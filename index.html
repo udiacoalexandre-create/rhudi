@@ -25,9 +25,7 @@
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
   const auth = getAuth(app);
-  const provider = new GoogleAuthProvider();
-
-  window._db=db; window._auth=auth; window._provider=provider;
+  window._db=db; window._auth=auth;
   window._col=(n)=>collection(db,n);
   window._doc=(c,i)=>doc(db,c,i);
   window._getDocs=getDocs; window._setDoc=setDoc;
@@ -1669,8 +1667,7 @@ function exportarCajuCompleto(){
     const cpf=(c.cpf||'').replace(/\D/g,'').padStart(11,'0');
     linhas.push(`${cpf};${c.mat||''};${formatValorCaju(alim)};0;${formatValorCaju(mob)};0;0;0;0;0;0;0;0`);
   });
-  const blob=new Blob([linhas.join('
-')],{type:'text/csv;charset=utf-8;'});
+  const blob=new Blob([linhas.join('\n')],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
@@ -1695,8 +1692,7 @@ function exportarPorEmpresaCaju(){
         const cpf=(c.cpf||'').replace(/\D/g,'').padStart(11,'0');
         linhas.push(`${cpf};${c.mat||''};${formatValorCaju(alim)};0;${formatValorCaju(mob)};0;0;0;0;0;0;0;0`);
       });
-      const blob=new Blob([linhas.join('
-')],{type:'text/csv;charset=utf-8;'});
+      const blob=new Blob([linhas.join('\n')],{type:'text/csv;charset=utf-8;'});
       const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
       a.href=url; a.download=`pedidos_caju_${emp}_${comp.replace('/','_')}.csv`;
