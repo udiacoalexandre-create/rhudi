@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Udiaço — Gestão de Benefícios</title>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, writeBatch, query, orderBy }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, signInWithRedirect, getRedirectResult,
+           onAuthStateChanged, signOut }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDUD4CDg3zaZh9dM4_RXuxRmY9bV0YZAok",
+    authDomain: "udiaco-beneficios.firebaseapp.com",
+    projectId: "udiaco-beneficios",
+    storageBucket: "udiaco-beneficios.firebasestorage.app",
+    messagingSenderId: "27505050059",
+    appId: "1:27505050059:web:1aa59e7b14bdc7b796364e"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
+  window._db=db; window._auth=auth; window._provider=provider;
+  window._col=(n)=>collection(db,n);
+  window._doc=(c,i)=>doc(db,c,i);
+  window._getDocs=getDocs; window._setDoc=setDoc;
+  window._deleteDoc=deleteDoc; window._writeBatch=writeBatch;
+  window._query=query; window._orderBy=orderBy;
+  window._signIn=(e,p)=>signInWithEmailAndPassword(auth,e,p);
+  window._signInWithRedirect=signInWithRedirect;
+  window._getRedirectResult=getRedirectResult;
+  window._onAuthStateChanged=onAuthStateChanged;
+  window._signOut=signOut;
+  window._firebaseReady=true;
+  window.dispatchEvent(new Event('firebaseReady'));
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#F4F1EC;--surface:#FDFCFA;--surface2:#EDE9E2;--border:#D8D2C8;
+  --text:#1A1612;--text2:#6B6057;--accent:#E05C2A;--green:#2A7A4A;
+  --blue:#1F3864;--red:#C0392B;--yellow:#F39C12;
+  --shadow:0 2px 12px rgba(0,0,0,.07);--radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* LOGIN */
+#login-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100vh;background:var(--blue);}
+#login-screen h1{font-size:28px;color:#fff;margin-bottom:8px;}
+#login-screen p{color:rgba(255,255,255,.6);font-size:14px;margin-bottom:32px;}
+.btn-google{background:#fff;color:#1A1612;padding:12px 24px;border-radius:8px;border:none;
+  font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .15s;}
+.btn-google:hover{transform:translateY(-2px);}
+#login-screen .logo{font-size:48px;margin-bottom:16px;}
+
+/* APP */
+#app-screen{display:none;}
+header{background:var(--blue);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;}
+header h1{font-size:16px;font-weight:600;color:#fff;}
+.header-right{display:flex;align-items:center;gap:16px;}
+.header-right span{font-size:12px;color:rgba(255,255,255,.6);}
+#sync-status{font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;}
+#sync-status.ok{background:rgba(42,122,74,.5);}#sync-status.sync{background:rgba(243,156,18,.5);}#sync-status.err{background:rgba(192,57,43,.5);}
+.btn-signout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;}
+.btn-signout:hover{background:rgba(255,255,255,.25);}
+.app{display:flex;height:calc(100vh - 60px);}
+nav{width:210px;background:var(--surface);border-right:1px solid var(--border);padding:24px 0;flex-shrink:0;overflow-y:auto;}
+nav button{width:100%;padding:10px 18px;text-align:left;background:none;border:none;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .15s;}
+nav button:hover{background:var(--surface2);color:var(--text);}
+nav button.active{background:#EEE8FF;color:var(--blue);font-weight:600;border-right:3px solid var(--blue);}
+nav .sep{height:1px;background:var(--border);margin:10px 14px;}
+nav .nav-group{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;padding:8px 18px 4px;}
+main{flex:1;overflow-y:auto;padding:24px 28px;}
+.page{display:none;}.page.active{display:block;}
+.page-title{font-size:20px;font-weight:600;margin-bottom:3px;}
+.page-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;margin-bottom:16px;box-shadow:var(--shadow);}
+.card-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;}
+.form-group{display:flex;flex-direction:column;gap:4px;}
+.form-group label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;}
+.form-group input,.form-group select,.form-group textarea{padding:8px 11px;border:1px solid var(--border);border-radius:6px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--bg);color:var(--text);}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--blue);background:#fff;}
+.form-group.span2{grid-column:span 2;}.form-group.span3{grid-column:span 3;}.form-group.full{grid-column:1/-1;}
+.section-divider{background:var(--surface2);border-radius:8px;padding:12px 16px;margin:14px 0 10px;font-size:12px;font-weight:600;color:var(--blue);display:flex;align-items:center;gap:8px;}
+
+/* Mobilidade condicional */
+#f-bloco-vt,#f-bloco-comb,#e-bloco-vt,#e-bloco-comb{display:none;}
+
+.btn{padding:8px 16px;border-radius:7px;border:none;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
+.btn-primary{background:var(--blue);color:#fff;}.btn-primary:hover{background:#162B52;}
+.btn-accent{background:var(--accent);color:#fff;}.btn-accent:hover{background:#C44D20;}
+.btn-green{background:var(--green);color:#fff;}.btn-green:hover{background:#1F5E38;}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border);}.btn-ghost:hover{background:var(--border);}
+.btn-danger{background:var(--red);color:#fff;}.btn-danger:hover{background:#A93226;}
+.btn-yellow{background:#F39C12;color:#fff;}.btn-yellow:hover{background:#D68910;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+.tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead th{background:var(--blue);color:#fff;padding:9px 10px;text-align:left;font-weight:500;font-size:11px;white-space:nowrap;}
+tbody tr{border-bottom:1px solid var(--border);}tbody tr:last-child{border-bottom:none;}
+tbody tr:nth-child(even){background:#F8F6F2;}tbody tr:hover{background:#EEE8FF;}
+tbody td{padding:8px 10px;white-space:nowrap;}
+.badge{padding:2px 7px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap;}
+.badge-green{background:#D4EDDA;color:#155724;}.badge-red{background:#F8D7DA;color:#721c24;}
+.badge-blue{background:#CCE5FF;color:#004085;}.badge-orange{background:#FFE0CC;color:#7A3300;}
+.badge-gray{background:var(--surface2);color:var(--text2);}.badge-purple{background:#E2D9F3;color:#4B2E83;}
+.badge-yellow{background:#FFF3CD;color:#856404;}
+.filter-bar{display:flex;gap:10px;margin-bottom:12px;align-items:flex-end;flex-wrap:wrap;}
+.filter-bar input,.filter-bar select{padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-family:'DM Sans',sans-serif;font-size:13px;background:var(--surface);}
+.filter-bar input{flex:1;min-width:180px;}.filter-bar input:focus,.filter-bar select:focus{outline:none;border-color:var(--blue);}
+.filter-group{display:flex;flex-direction:column;gap:3px;}.filter-group label{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;box-shadow:var(--shadow);}
+.stat-card .val{font-size:24px;font-weight:600;color:var(--blue);}
+.stat-card .lbl{font-size:12px;color:var(--text2);margin-top:2px;}
+.lan-tbl thead th{font-size:10px;padding:7px 6px;}
+.lan-tbl td{padding:5px 6px;}
+.lan-tbl input[type="number"]{width:52px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:12px;text-align:center;font-family:'DM Mono',monospace;}
+.dias-reais{font-weight:700;color:var(--green);font-family:'DM Mono',monospace;font-size:13px;text-align:center;}
+.total-col{font-weight:600;color:var(--blue);font-family:'DM Mono',monospace;font-size:11px;text-align:right;}
+.export-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;}
+.export-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;text-align:center;box-shadow:var(--shadow);}
+.export-card .icon{font-size:28px;margin-bottom:8px;}
+.export-card h3{font-size:13px;font-weight:600;margin-bottom:3px;}
+.export-card p{font-size:11px;color:var(--text2);margin-bottom:12px;}
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);}
+.upload-zone:hover{border-color:var(--blue);background:#F0F4FF;}
+.upload-zone input{display:none;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--surface);border-radius:12px;padding:24px;max-width:760px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,.2);margin-bottom:40px;}
+.modal h2{font-size:17px;margin-bottom:18px;}
+.modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
+#toast{position:fixed;bottom:20px;right:20px;background:var(--text);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(10px);transition:all .3s;z-index:999;pointer-events:none;max-width:400px;}
+#toast.show{opacity:1;transform:translateY(0);}
+#toast.success{background:var(--green);}#toast.error{background:var(--red);}#toast.warning{background:#E67E22;}
+.tag-vt{display:inline-block;background:#E3F2FD;color:#1565C0;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:500;margin:1px;}
+.tag-pec{display:inline-block;background:#E8F5E9;color:#2E7D32;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:500;}
+.tag-top{display:inline-block;background:#FFF3E0;color:#E65100;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:500;}
+.mob-badge{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:500;}
+.mob-perto{background:#FEE2E2;color:#991B1B;}
+.mob-carro{background:#E0F2FE;color:#0C4A6E;}
+.mob-comb{background:#FEF9C3;color:#713F12;}
+.mob-vt{background:#DCFCE7;color:#14532D;}
+.info-box{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 16px;font-size:12px;color:#1E40AF;margin-bottom:14px;}
+.warn-box{background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:12px 16px;font-size:12px;color:#92400E;margin-bottom:14px;}
+.success-box{background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;font-size:12px;color:#14532D;margin-bottom:14px;}
+.hist-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.hist-card .comp{font-weight:600;font-size:15px;color:var(--blue);}
+.hist-card .meta{font-size:12px;color:var(--text2);margin-top:2px;}
+.hist-card .vals{text-align:right;font-family:'DM Mono',monospace;font-size:13px;color:var(--green);font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div style="background:linear-gradient(135deg,#1F3864 0%,#2E75B6 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:16px;padding:40px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.2);">
+      <div style="text-align:center;font-size:40px;margin-bottom:8px">🧃</div>
+      <h1 style="text-align:center;font-size:20px;font-weight:600;color:#1F3864;margin-bottom:4px">Udiaço — Sistema de RH</h1>
+      <p style="text-align:center;font-size:13px;color:#6B6057;margin-bottom:24px">Acesso restrito a usuários autorizados</p>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+        <label style="font-size:11px;font-weight:600;color:#6B6057;text-transform:uppercase">E-mail</label>
+        <input type="email" id="login-email" placeholder="seu@email.com"
+          style="padding:10px 14px;border:1px solid #D8D2C8;border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif"
+          onkeydown="if(event.key==='Enter')fazerLogin()">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+        <label style="font-size:11px;font-weight:600;color:#6B6057;text-transform:uppercase">Senha</label>
+        <input type="password" id="login-senha" placeholder="••••••••"
+          style="padding:10px 14px;border:1px solid #D8D2C8;border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif"
+          onkeydown="if(event.key==='Enter')fazerLogin()">
+      </div>
+      <button onclick="fazerLogin()"
+        style="width:100%;padding:12px;background:#1F3864;color:#fff;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer">
+        Entrar
+      </button>
+      <div id="login-error" style="color:#C0392B;font-size:12px;text-align:center;margin-top:8px;display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app-screen">
+  <header>
+    <h1>🧃 Udiaço — Gestão de Benefícios</h1>
+    <div class="header-right">
+      <span id="user-name"></span>
+      <span id="sync-status">⏳ Conectando...</span>
+      <button class="btn-signout" onclick="fazerLogout()">Sair</button>
+    </div>
+  </header>
+  <div class="app">
+    <nav>
+      <div class="nav-group">Visão Geral</div>
+      <button class="active" onclick="showPage('dashboard')" id="nav-dashboard">📊 Dashboard</button>
+      <div class="sep"></div>
+      <div class="nav-group">Colaboradores</div>
+      <button onclick="showPage('colaboradores')" id="nav-colaboradores">👥 Base de Colaboradores</button>
+      <button onclick="showPage('cadastro')" id="nav-cadastro">➕ Novo Colaborador</button>
+      <button onclick="showPage('carga')" id="nav-carga">📥 Carga em Lote</button>
+      <div class="sep"></div>
+      <div class="nav-group">Lançamento</div>
+      <button onclick="showPage('lancamento')" id="nav-lancamento">📅 Lançamento Mensal</button>
+      <button onclick="showPage('importar')" id="nav-importar">📋 Importar Faltas</button>
+      <div class="sep"></div>
+      <div class="nav-group">Exportação</div>
+      <button onclick="showPage('exportar')" id="nav-exportar">📤 Exportar Caju + VT</button>
+      <div class="sep"></div>
+      <div class="nav-group">Folha de Pagamento</div>
+      <button onclick="showPage('folha-import')" id="nav-folha-import">📥 Importar Senior</button>
+      <button onclick="showPage('folha-view')" id="nav-folha-view">📊 Visualizar Folha</button>
+      <button onclick="showPage('exportar-senior')" id="nav-exportar-senior">🏢 Exportar Senior</button>
+      <div class="sep"></div>
+      <div class="nav-group">Histórico & Config</div>
+      <button onclick="showPage('historico')" id="nav-historico">🗂️ Histórico</button>
+      <button onclick="showPage('config')" id="nav-config">⚙️ Configurações</button>
+    </nav>
+    <main>
+
+      <!-- ═══ DASHBOARD ═══ -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub" id="dash-sub">Carregando...</div>
+        <div class="stats-row" id="stats-row"></div>
+        <div id="dash-competencia" style="display:none" class="card">
+          <div class="card-title">📊 Resumo da Competência — <span id="dash-comp-label" style="color:var(--blue)"></span></div>
+          <div class="stats-row" id="stats-beneficios" style="margin-bottom:0"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Últimos cadastrados</div>
+          <div id="dash-recent"></div>
+        </div>
+      </div>
+
+      <!-- ═══ COLABORADORES ═══ -->
+      <div class="page" id="page-colaboradores">
+        <div class="page-title">Base de Colaboradores</div>
+        <div class="page-sub">Gerencie, filtre e exporte a base</div>
+        <div class="filter-bar">
+          <div class="filter-group" style="flex:1;min-width:200px">
+            <label>🔍 Buscar</label>
+            <input type="text" id="search-input" placeholder="Nome, matrícula ou CPF..." oninput="renderTabela()">
+          </div>
+          <div class="filter-group">
+            <label>🏢 Empresa</label>
+            <select id="colab-empresa" onchange="renderTabela()"><option value="">Todas</option></select>
+          </div>
+          <div class="filter-group">
+            <label>🏬 Departamento</label>
+            <select id="colab-depto" onchange="renderTabela()"><option value="">Todos</option></select>
+          </div>
+          <div class="filter-group">
+            <label>💰 Benefício</label>
+            <select id="colab-beneficio" onchange="renderTabela()">
+              <option value="">Todos</option>
+              <option value="vr">🍽️ VR</option>
+              <option value="cafe">☕ Café</option>
+              <option value="comb">⛽ Combustível</option>
+              <option value="vt">🚌 VT</option>
+              <option value="sem">❌ Sem benefício</option>
+              <option disabled>──────────</option>
+              <option value="comb_e_vt">⚠️ Comb+VT (erro?)</option>
+              <option value="sem_comb_vt">⚠️ Sem Comb e VT</option>
+              <option value="mob_sem">🏠 Sem mobilidade</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>🚗 Tipo de Transporte</label>
+            <select id="colab-mob" onchange="renderTabela()">
+              <option value="">Todos</option>
+              <option value="vt">🚌 VT</option>
+              <option value="combustivel">⛽ Combustível</option>
+              <option value="perto">🏠 Mora perto</option>
+              <option value="carro_empresa">🚘 Carro empresa</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()">✖</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportarFiltradosExcel()">📊 Excel</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportarBase()">💾 Exportar base</button>
+        </div>
+        <div id="colab-count" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+        <div class="tbl-wrap">
+          <table><thead><tr>
+            <th>Matrícula</th><th>Nome</th><th>CPF</th><th>Depto</th><th>Status</th>
+            <th>VR/dia</th><th>Café/dia</th><th>Mobilidade</th><th>Ações</th>
+          </tr></thead>
+          <tbody id="tbody-colab"></tbody></table>
+        </div>
+      </div>
+
+      <!-- ═══ CADASTRO ═══ -->
+      <div class="page" id="page-cadastro">
+        <div class="page-title">Novo Colaborador</div>
+        <div class="page-sub">Preencha os dados. O sistema verifica duplicidades automaticamente.</div>
+        <div class="card">
+          <div class="card-title">👤 Dados Pessoais</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Matrícula *</label><input type="text" id="f-mat" oninput="verificarDuplic()"></div>
+            <div class="form-group span2"><label>Nome Completo *</label><input type="text" id="f-nome" oninput="verificarDuplic()"></div>
+            <div class="form-group"><label>CPF</label><input type="text" id="f-cpf" oninput="verificarDuplic()"></div>
+            <div class="form-group span2"><label>Cargo</label><input type="text" id="f-cargo"></div>
+            <div class="form-group span2"><label>Departamento</label><input type="text" id="f-depto"></div>
+            <div class="form-group"><label>Status</label>
+              <select id="f-status"><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option><option value="Férias">Em Férias</option></select>
+            </div>
+          </div>
+          <div id="duplic-alert" style="display:none;margin-top:10px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🍽️ Vale Refeição</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Valor/dia (R$)</label><input type="number" id="f-vr" step="0.01" min="0" placeholder="0.00"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">☕ Café da Manhã</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Valor/dia (R$)</label><input type="number" id="f-cafe" step="0.01" min="0" placeholder="0.00"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🚗 Tipo de Transporte</div>
+          <div class="form-grid">
+            <div class="form-group span2">
+              <label>Tipo de Transporte</label>
+              <select id="f-mobilidade" onchange="toggleMobilidadeF()">
+                <option value="vt">🚌 Vale Transporte (VT)</option>
+                <option value="combustivel">⛽ Combustível</option>
+                <option value="perto">🏠 Mora perto (sem mobilidade)</option>
+                <option value="carro_empresa">🚘 Carro da empresa (sem mobilidade)</option>
+              </select>
+            </div>
+          </div>
+          <!-- Bloco Combustível -->
+          <div id="f-bloco-comb" style="display:none;margin-top:12px">
+            <div class="section-divider">⛽ Valor do Combustível</div>
+            <div class="form-grid">
+              <div class="form-group"><label>Valor Mensal (R$)</label><input type="number" id="f-comb" step="0.01" min="0" placeholder="0.00"></div>
+            </div>
+          </div>
+          <!-- Bloco VT -->
+          <div id="f-bloco-vt" style="display:none;margin-top:12px">
+            <div class="section-divider">🚌 Linhas de Vale Transporte</div>
+            <div style="overflow-x:auto">
+              <table style="min-width:600px">
+                <thead><tr>
+                  <th>Linha</th><th>Tipo (PEC/TOP)</th><th>Código Benefício</th><th>Nome do Benefício</th><th>Valor (R$)</th><th>Viagens/dia</th>
+                </tr></thead>
+                <tbody>
+                  <tr id="f-vt-row-1">
+                    <td style="padding:6px;font-weight:600;color:var(--blue)">L1</td>
+                    <td colspan="3">
+                      <select id="f-sel1" onchange="onSelectLinha(1,'f')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                      </select>
+                      <input type="hidden" id="f-tp1"><input type="hidden" id="f-cod1"><input type="hidden" id="f-ben1">
+                    </td>
+                    <td><input type="number" id="f-vt1" step="0.01" min="0" placeholder="0.00" style="width:80px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                    <td><input type="number" id="f-v1" min="0" placeholder="0" style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                  </tr>
+                  <tr id="f-vt-row-2">
+                    <td style="padding:6px;font-weight:600;color:var(--blue)">L2</td>
+                    <td colspan="3">
+                      <select id="f-sel2" onchange="onSelectLinha(2,'f')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                      </select>
+                      <input type="hidden" id="f-tp2"><input type="hidden" id="f-cod2"><input type="hidden" id="f-ben2">
+                    </td>
+                    <td><input type="number" id="f-vt2" step="0.01" min="0" placeholder="0.00" style="width:80px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                    <td><input type="number" id="f-v2" min="0" placeholder="0" style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                  </tr>
+                  <tr id="f-vt-row-3">
+                    <td style="padding:6px;font-weight:600;color:var(--blue)">L3</td>
+                    <td colspan="3">
+                      <select id="f-sel3" onchange="onSelectLinha(3,'f')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                      </select>
+                      <input type="hidden" id="f-tp3"><input type="hidden" id="f-cod3"><input type="hidden" id="f-ben3">
+                    </td>
+                    <td><input type="number" id="f-vt3" step="0.01" min="0" placeholder="0.00" style="width:80px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                    <td><input type="number" id="f-v3" min="0" placeholder="0" style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                  </tr>
+                  <tr id="f-vt-row-4">
+                    <td style="padding:6px;font-weight:600;color:var(--blue)">L4</td>
+                    <td colspan="3">
+                      <select id="f-sel4" onchange="onSelectLinha(4,'f')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                      </select>
+                      <input type="hidden" id="f-tp4"><input type="hidden" id="f-cod4"><input type="hidden" id="f-ben4">
+                    </td>
+                    <td><input type="number" id="f-vt4" step="0.01" min="0" placeholder="0.00" style="width:80px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                    <td><input type="number" id="f-v4" min="0" placeholder="0" style="width:60px;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p style="font-size:11px;color:var(--text2);margin-top:8px">Preencha apenas as linhas utilizadas. Linhas vazias serão ignoradas.</p>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="salvarColaborador()">💾 Salvar Colaborador</button>
+          <button class="btn btn-ghost" onclick="limparForm()">✖ Limpar</button>
+        </div>
+      </div>
+
+      <!-- ═══ CARGA EM LOTE ═══ -->
+      <div class="page" id="page-carga">
+        <div class="page-title">Carga em Lote</div>
+        <div class="page-sub">Importe múltiplos colaboradores de uma vez via planilha</div>
+        <div class="card">
+          <div class="card-title">📥 Upload da planilha</div>
+          <div class="info-box">
+            A planilha deve ter as colunas: <strong>Matrícula, Nome, CPF, Cargo, Departamento, Status, VR/dia, Café/dia, Combustível, Mobilidade</strong>.<br>
+            Colaboradores com matrícula já existente serão identificados como duplicatas para confirmação.
+          </div>
+          <div class="upload-zone" onclick="document.getElementById('carga-file').click()">
+            <input type="file" id="carga-file" accept=".xlsx,.xls" onchange="processarCarga(event)">
+            <div style="font-size:32px">📋</div>
+            <p>Clique para selecionar a planilha de colaboradores</p>
+          </div>
+          <div id="carga-preview" style="margin-top:16px"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">⬇ Baixar modelo</div>
+          <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Planilha modelo com as colunas corretas para preenchimento.</p>
+          <button class="btn btn-green" onclick="gerarModeloCarga()">⬇ Baixar modelo de carga (.xlsx)</button>
+        </div>
+      </div>
+
+      <!-- ═══ LANÇAMENTO ═══ -->
+      <div class="page" id="page-lancamento">
+        <div class="page-title">Lançamento Mensal</div>
+        <div class="page-sub">Calcule os benefícios da competência</div>
+
+        <div class="card" style="padding:14px 20px">
+          <div class="card-title" style="margin-bottom:10px">📅 Competência</div>
+          <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+            <div class="form-group"><label>Mês/Ano</label>
+              <input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:120px" onchange="renderDashCompetencia()">
+            </div>
+            <div class="form-group"><label>Dias Úteis</label>
+              <input type="number" id="lan-duteis" value="22" min="1" max="31" style="width:80px" onchange="renderLancamento()">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">✅ Aplicar a todos</button>
+            <button class="btn btn-green btn-sm" onclick="fecharCompetencia()">🔒 Fechar Competência</button>
+            <p style="font-size:12px;color:var(--text2);align-self:flex-end;padding-bottom:2px">Aplica os dias úteis a todos sem lançamentos individuais.</p>
+          </div>
+        </div>
+
+        <div class="card" style="padding:14px 20px">
+          <div class="card-title" style="margin-bottom:10px">🔍 Filtros</div>
+          <div class="filter-bar" style="margin-bottom:0">
+            <div class="filter-group">
+              <label>🏢 Empresa</label>
+              <select id="lan-empresa" onchange="renderLancamento()"><option value="">Todas</option></select>
+            </div>
+            <div class="filter-group" style="flex:1;min-width:180px">
+              <label>🔍 Buscar</label>
+              <input type="text" id="lan-search" placeholder="Nome, matrícula ou CPF..." oninput="renderLancamento()">
+            </div>
+            <div class="filter-group">
+              <label>🏬 Departamento</label>
+              <select id="lan-depto" onchange="renderLancamento()"><option value="">Todos</option></select>
+            </div>
+            <div class="filter-group">
+              <label>💰 Benefício</label>
+              <select id="lan-beneficio" onchange="renderLancamento()">
+                <option value="">Todos</option>
+                <option value="vr">🍽️ VR</option>
+                <option value="cafe">☕ Café</option>
+                <option value="comb">⛽ Combustível</option>
+                <option value="vt">🚌 VT</option>
+              </select>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()">✖</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()">📊 Excel</button>
+          </div>
+        </div>
+
+        <div class="tbl-wrap">
+          <table class="lan-tbl">
+            <thead><tr>
+              <th>Mat.</th><th>Nome</th>
+              <th>Dias Úteis</th><th>Faltas</th><th>Férias</th><th>Extras</th><th>Dias Reais</th>
+              <th>VR</th><th>Café</th><th>Comb.</th><th>VT</th><th>Total</th>
+            </tr></thead>
+            <tbody id="tbody-lan"></tbody>
+            <tfoot id="tfoot-lan" style="display:none">
+              <tr style="background:#162B52;color:rgba(255,255,255,.6);font-size:10px;text-transform:uppercase;letter-spacing:.5px">
+                <td colspan="2" style="padding:6px 10px">📊 <span id="lan-total-label"></span></td>
+                <td style="padding:6px;text-align:center">Dias Úteis</td>
+                <td style="padding:6px;text-align:center">Faltas</td>
+                <td style="padding:6px;text-align:center">Férias</td>
+                <td style="padding:6px;text-align:center">Extras</td>
+                <td style="padding:6px;text-align:center">Dias Reais</td>
+                <td style="padding:6px;text-align:center">🍽️ VR</td>
+                <td style="padding:6px;text-align:center">☕ Café</td>
+                <td style="padding:6px;text-align:center">⛽ Comb.</td>
+                <td style="padding:6px;text-align:center">🚌 VT</td>
+                <td style="padding:6px;text-align:center">💰 Total</td>
+              </tr>
+              <tr style="background:var(--blue);color:#fff;font-weight:600;font-family:'DM Mono',monospace">
+                <td colspan="2" style="padding:9px 10px;font-family:'DM Sans',sans-serif;font-size:12px">
+                  <span id="lan-total-colab" style="color:rgba(255,255,255,.8)"></span>
+                </td>
+                <td style="padding:9px 6px;text-align:center;font-size:11px;color:rgba(255,255,255,.4)">—</td>
+                <td style="padding:9px 6px;text-align:center;font-size:11px;color:rgba(255,255,255,.4)">—</td>
+                <td style="padding:9px 6px;text-align:center;font-size:11px;color:rgba(255,255,255,.4)">—</td>
+                <td style="padding:9px 6px;text-align:center;font-size:11px;color:rgba(255,255,255,.4)">—</td>
+                <td style="padding:9px 6px;text-align:center;font-size:11px;color:rgba(255,255,255,.4)">—</td>
+                <td style="padding:9px 6px;text-align:right;font-size:12px" id="tot-vr"></td>
+                <td style="padding:9px 6px;text-align:right;font-size:12px" id="tot-cafe"></td>
+                <td style="padding:9px 6px;text-align:right;font-size:12px" id="tot-comb"></td>
+                <td style="padding:9px 6px;text-align:right;font-size:12px" id="tot-vt"></td>
+                <td style="padding:9px 6px;text-align:right;font-size:14px;color:#90EE90;font-weight:700" id="tot-geral"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- ═══ IMPORTAR FALTAS ═══ -->
+      <div class="page" id="page-importar">
+        <div class="page-title">Importar Faltas</div>
+        <div class="page-sub">Upload da planilha de faltas para atualizar o lançamento</div>
+        <div class="card">
+          <div class="upload-zone" onclick="document.getElementById('faltas-file').click()">
+            <input type="file" id="faltas-file" accept=".xlsx,.xls" onchange="importarFaltas(event)">
+            <div style="font-size:32px">📋</div>
+            <p>Clique para selecionar a planilha de faltas<br><small>Colunas: Matrícula | Nome | CPF | Nº de Faltas</small></p>
+          </div>
+          <div id="faltas-preview" style="margin-top:14px"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Gerar modelo</div>
+          <button class="btn btn-green" onclick="gerarModeloFaltas()">⬇ Baixar modelo (.xlsx)</button>
+        </div>
+      </div>
+
+      <!-- ═══ EXPORTAR CAJU + VT ═══ -->
+      <div class="page" id="page-exportar">
+        <div class="page-title">Exportar — Caju & VT</div>
+        <div class="page-sub">Arquivos de importação para o Caju e sistema de VT</div>
+        <div class="export-grid">
+          <div class="export-card"><div class="icon">🍽️</div><h3>Vale Refeição</h3><p>CPF + Valor — Caju</p><button class="btn btn-primary" onclick="exportarCaju('vr')">⬇ Exportar VR</button></div>
+          <div class="export-card"><div class="icon">☕</div><h3>Café da Manhã</h3><p>CPF + Valor — Caju</p><button class="btn btn-primary" onclick="exportarCaju('cafe')">⬇ Exportar Café</button></div>
+          <div class="export-card"><div class="icon">⛽</div><h3>Mobilidade</h3><p>CPF + Valor — Caju</p><button class="btn btn-primary" onclick="exportarCaju('comb')">⬇ Exportar Mobilidade</button></div>
+          <div class="export-card"><div class="icon">🚌</div><h3>Vale Transporte</h3><p>CPF, Código, Tipo, Valor, Qtd, Dias</p><button class="btn btn-accent" onclick="exportarVT()">⬇ Exportar VT</button></div>
+          <div class="export-card"><div class="icon">📦</div><h3>Exportar Tudo</h3><p>Todos os arquivos Caju + VT</p><button class="btn btn-green" onclick="exportarTudo()">⬇ Exportar Todos</button></div>
+        </div>
+      </div>
+
+      <!-- ═══ EXPORTAR SENIOR ═══ -->
+      <div class="page" id="page-exportar-senior">
+        <div class="page-title">Exportar — Sistema Senior</div>
+        <div class="page-sub">Arquivos CSV para integração com o Senior (CPF 11 dígitos, Empresa, Valor)</div>
+        <div class="info-box">Formato: CPF com 11 dígitos (zeros à esquerda) | Empresa (4 dígitos da matrícula) | Valor no formato 0,00</div>
+        <div class="export-grid">
+          <div class="export-card"><div class="icon">🍽️</div><h3>VR — Senior</h3><p>CSV para Senior</p><button class="btn btn-primary" onclick="exportarSenior('vr')">⬇ VR_Senior.csv</button></div>
+          <div class="export-card"><div class="icon">☕</div><h3>Café — Senior</h3><p>CSV para Senior</p><button class="btn btn-primary" onclick="exportarSenior('cafe')">⬇ Cafe_Senior.csv</button></div>
+          <div class="export-card"><div class="icon">⛽</div><h3>Mobilidade — Senior</h3><p>CSV para Senior</p><button class="btn btn-primary" onclick="exportarSenior('comb')">⬇ Mobilidade_Senior.csv</button></div>
+          <div class="export-card"><div class="icon">🚌</div><h3>VT — Senior</h3><p>CSV para Senior</p><button class="btn btn-accent" onclick="exportarSenior('vt')">⬇ VT_Senior.csv</button></div>
+          <div class="export-card"><div class="icon">📦</div><h3>Tudo Senior</h3><p>4 CSVs de uma vez</p><button class="btn btn-green" onclick="exportarTodosSenior()">⬇ Exportar Todos</button></div>
+        </div>
+      </div>
+
+      <!-- ═══ HISTÓRICO ═══ -->
+      <div class="page" id="page-historico">
+        <div class="page-title">Histórico de Competências</div>
+        <div class="page-sub">Competências fechadas — compare mês a mês</div>
+        <div id="hist-lista">
+          <div class="empty-state" style="text-align:center;padding:40px;color:var(--text2)">
+            <div style="font-size:36px;margin-bottom:10px">🗂️</div>
+            Carregando histórico...
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ CONFIGURAÇÕES ═══ -->
+      <div class="page" id="page-config">
+        <div class="page-title">Configurações</div>
+        <div class="page-sub">Tipo de cálculo por benefício — altere apenas quando necessário</div>
+        <div class="card">
+          <div class="card-title">💰 Tipo de cálculo</div>
+          <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)">
+              <div><div style="font-weight:600;font-size:14px">🍽️ Vale Refeição</div><div style="font-size:12px;color:var(--text2)">Valor/dia no cadastro</div></div>
+              <div style="display:flex;gap:16px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-vr" id="tipo-vr-mult" value="mult" checked onchange="salvarConfig()"> Valor × dias</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-vr" id="tipo-vr-fixo" value="fixo" onchange="salvarConfig()"> Fixo mensal</label>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:#FAFAF8">
+              <div><div style="font-weight:600;font-size:14px">☕ Café da Manhã</div><div style="font-size:12px;color:var(--text2)">Valor/dia no cadastro</div></div>
+              <div style="display:flex;gap:16px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-cafe" id="tipo-cafe-mult" value="mult" onchange="salvarConfig()"> Valor × dias</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-cafe" id="tipo-cafe-fixo" value="fixo" checked onchange="salvarConfig()"> Fixo mensal</label>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)">
+              <div><div style="font-weight:600;font-size:14px">⛽ Combustível</div><div style="font-size:12px;color:var(--text2)">Lógica proporcional especial</div></div>
+              <div style="display:flex;gap:16px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-comb" id="tipo-comb-prop" value="prop" checked onchange="salvarConfig()"> Proporcional /30</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-comb" id="tipo-comb-fixo" value="fixo" onchange="salvarConfig()"> Sempre fixo</label>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#FAFAF8">
+              <div><div style="font-weight:600;font-size:14px">🚌 Vale Transporte</div><div style="font-size:12px;color:var(--text2)">(Val linha × viagens) × dias</div></div>
+              <div style="display:flex;gap:16px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-vt" id="tipo-vt-mult" value="mult" checked onchange="salvarConfig()"> Valor × dias</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="tipo-vt" id="tipo-vt-fixo" value="fixo" onchange="salvarConfig()"> Fixo mensal</label>
+              </div>
+            </div>
+          </div>
+          <div class="success-box" style="margin-top:14px;margin-bottom:0">💡 Configuração salva automaticamente no Firebase — todos os usuários verão a mesma configuração.</div>
+        </div>
+        <div class="card">
+          <div class="card-title">🗄️ Dados & Portabilidade</div>
+          <p style="font-size:13px;color:var(--text2);margin-bottom:14px">Exporte toda a base de colaboradores para backup ou migração de servidor.</p>
+          <div class="btn-row" style="margin-top:0">
+            <button class="btn btn-ghost" onclick="exportarBase()">💾 Exportar base (.xlsx)</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('import-base').click()">📤 Importar base (.xlsx)</button>
+            <input type="file" id="import-base" accept=".xlsx,.xls" style="display:none" onchange="importarBase(event)">
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+      <!-- FOLHA IMPORT -->
+      <div class="page" id="page-folha-import">
+        <div class="page-title">Importar Relatório Senior — Folha</div>
+        <div class="page-sub">Transforme o relatório de eventos da Senior na planilha Folha por Equipes</div>
+        <div class="card">
+          <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:7px;padding:10px 14px;font-size:12px;color:#1E40AF;margin-bottom:12px">
+            Formato esperado: <strong>Cadastro | Nome | Evento | Descrição Evento | Valor do Evento</strong>
+          </div>
+          <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
+            <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
+            <div style="font-size:28px">💰</div>
+            <p style="font-size:13px;color:var(--text2);margin-top:6px">Clique para selecionar o relatório de eventos da Senior</p>
+          </div>
+          <div id="folha-preview" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- FOLHA VIEW -->
+      <div class="page" id="page-folha-view">
+        <div class="page-title">Folha de Pagamento</div>
+        <div class="page-sub">Visualize e exporte no modelo Senior → Folha por Equipes</div>
+        <div id="folha-content">
+          <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:7px;padding:10px 14px;font-size:12px;color:#92400E">
+            ⚠️ Nenhuma folha importada. Importe um relatório na aba "Importar Senior".
+          </div>
+        </div>
+      </div>
+
+<!-- MODAL EDITAR -->
+<div class="modal-overlay" id="modal-editar">
+  <div class="modal">
+    <h2>✏️ Editar Colaborador</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>Matrícula</label><input type="text" id="e-mat"></div>
+      <div class="form-group span2"><label>Nome *</label><input type="text" id="e-nome"></div>
+      <div class="form-group"><label>CPF</label><input type="text" id="e-cpf"></div>
+      <div class="form-group span2"><label>Cargo</label><input type="text" id="e-cargo"></div>
+      <div class="form-group span2"><label>Departamento</label><input type="text" id="e-depto"></div>
+      <div class="form-group"><label>Status</label>
+        <select id="e-status"><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option></select>
+      </div>
+    </div>
+    <div class="section-divider">🍽️ Vale Refeição</div>
+    <div class="form-grid"><div class="form-group"><label>Valor/dia (R$)</label><input type="number" id="e-vr" step="0.01"></div></div>
+    <div class="section-divider">☕ Café da Manhã</div>
+    <div class="form-grid"><div class="form-group"><label>Valor/dia (R$)</label><input type="number" id="e-cafe" step="0.01"></div></div>
+    <div class="section-divider">🚗 Tipo de Transporte</div>
+    <div class="form-grid">
+      <div class="form-group span2"><label>Tipo</label>
+        <select id="e-mobilidade" onchange="toggleMobilidadeE()">
+          <option value="vt">🚌 Vale Transporte (VT)</option>
+          <option value="combustivel">⛽ Combustível</option>
+          <option value="perto">🏠 Mora perto</option>
+          <option value="carro_empresa">🚘 Carro da empresa</option>
+        </select>
+      </div>
+    </div>
+    <div id="e-bloco-comb" style="display:none;margin-top:10px">
+      <div class="form-grid"><div class="form-group"><label>Combustível Mensal (R$)</label><input type="number" id="e-comb" step="0.01"></div></div>
+    </div>
+    <div id="e-bloco-vt" style="display:none;margin-top:10px">
+      <div style="overflow-x:auto">
+        <table style="min-width:580px">
+          <thead><tr><th>Linha</th><th>Tipo</th><th>Código</th><th>Nome Benefício</th><th>Valor (R$)</th><th>Viag/dia</th></tr></thead>
+          <tbody>
+            <tr><td style="padding:5px;font-weight:600;color:var(--blue)">L1</td>
+              <td colspan="3">
+                <select id="e-sel1" onchange="onSelectLinha(1,'e')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                </select>
+                <input type="hidden" id="e-tp1"><input type="hidden" id="e-cod1"><input type="hidden" id="e-ben1">
+              </td>
+              <td><input type="number" id="e-vt1" step="0.01" style="width:75px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+              <td><input type="number" id="e-v1" style="width:55px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+            </tr>
+            <tr><td style="padding:5px;font-weight:600;color:var(--blue)">L2</td>
+              <td colspan="3">
+                <select id="e-sel2" onchange="onSelectLinha(2,'e')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                </select>
+                <input type="hidden" id="e-tp2"><input type="hidden" id="e-cod2"><input type="hidden" id="e-ben2">
+              </td>
+              <td><input type="number" id="e-vt2" step="0.01" style="width:75px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+              <td><input type="number" id="e-v2" style="width:55px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+            </tr>
+            <tr><td style="padding:5px;font-weight:600;color:var(--blue)">L3</td>
+              <td colspan="3">
+                <select id="e-sel3" onchange="onSelectLinha(3,'e')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                </select>
+                <input type="hidden" id="e-tp3"><input type="hidden" id="e-cod3"><input type="hidden" id="e-ben3">
+              </td>
+              <td><input type="number" id="e-vt3" step="0.01" style="width:75px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+              <td><input type="number" id="e-v3" style="width:55px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+            </tr>
+            <tr><td style="padding:5px;font-weight:600;color:var(--blue)">L4</td>
+              <td colspan="3">
+                <select id="e-sel4" onchange="onSelectLinha(4,'e')" style="width:100%;padding:4px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+                </select>
+                <input type="hidden" id="e-tp4"><input type="hidden" id="e-cod4"><input type="hidden" id="e-ben4">
+              </td>
+              <td><input type="number" id="e-vt4" step="0.01" style="width:75px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+              <td><input type="number" id="e-v4" style="width:55px;padding:4px;font-size:12px;border:1px solid var(--border);border-radius:4px"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEdicao()">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DUPLICATAS CARGA -->
+<div class="modal-overlay" id="modal-duplic-carga">
+  <div class="modal">
+    <h2>⚠️ Duplicatas Encontradas</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px">Os seguintes colaboradores já existem na base. Deseja ignorá-los e importar apenas os novos?</p>
+    <div id="duplic-lista" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:14px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalCarga()">❌ Cancelar tudo</button>
+      <button class="btn btn-yellow" onclick="importarSemDuplic()">⏩ Ignorar duplicatas e importar novos</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════
+// DADOS INICIAIS & ESTADO
+// ══════════════════════════════════════════════════
+const DADOS_INICIAIS = []; // dados carregados do Firebase
+
+let colaboradores = [];
+let lancamento = {};
+let editId = null;
+let cargaPendente = []; // colaboradores aguardando confirmação de importação
+
+// ══════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════
+const brl = v => (parseFloat(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const fnum = v => parseFloat(v)||0;
+const g = id => document.getElementById(id)?.value.trim()||'';
+const setSS = (txt,tp) => { const e=document.getElementById('sync-status'); e.textContent=txt; e.className=tp||''; };
+function toast(msg,tipo='',dur=3000){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+tipo;
+  setTimeout(()=>t.className='',dur);
+}
+
+// ══════════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════════
+function fazerLogin(){
+  const email=document.getElementById('login-email')?.value.trim()||'';
+  const senha=document.getElementById('login-senha')?.value||'';
+  const errEl=document.getElementById('login-error');
+  if(errEl) errEl.style.display='none';
+  if(!email||!senha){
+    if(errEl){errEl.textContent='Preencha e-mail e senha.';errEl.style.display='block';}
+    return;
+  }
+  window._signIn(email,senha).catch(e=>{
+    let msg='E-mail ou senha incorretos.';
+    if(e.code==='auth/too-many-requests') msg='Muitas tentativas. Aguarde.';
+    if(errEl){errEl.textContent=msg;errEl.style.display='block';}
+  });
+}
+function fazerLogout(){
+  window._signOut(window._auth);
+  document.getElementById('app-screen').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+}
+
+// ══════════════════════════════════════════════════
+// FIREBASE OPS
+// ══════════════════════════════════════════════════
+async function carregarColaboradores(){
+  setSS('⏳ Carregando...','sync');
+  try{
+    const snap=await window._getDocs(window._col('colaboradores'));
+    colaboradores=[];
+    const semMobilidade=[];
+    snap.forEach(d=>{
+      const c={...d.data(),_id:d.id};
+      // Inferir mobilidade se não estiver definida e marcar para salvar
+      if(!c.mobilidade||!['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade)){
+        const temVT=[1,2,3,4].some(n=>parseFloat(c['vt'+n])||0);
+        const temComb=parseFloat(c.comb)||0;
+        c.mobilidade=temVT?'vt':temComb>0?'combustivel':'perto';
+        semMobilidade.push(c);
+      }
+      colaboradores.push(c);
+    });
+    if(colaboradores.length===0){ setSS('⏳ Carga inicial...','sync'); await cargaInicial(); }
+    else {
+      setSS('✅ '+colaboradores.length+' colaboradores','ok');
+      // Salvar mobilidade inferida no Firebase (em lotes de 500)
+      if(semMobilidade.length>0){
+        console.log('Salvando mobilidade inferida para '+semMobilidade.length+' colaboradores...');
+        for(let i=0;i<semMobilidade.length;i+=400){
+          const batch=window._writeBatch(window._db);
+          semMobilidade.slice(i,i+400).forEach(c=>batch.set(window._doc('colaboradores',c._id),c));
+          await batch.commit();
+        }
+        console.log('Mobilidade salva com sucesso.');
+      }
+    }
+    document.getElementById('header-count')||null;
+  }catch(e){ setSS('❌ Erro','err'); toast('Erro: '+e.message,'error'); }
+}
+
+async function carregarLancamento(){
+  try{
+    const snap=await window._getDocs(window._col('lancamento'));
+    lancamento={};
+    snap.forEach(d=>{lancamento[d.id]=d.data();});
+  }catch(e){ console.error(e); }
+}
+
+async function cargaInicial(){
+  const batch=window._writeBatch(window._db);
+  DADOS_INICIAIS.forEach(c=>{
+    const id=c.mat||(c.nome.replace(/\s+/g,'_').substring(0,20)+'_'+Math.random().toString(36).substr(2,5));
+    batch.set(window._doc('colaboradores',id),{...c,_id:id});
+  });
+  await batch.commit();
+  const snap=await window._getDocs(window._col('colaboradores'));
+  colaboradores=[];
+  snap.forEach(d=>colaboradores.push({...d.data(),_id:d.id}));
+  setSS('✅ '+colaboradores.length+' colaboradores','ok');
+  toast('✅ '+colaboradores.length+' colaboradores carregados!','success');
+}
+
+async function fsSetColab(c){
+  const id=c._id||c.mat||(c.nome.replace(/\s+/g,'_').substr(0,20)+'_'+Date.now());
+  c._id=id;
+  await window._setDoc(window._doc('colaboradores',id),c);
+  return c;
+}
+async function fsDelColab(id){ await window._deleteDoc(window._doc('colaboradores',id)); }
+async function fsSetLan(mat,dados){ await window._setDoc(window._doc('lancamento',mat),dados); }
+
+// ══════════════════════════════════════════════════
+// NAV
+// ══════════════════════════════════════════════════
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  document.getElementById('nav-'+id).classList.add('active');
+  if(id==='dashboard') renderDashboard();
+  if(id==='colaboradores'){ popularFiltrosColab(); renderTabela(); }
+  if(id==='lancamento'){ popularFiltrosLan(); renderLancamento(); }
+  if(id==='historico') renderHistorico();
+}
+
+// ══════════════════════════════════════════════════
+// MOBILIDADE — toggle campos
+// ══════════════════════════════════════════════════
+function toggleMobilidadeF(){
+  const v=g('f-mobilidade');
+  document.getElementById('f-bloco-comb').style.display=v==='combustivel'?'block':'none';
+  document.getElementById('f-bloco-vt').style.display=v==='vt'?'block':'none';
+  if(v==='vt') popularSelectsVT('f');
+}
+function popularSelectsVT(prefix){
+  [1,2,3,4].forEach(n=>{
+    const sel=document.getElementById(prefix+'-sel'+n);
+    if(sel && sel.options.length<=1) sel.innerHTML=VT_OPTIONS_HTML('');
+  });
+}
+function toggleMobilidadeE(){
+  const v=g('e-mobilidade');
+  document.getElementById('e-bloco-comb').style.display=v==='combustivel'?'block':'none';
+  document.getElementById('e-bloco-vt').style.display=v==='vt'?'block':'none';
+  if(v==='vt'){
+    [1,2,3,4].forEach(n=>{
+      const sel=document.getElementById('e-sel'+n);
+      if(sel && sel.options.length<=1) sel.innerHTML=VT_OPTIONS_HTML('');
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════
+function renderDashboard(){
+  const ativos=colaboradores.filter(c=>c.status==='Ativo');
+  const comVR=colaboradores.filter(c=>fnum(c.vr)>0);
+  const comVT=colaboradores.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  const comComb=colaboradores.filter(c=>fnum(c.comb)>0);
+  document.getElementById('dash-sub').textContent='Visão geral — '+colaboradores.length+' colaboradores na base';
+  document.getElementById('stats-row').innerHTML=`
+    <div class="stat-card"><div class="val">${colaboradores.length}</div><div class="lbl">Total</div></div>
+    <div class="stat-card"><div class="val" style="color:var(--green)">${ativos.length}</div><div class="lbl">Ativos</div></div>
+    <div class="stat-card"><div class="val" style="color:var(--accent)">${comVR.length}</div><div class="lbl">Com VR</div></div>
+    <div class="stat-card"><div class="val" style="color:var(--blue)">${comVT.length}</div><div class="lbl">Com VT</div></div>
+    <div class="stat-card"><div class="val" style="color:#7B3F00">${comComb.length}</div><div class="lbl">Combustível</div></div>`;
+  renderDashCompetencia();
+  const rec=colaboradores.slice(-5).reverse();
+  document.getElementById('dash-recent').innerHTML=rec.length===0
+    ?'<div style="text-align:center;padding:30px;color:var(--text2)">Nenhum colaborador ainda.</div>'
+    :`<div class="tbl-wrap"><table><thead><tr><th>Matrícula</th><th>Nome</th><th>Status</th><th>VR/dia</th><th>Mobilidade</th></tr></thead><tbody>
+      ${rec.map(c=>`<tr><td><code>${c.mat||'—'}</code></td><td><strong>${c.nome}</strong></td>
+        <td><span class="badge ${c.status==='Ativo'?'badge-green':'badge-red'}">${c.status||'—'}</span></td>
+        <td>${fnum(c.vr)>0?brl(c.vr):'—'}</td>
+        <td>${mobBadgeStr(c)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+}
+
+function mobBadgeStr(c){
+  const m=c.mobilidade||'vt';
+  if(m==='perto') return '<span class="mob-badge mob-perto">🏠 Mora perto</span>';
+  if(m==='carro_empresa') return '<span class="mob-badge mob-carro">🚘 Carro empresa</span>';
+  if(m==='combustivel') return `<span class="mob-badge mob-comb">⛽ ${brl(c.comb)}/mês</span>`;
+  const vtInfo=[1,2,3,4].filter(n=>fnum(c['vt'+n])>0)
+    .map(n=>`<span class="tag-${(c['tp'+n]||'vt').toLowerCase()}">${c['tp'+n]||'VT'} L${n}</span>`).join(' ');
+  return vtInfo||'<span class="mob-badge mob-vt">🚌 VT</span>';
+}
+
+function renderDashCompetencia(){
+  const ativos=colaboradores.filter(c=>c.status!=='Inativo');
+  if(ativos.length===0||Object.keys(lancamento).length===0){
+    document.getElementById('dash-competencia').style.display='none'; return;
+  }
+  const comp=g('lan-comp')||'';
+  let tVR=0,tCafe=0,tComb=0,tVT=0,nVR=0,nCafe=0,nComb=0,nVT=0;
+  ativos.forEach(c=>{
+    const l=lancamento[c.mat]||{};
+    const du=fnum(l.duteis)||22;
+    const dr=Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+    const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+    if(vr>0){tVR+=vr;nVR++;}if(cafe>0){tCafe+=cafe;nCafe++;}
+    if(comb>0){tComb+=comb;nComb++;}if(vt>0){tVT+=vt;nVT++;}
+  });
+  document.getElementById('dash-competencia').style.display='block';
+  document.getElementById('dash-comp-label').textContent=comp||'—';
+  document.getElementById('stats-beneficios').innerHTML=`
+    <div class="stat-card" style="border-left:4px solid var(--accent)"><div class="val" style="font-size:15px;color:var(--accent)">${brl(tVR)}</div><div class="lbl">🍽️ VR — ${nVR} colab.</div></div>
+    <div class="stat-card" style="border-left:4px solid #7B5E00"><div class="val" style="font-size:15px;color:#7B5E00">${brl(tCafe)}</div><div class="lbl">☕ Café — ${nCafe} colab.</div></div>
+    <div class="stat-card" style="border-left:4px solid #7B3F00"><div class="val" style="font-size:15px;color:#7B3F00">${brl(tComb)}</div><div class="lbl">⛽ Comb. — ${nComb} colab.</div></div>
+    <div class="stat-card" style="border-left:4px solid var(--blue)"><div class="val" style="font-size:15px;color:var(--blue)">${brl(tVT)}</div><div class="lbl">🚌 VT — ${nVT} colab.</div></div>
+    <div class="stat-card" style="border-left:4px solid var(--green);grid-column:1/-1"><div class="val" style="font-size:20px;color:var(--green)">${brl(tVR+tCafe+tComb+tVT)}</div><div class="lbl">💰 Total Geral da Competência</div></div>`;
+}
+
+// ══════════════════════════════════════════════════
+// CÁLCULO BENEFÍCIOS (central)
+// ══════════════════════════════════════════════════
+function calcBeneficios(c,dr,du){
+  const tipoVR  = document.querySelector('input[name="tipo-vr"]:checked')?.value!=='fixo';
+  const tipoCafe= document.querySelector('input[name="tipo-cafe"]:checked')?.value==='mult';
+  const tipoComb= document.querySelector('input[name="tipo-comb"]:checked')?.value;
+  const tipoVT  = document.querySelector('input[name="tipo-vt"]:checked')?.value!=='fixo';
+  const mob=c.mobilidade||(fnum(c.comb)>0?'combustivel':'vt');
+  const inativo=c.status==='Inativo';
+  const vr  =inativo?0:tipoVR?fnum(c.vr)*dr:fnum(c.vr);
+  const cafe =inativo?0:tipoCafe?fnum(c.cafe)*dr:fnum(c.cafe);
+  let comb=0;
+  if(!inativo&&mob==='combustivel'){
+    if(tipoComb==='fixo') comb=fnum(c.comb);
+    else comb=calcMob(fnum(c.comb),dr,du);
+  }
+  const vt=inativo||mob!=='vt'?0:(tipoVT?calcVT(c,dr):calcVT(c,1));
+  return {vr,cafe,comb,vt};
+}
+
+function calcMob(valor,dr,du){
+  if(dr>=du) return valor;
+  const raw=(valor/30)*dr;
+  const fl=Math.floor(raw);
+  return (raw-fl)<=0.5?fl:fl+1;
+}
+
+function calcVT(c,dr){
+  return [1,2,3,4].reduce((s,n)=>s+fnum(c['vt'+n])*fnum(c['v'+n]),0)*dr;
+}
+
+function getDiasReais(mat){
+  const l=lancamento[mat]||{};
+  const du=fnum(l.duteis)||fnum(g('lan-duteis'))||22;
+  return Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+}
+
+// ══════════════════════════════════════════════════
+// VERIFICAR DUPLICIDADE NO CADASTRO
+// ══════════════════════════════════════════════════
+function verificarDuplic(){
+  const mat=g('f-mat'), nome=g('f-nome').toUpperCase(), cpf=g('f-cpf');
+  const alertas=[];
+  if(mat && colaboradores.some(c=>c.mat===mat))
+    alertas.push(`⚠️ Matrícula <strong>${mat}</strong> já cadastrada.`);
+  if(nome.length>3){
+    const mNome=colaboradores.find(c=>c.nome.toUpperCase()===nome);
+    if(mNome) alertas.push(`⚠️ Nome <strong>${nome}</strong> já existe (Mat: ${mNome.mat}).`);
+  }
+  if(cpf.length>8){
+    const cpfLimpo=cpf.replace(/\D/g,'');
+    const mCPF=colaboradores.find(c=>(c.cpf||'').replace(/\D/g,'')===cpfLimpo);
+    if(mCPF) alertas.push(`⚠️ CPF já cadastrado para <strong>${mCPF.nome}</strong>.`);
+  }
+  const el=document.getElementById('duplic-alert');
+  if(alertas.length>0){
+    el.style.display='block';
+    el.innerHTML=`<div class="warn-box">${alertas.join('<br>')}</div>`;
+  } else { el.style.display='none'; }
+}
+
+// ══════════════════════════════════════════════════
+// SALVAR COLABORADOR
+// ══════════════════════════════════════════════════
+async function salvarColaborador(){
+  const nome=g('f-nome').toUpperCase(), mat=g('f-mat');
+  if(!nome){toast('Nome é obrigatório','error');return;}
+  if(mat&&colaboradores.some(c=>c.mat===mat)){
+    if(!confirm(`Matrícula ${mat} já existe. Continuar mesmo assim?`)) return;
+  }
+  const mob=g('f-mobilidade')||'vt';
+  const c={
+    mat,nome,cpf:g('f-cpf'),cargo:g('f-cargo').toUpperCase(),
+    depto:g('f-depto'),status:g('f-status')||'Ativo',mobilidade:mob,
+    vr:fnum(g('f-vr')),cafe:fnum(g('f-cafe')),
+    comb:mob==='combustivel'?fnum(g('f-comb')):0,
+    vt1:mob==='vt'?fnum(g('f-vt1')):0, v1:mob==='vt'?fnum(g('f-v1')):0,
+    vt2:mob==='vt'?fnum(g('f-vt2')):0, v2:mob==='vt'?fnum(g('f-v2')):0,
+    vt3:mob==='vt'?fnum(g('f-vt3')):0, v3:mob==='vt'?fnum(g('f-v3')):0,
+    vt4:mob==='vt'?fnum(g('f-vt4')):0, v4:mob==='vt'?fnum(g('f-v4')):0,
+    tp1:mob==='vt'?g('f-tp1'):'', cod1:mob==='vt'?g('f-cod1'):'', ben1:mob==='vt'?g('f-ben1'):'',
+    tp2:mob==='vt'?g('f-tp2'):'', cod2:mob==='vt'?g('f-cod2'):'', ben2:mob==='vt'?g('f-ben2'):'',
+    tp3:mob==='vt'?g('f-tp3'):'', cod3:mob==='vt'?g('f-cod3'):'', ben3:mob==='vt'?g('f-ben3'):'',
+    tp4:mob==='vt'?g('f-tp4'):'', cod4:mob==='vt'?g('f-cod4'):'', ben4:mob==='vt'?g('f-ben4'):'',
+  };
+  try{
+    const saved=await fsSetColab(c);
+    colaboradores.push(saved);
+    toast('✅ Colaborador salvo!','success'); limparForm();
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+function limparForm(){
+  ['f-mat','f-nome','f-cpf','f-cargo','f-depto','f-vr','f-cafe','f-comb',
+   'f-vt1','f-v1','f-vt2','f-v2','f-vt3','f-v3','f-vt4','f-v4',
+   'f-cod1','f-ben1','f-cod2','f-ben2','f-cod3','f-ben3','f-cod4','f-ben4'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  ['f-tp1','f-tp2','f-tp3','f-tp4',
+   'f-sel1','f-sel2','f-sel3','f-sel4'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('f-status').value='Ativo';
+  document.getElementById('f-mobilidade').value='vt';
+  document.getElementById('duplic-alert').style.display='none';
+  toggleMobilidadeF();
+}
+
+// ══════════════════════════════════════════════════
+// TABELA COLABORADORES
+// ══════════════════════════════════════════════════
+function popularFiltrosColab(){
+  ['colab-empresa','colab-depto'].forEach(sid=>{
+    const sel=document.getElementById(sid); if(!sel) return;
+    const atual=sel.value;
+    let opts;
+    if(sid==='colab-empresa'){
+      const g2={};
+      colaboradores.forEach(c=>{const p=String(c.mat||'').trim().substring(0,4);if(p.length===4)g2[p]=(g2[p]||0)+1;});
+      opts=Object.keys(g2).sort().map(p=>`<option value="${p}" ${p===atual?'selected':''}>${p} (${g2[p]})</option>`);
+      sel.innerHTML='<option value="">Todas</option>'+opts.join('');
+    } else {
+      const deps=[...new Set(colaboradores.map(c=>c.depto||'').filter(d=>d))].sort();
+      sel.innerHTML='<option value="">Todos</option>'+deps.map(d=>`<option value="${d}" ${d===atual?'selected':''}>${d}</option>`).join('');
+    }
+  });
+}
+
+function limparFiltrosColab(){
+  ['search-input','colab-empresa','colab-depto','colab-beneficio','colab-mob'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  renderTabela();
+}
+
+function renderTabela(){
+  const q=(document.getElementById('search-input')?.value||'').toLowerCase();
+  const empF=g('colab-empresa'), depF=g('colab-depto');
+  const benF=g('colab-beneficio'), mobF=g('colab-mob');
+  let f=colaboradores.filter(c=>
+    c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
+  if(empF) f=f.filter(c=>String(c.mat||'').trim().startsWith(empF));
+  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+  if(benF==='vr') f=f.filter(c=>fnum(c.vr)>0);
+  else if(benF==='cafe') f=f.filter(c=>fnum(c.cafe)>0);
+  else if(benF==='comb') f=f.filter(c=>fnum(c.comb)>0);
+  else if(benF==='vt') f=f.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  else if(benF==='sem') f=f.filter(c=>fnum(c.vr)===0&&fnum(c.cafe)===0&&fnum(c.comb)===0&&[1,2,3,4].every(n=>fnum(c['vt'+n])===0));
+  else if(benF==='comb_e_vt') f=f.filter(c=>fnum(c.comb)>0&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  else if(benF==='sem_comb_vt') f=f.filter(c=>fnum(c.comb)===0&&[1,2,3,4].every(n=>fnum(c['vt'+n])===0));
+  else if(benF==='mob_sem') f=f.filter(c=>['perto','carro_empresa'].includes(c.mobilidade));
+  if(mobF) f=f.filter(c=>(c.mobilidade||'vt')===mobF);
+  const cnt=document.getElementById('colab-count');
+  if(cnt) cnt.textContent=`${f.length} de ${colaboradores.length} colaboradores`;
+  if(f.length===0){
+    document.getElementById('tbody-colab').innerHTML=`<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text2)">Nenhum resultado.</td></tr>`;
+    return;
+  }
+  document.getElementById('tbody-colab').innerHTML=f.map(c=>`<tr>
+    <td><code style="font-size:11px">${c.mat||'—'}</code></td>
+    <td><strong style="font-size:12px">${c.nome}</strong></td>
+    <td><code style="font-size:11px">${c.cpf||'—'}</code></td>
+    <td style="font-size:11px;color:var(--text2);max-width:140px;overflow:hidden;text-overflow:ellipsis">${c.depto||'—'}</td>
+    <td><span class="badge ${c.status==='Ativo'?'badge-green':'badge-red'}">${c.status||'—'}</span></td>
+    <td style="font-size:12px">${fnum(c.vr)>0?brl(c.vr):'—'}</td>
+    <td style="font-size:12px">${fnum(c.cafe)>0?brl(c.cafe):'—'}</td>
+    <td>${mobBadgeStr(c)}</td>
+    <td>
+      <button class="btn btn-ghost btn-sm" onclick="abrirEditar('${c._id}')">✏️</button>
+      <button class="btn btn-danger btn-sm" onclick="excluir('${c._id}','${c.nome.replace(/'/g,"\\'")}')">🗑</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function excluir(id,nome){
+  if(!confirm(`Excluir "${nome}"?`)) return;
+  try{await fsDelColab(id);colaboradores=colaboradores.filter(c=>c._id!==id);renderTabela();toast('Removido.','error');}
+  catch(e){toast('Erro: '+e.message,'error');}
+}
+
+// ══════════════════════════════════════════════════
+// EDITAR
+// ══════════════════════════════════════════════════
+function inferirMobilidade(c){
+  // Inferir tipo de transporte se não estiver definido
+  if(c.mobilidade && ['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade))
+    return c.mobilidade;
+  const temVT=[1,2,3,4].some(n=>fnum(c['vt'+n])>0);
+  const temComb=fnum(c.comb)>0;
+  if(temVT) return 'vt';
+  if(temComb) return 'combustivel';
+  return 'perto';
+}
+
+function abrirEditar(id){
+  editId=id;
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  ['mat','nome','cpf','cargo','depto','status','vr','cafe','comb',
+   'vt1','v1','vt2','v2','vt3','v3','vt4','v4',
+   'tp1','cod1','ben1','tp2','cod2','ben2','tp3','cod3','ben3','tp4','cod4','ben4'].forEach(f=>{
+    const el=document.getElementById('e-'+f); if(el) el.value=c[f]||'';
+  });
+  // Inferir mobilidade automaticamente
+  const mob=inferirMobilidade(c);
+  const selMob=document.getElementById('e-mobilidade');
+  if(selMob) selMob.value=mob;
+  toggleMobilidadeE();
+  // Popular selects de VT e marcar o valor atual
+  if(mob==='vt'){
+    [1,2,3,4].forEach(n=>{
+      const sel=document.getElementById('e-sel'+n);
+      if(sel){ sel.innerHTML=VT_OPTIONS_HTML(c['cod'+n]||''); }
+    });
+  }
+  document.getElementById('modal-editar').classList.add('open');
+}
+function fecharModal(){ document.getElementById('modal-editar').classList.remove('open'); editId=null; }
+
+async function salvarEdicao(){
+  if(!editId) return;
+  const idx=colaboradores.findIndex(x=>x._id===editId); if(idx<0) return;
+  const mob=g('e-mobilidade')||'vt';
+  ['mat','nome','cpf','cargo','depto','status','mobilidade','vr','cafe','comb',
+   'vt1','v1','vt2','v2','vt3','v3','vt4','v4',
+   'tp1','cod1','ben1','tp2','cod2','ben2','tp3','cod3','ben3','tp4','cod4','ben4'].forEach(f=>{
+    const el=document.getElementById('e-'+f);
+    if(!el) return;
+    colaboradores[idx][f]=['vr','cafe','comb','vt1','v1','vt2','v2','vt3','v3','vt4','v4'].includes(f)?fnum(el.value):el.value.trim();
+  });
+  colaboradores[idx].nome=(colaboradores[idx].nome||'').toUpperCase();
+  colaboradores[idx].cargo=(colaboradores[idx].cargo||'').toUpperCase();
+  // Zerar campos não usados pela mobilidade
+  if(mob!=='combustivel') colaboradores[idx].comb=0;
+  if(mob!=='vt'){['vt1','v1','vt2','v2','vt3','v3','vt4','v4','tp1','tp2','tp3','tp4','cod1','cod2','cod3','cod4','ben1','ben2','ben3','ben4'].forEach(f=>colaboradores[idx][f]=0||'');}
+  try{await fsSetColab(colaboradores[idx]);fecharModal();renderTabela();toast('✅ Atualizado!','success');}
+  catch(e){toast('Erro: '+e.message,'error');}
+}
+
+// ══════════════════════════════════════════════════
+// LANÇAMENTO MENSAL
+// ══════════════════════════════════════════════════
+function popularFiltrosLan(){
+  // Empresa
+  const selEmp=document.getElementById('lan-empresa');
+  if(selEmp){
+    const atual=selEmp.value;
+    const g2={};
+    colaboradores.forEach(c=>{const p=String(c.mat||'').trim().substring(0,4);if(p.length===4)g2[p]=(g2[p]||0)+1;});
+    selEmp.innerHTML='<option value="">Todas</option>'+Object.keys(g2).sort().map(p=>`<option value="${p}" ${p===atual?'selected':''}>${p} (${g2[p]})</option>`).join('');
+  }
+  // Departamento
+  const selDep=document.getElementById('lan-depto');
+  if(selDep){
+    const atual=selDep.value;
+    const deps=[...new Set(colaboradores.map(c=>c.depto||'').filter(d=>d))].sort();
+    selDep.innerHTML='<option value="">Todos</option>'+deps.map(d=>`<option value="${d}" ${d===atual?'selected':''}>${d}</option>`).join('');
+  }
+}
+
+function limparFiltrosLan(){
+  ['lan-search','lan-empresa','lan-depto','lan-beneficio'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  renderLancamento();
+}
+
+function renderLancamento(){
+  const duteis=fnum(g('lan-duteis'))||22;
+  const q=(g('lan-search')||'').toLowerCase();
+  const empF=g('lan-empresa'), depF=g('lan-depto'), benF=g('lan-beneficio');
+
+  let ativos=colaboradores.filter(c=>c.status!=='Inativo');
+  if(empF) ativos=ativos.filter(c=>String(c.mat||'').trim().startsWith(empF));
+  if(q) ativos=ativos.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
+  if(depF) ativos=ativos.filter(c=>(c.depto||'')===depF);
+  if(benF==='vr') ativos=ativos.filter(c=>fnum(c.vr)>0);
+  if(benF==='cafe') ativos=ativos.filter(c=>fnum(c.cafe)>0);
+  if(benF==='comb') ativos=ativos.filter(c=>fnum(c.comb)>0);
+  if(benF==='vt') ativos=ativos.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+
+  // Calcular totais
+  let tVR=0,tCafe=0,tComb=0,tVT=0;
+  ativos.forEach(c=>{
+    const l=lancamento[c.mat]||{};
+    const du=l.duteis!==undefined?fnum(l.duteis):duteis;
+    const dr=Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+    const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+    tVR+=vr;tCafe+=cafe;tComb+=comb;tVT+=vt;
+  });
+
+  // Atualizar rodapé
+  const tfoot=document.getElementById('tfoot-lan');
+  if(tfoot){
+    tfoot.style.display=ativos.length>0?'table-footer-group':'none';
+    const empFiltro=g('lan-empresa');
+    const totalAtivos=colaboradores.filter(c=>c.status!=='Inativo').length;
+    document.getElementById('lan-total-label').textContent=
+      empFiltro?`Empresa ${empFiltro} — ${ativos.length} colaboradores`
+      :ativos.length===totalAtivos?'Totais do mês':`Totais da seleção (${ativos.length})`;
+    document.getElementById('lan-total-colab').textContent=`${ativos.length} colaborador${ativos.length!==1?'es':''}`;
+    document.getElementById('tot-vr').textContent=tVR>0?brl(tVR):'—';
+    document.getElementById('tot-cafe').textContent=tCafe>0?brl(tCafe):'—';
+    document.getElementById('tot-comb').textContent=tComb>0?brl(tComb):'—';
+    document.getElementById('tot-vt').textContent=tVT>0?brl(tVT):'—';
+    document.getElementById('tot-geral').textContent=brl(tVR+tCafe+tComb+tVT);
+  }
+
+  if(ativos.length===0){
+    document.getElementById('tbody-lan').innerHTML=`<tr><td colspan="12" style="text-align:center;padding:30px;color:var(--text2)">Nenhum resultado.</td></tr>`;
+    return;
+  }
+
+  document.getElementById('tbody-lan').innerHTML=ativos.map((c,i)=>{
+    const l=lancamento[c.mat]||{};
+    const du=l.duteis!==undefined?fnum(l.duteis):duteis;
+    const fat=fnum(l.faltas),fev=fnum(l.ferias),ext=fnum(l.extras);
+    const dr=Math.max(0,du-fat-fev+ext);
+    const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+    const total=vr+cafe+comb+vt;
+    return `<tr style="background:${i%2===0?'#F8F6F2':''}">
+      <td><code style="font-size:10px">${c.mat||'—'}</code></td>
+      <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${c.nome}">${c.nome}</td>
+      <td><input type="number" class="duteis-input" value="${du}" min="0" max="31" style="background:#E8F5E9" onchange="setLan('${c.mat}','duteis',this.value)"></td>
+      <td><input type="number" class="faltas-input" value="${fat}" min="0" max="31" style="background:#FFEBEE" onchange="setLan('${c.mat}','faltas',this.value)"></td>
+      <td><input type="number" value="${fev}" min="0" max="31" style="background:#FFF3E0" onchange="setLan('${c.mat}','ferias',this.value)"></td>
+      <td><input type="number" value="${ext}" min="0" max="31" style="background:#F3E5F5" onchange="setLan('${c.mat}','extras',this.value)" title="Dias extras trabalhados"></td>
+      <td class="dias-reais">${dr}</td>
+      <td class="total-col">${vr>0?brl(vr):'—'}</td>
+      <td class="total-col">${cafe>0?brl(cafe):'—'}</td>
+      <td class="total-col">${comb>0?brl(comb):'—'}</td>
+      <td class="total-col">${vt>0?brl(vt):'—'}</td>
+      <td class="total-col" style="color:var(--accent);font-weight:700">${brl(total)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function setLan(mat,campo,val){
+  if(!lancamento[mat]) lancamento[mat]={};
+  lancamento[mat][campo]=fnum(val);
+  try{await fsSetLan(mat,lancamento[mat]);}catch(e){console.error(e);}
+  renderLancamento();
+}
+
+async function aplicarDiasUteis(){
+  const du=fnum(g('lan-duteis'));
+  const batch=window._writeBatch(window._db);
+  let travados=0;
+  colaboradores.forEach(c=>{
+    if(lancamento[c.mat]?.locked){ travados++; return; } // não sobrepõe travados
+    if(!lancamento[c.mat]) lancamento[c.mat]={};
+    lancamento[c.mat].duteis=du;
+    batch.set(window._doc('lancamento',c.mat),lancamento[c.mat]);
+  });
+  await batch.commit();
+  renderLancamento();
+  toast(`✅ Dias (${du}) aplicados.${travados>0?' '+travados+' colaboradores travados foram mantidos.':''}`, 'success');
+}
+
+async function toggleLock(mat,locked){
+  if(!lancamento[mat]) lancamento[mat]={};
+  lancamento[mat].locked=locked;
+  try{ await window._setDoc(window._doc('lancamento',mat),lancamento[mat]); }catch(e){}
+  toast(locked?'🔒 Travado':'🔓 Desbloqueado','success',1500);
+}
+
+// ══════════════════════════════════════════════════
+// FECHAR COMPETÊNCIA (HISTÓRICO)
+// ══════════════════════════════════════════════════
+async function fecharCompetencia(){
+  const comp=g('lan-comp');
+  if(!comp){toast('Informe a competência (MM/AAAA) antes de fechar.','error');return;}
+  if(!confirm(`Fechar a competência ${comp}?\n\nIsso vai salvar um snapshot dos dados atuais no histórico.`)) return;
+  const ativos=colaboradores.filter(c=>c.status!=='Inativo');
+  let tVR=0,tCafe=0,tComb=0,tVT=0;
+  const detalhes=ativos.map(c=>{
+    const l=lancamento[c.mat]||{};
+    const du=fnum(l.duteis)||fnum(g('lan-duteis'))||22;
+    const dr=Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+    const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+    tVR+=vr;tCafe+=cafe;tComb+=comb;tVT+=vt;
+    return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du,faltas:fnum(l.faltas),ferias:fnum(l.ferias),extras:fnum(l.extras),dr,vr,cafe,comb,vt,total:vr+cafe+comb+vt};
+  });
+  const snapshot={
+    competencia:comp,fechadoEm:new Date().toISOString(),
+    totalColaboradores:ativos.length,
+    totais:{vr:tVR,cafe:tCafe,comb:tComb,vt:tVT,geral:tVR+tCafe+tComb+tVT},
+    detalhes
+  };
+  const id=comp.replace('/','_');
+  try{
+    await window._setDoc(window._doc('historico',id),snapshot);
+    toast(`✅ Competência ${comp} fechada e salva no histórico!`,'success');
+    renderHistorico();
+  }catch(e){toast('Erro ao fechar: '+e.message,'error');}
+}
+
+// ══════════════════════════════════════════════════
+// HISTÓRICO
+// ══════════════════════════════════════════════════
+async function renderHistorico(){
+  try{
+    const snap=await window._getDocs(window._col('historico'));
+    const items=[];
+    snap.forEach(d=>items.push(d.data()));
+    items.sort((a,b)=>b.fechadoEm.localeCompare(a.fechadoEm));
+    if(items.length===0){
+      document.getElementById('hist-lista').innerHTML=`<div style="text-align:center;padding:40px;color:var(--text2)"><div style="font-size:36px;margin-bottom:10px">🗂️</div>Nenhuma competência fechada ainda.<br><small>Use o botão "Fechar Competência" no Lançamento Mensal.</small></div>`;
+      return;
+    }
+    document.getElementById('hist-lista').innerHTML=items.map(h=>`
+      <div class="hist-card">
+        <div>
+          <div class="comp">📅 ${h.competencia}</div>
+          <div class="meta">${h.totalColaboradores} colaboradores · Fechado em ${new Date(h.fechadoEm).toLocaleDateString('pt-BR')}</div>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-orange">🍽️ VR: ${brl(h.totais.vr)}</span>
+            <span class="badge badge-gray">☕ Café: ${brl(h.totais.cafe)}</span>
+            <span class="badge badge-yellow">⛽ Comb: ${brl(h.totais.comb)}</span>
+            <span class="badge badge-blue">🚌 VT: ${brl(h.totais.vt)}</span>
+          </div>
+        </div>
+        <div>
+          <div class="vals">${brl(h.totais.geral)}</div>
+          <div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="exportarHistoricoExcel('${h.competencia}')">📊 Excel</button>
+            <button class="btn btn-danger btn-sm" onclick="excluirHistorico('${h.competencia}')">🗑</button>
+          </div>
+        </div>
+      </div>`).join('');
+  }catch(e){toast('Erro ao carregar histórico: '+e.message,'error');}
+}
+
+async function excluirHistorico(comp){
+  if(!confirm(`Excluir histórico de ${comp}?`)) return;
+  const id=comp.replace('/','_');
+  await window._deleteDoc(window._doc('historico',id));
+  toast('Histórico removido.','error');
+  renderHistorico();
+}
+
+async function exportarHistoricoExcel(comp){
+  const id=comp.replace('/','_');
+  const snap=await window._getDocs(window._col('historico'));
+  let h=null;
+  snap.forEach(d=>{if(d.id===id)h=d.data();});
+  if(!h){toast('Histórico não encontrado','error');return;}
+  const rows=[
+    [`Competência: ${h.competencia}`,`Fechado em: ${new Date(h.fechadoEm).toLocaleDateString('pt-BR')}`],
+    ['Matrícula','Nome','CPF','Departamento','Dias Úteis','Faltas','Férias','Extras','Dias Reais','VR','Café','Combustível','VT','Total'],
+    ...h.detalhes.map(r=>[r.mat,r.nome,r.cpf,r.depto,r.du,r.faltas,r.ferias,r.extras,r.dr,r.vr,r.cafe,r.comb,r.vt,r.total]),
+    [],['','','','','','','','','Total',h.totais.vr,h.totais.cafe,h.totais.comb,h.totais.vt,h.totais.geral]
+  ];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,`Competência ${comp}`);
+  XLSX.writeFile(wb,`Historico_${comp.replace('/','_')}.xlsx`);
+  toast('✅ Excel do histórico baixado!','success');
+}
+
+// ══════════════════════════════════════════════════
+// CARGA EM LOTE
+// ══════════════════════════════════════════════════
+function gerarModeloCarga(){
+  const wb=XLSX.utils.book_new();
+  const rows=[
+    ['Matrícula','Nome','CPF','Cargo','Departamento','Status','VR/dia','Café/dia','Combustível','Mobilidade (vt/combustivel/perto/carro_empresa)'],
+    ['10001234','EXEMPLO DA SILVA','123.456.789-00','MOTORISTA','Motoristas','Ativo',0,0,295,'combustivel'],
+    ['10001235','OUTRO EXEMPLO','234.567.890-11','AJUDANTE','Produção','Ativo',35,15,0,'vt'],
+  ];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:14},{wch:35},{wch:18},{wch:20},{wch:20},{wch:10},{wch:10},{wch:10},{wch:14},{wch:35}];
+  XLSX.utils.book_append_sheet(wb,ws,'Colaboradores');
+  XLSX.writeFile(wb,'Modelo_Carga_Colaboradores.xlsx');
+  toast('✅ Modelo baixado!','success');
+}
+
+function processarCarga(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const data=XLSX.utils.sheet_to_json(ws,{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const col=(...keys)=>hs.findIndex(h=>keys.some(k=>h.includes(k)));
+    const iMat=col('matr'),iNome=col('nome'),iCPF=col('cpf'),iCargo=col('cargo');
+    const iDepto=col('depart','depto'),iStat=col('status');
+    const iVR=col('vr'),iCafe=col('café','cafe'),iComb=col('comb','combusti'),iMob=col('mobil');
+
+    const novos=[], duplic=[];
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iNome]||!String(r[iNome]).trim()) continue;
+      const mat=String(r[iMat]||'').trim();
+      const nome=String(r[iNome]||'').trim().toUpperCase();
+      const existe=colaboradores.some(c=>c.mat===mat||(c.nome.toUpperCase()===nome));
+      const c={mat,nome,cpf:String(r[iCPF]||'').trim(),
+        cargo:String(r[iCargo]||'').trim().toUpperCase(),depto:String(r[iDepto]||'').trim(),
+        status:String(r[iStat]||'Ativo').trim(),
+        vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
+        mobilidade:String(r[iMob]||'vt').trim().toLowerCase()||'vt'};
+      if(existe) duplic.push(c);
+      else novos.push(c);
+    }
+
+    if(duplic.length>0){
+      // Mostrar modal de duplicatas
+      cargaPendente=novos;
+      document.getElementById('duplic-lista').innerHTML=duplic.map(c=>
+        `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <strong>${c.nome}</strong> — Mat: ${c.mat||'—'} — CPF: ${c.cpf||'—'}
+        </div>`).join('');
+      document.getElementById('modal-duplic-carga').classList.add('open');
+    } else {
+      cargaPendente=novos;
+      importarSemDuplic();
+    }
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function fecharModalCarga(){ document.getElementById('modal-duplic-carga').classList.remove('open'); cargaPendente=[]; }
+
+async function importarSemDuplic(){
+  fecharModalCarga();
+  if(cargaPendente.length===0){toast('Nenhum colaborador novo para importar.','warning');return;}
+  const batch=window._writeBatch(window._db);
+  let novos=0;
+  cargaPendente.forEach(c=>{
+    const id=c.mat||(c.nome.replace(/\s+/g,'_').substr(0,20)+'_'+Date.now()+novos);
+    c._id=id;
+    batch.set(window._doc('colaboradores',id),c);
+    colaboradores.push(c);
+    novos++;
+  });
+  await batch.commit();
+  cargaPendente=[];
+  document.getElementById('carga-preview').innerHTML=
+    `<div class="success-box">✅ <strong>${novos} colaboradores importados com sucesso!</strong></div>`;
+  toast(`✅ ${novos} colaboradores importados!`,'success');
+}
+
+// ══════════════════════════════════════════════════
+// EXPORTAR LANÇAMENTO (Excel da seleção atual)
+// ══════════════════════════════════════════════════
+function exportarLancamentoExcel(){
+  const comp=g('lan-comp')||'MES';
+  const duteis=fnum(g('lan-duteis'))||22;
+  const q=(g('lan-search')||'').toLowerCase();
+  const empF=g('lan-empresa'),depF=g('lan-depto'),benF=g('lan-beneficio');
+  let ativos=colaboradores.filter(c=>c.status!=='Inativo');
+  if(empF) ativos=ativos.filter(c=>String(c.mat||'').trim().startsWith(empF));
+  if(q) ativos=ativos.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
+  if(depF) ativos=ativos.filter(c=>(c.depto||'')===depF);
+  if(benF==='vr') ativos=ativos.filter(c=>fnum(c.vr)>0);
+  if(benF==='cafe') ativos=ativos.filter(c=>fnum(c.cafe)>0);
+  if(benF==='comb') ativos=ativos.filter(c=>fnum(c.comb)>0);
+  if(benF==='vt') ativos=ativos.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  const rows=[
+    [`Lançamento Mensal — Competência: ${comp}`],
+    ['Matrícula','Nome','CPF','Departamento','Dias Úteis','Faltas','Férias','Extras','Dias Reais','VR','Café','Combustível','VT','Total'],
+    ...ativos.map(c=>{
+      const l=lancamento[c.mat]||{};
+      const du=l.duteis!==undefined?fnum(l.duteis):duteis;
+      const dr=Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+      const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+      return [c.mat,c.nome,c.cpf||'',c.depto||'',du,fnum(l.faltas),fnum(l.ferias),fnum(l.extras),dr,vr,cafe,comb,vt,vr+cafe+comb+vt];
+    })
+  ];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Lancamento');
+  XLSX.writeFile(wb,`Lancamento_${comp.replace('/','_')}${empF?'_Empresa'+empF:''}.xlsx`);
+  toast('✅ Excel exportado!','success');
+}
+
+// Excel da seleção atual de colaboradores
+function exportarFiltradosExcel(){
+  const q=(document.getElementById('search-input')?.value||'').toLowerCase();
+  const empF=g('colab-empresa'),depF=g('colab-depto'),benF=g('colab-beneficio'),mobF=g('colab-mob');
+  let f=colaboradores.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
+  if(empF) f=f.filter(c=>String(c.mat||'').trim().startsWith(empF));
+  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+  if(benF==='vr') f=f.filter(c=>fnum(c.vr)>0);
+  else if(benF==='cafe') f=f.filter(c=>fnum(c.cafe)>0);
+  else if(benF==='comb') f=f.filter(c=>fnum(c.comb)>0);
+  else if(benF==='vt') f=f.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  else if(benF==='mob_sem') f=f.filter(c=>['perto','carro_empresa'].includes(c.mobilidade));
+  if(mobF) f=f.filter(c=>(c.mobilidade||'vt')===mobF);
+  const rows=[
+    ['Matrícula','Nome','CPF','Cargo','Departamento','Status','Mobilidade','VR/dia','Café/dia','Combustível',
+     'VT L1','Viag L1','VT L2','Viag L2','VT L3','Viag L3','VT L4','Viag L4'],
+    ...f.map(c=>[c.mat,c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.status,c.mobilidade||'vt',
+      fnum(c.vr),fnum(c.cafe),fnum(c.comb),
+      fnum(c.vt1),fnum(c.v1),fnum(c.vt2),fnum(c.v2),fnum(c.vt3),fnum(c.v3),fnum(c.vt4),fnum(c.v4)])
+  ];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Colaboradores');
+  XLSX.writeFile(wb,'Colaboradores_Selecionados.xlsx');
+  toast('✅ Excel exportado!','success');
+}
+
+// ══════════════════════════════════════════════════
+// IMPORTAR FALTAS
+// ══════════════════════════════════════════════════
+async function importarFaltas(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const data=XLSX.utils.sheet_to_json(ws,{header:1});
+    let hi=-1;
+    for(let i=0;i<Math.min(6,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('falta'))){hi=i;break;}
+    }
+    if(hi<0){toast('Coluna "Faltas" não encontrada','error');return;}
+    const hs=data[hi].map(h=>String(h||'').toLowerCase());
+    const iMat=hs.findIndex(h=>h.includes('matr')),iFal=hs.findIndex(h=>h.includes('falta'));
+    const batch=window._writeBatch(window._db);
+    let ok=0;
+    for(let i=hi+1;i<data.length;i++){
+      const row=data[i]; if(!row||row.every(v=>!v)) continue;
+      const mat=String(row[iMat]||'').trim(); if(!mat) continue;
+      if(colaboradores.find(c=>c.mat===mat)){
+        if(!lancamento[mat]) lancamento[mat]={};
+        lancamento[mat].faltas=fnum(row[iFal]);
+        batch.set(window._doc('lancamento',mat),lancamento[mat]);
+        ok++;
+      }
+    }
+    await batch.commit();
+    toast(`✅ ${ok} colaboradores atualizados.`,'success');
+    document.getElementById('faltas-preview').innerHTML=
+      `<div class="success-box">✅ <strong>${ok} colaboradores</strong> com faltas atualizadas.</div>`;
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function gerarModeloFaltas(){
+  const comp=g('lan-comp')||'';
+  const wb=XLSX.utils.book_new();
+  const rows=[['CONTROLE DE FALTAS'],['Competência:',comp],[],
+    ['Matrícula','Nome Completo','CPF','Nº de Faltas','Observação'],
+    ...colaboradores.filter(c=>c.status!=='Inativo').map(c=>[c.mat||'',c.nome,c.cpf||'',0,''])];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:14},{wch:35},{wch:18},{wch:16},{wch:28}];
+  XLSX.utils.book_append_sheet(wb,ws,'Faltas');
+  XLSX.writeFile(wb,`Faltas_${comp||'MODELO'}.xlsx`);
+  toast('✅ Modelo baixado!','success');
+}
+
+// ══════════════════════════════════════════════════
+// EXPORTAR CAJU
+// ══════════════════════════════════════════════════
+function formatValorCaju(v){
+  return (parseFloat(v)||0).toFixed(2);
+}
+
+function exportarCajuCompleto(){
+  const comp=document.getElementById('lan-comp')?.value||'MES';
+  const empSel=document.getElementById('exp-empresa')?.value||'';
+  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+  const linhas=[header];
+  getColabFiltrados(empSel).forEach(c=>{
+    const du=getDU(c.mat); const dr=getDiasReais(c.mat);
+    const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+    const alim=vr+cafe, mob=comb+vt;
+    if(alim===0&&mob===0) return;
+    const cpf=(c.cpf||'').replace(/\D/g,'').padStart(11,'0');
+    linhas.push(`${cpf};${c.mat||''};${formatValorCaju(alim)};0;${formatValorCaju(mob)};0;0;0;0;0;0;0;0`);
+  });
+  const blob=new Blob([linhas.join('
+')],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  const suf=empSel?'_'+empSel:'';
+  a.download=`pedidos_caju_${comp.replace('/','_')}${suf}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  toast('✅ Arquivo Caju exportado!','success');
+}
+
+function exportarPorEmpresaCaju(){
+  const comp=document.getElementById('lan-comp')?.value||'MES';
+  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+  const empresas=[...new Set(colaboradores.map(c=>String(c.mat||'').substring(0,4)).filter(p=>p.length===4))].sort();
+  empresas.forEach((emp,i)=>{
+    setTimeout(()=>{
+      const linhas=[header];
+      colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp)).forEach(c=>{
+        const du=getDU(c.mat); const dr=getDiasReais(c.mat);
+        const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+        const alim=vr+cafe, mob=comb+vt;
+        if(alim===0&&mob===0) return;
+        const cpf=(c.cpf||'').replace(/\D/g,'').padStart(11,'0');
+        linhas.push(`${cpf};${c.mat||''};${formatValorCaju(alim)};0;${formatValorCaju(mob)};0;0;0;0;0;0;0;0`);
+      });
+      const blob=new Blob([linhas.join('
+')],{type:'text/csv;charset=utf-8;'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download=`pedidos_caju_${emp}_${comp.replace('/','_')}.csv`;
+      a.click(); URL.revokeObjectURL(url);
+    },i*500);
+  });
+  setTimeout(()=>toast('✅ '+empresas.length+' arquivos Caju!','success'),empresas.length*500+300);
+}
+
+function exportarCaju(tipo){
+  const comp=document.getElementById('lan-comp')?.value||'MES';
+  const empSel=document.getElementById('exp-empresa')?.value||'';
+  const nomes={vr:'VR',cafe:'Cafe',comb:'Mobilidade'};
+  const labels={vr:'Vale Refeição',cafe:'Café da Manhã',comb:'Mobilidade'};
+  const rows=[['CPF','Matrícula','Valor']]; let total=0;
+  getColabFiltrados(empSel).forEach(c=>{
+    const du=getDU(c.mat); const dr=getDiasReais(c.mat);
+    const {vr,cafe,comb}=calcBeneficios(c,dr,du);
+    const val=tipo==='vr'?vr:tipo==='cafe'?cafe:comb;
+    if(val>0){rows.push([c.cpf||'',c.mat||'',val]);total+=val;}
+  });
+  rows.push(['','TOTAL',total]);
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,labels[tipo]);
+  const suf=empSel?'_'+empSel:'';
+  XLSX.writeFile(wb,`${nomes[tipo]}_${comp.replace('/','_')}${suf}.xlsx`);
+  toast(`✅ ${labels[tipo]} exportado!`,'success');
+}
+
+
+function exportarVT(){
+  const comp=g('lan-comp')||'MES';
+  const tipoVT=document.querySelector('input[name="tipo-vt"]:checked')?.value!=='fixo';
+  const rows=[['CPF','NOME','CÓDIGO BENEFÍCIO','BENEFÍCIO','TIPO','VALOR UNITÁRIO','QUANTIDADE POR DIA','DIAS TRABALHADOS']];
+  colaboradores.filter(c=>c.status!=='Inativo'&&(c.mobilidade||'vt')==='vt').forEach(c=>{
+    const dr=tipoVT?getDiasReais(c.mat):1;
+    [1,2,3,4].forEach(n=>{
+      const val=fnum(c['vt'+n]),viag=fnum(c['v'+n]);
+      if(val>0&&viag>0){
+        rows.push([c.cpf||'',c.nome,c['cod'+n]||'',c['ben'+n]||'Transporte Linha '+n,c['tp'+n]||'',val,viag,dr]);
+      }
+    });
+  });
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:18},{wch:35},{wch:16},{wch:40},{wch:8},{wch:14},{wch:16},{wch:16}];
+  XLSX.utils.book_append_sheet(wb,ws,'PEDIDO');
+  XLSX.writeFile(wb,`VT_Importacao_${comp.replace('/','_')}.xlsx`);
+  toast('✅ VT exportado!','success');
+}
+
+function exportarTudo(){
+  exportarCaju('vr');
+  setTimeout(()=>exportarCaju('cafe'),400);
+  setTimeout(()=>exportarCaju('comb'),800);
+  setTimeout(()=>exportarVT(),1200);
+  setTimeout(()=>toast('✅ Todos exportados!','success'),1600);
+}
+
+// ══════════════════════════════════════════════════
+// EXPORTAR SENIOR
+// ══════════════════════════════════════════════════
+function formatCPFSenior(cpf){
+  const limpo=(cpf||'').replace(/\D/g,'');
+  return limpo.padStart(11,'0');
+}
+function formatValorSenior(v){
+  return (parseFloat(v)||0).toFixed(2).replace('.',',');
+}
+function getEmpresa(mat){
+  return String(mat||'').trim().substring(0,4)||'0000';
+}
+
+function exportarSenior(tipo){
+  const comp=g('lan-comp')||'MES';
+  const nomes={vr:'VR',cafe:'Cafe_Manha',comb:'Mobilidade',vt:'VT'};
+  const linhas=['CPF,Empresa,Valor'];
+  colaboradores.filter(c=>c.status!=='Inativo').forEach(c=>{
+    const l=lancamento[c.mat]||{};
+    const du=fnum(l.duteis)||22;
+    const dr=getDiasReais(c.mat);
+    const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+    const val=tipo==='vr'?vr:tipo==='cafe'?cafe:tipo==='comb'?comb:vt;
+    if(val>0){
+      linhas.push(`${formatCPFSenior(c.cpf)},${getEmpresa(c.mat)},${formatValorSenior(val)}`);
+    }
+  });
+  const blob=new Blob([linhas.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`${nomes[tipo]}_Senior_${comp.replace('/','_')}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  toast(`✅ ${nomes[tipo]} Senior exportado!`,'success');
+}
+
+function exportarTodosSenior(){
+  ['vr','cafe','comb','vt'].forEach((t,i)=>setTimeout(()=>exportarSenior(t),i*400));
+  setTimeout(()=>toast('✅ Todos os CSVs Senior exportados!','success'),1800);
+}
+
+// ══════════════════════════════════════════════════
+// EXPORTAR / IMPORTAR BASE
+// ══════════════════════════════════════════════════
+function exportarBase(){
+  const rows=[['Matrícula','Nome','CPF','Cargo','Departamento','Status','Mobilidade',
+    'VR/dia','Café/dia','Combustível','VT L1','Viag L1','Tipo L1','Cod L1','Ben L1',
+    'VT L2','Viag L2','Tipo L2','Cod L2','Ben L2',
+    'VT L3','Viag L3','Tipo L3','Cod L3','Ben L3',
+    'VT L4','Viag L4','Tipo L4','Cod L4','Ben L4'],
+    ...colaboradores.map(c=>[c.mat,c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.status,c.mobilidade||'vt',
+      fnum(c.vr),fnum(c.cafe),fnum(c.comb),
+      fnum(c.vt1),fnum(c.v1),c.tp1||'',c.cod1||'',c.ben1||'',
+      fnum(c.vt2),fnum(c.v2),c.tp2||'',c.cod2||'',c.ben2||'',
+      fnum(c.vt3),fnum(c.v3),c.tp3||'',c.cod3||'',c.ben3||'',
+      fnum(c.vt4),fnum(c.v4),c.tp4||'',c.cod4||'',c.ben4||''])];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Cadastro');
+  XLSX.writeFile(wb,'Base_Colaboradores_Completa.xlsx');
+  toast('✅ Base exportada!','success');
+}
+
+async function importarBase(event){
+  const file=event.target.files[0]; if(!file) return;
+  if(!confirm('Importar vai ADICIONAR colaboradores novos (sem apagar existentes). Continuar?')) return;
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const col=(...keys)=>hs.findIndex(h=>keys.some(k=>h.includes(k)));
+    const iMat=col('matr'),iNome=col('nome'),iCPF=col('cpf'),iCargo=col('cargo'),iDepto=col('depart','depto');
+    const iStat=col('status'),iMob=col('mobil'),iVR=col('vr/d','vr_d','vr dia'),iCafe=col('café','cafe');
+    const iComb=col('comb','combusti');
+    const iVT1=col('vt l1','vt_l1'),iV1=col('viag l1');
+    const iVT2=col('vt l2','vt_l2'),iV2=col('viag l2');
+    const iVT3=col('vt l3','vt_l3'),iV3=col('viag l3');
+    const iVT4=col('vt l4','vt_l4'),iV4=col('viag l4');
+    const batch=window._writeBatch(window._db); let novos=0,ign=0;
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iNome]||!String(r[iNome]).trim()) continue;
+      const mat=String(r[iMat]||'').trim();
+      if(mat&&colaboradores.some(c=>c.mat===mat)){ign++;continue;}
+      const c={mat,nome:String(r[iNome]).trim().toUpperCase(),cpf:String(r[iCPF]||'').trim(),
+        cargo:String(r[iCargo]||'').trim().toUpperCase(),depto:String(r[iDepto]||'').trim(),
+        status:String(r[iStat]||'Ativo').trim(),mobilidade:String(r[iMob]||'vt').trim().toLowerCase(),
+        vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
+        vt1:fnum(r[iVT1]),v1:fnum(r[iV1]),vt2:fnum(r[iVT2]),v2:fnum(r[iV2]),
+        vt3:fnum(r[iVT3]),v3:fnum(r[iV3]),vt4:fnum(r[iVT4]),v4:fnum(r[iV4])};
+      const id=mat||(c.nome.replace(/\s+/g,'_').substr(0,20)+'_'+Date.now()+novos);
+      c._id=id; batch.set(window._doc('colaboradores',id),c); colaboradores.push(c); novos++;
+    }
+    await batch.commit();
+    renderTabela();
+    toast(`✅ ${novos} importados, ${ign} ignorados.`,'success');
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ══════════════════════════════════════════════════
+// CONFIGURAÇÕES
+// ══════════════════════════════════════════════════
+async function salvarConfig(){
+  if(!window._db) return;
+  const cfg={
+    tipoVR:  document.querySelector('input[name="tipo-vr"]:checked')?.value  ||'mult',
+    tipoCafe:document.querySelector('input[name="tipo-cafe"]:checked')?.value||'fixo',
+    tipoComb:document.querySelector('input[name="tipo-comb"]:checked')?.value||'prop',
+    tipoVT:  document.querySelector('input[name="tipo-vt"]:checked')?.value  ||'mult',
+  };
+  try{await window._setDoc(window._doc('config','calculo'),cfg);toast('✅ Config salva!','success');}
+  catch(e){console.error(e);}
+}
+
+async function carregarConfig(){
+  try{
+    const snap=await window._getDocs(window._col('config'));
+    snap.forEach(d=>{
+      if(d.id==='calculo'){
+        const c=d.data();
+        const setR=(name,val)=>{const el=document.querySelector(`input[name="${name}"][value="${val}"]`);if(el)el.checked=true;};
+        setR('tipo-vr',c.tipoVR||'mult');setR('tipo-cafe',c.tipoCafe||'fixo');
+        setR('tipo-comb',c.tipoComb||'prop');setR('tipo-vt',c.tipoVT||'mult');
+      }
+    });
+  }catch(e){console.error(e);}
+}
+
+
+const VT_LINHAS = [
+  {cod:"",     nome:"— Selecione a linha —", tipo:""},
+  {cod:"40115",nome:"40115 - TOP - TREM / METRO - INTERMUNICIPAL - CARTÃO TOP (RECARGA)",tipo:"TOP"},
+  {cod:"42468",nome:"42468 - OSASCO - MUNICIPAL - URUBUPUNGA - BEM (RECARGA)",tipo:"PEC"},
+  {cod:"50132",nome:"50132 - CARAPICUIBA - MUNICIPAL - AETUR - PEC (RECARGA)",tipo:"PEC"},
+  {cod:"50128",nome:"50128 - BARUERI - MUNICIPAL - BENFÁCIL (RECARGA)",tipo:"PEC"},
+  {cod:"07001",nome:"07001 - SÃO PAULO - MUNICIPAL - SPTRANS - BILHETE ÚNICO (RECARGA) - ONIBUS",tipo:"PEC"},
+  {cod:"07201",nome:"07201 - SÃO PAULO - MUNICIPAL - SPTRANS - BILHETE ÚNICO (RECARGA) - INTEGRAÇÃO ONIBUS+METRO/TREM",tipo:"PEC"},
+  {cod:"07203",nome:"07203 - SÃO PAULO - MUNICIPAL - SPTRANS - BILHETE ÚNICO (RECARGA) - TREM",tipo:"PEC"},
+  {cod:"40114",nome:"40114 - SÃO PAULO - INTERMUNICIPAL - CARTÃO TOP (RECARGA)",tipo:"TOP"},
+  {cod:"50140",nome:"50140 - ITAPEVI - MUNICIPAL - BENFÁCIL (RECARGA)",tipo:"PEC"},
+  {cod:"50136",nome:"50136 - FRANCISCO MOURATO - MUNICIPAL - MORATENSE (RECARGA)",tipo:"PEC"},
+  {cod:"51200",nome:"51200 - SÃO PAULO - MUNICIPAL - CARTÃO TOP (RECARGA) - TREM",tipo:"TOP"},
+];
+
+function VT_OPTIONS_HTML(selectedCod){
+  return VT_LINHAS.map(l=>
+    `<option value="${l.cod}" data-tipo="${l.tipo}" ${l.cod===selectedCod?'selected':''}>${l.nome}</option>`
+  ).join('');
+}
+
+function onSelectLinha(n, prefix){
+  const sel = document.getElementById(prefix+'-sel'+n);
+  if(!sel) return;
+  const cod = sel.value;
+  const linha = VT_LINHAS.find(l=>l.cod===cod)||{cod:'',nome:'',tipo:''};
+  const codEl = document.getElementById(prefix+'-cod'+n);
+  const benEl = document.getElementById(prefix+'-ben'+n);
+  const tpEl  = document.getElementById(prefix+'-tp'+n);
+  if(codEl) codEl.value = linha.cod;
+  if(benEl) benEl.value = linha.nome;
+  if(tpEl)  tpEl.value  = linha.tipo;
+}
+
+
+// ══════════════════════════════════════════════════
+// EXPORTAR POR EMPRESA
+// ══════════════════════════════════════════════════
+function exportarPorEmpresa(){
+  const comp=document.getElementById('lan-comp')?.value||'MES';
+  const tipoVT=document.querySelector('input[name="tipo-vt"]:checked')?.value!=='fixo';
+  const empresas=[...new Set(colaboradores.map(c=>String(c.mat||'').substring(0,4)).filter(p=>p.length===4))].sort();
+  if(empresas.length===0){toast('Nenhuma empresa encontrada','error');return;}
+  empresas.forEach((emp,i)=>{
+    setTimeout(()=>{
+      const wb=XLSX.utils.book_new();
+      ['vr','cafe','comb'].forEach(tipo=>{
+        const labels={vr:'Vale Refeicao',cafe:'Cafe Manha',comb:'Mobilidade'};
+        const rows=[['cpf','valor']]; let total=0;
+        colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp)).forEach(c=>{
+          const l=lancamento[c.mat]||{};
+          const du=fnum(l.duteis)||22;
+          const dr=Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+          const {vr,cafe,comb}=calcBeneficios(c,dr,du);
+          const val=tipo==='vr'?vr:tipo==='cafe'?cafe:comb;
+          if(val>0){rows.push([c.cpf||'',val]);total+=val;}
+        });
+        rows.push(['TOTAL',total]);
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),labels[tipo]);
+      });
+      // VT
+      const vtRows=[['CPF','NOME','CÓDIGO BENEFÍCIO','BENEFÍCIO','TIPO','VALOR UNITÁRIO','QUANTIDADE POR DIA','DIAS TRABALHADOS']];
+      colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp)&&(c.mobilidade||'perto')==='vt').forEach(c=>{
+        const l=lancamento[c.mat]||{};
+        const du=fnum(l.duteis)||22;
+        const dr=tipoVT?Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras)):1;
+        [1,2,3,4].forEach(n=>{
+          const val=fnum(c['vt'+n]),viag=fnum(c['v'+n]);
+          if(val>0&&viag>0) vtRows.push([c.cpf||'',c.nome,c['cod'+n]||'',c['ben'+n]||'',c['tp'+n]||'',val,viag,dr]);
+        });
+      });
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(vtRows),'VT');
+      XLSX.writeFile(wb,'Beneficios_Empresa'+emp+'_'+comp.replace('/','_')+'.xlsx');
+    },i*700);
+  });
+  setTimeout(()=>toast('✅ '+empresas.length+' arquivos gerados!','success'),empresas.length*700+300);
+}
+
+// ══════════════════════════════════════════════════
+// FOLHA DE PAGAMENTO
+// ══════════════════════════════════════════════════
+const EVENTOS_MAP = {"1":"Salário Normal","1600":"Pró-Labore","1952":"Periculosidade","1962":"Diferença de Salário","301":"Horas Extras 60%","257":"Horas Extras 50%","259":"Horas Extras 100%","391":"Hora Extra Noturno 60%","261":"Hora Extra Noturno 50%","265":"DSR Reflexo H.Extras","1950":"Adicional Noturno","1968":"DSR Adicional Noturno","264":"Horas Extras c/100% Noturno","317":"Diferença Hora Extra","14":"Atestado até 15 dias","13":"Horas Licença Paternidade","9":"Horas Acidente Trabalho","5":"Horas Férias Diurnas","551":"Média Horas Extras Férias","553":"Adic.Noturno Férias","555":"Periculosidade Férias","558":"1/3 Férias","600":"Abono Pecuniário Férias","609":"1/3 Abono Pecuniário Fér","750":"13o Salário Adiantado","1701":"Estouro do Mês","2151":"Estouro Mês Anterior","389":"Reembolso de DSR","1753":"Devolução de INSS","390":"Reembolso de falta(s)","380":"Bolsa Auxílio (Faculdade)","2500":"FGTS","2505":"FGTS 13o Salário","1555":"FGTS Rescisão Depositado","1556":"FGTS 40% Depositado","2000":"INSS","2001":"INSS Diretor Carnê","2004":"IRRF","2006":"IRRF Adto Salarial","3":"Faltas Integral","4":"Faltas DSR","2457":"Falta Parcial","343":"Plano De Saude-depend","2453":"Vale Transporte","324":"Coparticip Pl Saude Amil","680":"Empr Cred do Trabal - 1","681":"Empr Cred do Trabal - 2","682":"Empr Cred do Trabal - 3","683":"Empr Cred do Trabal - 4","684":"Empr Cred do Trabal - 5","685":"Empr Cred do Trabal - 6","2014":"IRRF Férias","2002":"INSS Férias","2101":"Desconto Adto Férias","341":"Gremio Recreativo","2050":"Mensalidade Sindicato","2055":"Taxa Assistencial","2250":"Pensão Judicial","950":"Aviso Prévio Indenizado","650":"Férias Vencidas Rescisão","651":"Férias Proporc. Rescisão","850":"13º Salário Proporc. Resc.","900":"13º Indenizado Rescisão","1400":"Férias Indenizad. Rescisão","1550":"Saldo de Salário","2454":"Líquido Rescisão","347":"Vale"};
+
+let _folhaAtual = null;
+
+function processarFolha(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('cadastro')||String(v||'').toLowerCase().includes('evento'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
+    const iNome=hs.findIndex(h=>h.includes('nome'));
+    const iEvento=hs.findIndex(h=>h==='evento'||h.includes('cód')&&h.includes('evento'));
+    const iValor=hs.findIndex(h=>h.includes('valor'));
+    const porColab={};
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iMat]) continue;
+      const mat=String(r[iMat]||'').trim();
+      const nome=String(r[iNome]||'').trim().toUpperCase();
+      const ev=String(r[iEvento]||'').trim();
+      const val=fnum(r[iValor]);
+      if(!porColab[mat]) porColab[mat]={mat,nome,eventos:{}};
+      if(ev) porColab[mat].eventos[ev]=(porColab[mat].eventos[ev]||0)+val;
+    }
+    // Enriquecer com dados da base e benefícios
+    Object.keys(porColab).forEach(mat=>{
+      const c=colaboradores.find(x=>x.mat===mat);
+      if(c){
+        porColab[mat].depto=c.depto||''; porColab[mat].cargo=c.cargo||''; porColab[mat].cpf=c.cpf||'';
+        const l=lancamento[mat]||{};
+        const du=fnum(l.duteis)||22;
+        const dr=Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+        const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
+        porColab[mat].ben_vr=vr; porColab[mat].ben_cafe=cafe; porColab[mat].ben_comb=comb; porColab[mat].ben_vt=vt;
+      }
+    });
+    _folhaAtual=Object.values(porColab);
+    const prev=document.getElementById('folha-preview');
+    if(prev) prev.innerHTML=`<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:7px;padding:10px 14px;font-size:12px;color:#14532D">
+      ✅ <strong>${_folhaAtual.length} colaboradores processados.</strong>
+      <button class="btn btn-primary btn-sm" onclick="mostrarFolhaView()" style="margin-left:10px">Ver Folha →</button>
+    </div>`;
+    toast('✅ Folha processada: '+_folhaAtual.length+' colaboradores','success');
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function mostrarFolhaView(){
+  if(!_folhaAtual||_folhaAtual.length===0){toast('Nenhuma folha importada','error');return;}
+  renderFolhaTabela(_folhaAtual);
+}
+
+function renderFolhaTabela(dados){
+  const cont=document.getElementById('folha-content');
+  if(!cont) return;
+  const todosEv=new Set();
+  dados.forEach(d=>Object.keys(d.eventos||{}).forEach(ev=>todosEv.add(ev)));
+  const evList=[...todosEv].sort((a,b)=>parseInt(a)-parseInt(b));
+  cont.innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="folha-q" placeholder="🔍 Nome ou matrícula..." oninput="filtrarFolha()"
+        style="flex:1;min-width:180px;padding:7px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+      <button class="btn btn-green" onclick="exportarFolhaExcel()">📊 Exportar Excel</button>
+    </div>
+    <div id="folha-count" style="font-size:11px;color:var(--text2);margin-bottom:6px">${dados.length} colaboradores</div>
+    <div class="tbl-wrap" style="max-height:480px;overflow:auto">
+      <table style="font-size:11px;border-collapse:collapse;width:100%">
+        <thead>
+          <tr>
+            <th style="background:#1F3864;position:sticky;left:0;z-index:2">Matrícula</th>
+            <th style="background:#1F3864;position:sticky;left:60px;z-index:2;min-width:140px">Nome</th>
+            <th style="background:#1F3864">CPF</th>
+            <th style="background:#1F3864">Depto</th>
+            ${evList.map(ev=>`<th style="background:#2C5282" title="${EVENTOS_MAP[ev]||ev}">${EVENTOS_MAP[ev]||('Ev.'+ev)}</th>`).join('')}
+            <th style="background:#1B5E20;color:#fff">VR</th>
+            <th style="background:#1B5E20;color:#fff">Café</th>
+            <th style="background:#1B5E20;color:#fff">Comb.</th>
+            <th style="background:#1B5E20;color:#fff">VT</th>
+          </tr>
+        </thead>
+        <tbody id="folha-tbody">
+          ${dados.map((d,i)=>`<tr style="background:${i%2===0?'#F8F6F2':''}">
+            <td style="font-family:'DM Mono',monospace;font-size:10px;position:sticky;left:0;background:${i%2===0?'#F8F6F2':'#fff'}">${d.mat}</td>
+            <td style="font-size:11px;position:sticky;left:60px;background:${i%2===0?'#F8F6F2':'#fff'};min-width:140px;max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${d.nome}">${d.nome}</td>
+            <td style="font-size:10px">${d.cpf||'—'}</td>
+            <td style="font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis">${d.depto||'—'}</td>
+            ${evList.map(ev=>d.eventos[ev]?`<td style="text-align:right;font-family:'DM Mono',monospace;color:${fnum(d.eventos[ev])<0?'var(--red)':'inherit'}">${brl(d.eventos[ev])}</td>`:'<td style="color:#ddd;text-align:right">—</td>').join('')}
+            <td style="text-align:right;color:var(--accent);font-family:'DM Mono',monospace">${d.ben_vr>0?brl(d.ben_vr):'—'}</td>
+            <td style="text-align:right;color:#7B5E00;font-family:'DM Mono',monospace">${d.ben_cafe>0?brl(d.ben_cafe):'—'}</td>
+            <td style="text-align:right;color:#7B3F00;font-family:'DM Mono',monospace">${d.ben_comb>0?brl(d.ben_comb):'—'}</td>
+            <td style="text-align:right;color:var(--blue);font-family:'DM Mono',monospace">${d.ben_vt>0?brl(d.ben_vt):'—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function filtrarFolha(){
+  const q=(document.getElementById('folha-q')?.value||'').toLowerCase();
+  const rows=document.querySelectorAll('#folha-tbody tr');
+  let vis=0;
+  rows.forEach(row=>{row.style.display=row.textContent.toLowerCase().includes(q)?'':'none';if(row.style.display!=='none')vis++;});
+  const cnt=document.getElementById('folha-count');
+  if(cnt) cnt.textContent=vis+' colaboradores';
+}
+
+function exportarFolhaExcel(){
+  if(!_folhaAtual||_folhaAtual.length===0){toast('Nenhuma folha importada','error');return;}
+  const dados=_folhaAtual;
+  const todosEv=[...new Set(dados.flatMap(d=>Object.keys(d.eventos||{})))].sort((a,b)=>parseInt(a)-parseInt(b));
+  const wb=XLSX.utils.book_new();
+  // Linha de grupos
+  const grupoRow=['','','','','REMUNERAÇÃO','','','JORNADA','','','','','AFASTAMENTOS','','','FÉRIAS','','','','','REEMBOLSOS','','ENCARGOS','DESCONTOS','','','BENEFÍCIOS','','','',''];
+  // Linha de evento
+  const evRow=['','','','Evento',...todosEv,'','','','',''];
+  // Header
+  const hRow=['Matrícula','Nome','CPF','Departamento',...todosEv.map(ev=>EVENTOS_MAP[ev]||('Evento '+ev)),'VR','Café','Combustível','VT','Total Benefícios'];
+  const rows=[hRow];
+  dados.forEach(d=>{
+    const row=[d.mat,d.nome,d.cpf||'',d.depto||''];
+    todosEv.forEach(ev=>row.push(d.eventos[ev]||''));
+    row.push(d.ben_vr||''); row.push(d.ben_cafe||''); row.push(d.ben_comb||''); row.push(d.ben_vt||'');
+    row.push((d.ben_vr||0)+(d.ben_cafe||0)+(d.ben_comb||0)+(d.ben_vt||0)||'');
+    rows.push(row);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Folha por Equipes');
+  XLSX.writeFile(wb,'Folha_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'_')+'.xlsx');
+  toast('✅ Folha exportada!','success');
+}
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+function initApp(user){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app-screen').style.display='block';
+  document.getElementById('user-name').textContent=user.email;
+  Promise.all([carregarColaboradores(),carregarLancamento(),carregarConfig()]).then(()=>{
+    renderDashboard();
+    popularFiltrosColab();
+    popularFiltrosLan();
+    const hoje=new Date();
+    document.getElementById('lan-comp').value=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+  });
+}
+
+function waitFirebase(cb){
+  if(window._firebaseReady) cb();
+  else window.addEventListener('firebaseReady',cb,{once:true});
+}
+
+waitFirebase(()=>{
+  window._getRedirectResult(window._auth).then(r=>{if(r?.user)initApp(r.user);}).catch(e=>console.error(e));
+  window._onAuthStateChanged(window._auth,user=>{
+    if(user) initApp(user);
+    else{document.getElementById('login-screen').style.display='flex';document.getElementById('app-screen').style.display='none';}
+  });
+});
+</script>
+</body>
+</html>
