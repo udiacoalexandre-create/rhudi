@@ -1651,29 +1651,34 @@ function formatValorCaju(v){
 function exportarCajuCompleto(){
   const comp=document.getElementById('lan-comp')?.value||'MES';
   const empSel=document.getElementById('exp-empresa')?.value||'';
-  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+  const SEP=';';
+  const NL=String.fromCharCode(10);
+  const header=['CPF','Matricula (opcional)','Valor Fixo em Auxilio Alimentacao','Mobilidade','Valor Fixo em Mobilidade','Cultura','Valor Fixo em Cultura','Saude','Valor Fixo em Saude','Educacao','Valor Fixo em Educacao','Home Office','Valor Fixo em Home Office'].join(SEP);
   const linhas=[header];
   getColabFiltrados(empSel).forEach(c=>{
     const du=getDU(c.mat); const dr=getDiasReais(c.mat);
     const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
     const alim=vr+cafe, mob=comb+vt;
     if(alim===0&&mob===0) return;
-    const cpf=(c.cpf||'').replace(/\D/g,'').padStart(11,'0');
-    linhas.push(`${cpf};${c.mat||''};${formatValorCaju(alim)};0;${formatValorCaju(mob)};0;0;0;0;0;0;0;0`);
+    const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
+    const row=[cpf,c.mat||'',formatValorCaju(alim),'0',formatValorCaju(mob),'0','0','0','0','0','0','0','0'].join(SEP);
+    linhas.push(row);
   });
-  const blob=new Blob([linhas.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const csv=linhas.join(NL);
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
   const suf=empSel?'_'+empSel:'';
-  a.download=`pedidos_caju_${comp.replace('/','_')}${suf}.csv`;
+  a.download='pedidos_caju_'+comp.replace('/','_')+suf+'.csv';
   a.click(); URL.revokeObjectURL(url);
-  toast('✅ Arquivo Caju exportado!','success');
+  toast('Arquivo Caju exportado!','success');
 }
 
 function exportarPorEmpresaCaju(){
   const comp=document.getElementById('lan-comp')?.value||'MES';
-  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+  const SEP=';'; const NL=String.fromCharCode(10);
+  const header=['CPF','Matricula (opcional)','Valor Fixo em Auxilio Alimentacao','Mobilidade','Valor Fixo em Mobilidade','Cultura','Valor Fixo em Cultura','Saude','Valor Fixo em Saude','Educacao','Valor Fixo em Educacao','Home Office','Valor Fixo em Home Office'].join(SEP);
   const empresas=[...new Set(colaboradores.map(c=>String(c.mat||'').substring(0,4)).filter(p=>p.length===4))].sort();
   empresas.forEach((emp,i)=>{
     setTimeout(()=>{
@@ -1683,17 +1688,17 @@ function exportarPorEmpresaCaju(){
         const {vr,cafe,comb,vt}=calcBeneficios(c,dr,du);
         const alim=vr+cafe, mob=comb+vt;
         if(alim===0&&mob===0) return;
-        const cpf=(c.cpf||'').replace(/\D/g,'').padStart(11,'0');
-        linhas.push(`${cpf};${c.mat||''};${formatValorCaju(alim)};0;${formatValorCaju(mob)};0;0;0;0;0;0;0;0`);
+        const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
+        linhas.push([cpf,c.mat||'',formatValorCaju(alim),'0',formatValorCaju(mob),'0','0','0','0','0','0','0','0'].join(SEP));
       });
-      const blob=new Blob([linhas.join('\n')],{type:'text/csv;charset=utf-8;'});
+      const blob=new Blob([linhas.join(NL)],{type:'text/csv;charset=utf-8;'});
       const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
-      a.href=url; a.download=`pedidos_caju_${emp}_${comp.replace('/','_')}.csv`;
+      a.href=url; a.download='pedidos_caju_'+emp+'_'+comp.replace('/','_')+'.csv';
       a.click(); URL.revokeObjectURL(url);
     },i*500);
   });
-  setTimeout(()=>toast('✅ '+empresas.length+' arquivos Caju!','success'),empresas.length*500+300);
+  setTimeout(()=>toast(empresas.length+' arquivos Caju gerados!','success'),empresas.length*500+300);
 }
 
 function exportarCaju(tipo){
