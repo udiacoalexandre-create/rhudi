@@ -451,6 +451,259 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 <div id="toast"></div>
 <script>
 
+// ════════════════════════════════════════════════════════════════
+// NAVEGAÇÃO & ROTEAMENTO
+// ════════════════════════════════════════════════════════════════
+const MODULES = {
+  base:{pages:[
+    {id:'base-lista',icon:'👥',label:'Colaboradores'},
+    {id:'base-sync',icon:'🔄',label:'Sync Senior'},
+    {id:'base-carga',icon:'📥',label:'Carga em Lote'},
+    {id:'base-novo',icon:'➕',label:'Novo Colaborador'},
+  ]},
+  beneficios:{pages:[
+    {id:'ben-lancamento',icon:'📅',label:'Lançamento Mensal'},
+    {id:'ben-importar',icon:'📋',label:'Importar Faltas'},
+    {id:'ben-exportar-caju',icon:'📤',label:'Exportar Caju & VT'},
+    {id:'ben-exportar-senior',icon:'🏢',label:'Exportar Senior'},
+    {id:'ben-historico',icon:'🗂️',label:'Histórico'},
+    {id:'ben-config',icon:'⚙️',label:'Configurações'},
+  ]},
+  folha:{pages:[
+    {id:'folha-import',icon:'📥',label:'Importar Relatório'},
+    {id:'folha-view',icon:'📊',label:'Visualizar Folha'},
+  ]},
+  ferias:{pages:[
+    {id:'fer-radar',icon:'🎯',label:'Radar de Férias'},
+    {id:'fer-import',icon:'📥',label:'Importar Dados'},
+  ]},
+  dashboard:{pages:[
+    {id:'dash-main',icon:'📊',label:'Dashboard Geral'},
+  ]}
+};
+
+function switchModule(mod){
+  currentModule=mod;
+  document.querySelectorAll('.mod-tab').forEach(t=>t.classList.remove('active'));
+  const tabEl=document.getElementById('tab-'+mod);
+  if(tabEl) tabEl.classList.add('active');
+  buildSidebar(mod);
+  if(MODULES[mod]) showPage(MODULES[mod].pages[0].id);
+}
+
+function buildSidebar(mod){
+  const nav=document.getElementById('sidebar-nav');
+  if(!nav) return;
+  const pages=MODULES[mod]?.pages||[];
+  nav.innerHTML=pages.map(p=>
+    `<button class="sidebar-btn" id="snav-${p.id}" onclick="showPage('${p.id}')">
+      <span class="s-icon">${p.icon}</span>${p.label}
+    </button>`
+  ).join('');
+}
+
+function showPage(id){
+  currentPage=id;
+  document.querySelectorAll('.sidebar-btn').forEach(b=>b.classList.remove('active'));
+  const snav=document.getElementById('snav-'+id);
+  if(snav) snav.classList.add('active');
+  const main=document.getElementById('main-area');
+  if(!main) return;
+  main.innerHTML=renderPage(id);
+  afterRender(id);
+}
+
+function renderPage(id){
+  const pages={
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-novo':pgBaseNovo,
+    'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
+    'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
+    'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
+    'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
+    'fer-radar':pgFerRadar,'fer-import':pgFerImport,
+    'dash-main':pgDashMain,
+  };
+  const fn=pages[id];
+  if(fn) return fn();
+  return '<div class="empty-state"><div class="empty-icon">🚧</div><p>Página em construção</p></div>';
+}
+
+function afterRender(id){
+  if(id==='base-lista') renderColabList();
+  if(id==='ben-lancamento'){ popularLanFiltros(); renderLancamento(); }
+  if(id==='ben-historico') renderHistorico();
+  if(id==='folha-view') renderFolhaView();
+  if(id==='fer-radar') renderFerRadar();
+  if(id==='dash-main') renderDashMain();
+}
+
+// ════════════════════════════════════════════════════════════════
+// BASE: LISTA DE COLABORADORES
+// ════════════════════════════════════════════════════════════════
+function pgBaseLista(){
+  const empresas=getEmpresaList();
+  const deptos=getDeptoList();
+  return `
+    <div class="page-header">
+      <h2>👥 Base de Colaboradores</h2>
+      <p>Gerencie todos os colaboradores da empresa</p>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-group" style="flex:1">
+        <label>🔍 Buscar</label>
+        <input type="text" id="bl-q" placeholder="Nome, matrícula ou CPF..." oninput="renderColabList()">
+      </div>
+      <div class="filter-group">
+        <label>🏢 Empresa</label>
+        <select id="bl-emp" onchange="renderColabList()">
+          <option value="">Todas</option>
+          ${empresas.map(e=>`<option value="${e.cod}">${e.cod} (${e.qtd})</option>`).join('')}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>🏬 Departamento</label>
+        <select id="bl-dep" onchange="renderColabList()">
+          <option value="">Todos</option>
+          ${deptos.map(d=>`<option value="${d}">${d}</option>`).join('')}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Status</label>
+        <select id="bl-status" onchange="renderColabList()">
+          <option value="">Todos</option>
+          <option value="Ativo">Ativo</option>
+          <option value="Inativo">Inativo</option>
+          <option value="Férias">Férias</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Benefício</label>
+        <select id="bl-ben" onchange="renderColabList()">
+          <option value="">Todos</option>
+          <option value="vr">VR</option>
+          <option value="cafe">Café</option>
+          <option value="comb">Combustível</option>
+          <option value="vt">VT</option>
+          <option value="sem">Sem benefício</option>
+          <option disabled>──────────</option>
+          <option value="comb_vt">Comb+VT (erro?)</option>
+          <option value="sem_mob">Sem mobilidade</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()">✖</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()">📊 Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportarBase()">💾 Base</button>
+    </div>
+    <div id="bl-count" class="text-sm text-muted" style="margin-bottom:8px"></div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr>
+          <th>Matrícula</th><th>Nome</th><th>CPF</th><th>Departamento</th>
+          <th>Status</th><th>Elegibilidade</th><th>VR/dia</th><th>Café/dia</th>
+          <th>Transporte</th><th>Ações</th>
+        </tr></thead>
+        <tbody id="bl-tbody"></tbody>
+      </table>
+    </div>`;
+}
+
+function filtrarColabs(){
+  const q=(g('bl-q')||'').toLowerCase();
+  const empF=g('bl-emp'),depF=g('bl-dep'),stF=g('bl-status'),benF=g('bl-ben');
+  let f=colaboradores.filter(c=>
+    c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
+  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
+  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+  if(stF) f=f.filter(c=>c.status===stF);
+  if(benF==='vr') f=f.filter(c=>fnum(c.vr)>0);
+  else if(benF==='cafe') f=f.filter(c=>fnum(c.cafe)>0);
+  else if(benF==='comb') f=f.filter(c=>fnum(c.comb)>0);
+  else if(benF==='vt') f=f.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  else if(benF==='sem') f=f.filter(c=>fnum(c.vr)===0&&fnum(c.cafe)===0&&fnum(c.comb)===0&&[1,2,3,4].every(n=>fnum(c['vt'+n])===0));
+  else if(benF==='comb_vt') f=f.filter(c=>fnum(c.comb)>0&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  else if(benF==='sem_mob') f=f.filter(c=>['perto','carro_empresa'].includes(c.mobilidade));
+  return f;
+}
+
+function limparFiltrosColab(){
+  ['bl-q','bl-emp','bl-dep','bl-status','bl-ben'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  renderColabList();
+}
+
+function elegBadges(c){
+  const eleg=c.elegibilidade||{};
+  const tags=[];
+  if(eleg.vr!==false&&fnum(c.vr)>0) tags.push('<span class="badge badge-orange" style="font-size:10px">VR</span>');
+  if(eleg.cafe!==false&&fnum(c.cafe)>0) tags.push('<span class="badge badge-yellow" style="font-size:10px">Café</span>');
+  if(eleg.mobilidade!==false&&(fnum(c.comb)>0||[1,2,3,4].some(n=>fnum(c['vt'+n])>0))) tags.push('<span class="badge badge-green" style="font-size:10px">Mob.</span>');
+  if(eleg.folha!==false) tags.push('<span class="badge badge-purple" style="font-size:10px">Folha</span>');
+  return tags.length?tags.join(' '):'<span class="badge badge-gray" style="font-size:10px">Nenhum</span>';
+}
+
+function renderColabList(){
+  const f=filtrarColabs();
+  const cnt=document.getElementById('bl-count');
+  if(cnt) cnt.textContent=f.length+' de '+colaboradores.length+' colaboradores';
+  const tbody=document.getElementById('bl-tbody'); if(!tbody) return;
+  if(f.length===0){
+    tbody.innerHTML='<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">🔍</div><p>Nenhum resultado.</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML=f.map(c=>`<tr>
+    <td><code>${c.mat||'—'}</code></td>
+    <td><strong style="font-size:13px">${c.nome}</strong>${c.cargo?'<br><span class="text-xs text-muted">'+c.cargo+'</span>':''}</td>
+    <td><code style="font-size:10px">${c.cpf||'—'}</code></td>
+    <td class="text-sm text-muted">${c.depto||'—'}</td>
+    <td>${statusBadge(c.status)}</td>
+    <td>${elegBadges(c)}</td>
+    <td class="text-sm">${fnum(c.vr)>0?brl(c.vr):'—'}</td>
+    <td class="text-sm">${fnum(c.cafe)>0?brl(c.cafe):'—'}</td>
+    <td>${mobBadge(c)}</td>
+    <td>
+      <button class="btn btn-ghost btn-xs" onclick="abrirEditar('${c._id}')">✏️</button>
+      <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${c.nome.replace(/'/g,"\\'")}')">🗑</button>
+    </td>
+  </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// BASE: SYNC SENIOR
+// ════════════════════════════════════════════════════════════════
+function pgBaseSync(){
+  return `
+    <div class="page-header">
+      <h2>🔄 Sincronização com Senior</h2>
+      <p>Importe o relatório da Senior para atualizar a base.</p>
+    </div>
+    <div class="card">
+      <div class="alert alert-info" style="margin-bottom:14px">
+        Colunas esperadas: <strong>Matrícula (ou Cadastro), Nome, CPF</strong>
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('sync-file').click()">
+        <input type="file" id="sync-file" accept=".xlsx,.xls" onchange="processarSync(event)">
+        <div class="upload-icon">🔄</div>
+        <div class="upload-text">Clique para selecionar o relatório</div>
+        <div class="upload-sub">.xlsx ou .xls</div>
+      </div>
+      <div id="sync-preview" style="margin-top:14px"></div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// BASE: NOVO COLABORADOR (página inline)
+// ════════════════════════════════════════════════════════════════
+function pgBaseNovo(){
+  return `
+    <div class="page-header"><h2>➕ Novo Colaborador</h2><p>Defina a elegibilidade a cada benefício.</p></div>
+    <div id="novo-alert"></div>
+    ${formColabHTML('f', null)}
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="salvarNovoColab()">💾 Salvar</button>
+      <button class="btn btn-ghost" onclick="limparFormColab('f')">✖ Limpar</button>
+    </div>`;
+}
+
+
 function processarSync(event){
   const file=event.target.files[0]; if(!file) return;
   const reader=new FileReader();
@@ -474,18 +727,9 @@ function processarSync(event){
       if(mat){seniorMats.add(mat);seniorData.push({mat,nome,cpf:String(r[iCPF]||'').trim()});}
     }
     const acoes=[];
-    seniorData.forEach(s=>{
-      if(!colaboradores.find(c=>c.mat===s.mat))
-        acoes.push({tipo:'novo',dados:s});
-    });
-    colaboradores.filter(c=>c.status==='Ativo'&&c.mat).forEach(c=>{
-      if(!seniorMats.has(c.mat))
-        acoes.push({tipo:'demitido',dados:c});
-    });
-    colaboradores.filter(c=>['Ferias','Ferias'].includes(c.status)&&c.mat).forEach(c=>{
-      if(seniorMats.has(c.mat))
-        acoes.push({tipo:'voltou',dados:c});
-    });
+    seniorData.forEach(s=>{if(!colaboradores.find(c=>c.mat===s.mat))acoes.push({tipo:'novo',dados:s});});
+    colaboradores.filter(c=>c.status==='Ativo'&&c.mat).forEach(c=>{if(!seniorMats.has(c.mat))acoes.push({tipo:'demitido',dados:c});});
+    colaboradores.filter(c=>['Ferias','Ferias'].includes(c.status)&&c.mat).forEach(c=>{if(seniorMats.has(c.mat))acoes.push({tipo:'voltou',dados:c});});
     seniorPendente=acoes;
     renderSyncPreview(seniorData.length);
     event.target.value='';
@@ -497,25 +741,15 @@ function renderSyncPreview(total){
   const novos=seniorPendente.filter(a=>a.tipo==='novo');
   const demitidos=seniorPendente.filter(a=>a.tipo==='demitido');
   const voltaram=seniorPendente.filter(a=>a.tipo==='voltou');
-  const prev=document.getElementById('sync-preview');
-  if(!prev) return;
-  if(seniorPendente.length===0){
-    prev.innerHTML='<div class="alert alert-success">Relatorio lido: '+total+' colaboradores. Base sincronizada!</div>';
-    return;
-  }
-  let html='<div class="alert alert-info">Relatorio lido: <strong>'+total+'</strong> colab. &middot; <strong>'+novos.length+'</strong> novos &middot; <strong>'+demitidos.length+'</strong> demissoes &middot; <strong>'+voltaram.length+'</strong> retornos</div>';
-  html+='<div style="max-height:400px;overflow-y:auto">';
-  novos.forEach((a,i)=>{
-    html+='<div class="sync-card sync-novo"><div class="sync-card-text"><strong>Novo:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-success btn-sm" onclick="syncAcao(\'novo\','+i+')">Cadastrar</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'novo\','+i+')">Ignorar</button></div></div>';
-  });
-  demitidos.forEach((a,i)=>{
-    html+='<div class="sync-card sync-demitido"><div class="sync-card-text"><strong>Nao encontrado:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code> foi demitido?</div><div class="sync-card-btns"><button class="btn btn-danger btn-sm" onclick="syncAcao(\'demitido\','+i+')">Inativo</button><button class="btn btn-warning btn-sm" onclick="syncAcaoFerias('+i+')">Ferias</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'demitido\','+i+')">Ignorar</button></div></div>';
-  });
-  voltaram.forEach((a,i)=>{
-    html+='<div class="sync-card sync-ferias-out"><div class="sync-card-text"><strong>Voltou de ferias?</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-primary btn-sm" onclick="syncAcao(\'voltou\','+i+')">Marcar Ativo</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'voltou\','+i+')">Ignorar</button></div></div>';
-  });
-  html+='</div>';
-  prev.innerHTML=html;
+  const prev=document.getElementById('sync-preview'); if(!prev) return;
+  if(seniorPendente.length===0){prev.innerHTML='<div class="alert alert-success">Base sincronizada! '+total+' colaboradores no relatório.</div>';return;}
+  let h='<div class="alert alert-info"><strong>'+total+'</strong> no relatório &middot; <strong>'+novos.length+'</strong> novos &middot; <strong>'+demitidos.length+'</strong> demissões &middot; <strong>'+voltaram.length+'</strong> retornos</div>';
+  h+='<div style="max-height:380px;overflow-y:auto">';
+  novos.forEach((a,i)=>{h+='<div class="sync-card sync-novo"><div class="sync-card-text"><strong>Novo:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-success btn-sm" onclick="syncAcao(\'novo\','+i+')">Cadastrar</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'novo\','+i+')">Ignorar</button></div></div>';});
+  demitidos.forEach((a,i)=>{h+='<div class="sync-card sync-demitido"><div class="sync-card-text"><strong>Não encontrado:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-danger btn-sm" onclick="syncAcao(\'demitido\','+i+')">Inativo</button><button class="btn btn-warning btn-sm" onclick="syncAcaoFerias('+i+')">Férias</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'demitido\','+i+')">Ignorar</button></div></div>';});
+  voltaram.forEach((a,i)=>{h+='<div class="sync-card sync-ferias-out"><div class="sync-card-text"><strong>Voltou?</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-primary btn-sm" onclick="syncAcao(\'voltou\','+i+')">Marcar Ativo</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'voltou\','+i+')">Ignorar</button></div></div>';});
+  h+='</div>';
+  prev.innerHTML=h;
 }
 
 async function syncAcao(tipo, idx){
