@@ -214,9 +214,16 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="nav-group">Exportação</div>
       <button onclick="showPage('exportar')" id="nav-exportar">📤 Exportar Caju + VT</button>
       <div class="sep"></div>
+      <div class="nav-group">Base de Colaboradores</div>
+      <button onclick="showPage('senior-sync')" id="nav-senior-sync">🔄 Sync Senior</button>
+      <div class="sep"></div>
       <div class="nav-group">Folha de Pagamento</div>
       <button onclick="showPage('folha-import')" id="nav-folha-import">📥 Importar Senior</button>
       <button onclick="showPage('folha-view')" id="nav-folha-view">📊 Visualizar Folha</button>
+      <div class="sep"></div>
+      <div class="nav-group">Controle de Férias</div>
+      <button onclick="showPage('ferias-view')" id="nav-ferias-view">🏖️ Status de Férias</button>
+      <button onclick="showPage('ferias-import')" id="nav-ferias-import">📥 Importar Férias</button>
       <button onclick="showPage('exportar-senior')" id="nav-exportar-senior">🏢 Exportar Senior</button>
       <div class="sep"></div>
       <div class="nav-group">Histórico & Config</div>
@@ -665,6 +672,69 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         </div>
       </div>
 
+      <!-- SYNC SENIOR -->
+      <div class="page" id="page-senior-sync">
+        <div class="page-title">Sincronização com Senior</div>
+        <div class="page-sub">Importe o relatório da Senior para atualizar o status dos colaboradores</div>
+        <div class="card">
+          <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 16px;font-size:12px;color:#1E40AF;margin-bottom:14px">
+            O relatório deve conter: <strong>Matrícula, Nome, CPF</strong>.<br>
+            O sistema compara com a base e identifica: novos colaboradores, possíveis demissões, entrada e saída de férias.
+          </div>
+          <div class="upload-zone" onclick="document.getElementById('senior-sync-file').click()">
+            <input type="file" id="senior-sync-file" accept=".xlsx,.xls" onchange="processarSyncSenior(event)">
+            <div style="font-size:32px">🔄</div>
+            <p style="font-size:13px;color:var(--text2);margin-top:8px">Clique para selecionar o relatório da Senior</p>
+          </div>
+          <div id="senior-sync-preview" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <!-- FÉRIAS VIEW -->
+      <div class="page" id="page-ferias-view">
+        <div class="page-title">Controle de Férias</div>
+        <div class="page-sub">Status das férias dos colaboradores</div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="display:flex;flex-direction:column;gap:3px;flex:1">
+            <label style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase">🔍 Buscar</label>
+            <input type="text" id="fer-q" placeholder="Nome ou matrícula..." oninput="renderFeriasTabela()"
+              style="padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <label style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase">Status</label>
+            <select id="fer-status" onchange="renderFeriasTabela()"
+              style="padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:var(--surface)">
+              <option value="">Todos</option>
+              <option value="ferias">🏖️ Em Férias</option>
+              <option value="ativo">✅ Ativo</option>
+              <option value="vencendo">⚠️ Vencendo (30 dias)</option>
+              <option value="vencido">🔴 Vencido</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">📊 Excel</button>
+        </div>
+        <div id="ferias-lista">
+          <div style="text-align:center;padding:30px;color:var(--text2)">Carregando...</div>
+        </div>
+      </div>
+
+      <!-- FÉRIAS IMPORT -->
+      <div class="page" id="page-ferias-import">
+        <div class="page-title">Importar Dados de Férias</div>
+        <div class="page-sub">Atualize as datas de férias a partir do relatório da Senior</div>
+        <div class="card">
+          <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 16px;font-size:12px;color:#1E40AF;margin-bottom:14px">
+            Colunas esperadas: <strong>Matrícula, Nome, Data Início Férias, Data Fim Férias, Data Vencimento</strong>
+          </div>
+          <div class="upload-zone" onclick="document.getElementById('ferias-file').click()">
+            <input type="file" id="ferias-file" accept=".xlsx,.xls" onchange="importarFeriasDados(event)">
+            <div style="font-size:32px">🏖️</div>
+            <p style="font-size:13px;color:var(--text2);margin-top:8px">Clique para selecionar o relatório de férias</p>
+          </div>
+          <div id="ferias-import-preview" style="margin-top:14px"></div>
+        </div>
+      </div>
+
 <!-- MODAL EDITAR -->
 <div class="modal-overlay" id="modal-editar">
   <div class="modal">
@@ -758,6 +828,18 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalCarga()">❌ Cancelar tudo</button>
       <button class="btn btn-yellow" onclick="importarSemDuplic()">⏩ Ignorar duplicatas e importar novos</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL SYNC SENIOR -->
+<div id="modal-senior" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-start;justify-content:center;padding-top:30px;overflow-y:auto">
+  <div style="background:var(--surface);border-radius:12px;padding:24px;max-width:820px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,.2);margin-bottom:40px">
+    <h2 style="font-size:17px;margin-bottom:6px">🔄 Sincronização com Senior</h2>
+    <div id="senior-resumo" style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:7px;padding:10px 14px;font-size:12px;color:#1E40AF;margin-bottom:14px"></div>
+    <div id="senior-lista" style="max-height:420px;overflow-y:auto"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-senior').style.display='none'">Fechar</button>
     </div>
   </div>
 </div>
@@ -2133,6 +2215,217 @@ waitFirebase(()=>{
     else{document.getElementById('login-screen').style.display='flex';document.getElementById('app-screen').style.display='none';}
   });
 });
+
+// ════════════════════════════════════════════════════
+// SYNC SENIOR
+// ════════════════════════════════════════════════════
+let seniorPendente = [];
+
+function processarSyncSenior(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
+    const iNome=hs.findIndex(h=>h.includes('nome'));
+    const iCPF=hs.findIndex(h=>h.includes('cpf'));
+    const seniorMats=new Set();
+    const seniorData=[];
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iNome]) continue;
+      const mat=String(r[iMat]||'').trim();
+      const nome=String(r[iNome]||'').trim().toUpperCase();
+      if(mat){seniorMats.add(mat);seniorData.push({mat,nome,cpf:String(r[iCPF]||'').trim()});}
+    }
+    const acoes=[];
+    // Novos
+    seniorData.forEach(s=>{
+      if(!colaboradores.find(c=>c.mat===s.mat))
+        acoes.push({tipo:'novo',dados:s,msg:'Novo colaborador: <strong>'+s.nome+'</strong> (Mat: '+s.mat+')'});
+    });
+    // Possíveis demissões (ativo mas não está no relatório)
+    colaboradores.filter(c=>c.status==='Ativo'&&c.mat).forEach(c=>{
+      if(!seniorMats.has(c.mat))
+        acoes.push({tipo:'demitido',dados:c,msg:'Não encontrado no relatório: <strong>'+c.nome+'</strong> (Mat: '+c.mat+') — foi demitido?'});
+    });
+    // Voltou de férias (estava em férias e aparece no relatório ativo)
+    colaboradores.filter(c=>c.status==='Férias'&&c.mat).forEach(c=>{
+      if(seniorMats.has(c.mat))
+        acoes.push({tipo:'voltou_ferias',dados:c,msg:'Em férias mas aparece no relatório: <strong>'+c.nome+'</strong> — voltou de férias?'});
+    });
+    seniorPendente=acoes;
+    const prev=document.getElementById('senior-sync-preview');
+    if(prev) prev.innerHTML='<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:7px;padding:10px 14px;font-size:12px;color:#14532D">'+
+      '✅ Relatório lido: <strong>'+seniorData.length+' colaboradores</strong> · '+
+      acoes.filter(a=>a.tipo==='novo').length+' novos · '+
+      acoes.filter(a=>a.tipo==='demitido').length+' possíveis demissões · '+
+      acoes.filter(a=>a.tipo==='voltou_ferias').length+' retornos de férias</div>';
+    renderModalSenior();
+    document.getElementById('modal-senior').style.display='flex';
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function renderModalSenior(){
+  const resumo=seniorPendente.length===0
+    ? '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:7px;padding:12px;font-size:13px;color:#14532D">✅ Base sincronizada! Nenhuma divergência encontrada.</div>'
+    : seniorPendente.map((a,i)=>`
+      <div style="border-left:4px solid ${a.tipo==='novo'?'var(--green)':a.tipo==='demitido'?'var(--red)':'var(--blue)'};
+        background:${a.tipo==='novo'?'#F0FDF4':a.tipo==='demitido'?'#FFF5F5':'#EFF6FF'};
+        border-radius:7px;padding:12px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div style="font-size:13px">${a.msg}</div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${a.tipo==='novo'?`<button class="btn btn-green btn-sm" onclick="seniorAcao(${i},'cadastrar')">➕ Cadastrar</button><button class="btn btn-ghost btn-sm" onclick="seniorAcao(${i},'ignorar')">Ignorar</button>`:''}
+          ${a.tipo==='demitido'?`<button class="btn btn-danger btn-sm" onclick="seniorAcao(${i},'demitir')">Marcar Inativo</button><button class="btn btn-ghost btn-sm" onclick="seniorAcao(${i},'ignorar')">Ignorar</button>`:''}
+          ${a.tipo==='voltou_ferias'?`<button class="btn btn-primary btn-sm" onclick="seniorAcao(${i},'ativar')">✅ Marcar Ativo</button><button class="btn btn-ghost btn-sm" onclick="seniorAcao(${i},'ignorar')">Ignorar</button>`:''}
+        </div>
+      </div>`).join('');
+  document.getElementById('senior-lista').innerHTML=resumo;
+  document.getElementById('senior-resumo').textContent=
+    seniorPendente.length===0?'Todas as divergências resolvidas.':
+    seniorPendente.length+' divergência(s) encontrada(s) — resolva cada uma abaixo:';
+}
+
+async function seniorAcao(idx,acao){
+  const item=seniorPendente[idx];
+  if(acao==='ignorar'){
+    seniorPendente.splice(idx,1);
+  } else if(acao==='cadastrar'){
+    const d=item.dados;
+    const id=d.mat||(d.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
+    const c={_id:id,mat:d.mat,nome:d.nome,cpf:d.cpf||'',status:'Ativo',mobilidade:'perto',
+      vr:0,cafe:0,comb:0,vt1:0,v1:0,vt2:0,v2:0,vt3:0,v3:0,vt4:0,v4:0,cargo:'',depto:''};
+    await window._setDoc(window._doc('colaboradores',id),c);
+    colaboradores.push(c);
+    seniorPendente.splice(idx,1);
+    toast('✅ '+d.nome+' cadastrado!','success');
+  } else if(acao==='demitir'){
+    const c=colaboradores.find(x=>x._id===item.dados._id||x.mat===item.dados.mat);
+    if(!c) return;
+    c.status='Inativo';
+    await window._setDoc(window._doc('colaboradores',c._id),c);
+    seniorPendente.splice(idx,1);
+    toast(c.nome+' marcado como Inativo.','warning');
+  } else if(acao==='ativar'){
+    const c=colaboradores.find(x=>x._id===item.dados._id||x.mat===item.dados.mat);
+    if(!c) return;
+    c.status='Ativo'; c.ferInicio=''; c.ferFim='';
+    await window._setDoc(window._doc('colaboradores',c._id),c);
+    seniorPendente.splice(idx,1);
+    toast(c.nome+' voltou às atividades!','success');
+  }
+  renderModalSenior();
+}
+
+// ════════════════════════════════════════════════════
+// CONTROLE DE FÉRIAS
+// ════════════════════════════════════════════════════
+function renderFeriasTabela(){
+  const q=(document.getElementById('fer-q')?.value||'').toLowerCase();
+  const stF=document.getElementById('fer-status')?.value||'';
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const em30=new Date(hoje); em30.setDate(em30.getDate()+30);
+
+  let f=colaboradores.filter(c=>
+    c.nome.toLowerCase().includes(q)||(c.mat||'').includes(q));
+  if(stF==='ferias') f=f.filter(c=>c.status==='Férias');
+  else if(stF==='ativo') f=f.filter(c=>c.status==='Ativo');
+  else if(stF==='vencendo') f=f.filter(c=>{
+    if(!c.ferVenc) return false;
+    const v=new Date(c.ferVenc); return v>=hoje&&v<=em30;
+  });
+  else if(stF==='vencido') f=f.filter(c=>{
+    if(!c.ferVenc) return false;
+    return new Date(c.ferVenc)<hoje;
+  });
+
+  const el=document.getElementById('ferias-lista'); if(!el) return;
+  if(f.length===0){el.innerHTML='<div style="text-align:center;padding:24px;color:var(--text2)">Nenhum resultado.</div>';return;}
+
+  el.innerHTML='<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border)"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
+    '<thead><tr style="background:var(--blue);color:#fff">'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Matrícula</th>'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Nome</th>'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Status</th>'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Início Férias</th>'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Fim Férias</th>'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Vencimento</th>'+
+    '<th style="padding:9px 10px;text-align:left;font-weight:500">Situação</th>'+
+    '</tr></thead><tbody>'+
+    f.map((c,i)=>{
+      const venc=c.ferVenc?new Date(c.ferVenc):null;
+      let sit='—';
+      if(c.status==='Férias') sit='<span style="background:#DCFCE7;color:#14532D;padding:2px 8px;border-radius:20px;font-size:11px">🏖️ Em férias</span>';
+      else if(venc){
+        if(venc<hoje) sit='<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:20px;font-size:11px">🔴 Vencido</span>';
+        else if(venc<=em30) sit='<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:20px;font-size:11px">⚠️ Vence em breve</span>';
+        else sit='<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:20px;font-size:11px">✅ OK</span>';
+      }
+      return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F6F2':'')+'">'
+        +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
+        +'<td style="padding:8px 10px;font-size:12px">'+c.nome+'</td>'
+        +'<td style="padding:8px 10px"><span style="padding:2px 7px;border-radius:20px;font-size:11px;background:'+(c.status==='Ativo'?'#D4EDDA':'c.status==='Férias'?'#CCE5FF':'#F8D7DA')+';color:'+(c.status==='Ativo'?'#155724':'c.status==='Férias'?'#004085':'#721c24')+'">'+c.status+'</span></td>'
+        +'<td style="padding:8px 10px">'+(c.ferInicio||'—')+'</td>'
+        +'<td style="padding:8px 10px">'+(c.ferFim||'—')+'</td>'
+        +'<td style="padding:8px 10px">'+(c.ferVenc||'—')+'</td>'
+        +'<td style="padding:8px 10px">'+sit+'</td>'
+        +'</tr>';
+    }).join('')+
+    '</tbody></table></div>';
+}
+
+async function importarFeriasDados(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const iMat=hs.findIndex(h=>h.includes('matr')||h.includes('cadastro'));
+    const iIni=hs.findIndex(h=>h.includes('inicio')||h.includes('início'));
+    const iFim=hs.findIndex(h=>h.includes('fim')||h.includes('retorno'));
+    const iVenc=hs.findIndex(h=>h.includes('venc'));
+    const b=window._writeBatch(window._db); let ok=0;
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iMat]) continue;
+      const mat=String(r[iMat]||'').trim();
+      const c=colaboradores.find(x=>x.mat===mat); if(!c) continue;
+      if(r[iIni]) c.ferInicio=new Date(r[iIni]).toISOString().split('T')[0];
+      if(r[iFim])  c.ferFim=new Date(r[iFim]).toISOString().split('T')[0];
+      if(r[iVenc]) c.ferVenc=new Date(r[iVenc]).toISOString().split('T')[0];
+      b.set(window._doc('colaboradores',c._id),c); ok++;
+    }
+    await b.commit();
+    const prev=document.getElementById('ferias-import-preview');
+    if(prev) prev.innerHTML='<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:7px;padding:10px 14px;font-size:12px;color:#14532D">✅ '+ok+' colaboradores atualizados com dados de férias.</div>';
+    toast('✅ Férias importadas: '+ok+' colaboradores','success');
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function exportarFeriasExcel(){
+  const wb=XLSX.utils.book_new();
+  const rows=[['Matrícula','Nome','CPF','Status','Início Férias','Fim Férias','Vencimento'],
+    ...colaboradores.map(c=>[c.mat||'',c.nome,c.cpf||'',c.status,c.ferInicio||'',c.ferFim||'',c.ferVenc||''])];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:14},{wch:35},{wch:16},{wch:10},{wch:14},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws,'Férias');
+  XLSX.writeFile(wb,'Controle_Ferias.xlsx');
+  toast('✅ Exportado!','success');
+}
+
 </script>
 </body>
 </html>
