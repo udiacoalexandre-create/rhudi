@@ -509,20 +509,13 @@ function renderSyncPreview(total){
     html+='<div class="sync-card sync-novo"><div class="sync-card-text"><strong>Novo:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-success btn-sm" onclick="syncAcao(\'novo\','+i+')">Cadastrar</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'novo\','+i+')">Ignorar</button></div></div>';
   });
   demitidos.forEach((a,i)=>{
-    html+='<div class="sync-card sync-demitido"><div class="sync-card-text"><strong>Nao encontrado:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code> &mdash; foi demitido?</div><div class="sync-card-btns"><button class="btn btn-danger btn-sm" onclick="syncAcao(\'demitido\','+i+')">Marcar Inativo</button><button class="btn btn-warning btn-sm" onclick="syncAcaoFerias('+i+')">Ferias</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'demitido\','+i+')">Ignorar</button></div></div>';
+    html+='<div class="sync-card sync-demitido"><div class="sync-card-text"><strong>Nao encontrado:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code> foi demitido?</div><div class="sync-card-btns"><button class="btn btn-danger btn-sm" onclick="syncAcao(\'demitido\','+i+')">Inativo</button><button class="btn btn-warning btn-sm" onclick="syncAcaoFerias('+i+')">Ferias</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'demitido\','+i+')">Ignorar</button></div></div>';
   });
   voltaram.forEach((a,i)=>{
     html+='<div class="sync-card sync-ferias-out"><div class="sync-card-text"><strong>Voltou de ferias?</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-primary btn-sm" onclick="syncAcao(\'voltou\','+i+')">Marcar Ativo</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'voltou\','+i+')">Ignorar</button></div></div>';
   });
   html+='</div>';
   prev.innerHTML=html;
-}
-
-})">✅ Marcar Ativo</button>
-            <button class="btn btn-ghost btn-sm" onclick="syncIgnorar('voltou',${i})">Ignorar</button>
-          </div>
-        </div>`).join('')}
-    </div>`;
 }
 
 async function syncAcao(tipo, idx){
