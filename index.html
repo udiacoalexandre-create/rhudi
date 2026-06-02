@@ -451,6 +451,247 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 <div id="toast"></div>
 <script>
 
+
+// ════════════════════════════════════════════════════════════════
+// FORMULÁRIO DE COLABORADOR
+// ════════════════════════════════════════════════════════════════
+function formColabHTML(prefix, c){
+  const mob=c?inferMob(c):'perto';
+  const fil=c?.filtro||'OK';
+  return `
+    <div class="card">
+      <div class="card-title">Dados Pessoais</div>
+      <div class="form-grid">
+        <div class="fg"><label>Matrícula</label><input type="text" id="${prefix}-mat" value="${c?.mat||''}" oninput="verificarDuplic('${prefix}')"></div>
+        <div class="fg span2"><label>Nome Completo *</label><input type="text" id="${prefix}-nome" value="${c?.nome||''}" oninput="verificarDuplic('${prefix}')"></div>
+        <div class="fg"><label>CPF</label><input type="text" id="${prefix}-cpf" value="${c?.cpf||''}" oninput="verificarDuplic('${prefix}')"></div>
+        <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
+        <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
+        <div class="fg"><label>Status</label>
+          <select id="${prefix}-status">
+            <option value="Ativo" ${(c?.status||'Ativo')==='Ativo'?'selected':''}>Ativo</option>
+            <option value="Inativo" ${c?.status==='Inativo'?'selected':''}>Inativo</option>
+            <option value="Ferias" ${(c?.status==='Férias'||c?.status==='Ferias')?'selected':''}>Férias</option>
+          </select>
+        </div>
+        <div class="fg"><label>Filtro / Tipo</label>
+          <select id="${prefix}-filtro">
+            <option value="OK" ${fil==='OK'?'selected':''}>OK — CLT normal</option>
+            <option value="DUP" ${fil==='DUP'?'selected':''}>DUP — CLT com MEI/Sócio</option>
+            <option value="MEI" ${fil==='MEI'?'selected':''}>MEI — Contrato MEI</option>
+            <option value="SOC" ${fil==='SOC'?'selected':''}>SOC — Sócio</option>
+          </select>
+        </div>
+      </div>
+      <div id="${prefix}-duplic-alert"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Elegibilidade a Benefícios</div>
+      <p class="text-sm text-muted" style="margin-bottom:10px">Marque apenas os benefícios aos quais este colaborador tem direito.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        ${elegCheckHTML(prefix,c)}
+      </div>
+    </div>
+    <div class="card" id="${prefix}-card-vr" style="display:none">
+      <div class="card-title">Vale Refeição</div>
+      <div class="form-grid"><div class="fg"><label>Valor/dia (R$)</label><input type="number" id="${prefix}-vr" step="0.01" min="0" value="${fnum(c?.vr)||''}"></div></div>
+    </div>
+    <div class="card" id="${prefix}-card-cafe" style="display:none">
+      <div class="card-title">Café da Manhã</div>
+      <div class="form-grid"><div class="fg"><label>Valor/dia (R$)</label><input type="number" id="${prefix}-cafe" step="0.01" min="0" value="${fnum(c?.cafe)||''}"></div></div>
+    </div>
+    <div class="card" id="${prefix}-card-mob" style="display:none">
+      <div class="card-title">Tipo de Transporte</div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="fg span2"><label>Tipo</label>
+          <select id="${prefix}-mobilidade" onchange="toggleMob('${prefix}')">
+            <option value="vt" ${mob==='vt'?'selected':''}>Vale Transporte (VT)</option>
+            <option value="combustivel" ${mob==='combustivel'?'selected':''}>Combustível</option>
+            <option value="perto" ${mob==='perto'?'selected':''}>Mora perto</option>
+            <option value="carro_empresa" ${mob==='carro_empresa'?'selected':''}>Carro da empresa</option>
+          </select>
+        </div>
+      </div>
+      <div id="${prefix}-bloco-comb" style="display:${mob==='combustivel'?'block':'none'}">
+        <div class="form-grid"><div class="fg"><label>Combustível Mensal (R$)</label><input type="number" id="${prefix}-comb" step="0.01" min="0" value="${fnum(c?.comb)||''}"></div></div>
+      </div>
+      <div id="${prefix}-bloco-vt" style="display:${mob==='vt'?'block':'none'}">
+        <table class="vt-tbl">
+          <thead><tr><th>Linha</th><th>Linha de Transporte</th><th>Valor (R$)</th><th>Viagens/dia</th></tr></thead>
+          <tbody>${[1,2,3,4].map(n=>`<tr>
+            <td style="font-weight:700;color:var(--blue)">L${n}</td>
+            <td><select id="${prefix}-vt-sel${n}" onchange="onVTSelect(${n},'${prefix}')" style="width:100%">${vtOptions(c?c['cod'+n]||'':'')}</select>
+              <input type="hidden" id="${prefix}-vt-tp${n}" value="${c?c['tp'+n]||'':''}">
+              <input type="hidden" id="${prefix}-vt-cod${n}" value="${c?c['cod'+n]||'':''}">
+              <input type="hidden" id="${prefix}-vt-ben${n}" value="${c?c['ben'+n]||'':''}">
+            </td>
+            <td><input type="number" id="${prefix}-vt${n}" step="0.01" min="0" value="${c?fnum(c['vt'+n])||'':''}" style="width:90px"></td>
+            <td><input type="number" id="${prefix}-v${n}" min="0" value="${c?fnum(c['v'+n])||'':''}" style="width:60px"></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function elegCheckHTML(prefix, c){
+  const eleg=c?.elegibilidade||{};
+  const items=[
+    {id:'vr',    label:'🍽️ Vale Refeição',      checked:eleg.vr!==undefined?eleg.vr:fnum(c?.vr)>0},
+    {id:'cafe',  label:'☕ Café da Manhã',        checked:eleg.cafe!==undefined?eleg.cafe:fnum(c?.cafe)>0},
+    {id:'mobilidade',label:'🚗 Mobilidade',       checked:eleg.mobilidade!==undefined?eleg.mobilidade:(fnum(c?.comb)>0||[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0))},
+    {id:'folha', label:'💰 Folha de Pagamento',   checked:eleg.folha!==undefined?eleg.folha:true},
+  ];
+  return items.map(item=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid ${item.checked?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);cursor:pointer;background:${item.checked?'var(--blue-light)':'var(--surface2)'};transition:all .15s" onclick="toggleEleg(this)">
+      <input type="checkbox" name="${prefix}-eleg-${item.id}" id="${prefix}-eleg-${item.id}" ${item.checked?'checked':''}
+        onchange="onElegChange('${prefix}','${item.id}',this.checked)" style="accent-color:var(--blue);width:15px;height:15px">
+      <span style="font-size:13px;font-weight:500">${item.label}</span>
+    </label>`).join('');
+}
+
+function toggleEleg(label){
+  const cb=label.querySelector('input[type=checkbox]');
+  if(!cb) return;
+  label.style.borderColor=cb.checked?'var(--blue)':'var(--border)';
+  label.style.background=cb.checked?'var(--blue-light)':'var(--surface2)';
+}
+
+function onElegChange(prefix, tipo, checked){
+  if(tipo==='vr') document.getElementById(prefix+'-card-vr').style.display=checked?'block':'none';
+  if(tipo==='cafe') document.getElementById(prefix+'-card-cafe').style.display=checked?'block':'none';
+  if(tipo==='mobilidade'){
+    document.getElementById(prefix+'-card-mob').style.display=checked?'block':'none';
+    if(checked) toggleMob(prefix);
+  }
+}
+
+function toggleMob(prefix){
+  const v=document.getElementById(prefix+'-mobilidade')?.value||'perto';
+  const bc=document.getElementById(prefix+'-bloco-comb');
+  const bv=document.getElementById(prefix+'-bloco-vt');
+  if(bc) bc.style.display=v==='combustivel'?'block':'none';
+  if(bv) bv.style.display=v==='vt'?'block':'none';
+}
+
+function initFormDisplay(prefix){
+  ['vr','cafe','mobilidade'].forEach(t=>onElegChange(prefix,t,document.getElementById(prefix+'-eleg-'+t)?.checked||false));
+}
+
+function getColabFromForm(prefix){
+  const mob=document.getElementById(prefix+'-mobilidade')?.value||'perto';
+  const eleg={
+    vr:      document.getElementById(prefix+'-eleg-vr')?.checked||false,
+    cafe:    document.getElementById(prefix+'-eleg-cafe')?.checked||false,
+    mobilidade: document.getElementById(prefix+'-eleg-mobilidade')?.checked||false,
+    folha:   document.getElementById(prefix+'-eleg-folha')?.checked!==false,
+  };
+  return {
+    mat:    document.getElementById(prefix+'-mat')?.value.trim()||'',
+    nome:   (document.getElementById(prefix+'-nome')?.value||'').trim().toUpperCase(),
+    cpf:    document.getElementById(prefix+'-cpf')?.value.trim()||'',
+    cargo:  (document.getElementById(prefix+'-cargo')?.value||'').trim().toUpperCase(),
+    depto:  document.getElementById(prefix+'-depto')?.value.trim()||'',
+    status: document.getElementById(prefix+'-status')?.value||'Ativo',
+    filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
+    mobilidade:mob, elegibilidade:eleg,
+    vr:   eleg.vr?fnum(document.getElementById(prefix+'-vr')?.value):0,
+    cafe: eleg.cafe?fnum(document.getElementById(prefix+'-cafe')?.value):0,
+    comb: (eleg.mobilidade&&mob==='combustivel')?fnum(document.getElementById(prefix+'-comb')?.value):0,
+    vt1:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt1')?.value):0,
+    v1: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v1')?.value):0,
+    vt2:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt2')?.value):0,
+    v2: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v2')?.value):0,
+    vt3:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt3')?.value):0,
+    v3: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v3')?.value):0,
+    vt4:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt4')?.value):0,
+    v4: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v4')?.value):0,
+    tp1:document.getElementById(prefix+'-vt-tp1')?.value||'',
+    cod1:document.getElementById(prefix+'-vt-cod1')?.value||'',
+    ben1:document.getElementById(prefix+'-vt-ben1')?.value||'',
+    tp2:document.getElementById(prefix+'-vt-tp2')?.value||'',
+    cod2:document.getElementById(prefix+'-vt-cod2')?.value||'',
+    ben2:document.getElementById(prefix+'-vt-ben2')?.value||'',
+    tp3:document.getElementById(prefix+'-vt-tp3')?.value||'',
+    cod3:document.getElementById(prefix+'-vt-cod3')?.value||'',
+    ben3:document.getElementById(prefix+'-vt-ben3')?.value||'',
+    tp4:document.getElementById(prefix+'-vt-tp4')?.value||'',
+    cod4:document.getElementById(prefix+'-vt-cod4')?.value||'',
+    ben4:document.getElementById(prefix+'-vt-ben4')?.value||'',
+  };
+}
+
+function verificarDuplic(prefix){
+  const mat=document.getElementById(prefix+'-mat')?.value.trim()||'';
+  const nome=(document.getElementById(prefix+'-nome')?.value||'').trim().toUpperCase();
+  const cpf=(document.getElementById(prefix+'-cpf')?.value||'').trim();
+  const alertas=[];
+  if(mat){const ex=colaboradores.find(c=>c.mat===mat&&c._id!==editColabId);if(ex)alertas.push('Matrícula <strong>'+mat+'</strong> já cadastrada para <strong>'+ex.nome+'</strong>.');}
+  if(nome.length>3){const ex=colaboradores.find(c=>c.nome.toUpperCase()===nome&&c._id!==editColabId);if(ex)alertas.push('Nome já existe (Mat: '+ex.mat+')');}
+  if(cpf.length>8){const cl=cpf.replace(/[^0-9]/g,'');const ex=colaboradores.find(c=>(c.cpf||'').replace(/[^0-9]/g,'')===cl&&c._id!==editColabId);if(ex)alertas.push('CPF já cadastrado para <strong>'+ex.nome+'</strong>.');}
+  const el=document.getElementById(prefix+'-duplic-alert');
+  if(!el) return;
+  el.innerHTML=alertas.length>0?'<div class="alert alert-warning" style="margin-top:8px">'+alertas.join('<br>')+'</div>':'';
+}
+
+async function salvarNovoColab(){
+  const c=getColabFromForm('f');
+  if(!c.nome){toast('Nome é obrigatório','error');return;}
+  if(c.mat&&colaboradores.some(x=>x.mat===c.mat)){if(!confirm('Matrícula '+c.mat+' já existe. Continuar?'))return;}
+  const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
+  c._id=id; c.mobilidade=c.mobilidade||inferMob(c);
+  try{await fsSet('colaboradores',id,c);colaboradores.push(c);toast('Colaborador salvo!','success');limparFormColab('f');}
+  catch(e){toast('Erro: '+e.message,'error');}
+}
+
+function limparFormColab(prefix){
+  ['mat','nome','cpf','cargo','depto','vr','cafe','comb','vt1','v1','vt2','v2','vt3','v3','vt4','v4'].forEach(f=>{
+    const el=document.getElementById(prefix+'-'+f); if(el) el.value='';
+  });
+  const st=document.getElementById(prefix+'-status'); if(st) st.value='Ativo';
+  const fi=document.getElementById(prefix+'-filtro'); if(fi) fi.value='OK';
+  const mob=document.getElementById(prefix+'-mobilidade'); if(mob) mob.value='perto';
+  ['vr','cafe','mobilidade'].forEach(t=>onElegChange(prefix,t,false));
+  const folha=document.getElementById(prefix+'-eleg-folha');
+  if(folha){folha.checked=true;toggleEleg(folha.closest('label'));}
+  const dal=document.getElementById(prefix+'-duplic-alert'); if(dal) dal.innerHTML='';
+}
+
+function abrirEditar(id){
+  editColabId=id;
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const body=document.getElementById('modal-colab-body');
+  const title=document.getElementById('modal-colab-title');
+  if(!body||!title) return;
+  title.textContent='Editar: '+c.nome;
+  body.innerHTML=formColabHTML('e',c);
+  setTimeout(()=>initFormDisplay('e'),50);
+  openModal('modal-colab');
+}
+
+async function salvarColabModal(){
+  if(!editColabId) return;
+  const idx=colaboradores.findIndex(x=>x._id===editColabId); if(idx<0) return;
+  const dados=getColabFromForm('e');
+  dados._id=editColabId;
+  dados.mobilidade=dados.mobilidade||inferMob(dados);
+  Object.assign(colaboradores[idx],dados);
+  try{
+    await fsSet('colaboradores',editColabId,colaboradores[idx]);
+    closeModal('modal-colab');editColabId=null;
+    if(currentPage==='base-lista') renderColabList();
+    toast('Atualizado!','success');
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+async function excluirColab(id,nome){
+  if(!confirm('Excluir "'+nome+'"?')) return;
+  try{
+    await fsDel('colaboradores',id);
+    colaboradores=colaboradores.filter(c=>c._id!==id);
+    renderColabList();toast('Removido.','error');
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
 // ════════════════════════════════════════════════════════════════
 // NAVEGAÇÃO & ROTEAMENTO
 // ════════════════════════════════════════════════════════════════
@@ -599,7 +840,7 @@ function pgBaseLista(){
       <table class="tbl">
         <thead><tr>
           <th>Matrícula</th><th>Nome</th><th>CPF</th><th>Departamento</th>
-          <th>Status</th><th>Elegibilidade</th><th>VR/dia</th><th>Café/dia</th>
+          <th>Status</th><th>Tipo</th><th>Elegibilidade</th><th>VR/dia</th><th>Café/dia</th>
           <th>Transporte</th><th>Ações</th>
         </tr></thead>
         <tbody id="bl-tbody"></tbody>
@@ -655,6 +896,7 @@ function renderColabList(){
     <td><code style="font-size:10px">${c.cpf||'—'}</code></td>
     <td class="text-sm text-muted">${c.depto||'—'}</td>
     <td>${statusBadge(c.status)}</td>
+    <td>${filtroBadge(c.filtro||'OK')}</td>
     <td>${elegBadges(c)}</td>
     <td class="text-sm">${fnum(c.vr)>0?brl(c.vr):'—'}</td>
     <td class="text-sm">${fnum(c.cafe)>0?brl(c.cafe):'—'}</td>
@@ -803,18 +1045,22 @@ function syncIgnorar(tipo, idx){
 function pgBaseCarga(){
   return `
     <div class="page-header">
-      <h2>📥 Carga em Lote</h2>
-      <p>Importe múltiplos colaboradores de uma planilha. Duplicatas serão identificadas.</p>
+      <h2>📥 Importar & Reconciliar Base</h2>
+      <p>Importe uma planilha completa de colaboradores. O sistema compara com a base atual e propõe as ações necessárias.</p>
     </div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px">
-        Colunas esperadas: <strong>Matrícula, Nome, CPF, Cargo, Departamento, Status, VR/dia, Café/dia, Combustível, Mobilidade</strong>
+        <strong>Como funciona:</strong><br>
+        1️⃣ Colaboradores que já existem → sem alteração<br>
+        2️⃣ Na base atual mas não na planilha → pergunta se quer excluir<br>
+        3️⃣ Na planilha mas não na base → pergunta se quer incluir<br>
+        4️⃣ Mesmo CPF com matrículas diferentes → identifica duplicata (CLT+MEI)
       </div>
       <div class="upload-zone" onclick="document.getElementById('carga-file').click()">
         <input type="file" id="carga-file" accept=".xlsx,.xls" onchange="processarCarga(event)">
         <div class="upload-icon">📋</div>
-        <div class="upload-text">Clique para selecionar a planilha</div>
-        <div class="upload-sub">Formato .xlsx ou .xls</div>
+        <div class="upload-text">Clique para selecionar a planilha de colaboradores</div>
+        <div class="upload-sub">Colunas: Matrícula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC), VR/dia, Café/dia, Combustível, Mobilidade</div>
       </div>
       <div id="carga-preview" style="margin-top:14px"></div>
     </div>
@@ -823,6 +1069,10 @@ function pgBaseCarga(){
       <button class="btn btn-success btn-sm" onclick="gerarModeloCarga()">⬇ Baixar modelo</button>
     </div>`;
 }
+
+// Estado da reconciliação
+let reconcPlanilha = [];   // todos da planilha
+let reconcAcoes = {};      // {mat+cpf: 'incluir'|'excluir'|'ok'|'duplic'}
 
 function processarCarga(event){
   const file=event.target.files[0]; if(!file) return;
@@ -836,44 +1086,233 @@ function processarCarga(event){
     const col=(...keys)=>hs.findIndex(h=>keys.some(k=>h.includes(k)));
     const iMat=col('matr'),iNome=col('nome'),iCPF=col('cpf'),iCargo=col('cargo');
     const iDepto=col('depart','depto'),iStat=col('status'),iMob=col('mobil');
-    const iVR=col('vr'),iCafe=col('café','cafe'),iComb=col('comb','combusti');
-    const novos=[],duplic=[];
+    const iFiltro=col('filtro','tipo');
+    const iVR=col('vr/d','vr_d','vr dia','vr'),iCafe=col('café','cafe'),iComb=col('comb','combusti');
+
+    reconcPlanilha=[];
+    reconcAcoes={};
+
     for(let i=hi+1;i<data.length;i++){
       const r=data[i]; if(!r||!r[iNome]||!String(r[iNome]).trim()) continue;
       const mat=String(r[iMat]||'').trim();
+      const cpf=String(r[iCPF]||'').trim().replace(/[^0-9]/g,'');
       const nome=String(r[iNome]||'').trim().toUpperCase();
-      const existe=colaboradores.some(c=>c.mat===mat||(c.nome.toUpperCase()===nome));
-      const c={mat,nome,cpf:String(r[iCPF]||'').trim(),
-        cargo:String(r[iCargo]||'').trim().toUpperCase(),depto:String(r[iDepto]||'').trim(),
+      const filtro=String(r[iFiltro]||'OK').trim().toUpperCase();
+      reconcPlanilha.push({
+        mat,nome,cpf,filtro,
+        cargo:String(r[iCargo]||'').trim().toUpperCase(),
+        depto:String(r[iDepto]||'').trim(),
         status:String(r[iStat]||'Ativo').trim(),
-        vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
         mobilidade:String(r[iMob]||'perto').trim().toLowerCase(),
-        elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true}};
-      if(existe) duplic.push(c); else novos.push(c);
+        vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
+        elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true}
+      });
     }
-    const prev=document.getElementById('carga-preview');
-    if(duplic.length>0){
-      cargaPendente=novos;
-      prev.innerHTML=`
-        <div class="alert alert-warning">
-          ⚠️ <strong>${duplic.length} duplicatas</strong> encontradas e <strong>${novos.length} novos</strong> colaboradores.
-        </div>
-        <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
-          ${duplic.map(c=>`<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:13px">
-            <strong>${c.nome}</strong> — Mat: ${c.mat||'—'} — CPF: ${c.cpf||'—'}
-          </div>`).join('')}
-        </div>
-        <div class="btn-row" style="margin-top:0">
-          <button class="btn btn-ghost" onclick="document.getElementById('carga-preview').innerHTML=''">Cancelar</button>
-          <button class="btn btn-warning" onclick="importarSemDuplic()">⏩ Ignorar duplicatas e importar ${novos.length} novos</button>
-        </div>`;
-    } else {
-      cargaPendente=novos;
-      importarSemDuplic();
-    }
+
+    // Chave de identificação: mat+cpf
+    const chave=(mat,cpf)=>(mat||'')+'|'+(cpf||'').replace(/[^0-9]/g,'');
+    const planilhaKeys=new Set(reconcPlanilha.map(c=>chave(c.mat,c.cpf)));
+    const baseKeys=new Set(colaboradores.map(c=>chave(c.mat,(c.cpf||'').replace(/[^0-9]/g,''))));
+
+    // Identificar grupos
+    const jaExistem=[];
+    const paraIncluir=[];
+    const paraExcluir=[];
+    const duplicatas=[];
+
+    // CPFs que aparecem mais de uma vez na planilha = duplicatas CLT+MEI
+    const cpfCount={};
+    reconcPlanilha.forEach(c=>{if(c.cpf)cpfCount[c.cpf]=(cpfCount[c.cpf]||0)+1;});
+
+    reconcPlanilha.forEach(c=>{
+      const k=chave(c.mat,c.cpf);
+      if(baseKeys.has(k)){
+        jaExistem.push(c);
+        reconcAcoes[k]='ok';
+      } else if(c.cpf&&cpfCount[c.cpf]>1){
+        duplicatas.push(c);
+        reconcAcoes[k]='duplic_pendente';
+      } else {
+        paraIncluir.push(c);
+        reconcAcoes[k]='incluir'; // padrão: incluir
+      }
+    });
+
+    colaboradores.forEach(c=>{
+      const k=chave(c.mat,(c.cpf||''));
+      if(!planilhaKeys.has(k)){
+        paraExcluir.push(c);
+        reconcAcoes[k]='manter'; // padrão: manter (não excluir)
+      }
+    });
+
+    renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas);
     event.target.value='';
   };
   reader.readAsBinaryString(file);
+}
+
+function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
+  const chave=(mat,cpf)=>(mat||'')+'|'+(cpf||'').replace(/[^0-9]/g,'');
+  const prev=document.getElementById('carga-preview'); if(!prev) return;
+
+  let html=`
+    <div class="stats-grid" style="margin-bottom:16px">
+      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${jaExistem.length}</div><div class="stat-label">Já existem (sem alteração)</div></div>
+      <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${paraIncluir.length}</div><div class="stat-label">Novos para incluir</div></div>
+      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${paraExcluir.length}</div><div class="stat-label">Na base mas não na planilha</div></div>
+      <div class="stat-card purple"><div class="stat-val" style="color:var(--purple)">${duplicatas.length}</div><div class="stat-label">Duplicatas (CLT+MEI)</div></div>
+    </div>`;
+
+  // INCLUIR
+  if(paraIncluir.length>0){
+    html+=`<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="color:var(--blue)">🆕 Novos colaboradores — selecione os que deseja incluir</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosIncluir(true)">✅ Selecionar todos</button>
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosIncluir(false)">☐ Desmarcar todos</button>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th style="width:36px"></th><th>Matrícula</th><th>Nome</th><th>CPF</th><th>Departamento</th><th>Filtro</th></tr></thead>
+        <tbody>
+          ${paraIncluir.map((c,i)=>`<tr>
+            <td><input type="checkbox" id="inc-${i}" class="inc-check" data-idx="${i}" checked style="accent-color:var(--blue)"></td>
+            <td><code>${c.mat||'—'}</code></td>
+            <td>${c.nome}</td>
+            <td><code style="font-size:10px">${c.cpf||'—'}</code></td>
+            <td class="text-sm text-muted">${c.depto||'—'}</td>
+            <td>${filtroBadge(c.filtro||'OK')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // EXCLUIR
+  if(paraExcluir.length>0){
+    html+=`<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="color:var(--red)">⚠️ Estão na base mas não na planilha — selecione os que deseja EXCLUIR</div>
+      <div class="alert alert-warning" style="margin-bottom:10px">Por padrão NENHUM está marcado para exclusão. Marque apenas os que confirmar que saíram.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosExcluir(true)">⚠️ Marcar todos para excluir</button>
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosExcluir(false)">☐ Desmarcar todos</button>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th style="width:36px">Excluir?</th><th>Matrícula</th><th>Nome</th><th>CPF</th><th>Departamento</th><th>Status atual</th></tr></thead>
+        <tbody>
+          ${paraExcluir.map((c,i)=>`<tr>
+            <td><input type="checkbox" id="exc-${i}" class="exc-check" data-idx="${i}" style="accent-color:var(--red)"></td>
+            <td><code>${c.mat||'—'}</code></td>
+            <td>${c.nome}</td>
+            <td><code style="font-size:10px">${c.cpf||'—'}</code></td>
+            <td class="text-sm text-muted">${c.depto||'—'}</td>
+            <td>${statusBadge(c.status)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // DUPLICATAS
+  if(duplicatas.length>0){
+    html+=`<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="color:var(--purple)">🔀 Possíveis duplicatas (mesmo CPF, matrículas diferentes) — CLT + MEI/Sócio</div>
+      <div class="alert alert-info" style="margin-bottom:10px">Para cada duplicata, selecione o tipo correto para classificar no campo Filtro.</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Incluir?</th><th>Matrícula</th><th>Nome</th><th>CPF</th><th>Classificar como</th></tr></thead>
+        <tbody>
+          ${duplicatas.map((c,i)=>`<tr>
+            <td><input type="checkbox" id="dup-${i}" class="dup-check" data-idx="${i}" checked style="accent-color:var(--purple)"></td>
+            <td><code>${c.mat||'—'}</code></td>
+            <td>${c.nome}</td>
+            <td><code style="font-size:10px">${c.cpf||'—'}</code></td>
+            <td>
+              <select id="dup-filtro-${i}" style="padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
+                <option value="OK" ${c.filtro==='OK'?'selected':''}>✅ OK — CLT normal</option>
+                <option value="DUP" ${c.filtro==='DUP'||!c.filtro?'selected':''}>🔀 DUP — CLT com MEI/Sócio</option>
+                <option value="MEI" ${c.filtro==='MEI'?'selected':''}>🟡 MEI — Contrato MEI</option>
+                <option value="SOC" ${c.filtro==='SOC'?'selected':''}>🔵 SOC — Sócio</option>
+              </select>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // BOTÃO APLICAR
+  html+=`<div class="btn-row">
+    <button class="btn btn-ghost" onclick="document.getElementById('carga-preview').innerHTML=''">Cancelar</button>
+    <button class="btn btn-primary" onclick="aplicarReconciliacao(${JSON.stringify(paraIncluir.map((_,i)=>i))},${JSON.stringify(paraExcluir)},${JSON.stringify(duplicatas.map((_,i)=>i))})">
+      ✅ Aplicar alterações selecionadas
+    </button>
+  </div>`;
+
+  prev.innerHTML=html;
+  // Guardar arrays para uso no apply
+  prev._paraIncluir=paraIncluir;
+  prev._paraExcluir=paraExcluir;
+  prev._duplicatas=duplicatas;
+}
+
+function selecionarTodosIncluir(sel){
+  document.querySelectorAll('.inc-check').forEach(cb=>cb.checked=sel);
+}
+function selecionarTodosExcluir(sel){
+  document.querySelectorAll('.exc-check').forEach(cb=>cb.checked=sel);
+}
+
+async function aplicarReconciliacao(incIdxs, paraExcluirData, dupIdxs){
+  const prev=document.getElementById('carga-preview');
+  const paraIncluir=prev._paraIncluir||[];
+  const paraExcluir=prev._paraExcluir||[];
+  const duplicatas=prev._duplicatas||[];
+
+  // Coletar selecionados para incluir
+  const aIncluir=paraIncluir.filter((_,i)=>document.getElementById('inc-'+i)?.checked);
+  // Coletar selecionados para excluir
+  const aExcluir=paraExcluir.filter((_,i)=>document.getElementById('exc-'+i)?.checked);
+  // Duplicatas marcadas para incluir com filtro selecionado
+  const aDuplic=duplicatas.filter((_,i)=>document.getElementById('dup-'+i)?.checked).map((c,i)=>{
+    const idx=dupIdxs[i];
+    const filtroSel=document.getElementById('dup-filtro-'+i)?.value||'DUP';
+    return {...c,filtro:filtroSel};
+  });
+
+  const b=window._writeBatch(window._db);
+  let nInc=0,nExc=0,nDup=0;
+
+  // Incluir novos
+  [...aIncluir,...aDuplic].forEach(c=>{
+    const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now()+nInc);
+    c._id=id;
+    c.mobilidade=c.mobilidade||inferMob(c);
+    b.set(window._doc('colaboradores',id),c);
+    colaboradores.push(c);
+    nInc++;
+    if(aDuplic.includes(c)) nDup++;
+  });
+
+  // Excluir selecionados
+  aExcluir.forEach(c=>{
+    if(c._id){
+      b.delete(window._doc('colaboradores',c._id));
+      colaboradores=colaboradores.filter(x=>x._id!==c._id);
+      nExc++;
+    }
+  });
+
+  await b.commit();
+
+  prev.innerHTML=`<div class="alert alert-success">
+    ✅ Reconciliação concluída!<br>
+    <strong>${nInc}</strong> incluídos (${nDup} duplicatas classificadas) ·
+    <strong>${nExc}</strong> excluídos ·
+    Base atual: <strong>${colaboradores.length}</strong> colaboradores
+  </div>`;
+
+  setSS('✅ '+colaboradores.length,'ok');
+  toast('✅ Base reconciliada com sucesso!','success');
 }
 
 async function importarSemDuplic(){
