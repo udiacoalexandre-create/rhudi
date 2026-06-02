@@ -53,7 +53,7 @@
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 
 /* LOGIN */
-#login-screen{}
+#login-screen{display:block;position:fixed;inset:0;z-index:999;}
 
 
 
@@ -190,7 +190,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 <!-- APP -->
 <div id="app-screen">
   <header>
-    <h1>🧃 Udiaço — Gestão de Benefícios</h1>
+    <h1>🧃 Udiaço — Sistema de RH</h1>
     <div class="header-right">
       <span id="user-name"></span>
       <span id="sync-status">⏳ Conectando...</span>
@@ -2196,10 +2196,11 @@ function initApp(user){
   document.getElementById('user-name').textContent=user.email;
   Promise.all([carregarColaboradores(),carregarLancamento(),carregarConfig()]).then(()=>{
     renderDashboard();
-    popularFiltrosColab();
-    popularFiltrosLan();
+    if(typeof popularFiltrosColab==='function') popularFiltrosColab();
+    if(typeof popularFiltrosLan==='function') popularFiltrosLan();
     const hoje=new Date();
-    document.getElementById('lan-comp').value=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+    const elComp=document.getElementById('lan-comp');
+    if(elComp) elComp.value=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
   });
 }
 
