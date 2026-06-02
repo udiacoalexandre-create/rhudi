@@ -451,6 +451,93 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 <div id="toast"></div>
 <script>
 
+// ════════════════════════════════════════════════════════════════
+// UTILS & CONSTANTES
+// ════════════════════════════════════════════════════════════════
+const NL = String.fromCharCode(10);
+const SEP = ';';
+
+const brl = v => (parseFloat(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const fnum = v => parseFloat(v)||0;
+const g = id => document.getElementById(id)?.value?.trim()||'';
+
+function toast(msg, tipo='info', dur=3000){
+  const t=document.getElementById('toast');
+  if(!t) return;
+  t.textContent=msg; t.className='show '+tipo;
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.className='',dur);
+}
+
+function setSS(txt,cls){
+  const e=document.getElementById('sync-status');
+  if(e){e.textContent=txt;e.className='topbar-sync '+(cls||'');}
+}
+
+function openModal(id){ document.getElementById(id)?.classList.add('open'); }
+function closeModal(id){ document.getElementById(id)?.classList.remove('open'); }
+
+function getEmpresaList(){
+  const g2={};
+  colaboradores.forEach(c=>{
+    const p=String(c.mat||'').substring(0,4);
+    if(p.length===4) g2[p]=(g2[p]||0)+1;
+  });
+  return Object.keys(g2).sort().map(p=>({cod:p,qtd:g2[p]}));
+}
+
+function getDeptoList(){
+  return [...new Set(colaboradores.map(c=>c.depto||'').filter(d=>d))].sort();
+}
+
+function inferMob(c){
+  if(['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade)) return c.mobilidade;
+  if([1,2,3,4].some(n=>fnum(c['vt'+n])>0)) return 'vt';
+  if(fnum(c.comb)>0) return 'combustivel';
+  return 'perto';
+}
+
+function mobBadge(c){
+  const m=inferMob(c);
+  if(m==='perto') return '<span class="mob-tag mob-perto">🏠 Mora perto</span>';
+  if(m==='carro_empresa') return '<span class="mob-tag mob-carro">🚘 Carro empresa</span>';
+  if(m==='combustivel') return '<span class="mob-tag mob-comb">⛽ '+brl(c.comb)+'/mês</span>';
+  const vt=[1,2,3,4].filter(n=>fnum(c['vt'+n])>0)
+    .map(n=>'<span class="tag-'+(c['tp'+n]||'pec').toLowerCase()+'">'+(c['tp'+n]||'VT')+'</span>').join(' ');
+  return vt||'<span class="mob-tag mob-vt">🚌 VT</span>';
+}
+
+function statusBadge(s){
+  if(s==='Ativo') return '<span class="badge badge-green">● Ativo</span>';
+  if(s==='Inativo') return '<span class="badge badge-gray">● Inativo</span>';
+  if(s==='Férias'||s==='Ferias') return '<span class="badge badge-blue">🏖️ Férias</span>';
+  return '<span class="badge badge-gray">'+(s||'—')+'</span>';
+}
+
+function filtroBadge(f){
+  const map={
+    'OK':'<span class="badge badge-green">✅ OK</span>',
+    'DUP':'<span class="badge badge-purple">🔀 DUP</span>',
+    'MEI':'<span class="badge badge-yellow">🟡 MEI</span>',
+    'SOC':'<span class="badge badge-blue">🔵 SOC</span>',
+  };
+  return map[f]||'<span class="badge badge-gray">'+(f||'OK')+'</span>';
+}
+
+function vtOptions(selCod){
+  return VT_LINHAS.map(l=>'<option value="'+l.cod+'" data-tipo="'+l.tipo+'" '+(l.cod===selCod?'selected':'')+'>'+l.nome+'</option>').join('');
+}
+
+function onVTSelect(n,prefix){
+  const sel=document.getElementById(prefix+'-vt-sel'+n); if(!sel) return;
+  const l=VT_LINHAS.find(x=>x.cod===sel.value)||{cod:'',nome:'',tipo:''};
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
+  set(prefix+'-vt-cod'+n,l.cod);
+  set(prefix+'-vt-ben'+n,l.nome);
+  set(prefix+'-vt-tp'+n,l.tipo);
+}
+
+
 
 // ════════════════════════════════════════════════════════════════
 // FORMULÁRIO DE COLABORADOR
