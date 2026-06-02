@@ -2332,10 +2332,10 @@ function renderFeriasTabela(){
   const stF=document.getElementById('fer-status')?.value||'';
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const em30=new Date(hoje); em30.setDate(em30.getDate()+30);
+  const FERIAS='Ferias'; // evitar problemas de encoding
 
-  let f=colaboradores.filter(c=>
-    c.nome.toLowerCase().includes(q)||(c.mat||'').includes(q));
-  if(stF==='ferias') f=f.filter(c=>c.status==='Férias');
+  let f=colaboradores.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').includes(q));
+  if(stF==='ferias') f=f.filter(c=>c.status==='Ativo'&&c.ferInicio||c.status===FERIAS||(c.status||'').includes('rias'));
   else if(stF==='ativo') f=f.filter(c=>c.status==='Ativo');
   else if(stF==='vencendo') f=f.filter(c=>{
     if(!c.ferVenc) return false;
@@ -2347,38 +2347,52 @@ function renderFeriasTabela(){
   });
 
   const el=document.getElementById('ferias-lista'); if(!el) return;
-  if(f.length===0){el.innerHTML='<div style="text-align:center;padding:24px;color:var(--text2)">Nenhum resultado.</div>';return;}
+  if(f.length===0){
+    el.innerHTML='<div style="text-align:center;padding:24px;color:var(--text2)">Nenhum resultado.</div>';
+    return;
+  }
 
-  el.innerHTML='<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border)"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
-    '<thead><tr style="background:var(--blue);color:#fff">'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Matrícula</th>'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Nome</th>'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Status</th>'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Início Férias</th>'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Fim Férias</th>'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Vencimento</th>'+
-    '<th style="padding:9px 10px;text-align:left;font-weight:500">Situação</th>'+
-    '</tr></thead><tbody>'+
-    f.map((c,i)=>{
-      const venc=c.ferVenc?new Date(c.ferVenc):null;
-      let sit='—';
-      if(c.status==='Férias') sit='<span style="background:#DCFCE7;color:#14532D;padding:2px 8px;border-radius:20px;font-size:11px">🏖️ Em férias</span>';
-      else if(venc){
-        if(venc<hoje) sit='<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:20px;font-size:11px">🔴 Vencido</span>';
-        else if(venc<=em30) sit='<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:20px;font-size:11px">⚠️ Vence em breve</span>';
-        else sit='<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:20px;font-size:11px">✅ OK</span>';
-      }
-      return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F6F2':'')+'">'
-        +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
-        +'<td style="padding:8px 10px;font-size:12px">'+c.nome+'</td>'
-        +'<td style="padding:8px 10px"><span style="padding:2px 7px;border-radius:20px;font-size:11px;background:'+(c.status==='Ativo'?'#D4EDDA':'c.status==='Férias'?'#CCE5FF':'#F8D7DA')+';color:'+(c.status==='Ativo'?'#155724':'c.status==='Férias'?'#004085':'#721c24')+'">'+c.status+'</span></td>'
-        +'<td style="padding:8px 10px">'+(c.ferInicio||'—')+'</td>'
-        +'<td style="padding:8px 10px">'+(c.ferFim||'—')+'</td>'
-        +'<td style="padding:8px 10px">'+(c.ferVenc||'—')+'</td>'
-        +'<td style="padding:8px 10px">'+sit+'</td>'
-        +'</tr>';
-    }).join('')+
-    '</tbody></table></div>';
+  function badgeStatus(st){
+    if(st==='Ativo') return '<span style="background:#D4EDDA;color:#155724;padding:2px 7px;border-radius:20px;font-size:11px">Ativo</span>';
+    if(st==='Inativo') return '<span style="background:#F8D7DA;color:#721c24;padding:2px 7px;border-radius:20px;font-size:11px">Inativo</span>';
+    return '<span style="background:#CCE5FF;color:#004085;padding:2px 7px;border-radius:20px;font-size:11px">'+st+'</span>';
+  }
+
+  function badgeSit(c){
+    const venc=c.ferVenc?new Date(c.ferVenc):null;
+    const emFer=(c.status||'').includes('rias')||(c.status||'').includes('erias');
+    if(emFer) return '<span style="background:#DCFCE7;color:#14532D;padding:2px 8px;border-radius:20px;font-size:11px">Em ferias</span>';
+    if(!venc) return '—';
+    if(venc<hoje) return '<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:20px;font-size:11px">Vencido</span>';
+    if(venc<=em30) return '<span style="background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:20px;font-size:11px">Vence em breve</span>';
+    return '<span style="background:#D1FAE5;color:#065F46;padding:2px 8px;border-radius:20px;font-size:11px">OK</span>';
+  }
+
+  let rows='';
+  f.forEach((c,i)=>{
+    const bg=i%2===0?'background:#F8F6F2':'';
+    rows+='<tr style="border-bottom:1px solid var(--border);'+bg+'">'
+      +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
+      +'<td style="padding:8px 10px;font-size:12px">'+c.nome+'</td>'
+      +'<td style="padding:8px 10px">'+badgeStatus(c.status||'—')+'</td>'
+      +'<td style="padding:8px 10px;font-size:12px">'+(c.ferInicio||'—')+'</td>'
+      +'<td style="padding:8px 10px;font-size:12px">'+(c.ferFim||'—')+'</td>'
+      +'<td style="padding:8px 10px;font-size:12px">'+(c.ferVenc||'—')+'</td>'
+      +'<td style="padding:8px 10px">'+badgeSit(c)+'</td>'
+      +'</tr>';
+  });
+
+  el.innerHTML='<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border)">'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="background:var(--blue);color:#fff">'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Matricula</th>'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Nome</th>'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Status</th>'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Inicio Ferias</th>'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Fim Ferias</th>'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Vencimento</th>'
+    +'<th style="padding:9px 10px;text-align:left;font-weight:500">Situacao</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 async function importarFeriasDados(event){
