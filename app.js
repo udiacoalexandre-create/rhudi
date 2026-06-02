@@ -884,16 +884,16 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
   // BOT\u00C3O APLICAR
   html+=`<div class="btn-row">
     <button class="btn btn-ghost" onclick="document.getElementById('carga-preview').innerHTML=''">Cancelar</button>
-    <button class="btn btn-primary" onclick="aplicarReconciliacao(${JSON.stringify(paraIncluir.map((_,i)=>i))},${JSON.stringify(paraExcluir)},${JSON.stringify(duplicatas.map((_,i)=>i))})">
-      \u2705 Aplicar altera\u00E7\u00F5es selecionadas
+    <button class="btn btn-primary" onclick="aplicarReconciliacao()">
+      Aplicar alteracoes selecionadas
     </button>
   </div>`;
 
   prev.innerHTML=html;
   // Guardar arrays para uso no apply
-  prev._paraIncluir=paraIncluir;
-  prev._paraExcluir=paraExcluir;
-  prev._duplicatas=duplicatas;
+  window._reconcIncluir=paraIncluir;
+  window._reconcExcluir=paraExcluir;
+  window._reconcDuplic=duplicatas;
 }
 
 function selecionarTodosIncluir(sel){
@@ -903,11 +903,12 @@ function selecionarTodosExcluir(sel){
   document.querySelectorAll('.exc-check').forEach(cb=>cb.checked=sel);
 }
 
-async function aplicarReconciliacao(incIdxs, paraExcluirData, dupIdxs){
+async function aplicarReconciliacao(){
   const prev=document.getElementById('carga-preview');
-  const paraIncluir=prev._paraIncluir||[];
-  const paraExcluir=prev._paraExcluir||[];
-  const duplicatas=prev._duplicatas||[];
+  const paraIncluir=window._reconcIncluir||[];
+  const paraExcluir=window._reconcExcluir||[];
+  const duplicatas=window._reconcDuplic||[];
+  const dupIdxs=duplicatas.map((_,i)=>i);
 
   // Coletar selecionados para incluir
   const aIncluir=paraIncluir.filter((_,i)=>document.getElementById('inc-'+i)?.checked);
