@@ -552,6 +552,7 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>Matrícula</label><input type="text" id="${prefix}-mat" value="${c?.mat||''}" oninput="verificarDuplic('${prefix}')"></div>
         <div class="fg span2"><label>Nome Completo *</label><input type="text" id="${prefix}-nome" value="${c?.nome||''}" oninput="verificarDuplic('${prefix}')"></div>
         <div class="fg"><label>CPF</label><input type="text" id="${prefix}-cpf" value="${c?.cpf||''}" oninput="verificarDuplic('${prefix}')"></div>
+        <div class="fg"><label>Data de Admissão</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
         <div class="fg"><label>Status</label>
@@ -676,6 +677,7 @@ function getColabFromForm(prefix){
     mat:    document.getElementById(prefix+'-mat')?.value.trim()||'',
     nome:   (document.getElementById(prefix+'-nome')?.value||'').trim().toUpperCase(),
     cpf:    document.getElementById(prefix+'-cpf')?.value.trim()||'',
+    admissao: document.getElementById(prefix+'-admissao')?.value||'',
     cargo:  (document.getElementById(prefix+'-cargo')?.value||'').trim().toUpperCase(),
     depto:  document.getElementById(prefix+'-depto')?.value.trim()||'',
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
@@ -926,7 +928,7 @@ function pgBaseLista(){
     <div class="tbl-wrap">
       <table class="tbl">
         <thead><tr>
-          <th>Matrícula</th><th>Nome</th><th>CPF</th><th>Departamento</th>
+          <th>Matrícula</th><th>Nome</th><th>CPF</th><th>Admissão</th><th>Departamento</th>
           <th>Status</th><th>Tipo</th><th>Elegibilidade</th><th>VR/dia</th><th>Café/dia</th>
           <th>Transporte</th><th>Ações</th>
         </tr></thead>
@@ -981,6 +983,7 @@ function renderColabList(){
     <td><code>${c.mat||'—'}</code></td>
     <td><strong style="font-size:13px">${c.nome}</strong>${c.cargo?'<br><span class="text-xs text-muted">'+c.cargo+'</span>':''}</td>
     <td><code style="font-size:10px">${c.cpf||'—'}</code></td>
+    <td class="text-xs text-muted">${c.admissao||'—'}</td>
     <td class="text-sm text-muted">${c.depto||'—'}</td>
     <td>${statusBadge(c.status)}</td>
     <td>${filtroBadge(c.filtro||'OK')}</td>
@@ -1174,6 +1177,7 @@ function processarCarga(event){
     const iMat=col('matr'),iNome=col('nome'),iCPF=col('cpf'),iCargo=col('cargo');
     const iDepto=col('depart','depto'),iStat=col('status'),iMob=col('mobil');
     const iFiltro=col('filtro','tipo');
+    const iAdm=col('admiss','admis');
     const iVR=col('vr/d','vr_d','vr dia','vr'),iCafe=col('café','cafe'),iComb=col('comb','combusti');
 
     reconcPlanilha=[];
@@ -1190,6 +1194,7 @@ function processarCarga(event){
         cargo:String(r[iCargo]||'').trim().toUpperCase(),
         depto:String(r[iDepto]||'').trim(),
         status:String(r[iStat]||'Ativo').trim(),
+        admissao:r[iAdm]?new Date(r[iAdm]).toISOString().split('T')[0]:'',
         mobilidade:String(r[iMob]||'perto').trim().toLowerCase(),
         vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
         elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true}
@@ -2142,7 +2147,7 @@ function exportarBase(){
   const rows=[['Matrícula','Nome','CPF','Cargo','Departamento','Status','Mobilidade','VR/dia','Café/dia','Combustível',
     'VT L1','Viag L1','Tipo L1','Cod L1','VT L2','Viag L2','Tipo L2','Cod L2',
     'VT L3','Viag L3','Tipo L3','Cod L3','VT L4','Viag L4','Tipo L4','Cod L4',
-    'Eleg.VR','Eleg.Café','Eleg.Mob','Eleg.Folha'],
+    'Admissão','Eleg.VR','Eleg.Café','Eleg.Mob','Eleg.Folha'],
     ...colaboradores.map(c=>{
       const e=c.elegibilidade||{};
       return [c.mat,c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.status,c.mobilidade||'perto',
@@ -2151,7 +2156,7 @@ function exportarBase(){
         fnum(c.vt2),fnum(c.v2),c.tp2||'',c.cod2||'',
         fnum(c.vt3),fnum(c.v3),c.tp3||'',c.cod3||'',
         fnum(c.vt4),fnum(c.v4),c.tp4||'',c.cod4||'',
-        e.vr?'SIM':'NÃO',e.cafe?'SIM':'NÃO',e.mobilidade?'SIM':'NÃO',e.folha!==false?'SIM':'NÃO'];
+        c.admissao||'',e.vr?'SIM':'NÃO',e.cafe?'SIM':'NÃO',e.mobilidade?'SIM':'NÃO',e.folha!==false?'SIM':'NÃO'];
     })];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Colaboradores');
