@@ -2588,6 +2588,78 @@ function renderDashMain(){
 // ════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+// FIREBASE — CARREGAR DADOS
+// ════════════════════════════════════════════════════════════════
+async function loadColaboradores(){
+  setSS('⏳ Carregando...','');
+  try{
+    const snap=await window._getDocs(window._col('colaboradores'));
+    colaboradores=[];
+    const semMob=[];
+    snap.forEach(d=>{
+      const c={...d.data(),_id:d.id};
+      if(!['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade)){
+        c.mobilidade=inferMob(c); semMob.push(c);
+      }
+      colaboradores.push(c);
+    });
+    if(colaboradores.length===0){
+      setSS('✅ 0 colaboradores','ok');
+    } else {
+      setSS('✅ '+colaboradores.length+' colaboradores','ok');
+      // Salvar mobilidade inferida no Firebase
+      if(semMob.length>0){
+        for(let i=0;i<semMob.length;i+=400){
+          const b=window._writeBatch(window._db);
+          semMob.slice(i,i+400).forEach(c=>b.set(window._doc('colaboradores',c._id),c));
+          await b.commit();
+        }
+      }
+    }
+  }catch(e){
+    setSS('❌ Erro','err');
+    toast('Erro ao carregar: '+e.message,'error');
+  }
+}
+
+async function loadLancamento(){
+  try{
+    const snap=await window._getDocs(window._col('lancamento'));
+    lancamento={};
+    snap.forEach(d=>lancamento[d.id]=d.data());
+  }catch(e){ console.error('Erro lancamento:',e); }
+}
+
+async function loadConfig(){
+  try{
+    const snap=await window._getDocs(window._col('config'));
+    snap.forEach(d=>{
+      if(d.id==='calculo'){
+        const c=d.data();
+        const setR=(nm,v)=>{const el=document.querySelector('input[name="'+nm+'"][value="'+v+'"]');if(el)el.checked=true;};
+        setR('cfg-vr',c.tipoVR||'mult');
+        setR('cfg-cafe',c.tipoCafe||'fixo');
+        setR('cfg-comb',c.tipoComb||'prop');
+        setR('cfg-vt',c.tipoVT||'mult');
+      }
+    });
+  }catch(e){ console.error('Erro config:',e); }
+}
+
+async function fsSet(col,id,data){
+  await window._setDoc(window._doc(col,id),data);
+}
+
+async function fsDel(col,id){
+  await window._deleteDoc(window._doc(col,id));
+}
+
+async function fsSetLan(mat,data){
+  await fsSet('lancamento',mat,data);
+}
+
 function initApp(user){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-screen').style.display='flex';
