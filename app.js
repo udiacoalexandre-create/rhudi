@@ -394,7 +394,7 @@ function showPage(id){
 
 function renderPage(id){
   const pages={
-    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-novo':pgBaseNovo,
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-novo':pgBaseNovo,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
@@ -2666,6 +2666,31 @@ Object.values(EVENTOS_FOLHA).forEach(tab=>Object.values(tab).forEach(g=>Object.a
 // Eventos nao mapeados (adicionados pelo usuario via sessao)
 let eventosCustom = {};
 
+// ════════════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════════════
+function fazerLogin(){
+  const email=document.getElementById('login-email')?.value.trim()||'';
+  const senha=document.getElementById('login-senha')?.value||'';
+  const errEl=document.getElementById('login-error');
+  if(errEl) errEl.style.display='none';
+  if(!email||!senha){
+    if(errEl){errEl.textContent='Preencha e-mail e senha.';errEl.style.display='block';}
+    return;
+  }
+  window._signIn(email,senha).catch(e=>{
+    const msgs={'auth/wrong-password':'Senha incorreta.','auth/user-not-found':'E-mail nao cadastrado.','auth/too-many-requests':'Muitas tentativas. Aguarde.'};
+    if(errEl){errEl.textContent=msgs[e.code]||'E-mail ou senha incorretos.';errEl.style.display='block';}
+  });
+}
+
+function fazerLogout(){
+  window._signOut();
+  document.getElementById('app-screen').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+}
+
+
 function pgFolhaImport(){
   return `
     <div class="page-header"><h2>[imp] Importar Relatorio Senior</h2>
@@ -3186,24 +3211,5 @@ const MODULES_OVERRIDE = {
 // Substituir MODULES
 Object.assign(MODULES, MODULES_OVERRIDE);
 
-// Adicionar premio-main no renderPage
-const _renderPageOrig = renderPage;
-function renderPage(id){
-  if(id==='premio-main') return pgPremioAssiduidade();
-  if(id==='base-import') return pgBaseImport();
-  return _renderPageOrig(id);
-}
-
-// Override afterRender
-const _afterRenderOrig = afterRender;
-function afterRender(id){
-  if(id==='base-novo') setTimeout(()=>initDeptoAutocomplete('f'),100);
-  if(id==='base-lista') renderColabList();
-  if(id==='ben-lancamento'){popularLanFiltros();renderLancamento();}
-  if(id==='ben-historico') renderHistorico();
-  if(id==='folha-view') renderFolhaView();
-  if(id==='fer-radar') renderFerRadar();
-  if(id==='dash-main') renderDashMain();
-  if(id==='premio-main') {} // nada a fazer no init
-}
+// Novas paginas registradas diretamente (sem override recursivo)
 
