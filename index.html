@@ -346,6 +346,9 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .dash-section { margin-bottom: 24px; }
 .dash-section-title { font-size: 13px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 
+.dot-verde{background:var(--green)}.dot-amarelo{background:var(--yellow)}.dot-laranja{background:var(--orange)}.dot-vermelho{background:var(--red)}.dot-sem{background:var(--border)}
+.badge-orange{background:#FFF7ED;color:#C2410C}
+
 /* UTIL */
 code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: var(--bg); padding: 1px 5px; border-radius: 3px; }
 .mono { font-family: 'JetBrains Mono', monospace; }
@@ -413,6 +416,9 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     </button>
     <button class="mod-tab" id="tab-ferias" onclick="switchModule('ferias')">
       <span class="mod-icon">🏖️</span> Controle de Férias
+    </button>
+    <button class="mod-tab" id="tab-premio" onclick="switchModule('premio')">
+      <span class="mod-icon">&#127942;</span> Premio Assiduidade
     </button>
     <button class="mod-tab" id="tab-dashboard" onclick="switchModule('dashboard')">
       <span class="mod-icon">📊</span> Dashboard

@@ -394,7 +394,7 @@ function showPage(id){
 
 function renderPage(id){
   const pages={
-    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-novo':pgBaseNovo,
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-novo':pgBaseNovo,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
@@ -1007,7 +1007,8 @@ function calcBen(c, dr, du){
   }
   const vt=(eleg.mobilidade!==false&&mob==='vt')
     ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
-  return {vr,cafe,comb,vt};
+  const cesta=(c.elegibilidade?.cesta!==false&&c.status!=='Inativo')?185:0;
+  return {vr,cafe,comb,vt,cesta};
 }
 
 function calcMob(val,dr,du){
@@ -1202,8 +1203,8 @@ function renderLancamento(){
     const du2=l.duteis!==undefined?fnum(l.duteis):du;
     const fat=fnum(l.faltas),fev=fnum(l.ferias),ext=fnum(l.extras);
     const dr=Math.max(0,du2-fat-fev+ext);
-    const {vr,cafe,comb,vt}=calcBen(c,dr,du2);
-    const total=vr+cafe+comb+vt;
+    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
+    const total=vr+cafe+comb+vt+cesta;
     const dis=locked?'disabled':'' ;
     return `<tr>
       <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
@@ -2329,4 +2330,880 @@ waitFirebase(()=>{
     }
   });
 });
+
+
+// ════════════════════════════════════════════════════════════════
+// BASE: IMPORTAR / SYNC (unificado)
+// ════════════════════════════════════════════════════════════════
+function pgBaseImport(){
+  return `
+    <div class="page-header">
+      <h2>[sync] Importar / Sincronizar Base</h2>
+      <p>Dois modos: Sync Senior (status/demissoes/ferias) ou Carga Completa (reconciliacao total).</p>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Modo de importacao</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;padding:12px 18px;border:2px solid var(--blue);border-radius:var(--radius);cursor:pointer;background:var(--blue-light);flex:1;min-width:220px">
+          <input type="radio" name="import-modo" value="sync" checked style="accent-color:var(--blue)">
+          <div>
+            <div style="font-weight:600;font-size:14px">Sync Senior</div>
+            <div class="text-xs text-muted">Apenas Matricula + Nome + CPF. Detecta novos, demissoes e ferias.</div>
+          </div>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;padding:12px 18px;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer;background:var(--surface2);flex:1;min-width:220px">
+          <input type="radio" name="import-modo" value="carga" style="accent-color:var(--blue)">
+          <div>
+            <div style="font-weight:600;font-size:14px">Carga Completa</div>
+            <div class="text-xs text-muted">Todos os campos. Reconciliacao completa: novos, excluir, duplicatas CLT+MEI.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="alert alert-info" style="margin-bottom:14px" id="import-hint">
+        <strong>Sync Senior:</strong> Colunas esperadas: Matricula (ou Cadastro), Nome, CPF.
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('import-file').click()">
+        <input type="file" id="import-file" accept=".xlsx,.xls" onchange="processarImport(event)">
+        <div class="upload-icon">[sync]</div>
+        <div class="upload-text">Clique para selecionar o arquivo</div>
+        <div class="upload-sub">.xlsx ou .xls</div>
+      </div>
+      <div id="import-preview" style="margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Modelo de planilha para Carga Completa</div>
+      <button class="btn btn-success btn-sm" onclick="gerarModeloCarga()">Baixar modelo</button>
+    </div>`;
+}
+
+function processarImport(event){
+  const file=event.target.files[0]; if(!file) return;
+  const modo=document.querySelector('input[name="import-modo"]:checked')?.value||'sync';
+  if(modo==='sync') processarSync(event);
+  else processarCarga(event);
+}
+
+// Atualizar hint ao mudar modo
+document.addEventListener('change', function(e){
+  if(e.target.name==='import-modo'){
+    const hint=document.getElementById('import-hint');
+    if(!hint) return;
+    if(e.target.value==='sync'){
+      hint.innerHTML='<strong>Sync Senior:</strong> Colunas: Matricula (ou Cadastro), Nome, CPF.';
+    } else {
+      hint.innerHTML='<strong>Carga Completa:</strong> Colunas: Matricula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC/PART), VR/dia, Cafe/dia, Combustivel, Mobilidade.';
+    }
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+// BASE: DROPDOWN DE DEPARTAMENTO (autocomplete)
+// ════════════════════════════════════════════════════════════════
+function initDeptoAutocomplete(prefix){
+  const input=document.getElementById(prefix+'-depto');
+  if(!input) return;
+  const deptos=getDeptoList();
+  if(deptos.length===0) return;
+
+  // Criar datalist
+  let dl=document.getElementById('depto-datalist');
+  if(!dl){
+    dl=document.createElement('datalist');
+    dl.id='depto-datalist';
+    document.body.appendChild(dl);
+  }
+  dl.innerHTML=deptos.map(d=>'<option value="'+d+'">').join('');
+  input.setAttribute('list','depto-datalist');
+  input.setAttribute('autocomplete','off');
+}
+
+// ════════════════════════════════════════════════════════════════
+// PREMIO ASSIDUIDADE
+// ════════════════════════════════════════════════════════════════
+let premioData = null;
+
+function pgPremioAssiduidade(){
+  return `
+    <div class="page-header">
+      <h2>Premio de Assiduidade</h2>
+      <p>Importar relatorio da Senior e calcular elegibilidade. Valor fixo: R$ 226,00</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px" id="premio-stats">
+      <div class="stat-card green"><div class="stat-val" id="ps-elegivel">-</div><div class="stat-label">Tem direito</div></div>
+      <div class="stat-card red"><div class="stat-val" id="ps-nao">-</div><div class="stat-label">Nao tem direito</div></div>
+      <div class="stat-card yellow"><div class="stat-val" id="ps-analisar">-</div><div class="stat-label">Analisar</div></div>
+      <div class="stat-card blue"><div class="stat-val" id="ps-total-val">-</div><div class="stat-label">Total a pagar</div></div>
+    </div>
+
+    <div class="card">
+      <div class="upload-zone" onclick="document.getElementById('premio-file').click()">
+        <input type="file" id="premio-file" accept=".xlsx,.xls" onchange="processarPremio(event)">
+        <div class="upload-icon">[list]</div>
+        <div class="upload-text">Clique para selecionar o relatorio de assiduidade</div>
+        <div class="upload-sub">Colunas: Cadastro, Nome, CPF, Situacao, Atraso, Saida Antecipada, Atestado, Atestado Horas, Atestado Noturno, Faltas, Abono Gestor</div>
+      </div>
+    </div>
+
+    <div id="premio-content" style="margin-top:14px"></div>`;
+}
+
+function parseHora(val){
+  if(!val) return 0;
+  const s=String(val).trim();
+  if(!s) return 0;
+  // formato "1:23h" ou "1:23" ou numero
+  const m=s.match(/(\d+):(\d+)/);
+  if(m) return parseInt(m[1])*60+parseInt(m[2]);
+  return parseFloat(s)||0;
+}
+
+function processarPremio(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
+    const iNome=hs.findIndex(h=>h.includes('nome'));
+    const iCPF=hs.findIndex(h=>h.includes('cpf'));
+    const iSit=hs.findIndex(h=>h.includes('situa'));
+    const iAtr=hs.findIndex(h=>h.includes('atraso'));
+    const iSaida=hs.findIndex(h=>h.includes('saida')||h.includes('saída'));
+    const iAtest=hs.findIndex(h=>h.includes('atestado')&&!h.includes('hora')&&!h.includes('notur'));
+    const iAHor=hs.findIndex(h=>h.includes('atestado hora'));
+    const iANot=hs.findIndex(h=>h.includes('atestado notur'));
+    const iFalt=hs.findIndex(h=>h.includes('falta'));
+    const iAbono=hs.findIndex(h=>h.includes('abono'));
+
+    const resultado=[];
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iNome]) continue;
+      const mat=String(r[iMat]||'').trim();
+      const nome=String(r[iNome]||'').trim().toUpperCase();
+      const cpf=String(r[iCPF]||'').trim().replace(/[^0-9]/g,'');
+      const sit=String(r[iSit]||'').trim();
+
+      // Excluidos automaticamente
+      if(['afastado','inativo','n/a'].some(x=>sit.toLowerCase().includes(x))){
+        resultado.push({mat,nome,cpf,sit,status:'NA',motivo:'Situacao: '+sit,
+          atraso:0,saida:0,atestado:0,aHoras:0,aNoturno:0,faltas:0,abono:0});
+        continue;
+      }
+
+      const atraso=parseHora(r[iAtr]);
+      const saida=parseHora(r[iSaida]);
+      const atestado=parseHora(r[iAtest]);
+      const aHoras=parseHora(r[iAHor]);
+      const aNoturno=parseHora(r[iANot]);
+      const faltas=parseHora(r[iFalt]);
+      const abono=parseHora(r[iAbono]);
+
+      let status, motivo='';
+
+      // Nao tem direito automaticamente
+      if(atestado>0||aHoras>0||aNoturno>0||abono>0){
+        status='NAO';
+        const motivos=[];
+        if(atestado>0) motivos.push('Atestado');
+        if(aHoras>0) motivos.push('Atestado Horas');
+        if(aNoturno>0) motivos.push('Atestado Noturno');
+        if(abono>0) motivos.push('Abono Gestor');
+        motivo=motivos.join(', ');
+      }
+      // Atraso/saida <= 10 min = tem direito
+      else if((atraso===0||atraso<=10)&&(saida===0||saida<=10)){
+        status='SIM';
+        if(atraso>0) motivo='Atraso ate 10min (OK)';
+        if(saida>0) motivo=(motivo?motivo+', ':'')+'Saida antecip. ate 10min (OK)';
+      }
+      // Atraso/saida > 10 min = analisar
+      else if(atraso>10||saida>10){
+        status='ANALISAR';
+        const motivos=[];
+        if(atraso>10) motivos.push('Atraso '+Math.floor(atraso/60)+'h'+String(atraso%60).padStart(2,'0')+'min');
+        if(saida>10) motivos.push('Saida antecip. '+Math.floor(saida/60)+'h'+String(saida%60).padStart(2,'0')+'min');
+        motivo=motivos.join(', ');
+      }
+      else { status='SIM'; }
+
+      resultado.push({mat,nome,cpf,sit,status,motivo,atraso,saida,atestado,aHoras,aNoturno,faltas,abono});
+    }
+
+    premioData=resultado;
+    renderPremioTabela(resultado);
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function renderPremioTabela(dados){
+  const sim=dados.filter(d=>d.status==='SIM').length;
+  const nao=dados.filter(d=>d.status==='NAO').length;
+  const analisar=dados.filter(d=>d.status==='ANALISAR').length;
+  const total=sim*226;
+
+  const setStat=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  setStat('ps-elegivel',sim);
+  setStat('ps-nao',nao);
+  setStat('ps-analisar',analisar);
+  setStat('ps-total-val',brl(total));
+
+  const content=document.getElementById('premio-content'); if(!content) return;
+  content.innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="premio-q" placeholder="Buscar nome ou matricula..." oninput="filtrarPremio()"
+        style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+      <select id="premio-filtro" onchange="filtrarPremio()"
+        style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+        <option value="">Todos</option>
+        <option value="SIM">Tem direito</option>
+        <option value="NAO">Nao tem direito</option>
+        <option value="ANALISAR">Analisar</option>
+      </select>
+      <button class="btn btn-success btn-sm" onclick="exportarPremioCaju()">Exportar Caju CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportarPremioExcel()">Excel</button>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl" id="premio-tbl">
+        <thead><tr>
+          <th>Matricula</th><th>Nome</th><th>CPF</th><th>Situacao</th>
+          <th>Atraso</th><th>Saida Antec.</th><th>Atestado</th><th>Ates.Horas</th>
+          <th>Ates.Noturn</th><th>Faltas</th><th>Abono Gest.</th>
+          <th>Resultado</th><th>Motivo</th><th>Valor</th>
+        </tr></thead>
+        <tbody id="premio-tbody">
+          ${renderPremioRows(dados)}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function fmtMin(min){
+  if(!min) return '-';
+  const h=Math.floor(min/60), m=min%60;
+  return h>0?h+'h'+String(m).padStart(2,'0')+'min':m+'min';
+}
+
+function renderPremioRows(dados){
+  return dados.map((d,i)=>{
+    const cor=d.status==='SIM'?'var(--green)':d.status==='NAO'?'var(--red)':'var(--yellow)';
+    const badge=d.status==='SIM'?'badge-green':d.status==='NAO'?'badge-red':d.status==='ANALISAR'?'badge-yellow':'badge-gray';
+    const label=d.status==='SIM'?'Sim':d.status==='NAO'?'Nao':d.status==='ANALISAR'?'Analisar':'N/A';
+    return '<tr style="background:'+( i%2===0?'#F8F9FB':'')+'">'
+      +'<td><code style="font-size:10px">'+d.mat+'</code></td>'
+      +'<td style="font-size:12px;font-weight:500">'+d.nome+'</td>'
+      +'<td style="font-size:10px">'+d.cpf+'</td>'
+      +'<td style="font-size:11px">'+d.sit+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.atraso>10?'var(--red)':d.atraso>0?'var(--yellow)':'var(--text3)')+'">'+fmtMin(d.atraso)+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.saida>10?'var(--red)':d.saida>0?'var(--yellow)':'var(--text3)')+'">'+fmtMin(d.saida)+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.atestado?'var(--red)':'var(--text3)')+'">'+fmtMin(d.atestado)+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.aHoras?'var(--red)':'var(--text3)')+'">'+fmtMin(d.aHoras)+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.aNoturno?'var(--red)':'var(--text3)')+'">'+fmtMin(d.aNoturno)+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.faltas?'var(--red)':'var(--text3)')+'">'+fmtMin(d.faltas)+'</td>'
+      +'<td style="text-align:center;font-size:11px;color:'+(d.abono?'var(--red)':'var(--text3)')+'">'+fmtMin(d.abono)+'</td>'
+      +'<td style="text-align:center"><span class="badge '+badge+'">'+label+'</span></td>'
+      +'<td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+d.motivo+'">'+d.motivo+'</td>'
+      +'<td style="text-align:right;font-weight:600;color:var(--green);font-family:monospace">'+(d.status==='SIM'?brl(226):'-')+'</td>'
+    +'</tr>';
+  }).join('');
+}
+
+function filtrarPremio(){
+  if(!premioData) return;
+  const q=(document.getElementById('premio-q')?.value||'').toLowerCase();
+  const f=document.getElementById('premio-filtro')?.value||'';
+  let dados=premioData;
+  if(q) dados=dados.filter(d=>d.nome.toLowerCase().includes(q)||d.mat.includes(q));
+  if(f) dados=dados.filter(d=>d.status===f);
+  const tbody=document.getElementById('premio-tbody');
+  if(tbody) tbody.innerHTML=renderPremioRows(dados);
+}
+
+function exportarPremioCaju(){
+  if(!premioData){toast('Nenhum dado carregado','error');return;}
+  const NL2=String.fromCharCode(10);
+  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+  const linhas=[header];
+  premioData.filter(d=>d.status==='SIM').forEach(d=>{
+    const cpf=(d.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
+    linhas.push([cpf,d.mat||'','226.00','0','0','0','0','0','0','0','0','0','0'].join(';'));
+  });
+  const blob=new Blob([linhas.join(NL2)],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='Premio_Assiduidade_Caju.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('CSV Caju exportado!','success');
+}
+
+function exportarPremioExcel(){
+  if(!premioData){toast('Nenhum dado','error');return;}
+  const rows=[['Matricula','Nome','CPF','Situacao','Atraso','Saida Antec.','Atestado','Ates.Horas','Ates.Noturno','Faltas','Abono Gestor','Resultado','Motivo','Valor'],
+    ...premioData.map(d=>[d.mat,d.nome,d.cpf,d.sit,fmtMin(d.atraso),fmtMin(d.saida),fmtMin(d.atestado),fmtMin(d.aHoras),fmtMin(d.aNoturno),fmtMin(d.faltas),fmtMin(d.abono),d.status,d.motivo,d.status==='SIM'?226:0])];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Premio Assiduidade');
+  XLSX.writeFile(wb,'Premio_Assiduidade.xlsx');
+  toast('Excel exportado!','success');
+}
+
+// ════════════════════════════════════════════════════════════════
+// FOLHA DE PAGAMENTO — 4 TABELAS COM GRUPOS
+// ════════════════════════════════════════════════════════════════
+const EVENTOS_FOLHA = {"proventos":{"REMUNERA\u00c7\u00c3O FIXA":{"1":"Sal\u00e1rio Normal","1600":"Pr\u00f3-Labore","1952":"Periculosidade","1962":"Diferen\u00e7a de Sal\u00e1rio"},"JORNADAS / HORAS ADICIONAIS":{"301":"Horas Extras 60%","257":"Horas Extras 50%","259":"Horas Extras 100%","391":"Hora Extra Noturno 60%","261":"Hora Extra Noturno 50%","265":"DSR Reflexo H.Extras","1950":"Adicional Noturno","1968":"DSR Adicional Noturno","264":"Horas Extras c/100% Noturno","317":"Diferen\u00e7a Hora Extra","601":"M\u00e9dia H.Extras Abono Pec.","273":"Diferen\u00e7a Horas Extras 60"},"AFASTAMENTOS":{"14":"Atestado at\u00e9 15 dias","13":"Horas Licen\u00e7a Paternidade","9":"Horas Acidente Trabalho"},"F\u00c9RIAS":{"5":"Horas F\u00e9rias Diurnas","104":"Horas F\u00e9rias Noturnas","551":"M\u00e9dia Horas Extras F\u00e9rias","553":"Adic.Noturno F\u00e9rias","555":"Periculosidade F\u00e9rias","558":"1/3 F\u00e9rias","600":"Abono Pecuni\u00e1rio F\u00e9rias","606":"Adic.Noturno Abono Pec. F\u00e9rias","609":"1/3 Abono Pecuni\u00e1rio F\u00e9r"},"13\u00ba SAL\u00c1RIO":{"750":"13o Sal\u00e1rio Adiantado","312":"13o Sal S/variav F\u00e9rias"},"REEMBOLSOS / AJUSTES":{"1701":"Estouro do M\u00eas","307":"Reembolso Desc Indevido","389":"Reembolso de DSR","1753":"Devolu\u00e7\u00e3o de INSS","390":"Reembolso de falta(s)","380":"Bolsa Aux\u00edlio (Faculdade)","2151":"Estouro M\u00eas Anterior"},"RESCIS\u00d3RIOS":{"650":"F\u00e9rias Vencidas Rescis\u00e3o","652":"M\u00e9dia H.Extra F\u00e9rias Resc.","659":"1/3 F\u00e9rias Rescis\u00e3o","851":"M\u00e9dia H.Extras 13\u00ba Prop.","900":"13\u00ba Indenizado Rescis\u00e3o","906":"Adic. Noturno 13\u00ba Inden.","951":"M\u00e9dia Horas Extras A.P.I.","1400":"F\u00e9rias Indenizad. Rescis\u00e3o","1406":"Adic. Not. F\u00e9rias Ind. Resc.","1550":"Saldo de Sal\u00e1rio","651":"F\u00e9rias Proporc. Rescis\u00e3o","656":"Adic. Noturno F\u00e9rias Resc.","850":"13\u00ba Sal\u00e1rio Proporc. Resc.","856":"Adic. Noturno 13\u00ba Prop.","901":"M\u00e9dia H.Extras 13\u00ba Inden.","950":"Aviso Pr\u00e9vio Indenizado","956":"Adic. Noturno A.P.I.","1401":"M\u00e9dia H.Ext. F\u00e9r. Ind. Resc.","1408":"1/3 F\u00e9rias Ind. Rescis\u00e3o"}},"encargos":{"ENCARGOS EMPRESA":{"2500":"FGTS","2505":"FGTS 13o Sal\u00e1rio","1555":"FGTS Rescis\u00e3o Depositado","1556":"FGTS 40% Depositado","1557":"FGTS 13o Sal. Dep\u00f3sito","INSS_PAT":"INSS Patronal"}},"adiantamento":{"ADIANTAMENTO SALARIAL":{"2464":"Desc.Adto Salarial"}},"descontos":{"ENCARGOS OBRIGAT\u00d3RIOS":{"2000":"INSS","2001":"INSS Diretor Carn\u00ea","2003":"INSS 13o Sal\u00e1rio","2004":"IRRF","2006":"IRRF Adto Salarial"},"DESCONTOS JORNADA":{"3":"Faltas Integral","4":"Faltas DSR","2457":"Falta Parcial"},"DESCONTOS BENEF\u00cdCIOS":{"343":"Plano De Saude-depend","2453":"Vale Transporte","324":"Coparticip Pl Saude Amil","2462":"Vale Parcelado","347":"Vale"},"DESCONTOS EMPR\u00c9STIMOS":{"680":"Empr Cred do Trabal - 1","681":"Empr Cred do Trabal - 2","682":"Empr Cred do Trabal - 3","692":"Dif Empr Cred Trabal - 3","683":"Empr Cred do Trabal - 4","693":"Dif Empr Cred Trabal - 4","684":"Empr Cred do Trabal - 5","694":"Dif Empr Cred Trabal - 5","685":"Empr Cred do Trabal - 6","695":"Dif Empr Cred Trabal - 6","686":"Empr Cred do Trabal - 7","696":"Dif Empr Cred Trabal - 7","687":"Empr Cred do Trabal - 8","688":"Dif Empr Cred Trabal - 9","698":"Dif Empr Cred Trabal - 9","690":"Dif Empr Cred Trabal - 1","691":"Dif Empr Cred Trabal - 2"},"DESCONTOS F\u00c9RIAS":{"2014":"IRRF F\u00e9rias","2002":"INSS F\u00e9rias","2251":"Pens\u00e3o Judicial F\u00e9rias","2101":"Desconto Adto F\u00e9rias"},"RESCIS\u00d3RIOS":{"1000":"Aviso Pr\u00e9vio Reavido","2454":"L\u00edquido Rescis\u00e3o"},"SINDICAIS / ASSISTENCIAIS":{"341":"Gremio Recreativo","2050":"Mensalidade Sindicato","2055":"Taxa Assistencial"},"PENS\u00c3O":{"2250":"Pens\u00e3o Judicial"}}};
+
+// Flat map para lookup rapido
+const EVENTOS_FLAT = {};
+Object.values(EVENTOS_FOLHA).forEach(tab=>Object.values(tab).forEach(g=>Object.assign(EVENTOS_FLAT,g)));
+
+// Eventos nao mapeados (adicionados pelo usuario via sessao)
+let eventosCustom = {};
+
+function pgFolhaImport(){
+  return `
+    <div class="page-header"><h2>[imp] Importar Relatorio Senior</h2>
+    <p>O relatorio sera classificado em 4 tabelas: Proventos, Encargos, Adiantamento e Descontos.</p></div>
+    <div class="card">
+      <div class="alert alert-info" style="margin-bottom:14px">
+        Formato esperado: <strong>Cadastro | Nome | Evento | Descricao | Valor</strong>
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
+        <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
+        <div class="upload-icon">[$]</div>
+        <div class="upload-text">Selecionar relatorio de eventos</div>
+        <div class="upload-sub">.xlsx ou .xls</div>
+      </div>
+      <div id="folha-import-preview" style="margin-top:14px"></div>
+    </div>`;
+}
+
+function processarFolha(event){
+  const file=event.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('cadastro')||String(v||'').toLowerCase().includes('evento'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
+    const iNome=hs.findIndex(h=>h.includes('nome'));
+    const iEv=hs.findIndex(h=>h==='evento'||(h.includes('evento')&&!h.includes('desc')));
+    const iValor=hs.findIndex(h=>h.includes('valor'));
+
+    const porColab={};
+    const eventosNaoMapeados=new Set();
+
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iMat]) continue;
+      const mat=String(r[iMat]||'').trim();
+      const nome=String(r[iNome]||'').trim().toUpperCase();
+      const ev=String(r[iEv]||'').trim();
+      const val=fnum(r[iValor]);
+      if(!porColab[mat]) porColab[mat]={mat,nome,eventos:{}};
+      if(ev){
+        porColab[mat].eventos[ev]=(porColab[mat].eventos[ev]||0)+val;
+        if(!EVENTOS_FLAT[ev]&&!eventosCustom[ev]) eventosNaoMapeados.add(ev);
+      }
+    }
+
+    // Enriquecer com dados da base
+    const du=fnum(document.getElementById('lan-du')?.value)||22;
+    Object.keys(porColab).forEach(mat=>{
+      const c=colaboradores.find(x=>x.mat===mat);
+      if(c){
+        porColab[mat].depto=c.depto||''; porColab[mat].cargo=c.cargo||'';
+        porColab[mat].cpf=c.cpf||''; porColab[mat].filtro=c.filtro||'OK';
+        porColab[mat].equipe=c.depto||'';
+        const dr=getLanDR(mat,du);
+        const ben=calcBen(c,dr,getLanDU(mat,du));
+        porColab[mat].ben=ben;
+      }
+    });
+
+    folhaData=Object.values(porColab);
+
+    const prev=document.getElementById('folha-import-preview');
+    if(prev){
+      let html='<div class="alert alert-success">'+folhaData.length+' colaboradores processados. ';
+      if(eventosNaoMapeados.size>0){
+        html+='<strong>'+eventosNaoMapeados.size+' eventos nao mapeados.</strong>';
+      }
+      html+='<button class="btn btn-primary btn-sm" onclick="showPage(\'folha-view\')" style="margin-left:10px">Ver Folha</button></div>';
+      if(eventosNaoMapeados.size>0){
+        html+='<div class="card" style="margin-top:12px"><div class="card-title" style="color:var(--red)">Eventos nao mapeados — clique para classificar</div>';
+        eventosNaoMapeados.forEach(ev=>{
+          html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+            +'<code style="min-width:60px">'+ev+'</code>'
+            +'<select id="ev-tab-'+ev+'" style="padding:5px;border:1px solid var(--border);border-radius:4px;font-size:12px">'
+            +'<option value="">-- Aba --</option>'
+            +'<option value="proventos">Proventos</option>'
+            +'<option value="encargos">Encargos</option>'
+            +'<option value="adiantamento">Adiantamento</option>'
+            +'<option value="descontos">Descontos</option>'
+            +'</select>'
+            +'<select id="ev-grupo-'+ev+'" style="padding:5px;border:1px solid var(--border);border-radius:4px;font-size:12px">'
+            +'<option value="">-- Grupo --</option>'
+            +'</select>'
+            +'<input type="text" id="ev-nome-'+ev+'" placeholder="Nome do evento" style="flex:1;padding:5px;border:1px solid var(--border);border-radius:4px;font-size:12px">'
+            +'<button class="btn btn-primary btn-xs" onclick="mapearEvento(\''+ev+'\')">Salvar</button>'
+            +'</div>';
+          // Popular grupos ao mudar aba
+          html+='<script>document.getElementById("ev-tab-'+ev+'").addEventListener("change",function(){popularGrupos("'+ev+'",this.value)});<\/script>';
+        });
+        html+='</div>';
+      }
+      prev.innerHTML=html;
+    }
+    toast('Folha processada: '+folhaData.length+' colaboradores','success');
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function popularGrupos(ev, tab){
+  const sel=document.getElementById('ev-grupo-'+ev); if(!sel) return;
+  const grupos=tab&&EVENTOS_FOLHA[tab]?Object.keys(EVENTOS_FOLHA[tab]):[];
+  sel.innerHTML='<option value="">-- Grupo --</option>'+grupos.map(g=>'<option value="'+g+'">'+g+'</option>').join('');
+}
+
+function mapearEvento(ev){
+  const tab=document.getElementById('ev-tab-'+ev)?.value;
+  const grupo=document.getElementById('ev-grupo-'+ev)?.value;
+  const nome=document.getElementById('ev-nome-'+ev)?.value.trim();
+  if(!tab||!grupo||!nome){toast('Preencha todos os campos','error');return;}
+  if(!EVENTOS_FOLHA[tab][grupo]) EVENTOS_FOLHA[tab][grupo]={};
+  EVENTOS_FOLHA[tab][grupo][ev]=nome;
+  EVENTOS_FLAT[ev]=nome;
+  eventosCustom[ev]=nome;
+  toast('Evento '+ev+' ('+nome+') adicionado em '+tab+' > '+grupo,'success');
+}
+
+function pgFolhaView(){
+  return `
+    <div class="page-header"><h2>[chart] Folha de Pagamento</h2>
+    <p id="folha-sub">Importe um relatorio para visualizar.</p></div>
+    <div id="folha-content">
+      <div class="alert alert-warning">Nenhuma folha importada. Va em "Importar Relatorio" primeiro.</div>
+    </div>`;
+}
+
+function renderFolhaView(){
+  if(!folhaData||folhaData.length===0) return;
+
+  const sub=document.getElementById('folha-sub');
+  if(sub) sub.textContent=folhaData.length+' colaboradores importados';
+
+  const cont=document.getElementById('folha-content'); if(!cont) return;
+
+  // Filtros
+  const empresas=getEmpresaList();
+  const deptos=getDeptoList();
+
+  cont.innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:3px;flex:1">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Buscar</label>
+        <input type="text" id="folha-q" placeholder="Nome ou matricula..." oninput="filtrarFolha()"
+          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Empresa</label>
+        <select id="folha-emp" onchange="filtrarFolha()" style="padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+          <option value="">Todas</option>${empresas.map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Aba</label>
+        <select id="folha-aba" onchange="filtrarFolha()" style="padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+          <option value="proventos">Proventos</option>
+          <option value="encargos">Encargos</option>
+          <option value="adiantamento">Adiantamento</option>
+          <option value="descontos">Descontos</option>
+        </select>
+      </div>
+      <button class="btn btn-success btn-sm" onclick="exportarFolhaExcel()">Excel (modelo completo)</button>
+    </div>
+    <div id="folha-tabela"></div>`;
+
+  renderTabelaFolha();
+}
+
+function filtrarFolha(){
+  renderTabelaFolha();
+}
+
+function getFolhaFiltrada(){
+  if(!folhaData) return [];
+  const q=(document.getElementById('folha-q')?.value||'').toLowerCase();
+  const empF=document.getElementById('folha-emp')?.value||'';
+  let f=folhaData;
+  if(q) f=f.filter(d=>d.nome.toLowerCase().includes(q)||d.mat.includes(q));
+  if(empF) f=f.filter(d=>String(d.mat||'').startsWith(empF));
+  return f;
+}
+
+function renderTabelaFolha(){
+  const dados=getFolhaFiltrada();
+  const aba=document.getElementById('folha-aba')?.value||'proventos';
+  const grupos=EVENTOS_FOLHA[aba]||{};
+  const tbl=document.getElementById('folha-tabela'); if(!tbl) return;
+
+  // Colunas = todos os eventos desta aba que aparecem nos dados
+  const todasCols=[];
+  Object.entries(grupos).forEach(([grupo,evs])=>{
+    Object.keys(evs).forEach(ev=>{
+      if(dados.some(d=>d.eventos&&d.eventos[ev])){
+        todasCols.push({grupo,ev,nome:evs[ev]});
+      }
+    });
+    // Eventos custom nesta aba
+    Object.entries(eventosCustom).forEach(([ev,nome])=>{
+      if(EVENTOS_FOLHA[aba]&&Object.values(EVENTOS_FOLHA[aba]).some(g=>g[ev])&&dados.some(d=>d.eventos&&d.eventos[ev])){
+        if(!todasCols.find(c=>c.ev===ev)) todasCols.push({grupo:'OUTROS',ev,nome});
+      }
+    });
+  });
+
+  if(todasCols.length===0){
+    tbl.innerHTML='<div class="alert alert-info">Nenhum evento desta aba encontrado nos dados importados.</div>';
+    return;
+  }
+
+  // Agrupar colunas por grupo
+  const colPorGrupo={};
+  todasCols.forEach(c=>{
+    if(!colPorGrupo[c.grupo]) colPorGrupo[c.grupo]=[];
+    colPorGrupo[c.grupo].push(c);
+  });
+
+  // Calcular totais por coluna
+  const totais={};
+  todasCols.forEach(c=>{
+    totais[c.ev]=dados.reduce((s,d)=>s+fnum(d.eventos?.[c.ev]),0);
+  });
+
+  let html='<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
+    +'<table style="border-collapse:collapse;font-size:11px;width:100%">';
+
+  // Linha de grupos
+  html+='<thead><tr style="background:#0f2d52;color:rgba(255,255,255,.5)">'
+    +'<th colspan="4" style="padding:6px 10px;text-align:left;background:#0f2d52;position:sticky;left:0;z-index:3">Colaborador</th>';
+  Object.entries(colPorGrupo).forEach(([grupo,cols])=>{
+    html+='<th colspan="'+cols.length+'" style="padding:6px 10px;text-align:center;border-left:2px solid rgba(255,255,255,.1);font-size:9px;letter-spacing:.5px">'+grupo+'</th>';
+  });
+  html+='<th style="padding:6px 10px;text-align:right;background:#1B5E20;color:#fff">TOTAL</th></tr>';
+
+  // Linha de nomes de eventos
+  html+='<tr style="background:#1D4ED8;color:#fff">'
+    +'<th style="padding:8px 10px;text-align:left;position:sticky;left:0;z-index:3;background:#1D4ED8">Mat.</th>'
+    +'<th style="padding:8px 10px;text-align:left;min-width:160px;position:sticky;left:60px;z-index:3;background:#1D4ED8">Nome</th>'
+    +'<th style="padding:8px 10px">CPF</th>'
+    +'<th style="padding:8px 10px">Depto</th>';
+  todasCols.forEach(c=>{
+    html+='<th style="padding:6px 8px;font-size:9px;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis" title="'+c.nome+'">'+c.nome+'</th>';
+  });
+  html+='<th style="padding:8px 10px;text-align:right;background:#1B5E20">Total</th></tr></thead><tbody>';
+
+  // Linhas de dados
+  dados.forEach((d,i)=>{
+    const rowTotal=todasCols.reduce((s,c)=>s+fnum(d.eventos?.[c.ev]),0);
+    html+='<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
+      +'<td style="padding:7px 10px;position:sticky;left:0;background:'+(i%2===0?'#F8F9FB':'#fff')+'"><code style="font-size:10px">'+d.mat+'</code></td>'
+      +'<td style="padding:7px 10px;position:sticky;left:60px;background:'+(i%2===0?'#F8F9FB':'#fff')+';min-width:160px;max-width:180px;overflow:hidden;text-overflow:ellipsis;font-weight:500" title="'+d.nome+'">'+d.nome+'</td>'
+      +'<td style="padding:7px 10px;font-size:10px">'+( d.cpf||'—')+'</td>'
+      +'<td style="padding:7px 10px;font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis">'+( d.depto||'—')+'</td>';
+    todasCols.forEach(c=>{
+      const val=fnum(d.eventos?.[c.ev]);
+      html+='<td style="padding:7px 8px;text-align:right;font-family:monospace;color:'+(val<0?'var(--red)':val===0?'#ccc':'inherit')+'">'+(val!==0?brl(val):'—')+'</td>';
+    });
+    html+='<td style="padding:7px 10px;text-align:right;font-weight:700;font-family:monospace;color:var(--blue)">'+(rowTotal!==0?brl(rowTotal):'—')+'</td>'
+    +'</tr>';
+  });
+
+  // Linha de totais
+  html+='<tr style="background:#1D4ED8;color:#fff;font-weight:700;font-family:monospace">'
+    +'<td colspan="4" style="padding:8px 10px;font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.7)">'+dados.length+' colaboradores</td>';
+  todasCols.forEach(c=>{
+    html+='<td style="padding:8px;text-align:right;font-size:10px">'+(totais[c.ev]?brl(totais[c.ev]):'—')+'</td>';
+  });
+  const totalGeral=todasCols.reduce((s,c)=>s+totais[c.ev],0);
+  html+='<td style="padding:8px 10px;text-align:right;background:#1B5E20;color:#86EFAC;font-size:13px">'+brl(totalGeral)+'</td></tr>';
+
+  html+='</tbody></table></div>';
+  tbl.innerHTML=html;
+}
+
+function exportarFolhaExcel(){
+  if(!folhaData||folhaData.length===0){toast('Nenhuma folha','error');return;}
+  const wb=XLSX.utils.book_new();
+
+  // Gerar uma aba por seção
+  ['proventos','encargos','adiantamento','descontos'].forEach(aba=>{
+    const grupos=EVENTOS_FOLHA[aba]||{};
+    const todasCols=[];
+    Object.entries(grupos).forEach(([grupo,evs])=>{
+      Object.keys(evs).forEach(ev=>{
+        if(folhaData.some(d=>d.eventos&&d.eventos[ev])){
+          todasCols.push({grupo,ev,nome:evs[ev]});
+        }
+      });
+    });
+    if(todasCols.length===0) return;
+
+    const header=['Filtro','Equipe','Matricula','Nome','CPF','Cargo',...todasCols.map(c=>c.nome),'TOTAL'];
+    const rows=[header];
+    folhaData.forEach(d=>{
+      const row=[d.filtro||'OK',d.equipe||'',d.mat,d.nome,d.cpf||'',d.cargo||''];
+      let tot=0;
+      todasCols.forEach(c=>{const v=fnum(d.eventos?.[c.ev]);row.push(v||'');tot+=v;});
+      row.push(tot||'');
+      rows.push(row);
+    });
+    // Total row
+    const totRow=['','','','','',''];
+    todasCols.forEach(c=>totRow.push(folhaData.reduce((s,d)=>s+fnum(d.eventos?.[c.ev]),0)||''));
+    totRow.push(folhaData.reduce((s,d)=>s+todasCols.reduce((s2,c)=>s2+fnum(d.eventos?.[c.ev]),0),0)||'');
+    rows.push(totRow);
+
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb,ws,aba.charAt(0).toUpperCase()+aba.slice(1));
+  });
+
+  XLSX.writeFile(wb,'Folha_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'_')+'.xlsx');
+  toast('Folha exportada em 4 abas!','success');
+}
+
+// ════════════════════════════════════════════════════════════════
+// CONTROLE DE FERIAS — FAROL POR ADMISSAO
+// ════════════════════════════════════════════════════════════════
+function pgFerRadar(){
+  return `
+    <div class="page-header"><h2>Radar de Ferias</h2><p>Farol de vencimento por colaborador.</p></div>
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--green)"></div>Nao vencida</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--yellow)"></div>Vencida 1-9 meses</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--orange)"></div>Vencida 10-12 meses</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencida +12 meses</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--border)"></div>Sem dados</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <select id="fer-emp" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+          <option value="">Todas as empresas</option>
+          ${getEmpresaList().map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
+        </select>
+        <select id="fer-dep" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+          <option value="">Todos os deptos</option>
+          ${getDeptoList().map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
+        </select>
+        <select id="fer-status-filter" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+          <option value="">Todos</option>
+          <option value="verde">Verde - OK</option>
+          <option value="amarelo">Amarelo 1-9m</option>
+          <option value="laranja">Laranja 10-12m</option>
+          <option value="vermelho">Vermelho +12m</option>
+          <option value="sem">Sem dados</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">Excel</button>
+      </div>
+    </div>
+    <div id="fer-stats" style="margin-bottom:16px"></div>
+    <div id="fer-radar-grid"></div>
+    <div id="fer-tabela" style="margin-top:20px"></div>`;
+}
+
+function getFarol(c){
+  // Prioridade: dados de ferVenc (importados) ou calcular por admissao
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+
+  let vencDate=null;
+  if(c.ferVenc){
+    try{ vencDate=new Date(c.ferVenc); }catch(e){}
+  } else if(c.admissao){
+    // Calcular: admissao + 1 ano = primeiro vencimento
+    try{
+      const adm=new Date(c.admissao);
+      // Vencimento = aniversario de admissao + 12 meses aquisitivos
+      vencDate=new Date(adm);
+      vencDate.setFullYear(vencDate.getFullYear()+1);
+      // Se ja passou, calcular proximo ciclo
+      while(vencDate < hoje){
+        vencDate.setFullYear(vencDate.getFullYear()+1);
+      }
+      // O vencimento "real" e o anterior (que venceu)
+      const prevVenc=new Date(vencDate);
+      prevVenc.setFullYear(prevVenc.getFullYear()-1);
+      vencDate=prevVenc < hoje ? prevVenc : vencDate;
+    }catch(e){}
+  }
+
+  if(!vencDate) return {cor:'sem',cls:'dot-sem',meses:0,label:'Sem dados',vencStr:'—',dias:0};
+
+  const diffMs=hoje-vencDate;
+  const meses=Math.round(diffMs/(1000*60*60*24*30));
+  const vencStr=vencDate.toLocaleDateString('pt-BR');
+  const diasDisp=c.ferDias||30;
+
+  if(meses<0) return {cor:'verde',cls:'dot-verde',meses:Math.abs(meses),label:'OK',vencStr,dias:diasDisp};
+  if(meses<=9) return {cor:'amarelo',cls:'dot-amarelo',meses,label:meses+'m',vencStr,dias:diasDisp};
+  if(meses<=12) return {cor:'laranja',cls:'dot-laranja',meses,label:meses+'m',vencStr,dias:diasDisp};
+  return {cor:'vermelho',cls:'dot-vermelho',meses,label:meses+'m',vencStr,dias:diasDisp};
+}
+
+function renderFerRadar(){
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const empF=document.getElementById('fer-emp')?.value||'';
+  const depF=document.getElementById('fer-dep')?.value||'';
+  const stF=document.getElementById('fer-status-filter')?.value||'';
+
+  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
+  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+
+  const comFarol=f.map(c=>({...c,farol:getFarol(c)}));
+
+  if(stF) {
+    const filtered=comFarol.filter(c=>c.farol.cor===stF);
+    renderFarois(filtered);
+  } else {
+    renderFarois(comFarol);
+  }
+
+  // Stats
+  const stats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0};
+  comFarol.forEach(c=>stats[c.farol.cor]=(stats[c.farol.cor]||0)+1);
+  const statsEl=document.getElementById('fer-stats');
+  if(statsEl) statsEl.innerHTML=`
+    <div class="stats-grid" style="margin-bottom:0">
+      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Verde - OK</div></div>
+      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Amarelo 1-9m</div></div>
+      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Laranja 10-12m</div></div>
+      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vermelho +12m</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${stats.sem}</div><div class="stat-label">Sem dados</div></div>
+    </div>`;
+}
+
+function renderFarois(dados){
+  // Ordenar: vermelho > laranja > amarelo > verde > sem
+  const order={vermelho:0,laranja:1,amarelo:2,verde:3,sem:4};
+  const sorted=[...dados].sort((a,b)=>(order[a.farol.cor]||4)-(order[b.farol.cor]||4));
+
+  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--border)'};
+
+  const grid=document.getElementById('fer-radar-grid');
+  if(grid) grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">'+
+    sorted.map(c=>{
+      const f=c.farol;
+      const cor=corMap[f.cor];
+      return '<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;cursor:default" title="'+c.nome+' — Venc: '+f.vencStr+'">'
+        +'<div style="width:36px;height:36px;border-radius:50%;background:'+cor+';margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">'+f.label+'</div>'
+        +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome.split(' ')[0]+' '+c.nome.split(' ').slice(-1)[0]+'</div>'
+        +'<div style="font-size:10px;color:var(--text2)">Venc: '+f.vencStr+'</div>'
+        +'<div style="font-size:11px;font-weight:600;margin-top:4px;color:'+cor+'">'+f.dias+' dias</div>'
+        +'</div>';
+    }).join('')+'</div>';
+
+  // Tabela
+  const tbl=document.getElementById('fer-tabela');
+  if(tbl) tbl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Tabela Detalhada</div>'
+    +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="background:var(--blue-dark);color:#fff">'
+    +'<th style="padding:9px 10px;text-align:left">Status</th>'
+    +'<th style="padding:9px 10px;text-align:left">Matricula</th>'
+    +'<th style="padding:9px 10px;text-align:left">Nome</th>'
+    +'<th style="padding:9px 10px;text-align:left">Departamento</th>'
+    +'<th style="padding:9px 10px;text-align:left">Admissao</th>'
+    +'<th style="padding:9px 10px;text-align:left">Em Ferias</th>'
+    +'<th style="padding:9px 10px;text-align:left">Inicio</th>'
+    +'<th style="padding:9px 10px;text-align:left">Fim</th>'
+    +'<th style="padding:9px 10px;text-align:left">Vencimento</th>'
+    +'<th style="padding:9px 10px;text-align:right">Dias Disp.</th>'
+    +'</tr></thead><tbody>'
+    +sorted.map((c,i)=>{
+      const f=c.farol;
+      const cor=corMap[f.cor];
+      const emFer=(c.status==='Ferias'||c.status==='Ferias')?'<span class="badge badge-blue">Sim</span>':'—';
+      return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
+        +'<td style="padding:8px 10px"><div style="width:20px;height:20px;border-radius:50%;background:'+cor+';display:inline-block;vertical-align:middle;margin-right:6px"></div></td>'
+        +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
+        +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+( c.depto||'—')+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px">'+( c.admissao||'—')+'</td>'
+        +'<td style="padding:8px 10px">'+emFer+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px">'+( c.ferInicio||'—')+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px">'+( c.ferFim||'—')+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px;font-weight:600;color:'+cor+'">'+f.vencStr+'</td>'
+        +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+f.dias+'</td>'
+        +'</tr>';
+    }).join('')+'</tbody></table></div>';
+}
+
+// ════════════════════════════════════════════════════════════════
+// MODULOS — ADICIONAR PREMIO ASSIDUIDADE
+// ════════════════════════════════════════════════════════════════
+// Override do MODULES para incluir premio
+const MODULES_OVERRIDE = {
+  base:{pages:[
+    {id:'base-lista',icon:'[colab]',label:'Colaboradores'},
+    {id:'base-import',icon:'[sync]',label:'Importar / Sync'},
+    {id:'base-novo',icon:'+',label:'Novo Colaborador'},
+  ]},
+  beneficios:{pages:[
+    {id:'ben-lancamento',icon:'[cal]',label:'Lancamento Mensal'},
+    {id:'ben-importar',icon:'[list]',label:'Importar Faltas'},
+    {id:'ben-exportar-caju',icon:'[exp]',label:'Exportar Caju e VT'},
+    {id:'ben-exportar-senior',icon:'[emp]',label:'Exportar Senior'},
+    {id:'ben-historico',icon:'[hist]',label:'Historico'},
+    {id:'ben-config',icon:'[cfg]',label:'Configuracoes'},
+  ]},
+  folha:{pages:[
+    {id:'folha-import',icon:'[imp]',label:'Importar Relatorio'},
+    {id:'folha-view',icon:'[chart]',label:'Visualizar Folha'},
+  ]},
+  ferias:{pages:[
+    {id:'fer-radar',icon:'[radar]',label:'Radar de Ferias'},
+    {id:'fer-import',icon:'[imp]',label:'Importar Dados'},
+  ]},
+  premio:{pages:[
+    {id:'premio-main',icon:'[list]',label:'Premio Assiduidade'},
+  ]},
+  dashboard:{pages:[
+    {id:'dash-main',icon:'[chart]',label:'Dashboard Geral'},
+  ]}
+};
+
+// Substituir MODULES
+Object.assign(MODULES, MODULES_OVERRIDE);
+
+// Adicionar premio-main no renderPage
+const _renderPageOrig = renderPage;
+function renderPage(id){
+  if(id==='premio-main') return pgPremioAssiduidade();
+  if(id==='base-import') return pgBaseImport();
+  return _renderPageOrig(id);
+}
+
+// Override afterRender
+const _afterRenderOrig = afterRender;
+function afterRender(id){
+  if(id==='base-novo') setTimeout(()=>initDeptoAutocomplete('f'),100);
+  if(id==='base-lista') renderColabList();
+  if(id==='ben-lancamento'){popularLanFiltros();renderLancamento();}
+  if(id==='ben-historico') renderHistorico();
+  if(id==='folha-view') renderFolhaView();
+  if(id==='fer-radar') renderFerRadar();
+  if(id==='dash-main') renderDashMain();
+  if(id==='premio-main') {} // nada a fazer no init
+}
 
