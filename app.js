@@ -1,4 +1,38 @@
 
+// ============================================================
+// DADOS & ESTADO GLOBAL
+// ============================================================
+const VT_LINHAS = [
+  {cod:"",nome:"Selecione a linha",tipo:""},
+  {cod:"40115",nome:"40115 - TOP - TREM/METRO - INTERMUNICIPAL - CARTAO TOP",tipo:"TOP"},
+  {cod:"42468",nome:"42468 - OSASCO - MUNICIPAL - URUBUPUNGA - BEM",tipo:"PEC"},
+  {cod:"50132",nome:"50132 - CARAPICUIBA - MUNICIPAL - AETUR - PEC",tipo:"PEC"},
+  {cod:"50128",nome:"50128 - BARUERI - MUNICIPAL - BENFACIL",tipo:"PEC"},
+  {cod:"07001",nome:"07001 - SAO PAULO - SPTRANS - BILHETE UNICO - ONIBUS",tipo:"PEC"},
+  {cod:"07201",nome:"07201 - SAO PAULO - SPTRANS - BILHETE UNICO - INTEGRACAO",tipo:"PEC"},
+  {cod:"07203",nome:"07203 - SAO PAULO - SPTRANS - BILHETE UNICO - TREM",tipo:"PEC"},
+  {cod:"40114",nome:"40114 - SAO PAULO - INTERMUNICIPAL - CARTAO TOP",tipo:"TOP"},
+  {cod:"50140",nome:"50140 - ITAPEVI - MUNICIPAL - BENFACIL",tipo:"PEC"},
+  {cod:"50136",nome:"50136 - FRANCISCO MOURATO - MUNICIPAL - MORATENSE",tipo:"PEC"},
+  {cod:"51200",nome:"51200 - SAO PAULO - MUNICIPAL - CARTAO TOP - TREM",tipo:"TOP"},
+];
+
+const EVENTOS_MAP = {"1":"Salario Normal","1600":"Pro-Labore","1952":"Periculosidade","301":"Horas Extras 60%","257":"Horas Extras 50%","259":"Horas Extras 100%","391":"H.Extra Noturno 60%","261":"H.Extra Noturno 50%","265":"DSR H.Extras","1950":"Adicional Noturno","1968":"DSR Adic.Noturno","264":"H.Extras 100% Not.","317":"Dif. Hora Extra","14":"Atestado 15 dias","13":"Lic. Paternidade","9":"Acid. Trabalho","5":"Ferias Diurnas","551":"Media H.Ext. Ferias","553":"Adic.Not. Ferias","555":"Periculosidade Ferias","558":"1/3 Ferias","600":"Abono Pecuniario","609":"1/3 Abono Pec.","1701":"Estouro Mes","2151":"Estouro Mes Ant.","389":"Reembolso DSR","1753":"Dev. INSS","390":"Reembolso Falta","380":"Bolsa Auxilio","2500":"FGTS","2505":"FGTS 13o","2000":"INSS","2001":"INSS Diretor","2004":"IRRF","2006":"IRRF Adto","3":"Faltas Integral","4":"Faltas DSR","2457":"Falta Parcial","343":"Plano Saude","2453":"VT Desconto","324":"Copart. Saude","680":"Emprestimo 1","681":"Emprestimo 2","682":"Emprestimo 3","683":"Emprestimo 4","684":"Emprestimo 5","685":"Emprestimo 6","2014":"IRRF Ferias","2002":"INSS Ferias","2101":"Desc. Adto Ferias","341":"Gremio","2050":"Sind. Mensalidade","2055":"Taxa Assistencial","2250":"Pensao Judicial","950":"Aviso Previo Ind.","650":"Ferias Vencidas Resc.","651":"Ferias Prop. Resc.","850":"13o Prop. Resc.","900":"13o Inden. Resc.","1400":"Ferias Inden. Resc.","1550":"Saldo Salario","347":"Vale"};
+
+let colaboradores = [];
+let lancamento = {};
+let currentModule = 'base';
+let currentPage = '';
+let editColabId = null;
+let seniorPendente = [];
+let folhaData = null;
+let cargaPendente = [];
+let premioData = null;
+let folhaCompetencia = '';
+let premioCompetencia = '';
+let eventosCustom = {};
+
+
 
 // ============================================================
 // UTILS & CONSTANTES
@@ -2435,7 +2469,7 @@ function initDeptoAutocomplete(prefix){
 // ════════════════════════════════════════════════════════════════
 // PREMIO ASSIDUIDADE
 // ════════════════════════════════════════════════════════════════
-let premioData = null;
+
 
 function pgPremioAssiduidade(){
   return `
@@ -2677,7 +2711,7 @@ const EVENTOS_FLAT = {};
 Object.values(EVENTOS_FOLHA).forEach(tab=>Object.values(tab).forEach(g=>Object.assign(EVENTOS_FLAT,g)));
 
 // Eventos nao mapeados (adicionados pelo usuario via sessao)
-let eventosCustom = {};
+
 
 // ════════════════════════════════════════════════════════════════
 // AUTH
@@ -3232,7 +3266,7 @@ Object.assign(MODULES, MODULES_OVERRIDE);
 // ════════════════════════════════════════════════════════════════
 
 // ── FIX: Folha com competência + fechar competência ──────────────
-let folhaCompetencia = '';
+
 
 function pgFolhaImport(){
   return `
@@ -3263,7 +3297,7 @@ function pgFolhaImport(){
 }
 
 // ── FIX: Premio com competência ──────────────────────────────────
-let premioCompetencia = '';
+
 
 function pgPremioAssiduidade(){
   return `
