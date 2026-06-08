@@ -119,6 +119,13 @@ function formColabHTML(prefix, c){
             <option value="SOC" ${fil==='SOC'?'selected':''}>SOC \u2014 S\u00F3cio</option>
           </select>
         </div>
+        <div class="fg">
+          <label>Dias Fixos (travar jornada)</label>
+          <input type="number" id="${prefix}-dias-fixos" min="0" max="31"
+            value="${c?.diasFixos||''}" placeholder="Opcional - trava os dias deste colab."
+            title="Se preenchido, este colaborador sempre usara este numero de dias independente do botao Aplicar a todos">
+          <span style="font-size:10px;color:var(--text3);margin-top:2px">Deixe vazio para usar os dias uteis do mes. Preenchido = jornada travada.</span>
+        </div>
       </div>
       <div id="${prefix}-duplic-alert"></div>
     </div>
@@ -230,6 +237,7 @@ function getColabFromForm(prefix){
     cargo:  (document.getElementById(prefix+'-cargo')?.value||'').trim().toUpperCase(),
     depto:  document.getElementById(prefix+'-depto')?.value.trim()||'',
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
+    diasFixos: fnum(document.getElementById(prefix+'-dias-fixos')?.value)||null,
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
     mobilidade:mob, elegibilidade:eleg,
     vr:   eleg.vr?fnum(document.getElementById(prefix+'-vr')?.value):0,
@@ -1021,12 +1029,16 @@ function calcMob(val,dr,du){
 function calcVT(c,dr){ return [1,2,3,4].reduce((s,n)=>s+fnum(c['vt'+n])*fnum(c['v'+n]),0)*dr; }
 
 function getLanDU(mat, defaultDU){
+  // 1. Se tem diasFixos no cadastro, usa sempre esse valor
+  const colab=colaboradores.find(c=>c.mat===mat);
+  if(colab?.diasFixos) return fnum(colab.diasFixos);
+  // 2. Se foi definido manualmente no lancamento, usa esse
   const l=lancamento[mat]||{};
   return l.duteis!==undefined?fnum(l.duteis):defaultDU;
 }
 function getLanDR(mat, defaultDU){
+  const du=getLanDU(mat,defaultDU);
   const l=lancamento[mat]||{};
-  const du=l.duteis!==undefined?fnum(l.duteis):defaultDU;
   return Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
 }
 
@@ -1161,7 +1173,7 @@ function renderLancamento(){
   ativos.forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
-    tVR+=vr;tCafe+=cafe;tComb+=comb;tVT+=vt;
+    tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
   });
   // Atualizar rodap\u00E9
   const tfoot=document.getElementById('lan-tfoot');
@@ -1217,6 +1229,7 @@ function renderLancamento(){
       <td class="dias-reais">${dr}</td>
       <td class="total-cell">${vr>0?brl(vr):'\u2014'}</td>
       <td class="total-cell">${cafe>0?brl(cafe):'\u2014'}</td>
+      <td class="total-cell">${cesta>0?brl(cesta):'\u2014'}</td>
       <td class="total-cell">${comb>0?brl(comb):'\u2014'}</td>
       <td class="total-cell">${vt>0?brl(vt):'\u2014'}</td>
       <td class="total-cell" style="color:var(--blue);font-weight:700">${brl(total)}</td>
@@ -1243,7 +1256,7 @@ async function aplicarDiasUteis(){
   const b=window._writeBatch(window._db);
   let travados=0;
   colaboradores.forEach(c=>{
-    if(lancamento[c.mat]?.locked){travados++;return;}
+    if(lancamento[c.mat]?.locked||c.diasFixos){travados++;return;} // pula travados e diasFixos
     if(!lancamento[c.mat]) lancamento[c.mat]={};
     lancamento[c.mat].duteis=du;
     b.set(window._doc('lancamento',c.mat),lancamento[c.mat]);
@@ -1264,7 +1277,7 @@ async function fecharCompetencia(){
     const du2=getLanDU(c.mat,du);
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,du2);
-    tVR+=vr;tCafe+=cafe;tComb+=comb;tVT+=vt;
+    tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
     return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',
       du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),
       extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,comb,vt,total:vr+cafe+comb+vt};
@@ -2146,7 +2159,7 @@ function renderDashMain(){
   colaboradores.filter(c=>c.status!=='Inativo').forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
-    tVR+=vr;tCafe+=cafe;tComb+=comb;tVT+=vt;
+    tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
   });
 
   // F\u00E9rias stats
@@ -3213,3 +3226,427 @@ Object.assign(MODULES, MODULES_OVERRIDE);
 
 // Novas paginas registradas diretamente (sem override recursivo)
 
+
+// ════════════════════════════════════════════════════════════════
+// FIXES ADICIONAIS
+// ════════════════════════════════════════════════════════════════
+
+// ── FIX: Folha com competência + fechar competência ──────────────
+let folhaCompetencia = '';
+
+function pgFolhaImport(){
+  return `
+    <div class="page-header"><h2>Importar Relatorio Senior</h2>
+    <p>Classifica os eventos em 4 tabelas: Proventos, Encargos, Adiantamento e Descontos.</p></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Competencia</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="fg"><label>Mes/Ano</label>
+          <input type="text" id="folha-comp" placeholder="MM/AAAA" style="width:120px"
+            oninput="folhaCompetencia=this.value">
+        </div>
+        <p class="text-sm text-muted">Defina a competencia antes de importar. Use o botao Fechar Competencia apos verificar os dados.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="alert alert-info" style="margin-bottom:14px">
+        Formato esperado: <strong>Cadastro | Nome | Evento | Descricao | Valor</strong>
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
+        <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
+        <div class="upload-icon">[$]</div>
+        <div class="upload-text">Selecionar relatorio de eventos</div>
+        <div class="upload-sub">.xlsx ou .xls</div>
+      </div>
+      <div id="folha-import-preview" style="margin-top:14px"></div>
+    </div>`;
+}
+
+// ── FIX: Premio com competência ──────────────────────────────────
+let premioCompetencia = '';
+
+function pgPremioAssiduidade(){
+  return `
+    <div class="page-header">
+      <h2>Premio de Assiduidade</h2>
+      <p>Importar relatorio da Senior. Valor fixo: R$ 226,00</p>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Competencia</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="fg"><label>Mes/Ano</label>
+          <input type="text" id="premio-comp" placeholder="MM/AAAA" style="width:120px"
+            oninput="premioCompetencia=this.value">
+        </div>
+        <button class="btn btn-success btn-sm" onclick="fecharCompetenциаPremio()">Fechar Competencia</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px">
+      <div class="stat-card green"><div class="stat-val" id="ps-elegivel">-</div><div class="stat-label">Tem direito</div></div>
+      <div class="stat-card red"><div class="stat-val" id="ps-nao">-</div><div class="stat-label">Nao tem direito</div></div>
+      <div class="stat-card yellow"><div class="stat-val" id="ps-analisar">-</div><div class="stat-label">Analisar</div></div>
+      <div class="stat-card blue"><div class="stat-val" id="ps-total-val">-</div><div class="stat-label">Total a pagar</div></div>
+    </div>
+
+    <div class="card">
+      <div class="upload-zone" onclick="document.getElementById('premio-file').click()">
+        <input type="file" id="premio-file" accept=".xlsx,.xls" onchange="processarPremio(event)">
+        <div class="upload-icon">[list]</div>
+        <div class="upload-text">Clique para selecionar o relatorio de assiduidade</div>
+        <div class="upload-sub">Colunas: Cadastro, Nome, CPF, Situacao, Atraso, Saida Antecipada, Atestado, Atestado Horas, Atestado Noturno, Faltas, Abono Gestor</div>
+      </div>
+    </div>
+    <div id="premio-content" style="margin-top:14px"></div>`;
+}
+
+async function fecharCompetenциаPremio(){
+  if(!premioData||premioData.length===0){toast('Importe um relatorio primeiro','error');return;}
+  const comp=document.getElementById('premio-comp')?.value||premioCompetencia;
+  if(!comp){toast('Informe a competencia (MM/AAAA)','error');return;}
+  if(!confirm('Fechar competencia '+comp+' do Premio de Assiduidade?')) return;
+  const sim=premioData.filter(d=>d.status==='SIM');
+  const snap={
+    competencia:comp, modulo:'premio',
+    fechadoEm:new Date().toISOString(),
+    totalElegiveis:sim.length,
+    totalNaoElegiveis:premioData.filter(d=>d.status==='NAO').length,
+    totalAnalisar:premioData.filter(d=>d.status==='ANALISAR').length,
+    valorTotal:sim.length*226,
+    detalhes:premioData
+  };
+  try{
+    await fsSet('historico','premio_'+comp.replace('/','_'),snap);
+    toast('Competencia '+comp+' fechada!','success');
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+// ── FIX: Fechar competência da folha ────────────────────────────
+async function fecharCompetenciaFolha(){
+  if(!folhaData||folhaData.length===0){toast('Importe um relatorio primeiro','error');return;}
+  const comp=document.getElementById('folha-comp')?.value||folhaCompetencia;
+  if(!comp){toast('Informe a competencia','error');return;}
+  if(!confirm('Fechar competencia '+comp+' da Folha?')) return;
+
+  // Calcular totais por aba
+  const totais={proventos:0,encargos:0,adiantamento:0,descontos:0};
+  folhaData.forEach(d=>{
+    Object.entries(EVENTOS_FOLHA).forEach(([aba,grupos])=>{
+      Object.values(grupos).forEach(evs=>{
+        Object.keys(evs).forEach(ev=>{
+          totais[aba]=(totais[aba]||0)+fnum(d.eventos?.[ev]);
+        });
+      });
+    });
+  });
+
+  const snap={
+    competencia:comp, modulo:'folha',
+    fechadoEm:new Date().toISOString(),
+    totalColaboradores:folhaData.length,
+    totais,
+    detalhes:folhaData.map(d=>({mat:d.mat,nome:d.nome,cpf:d.cpf,depto:d.depto,eventos:d.eventos}))
+  };
+  try{
+    await fsSet('historico','folha_'+comp.replace('/','_'),snap);
+    toast('Competencia '+comp+' da Folha fechada!','success');
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+// ── FIX: pgFolhaView com botão fechar competência ───────────────
+function pgFolhaView(){
+  return `
+    <div class="page-header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2>Folha de Pagamento</h2>
+          <p id="folha-sub">Importe um relatorio para visualizar.</p>
+        </div>
+        <button class="btn btn-success btn-sm" onclick="fecharCompetenciaFolha()">Fechar Competencia</button>
+      </div>
+    </div>
+    <div id="folha-content">
+      <div class="alert alert-warning">Nenhuma folha importada. Va em "Importar Relatorio" primeiro.</div>
+    </div>`;
+}
+
+// ── FIX: Controle de férias — Kanban ────────────────────────────
+function pgFerRadar(){
+  const empresas=getEmpresaList();
+  const deptos=getDeptoList();
+  return `
+    <div class="page-header"><h2>Radar de Ferias</h2><p>Visualizacao kanban por status de vencimento.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+      <div class="filter-group" style="flex:1">
+        <label>Buscar</label>
+        <input type="text" id="fer-q" placeholder="Nome ou matricula..." oninput="renderFerRadar()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
+      </div>
+      <div class="filter-group">
+        <label>Empresa</label>
+        <select id="fer-emp" onchange="renderFerRadar()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todas</option>
+          ${empresas.map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Departamento</label>
+        <select id="fer-dep" onchange="renderFerRadar()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos</option>
+          ${deptos.map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">Excel</button>
+    </div>
+    <div id="fer-stats" style="margin-bottom:14px"></div>
+    <div id="fer-kanban"></div>`;
+}
+
+function renderFerRadar(){
+  const empF=document.getElementById('fer-emp')?.value||'';
+  const depF=document.getElementById('fer-dep')?.value||'';
+  const q=(document.getElementById('fer-q')?.value||'').toLowerCase();
+
+  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
+  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+  if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').includes(q));
+
+  const comFarol=f.map(c=>({...c,farol:getFarol(c)}));
+
+  // Stats
+  const stats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0};
+  comFarol.forEach(c=>{ const cor=c.farol.cor; stats[cor]=(stats[cor]||0)+1; });
+
+  const statsEl=document.getElementById('fer-stats');
+  if(statsEl) statsEl.innerHTML=`
+    <div class="stats-grid" style="margin-bottom:0">
+      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Verde - OK</div></div>
+      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Amarelo 1-9m</div></div>
+      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Laranja 10-12m</div></div>
+      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vermelho +12m</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:var(--text3)">${stats.sem}</div><div class="stat-label">Sem dados</div></div>
+    </div>`;
+
+  // Kanban
+  const kanbanEl=document.getElementById('fer-kanban'); if(!kanbanEl) return;
+  const colunas=[
+    {id:'verde',label:'Verde — OK',cor:'var(--green)',bg:'var(--green-light)',border:'#A7F3D0'},
+    {id:'amarelo',label:'Amarelo — 1 a 9 meses',cor:'var(--yellow)',bg:'var(--yellow-light)',border:'#FDE68A'},
+    {id:'laranja',label:'Laranja — 10 a 12 meses',cor:'var(--orange)',bg:'var(--orange-light)',border:'#FED7AA'},
+    {id:'vermelho',label:'Vermelho — mais de 12 meses',cor:'var(--red)',bg:'var(--red-light)',border:'#FECACA'},
+    {id:'sem',label:'Sem dados de ferias',cor:'var(--text3)',bg:'var(--bg)',border:'var(--border)'},
+  ];
+
+  kanbanEl.innerHTML='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start">'
+    +colunas.map(col=>{
+      const cards=comFarol.filter(c=>c.farol.cor===col.id);
+      return '<div style="background:var(--surface);border:1.5px solid '+col.border+';border-radius:var(--radius);overflow:hidden">'
+        +'<div style="background:'+col.bg+';padding:10px 12px;border-bottom:1.5px solid '+col.border+';display:flex;justify-content:space-between;align-items:center">'
+        +'<span style="font-size:12px;font-weight:700;color:'+col.cor+'">'+col.label+'</span>'
+        +'<span style="background:'+col.cor+';color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">'+cards.length+'</span>'
+        +'</div>'
+        +'<div style="padding:8px;max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">'
+        +(cards.length===0?'<div style="text-align:center;padding:16px;font-size:12px;color:var(--text3)">Nenhum</div>'
+          :cards.map(c=>{
+            const f=c.farol;
+            return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px">'
+              +'<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px">'+c.nome+'</div>'
+              +'<div style="font-size:10px;color:var(--text2)">Mat: '+(c.mat||'—')+' | '+( c.depto||'—')+'</div>'
+              +'<div style="font-size:11px;margin-top:5px;display:flex;justify-content:space-between">'
+              +'<span style="color:var(--text2)">Venc: <strong>'+f.vencStr+'</strong></span>'
+              +'<span style="color:'+col.cor+';font-weight:700">'+f.dias+' dias</span>'
+              +'</div>'
+              +(c.admissao?'<div style="font-size:10px;color:var(--text3);margin-top:2px">Adm: '+c.admissao+'</div>':'')
+              +'</div>';
+          }).join(''))
+        +'</div></div>';
+    }).join('')
+    +'</div>';
+}
+
+// ── FIX: Dashboard completo ──────────────────────────────────────
+function pgDashMain(){
+  return `
+    <div class="page-header"><h2>Dashboard Geral</h2><p>Visao consolidada de todos os modulos.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+      <div class="filter-group">
+        <label>Empresa</label>
+        <select id="dash-emp" onchange="renderDashMain()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todas</option>
+          ${getEmpresaList().map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Departamento</label>
+        <select id="dash-dep" onchange="renderDashMain()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos</option>
+          ${getDeptoList().map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Status</label>
+        <select id="dash-status" onchange="renderDashMain()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos</option>
+          <option value="Ativo">Ativos</option>
+          <option value="Inativo">Inativos</option>
+          <option value="Ferias">Em Ferias</option>
+        </select>
+      </div>
+    </div>
+    <div id="dash-content"></div>`;
+}
+
+function renderDashMain(){
+  const du=fnum(document.getElementById('lan-du')?.value)||22;
+  const empF=document.getElementById('dash-emp')?.value||'';
+  const depF=document.getElementById('dash-dep')?.value||'';
+  const stF=document.getElementById('dash-status')?.value||'';
+
+  let f=colaboradores;
+  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
+  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+  if(stF) f=f.filter(c=>c.status===stF);
+
+  const ativos=f.filter(c=>c.status==='Ativo');
+  const inativos=f.filter(c=>c.status==='Inativo');
+  const emFerias=f.filter(c=>['Ferias','Férias'].includes(c.status));
+
+  // Calcular totais benefícios
+  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
+  f.filter(c=>c.status!=='Inativo').forEach(c=>{
+    const dr=getLanDR(c.mat,du);
+    const b=calcBen(c,dr,getLanDU(c.mat,du));
+    tVR+=b.vr; tCafe+=b.cafe; tCesta+=b.cesta||0; tComb+=b.comb; tVT+=b.vt;
+  });
+  const tBen=tVR+tCafe+tCesta+tComb+tVT;
+
+  // Farol de férias
+  const ferStats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0};
+  f.forEach(c=>{ferStats[getFarol(c).cor]=(ferStats[getFarol(c).cor]||0)+1;});
+
+  // Por empresa
+  const empresas=getEmpresaList().filter(e=>!empF||e.cod===empF);
+
+  const el=document.getElementById('dash-content'); if(!el) return;
+
+  el.innerHTML=`
+    <!-- COLABORADORES -->
+    <div class="dash-section">
+      <div class="dash-section-title">Colaboradores</div>
+      <div class="stats-grid">
+        <div class="stat-card blue"><div class="stat-val">${f.length}</div><div class="stat-label">Total filtrado</div></div>
+        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ativos.length}</div><div class="stat-label">Ativos</div><div class="stat-sub">${((ativos.length/Math.max(f.length,1))*100).toFixed(0)}% do total</div></div>
+        <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${emFerias.length}</div><div class="stat-label">Em Ferias</div></div>
+        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${inativos.length}</div><div class="stat-label">Inativos</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${f.filter(c=>c.filtro==='MEI').length}</div><div class="stat-label">MEI</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${f.filter(c=>c.filtro==='SOC').length}</div><div class="stat-label">Socios</div></div>
+        <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${f.filter(c=>c.filtro==='PART').length}</div><div class="stat-label">Particulares</div></div>
+      </div>
+    </div>
+
+    <!-- BENEFÍCIOS -->
+    <div class="dash-section">
+      <div class="dash-section-title">Beneficios — Competencia atual</div>
+      <div class="stats-grid">
+        <div class="stat-card" style="border-left:4px solid var(--orange)">
+          <div class="stat-val" style="font-size:16px;color:var(--orange)">${brl(tVR)}</div>
+          <div class="stat-label">Vale Refeicao</div>
+          <div class="stat-sub">${f.filter(c=>fnum(c.vr)>0).length} colaboradores</div>
+        </div>
+        <div class="stat-card" style="border-left:4px solid var(--yellow)">
+          <div class="stat-val" style="font-size:16px;color:var(--yellow)">${brl(tCafe)}</div>
+          <div class="stat-label">Cafe da Manha</div>
+          <div class="stat-sub">${f.filter(c=>fnum(c.cafe)>0).length} colaboradores</div>
+        </div>
+        <div class="stat-card" style="border-left:4px solid #7B5E00">
+          <div class="stat-val" style="font-size:16px;color:#7B5E00">${brl(tCesta)}</div>
+          <div class="stat-label">Cesta Basica</div>
+          <div class="stat-sub">R$ 185,00 por colaborador</div>
+        </div>
+        <div class="stat-card" style="border-left:4px solid var(--orange)">
+          <div class="stat-val" style="font-size:16px;color:var(--orange)">${brl(tComb)}</div>
+          <div class="stat-label">Combustivel</div>
+          <div class="stat-sub">${f.filter(c=>fnum(c.comb)>0).length} colaboradores</div>
+        </div>
+        <div class="stat-card" style="border-left:4px solid var(--blue)">
+          <div class="stat-val" style="font-size:16px;color:var(--blue)">${brl(tVT)}</div>
+          <div class="stat-label">Vale Transporte</div>
+          <div class="stat-sub">${f.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0)).length} colaboradores</div>
+        </div>
+        <div class="stat-card green" style="grid-column:span 2">
+          <div class="stat-val" style="font-size:22px;color:var(--green)">${brl(tBen)}</div>
+          <div class="stat-label">Total Geral de Beneficios</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FERIAS FAROL -->
+    <div class="dash-section">
+      <div class="dash-section-title">Controle de Ferias</div>
+      <div class="stats-grid" style="margin-bottom:12px">
+        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ferStats.verde}</div><div class="stat-label">Verde - OK</div></div>
+        <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${ferStats.amarelo}</div><div class="stat-label">Amarelo 1-9m</div></div>
+        <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${ferStats.laranja}</div><div class="stat-label">Laranja 10-12m</div></div>
+        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${ferStats.vermelho}</div><div class="stat-label">Vermelho +12m</div></div>
+      </div>
+      <!-- Mini kanban -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        ${[
+          {id:'vermelho',label:'Urgente (+12m)',cor:'var(--red)',bg:'var(--red-light)'},
+          {id:'laranja',label:'Atencao (10-12m)',cor:'var(--orange)',bg:'var(--orange-light)'},
+          {id:'amarelo',label:'Vencido (1-9m)',cor:'var(--yellow)',bg:'var(--yellow-light)'},
+          {id:'verde',label:'OK',cor:'var(--green)',bg:'var(--green-light)'},
+        ].map(col=>{
+          const cards=f.map(c=>({...c,farol:getFarol(c)})).filter(c=>c.farol.cor===col.id).slice(0,8);
+          return '<div style="background:'+col.bg+';border-radius:var(--radius);padding:10px">'
+            +'<div style="font-size:11px;font-weight:700;color:'+col.cor+';margin-bottom:8px">'+col.label+' ('+ferStats[col.id]+')</div>'
+            +cards.map(c=>'<div style="background:rgba(255,255,255,.7);border-radius:4px;padding:5px 8px;margin-bottom:4px;font-size:11px">'
+              +'<strong>'+c.nome.split(' ')[0]+'</strong> — '+c.farol.vencStr+'</div>').join('')
+            +(ferStats[col.id]>8?'<div style="font-size:10px;color:'+col.cor+';text-align:center;margin-top:4px">+mais '+(ferStats[col.id]-8)+'...</div>':'')
+            +'</div>';
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- POR EMPRESA -->
+    <div class="dash-section">
+      <div class="dash-section-title">Por Empresa</div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Empresa</th><th>Total</th><th>Ativos</th><th>Em Ferias</th><th>Inativos</th>
+            <th>VR</th><th>Cafe</th><th>Cesta</th><th>Comb.</th><th>VT</th><th>Total Ben.</th>
+          </tr></thead>
+          <tbody>
+            ${empresas.map(emp=>{
+              const ec=f.filter(c=>String(c.mat||'').startsWith(emp.cod));
+              const ea=ec.filter(c=>c.status==='Ativo').length;
+              const ef=ec.filter(c=>['Ferias','Férias'].includes(c.status)).length;
+              const ei=ec.filter(c=>c.status==='Inativo').length;
+              let evr=0,ecafe=0,ecesta=0,ecomb=0,evt=0;
+              ec.filter(c=>c.status!=='Inativo').forEach(c=>{
+                const b=calcBen(c,getLanDR(c.mat,du),getLanDU(c.mat,du));
+                evr+=b.vr;ecafe+=b.cafe;ecesta+=b.cesta||0;ecomb+=b.comb;evt+=b.vt;
+              });
+              return '<tr>'
+                +'<td><strong>'+emp.cod+'</strong></td>'
+                +'<td>'+ec.length+'</td><td>'+ea+'</td><td>'+ef+'</td><td>'+ei+'</td>'
+                +'<td class="mono text-right">'+(evr?brl(evr):'—')+'</td>'
+                +'<td class="mono text-right">'+(ecafe?brl(ecafe):'—')+'</td>'
+                +'<td class="mono text-right">'+(ecesta?brl(ecesta):'—')+'</td>'
+                +'<td class="mono text-right">'+(ecomb?brl(ecomb):'—')+'</td>'
+                +'<td class="mono text-right">'+(evt?brl(evt):'—')+'</td>'
+                +'<td class="mono text-right" style="font-weight:700;color:var(--green)">'+brl(evr+ecafe+ecesta+ecomb+evt)+'</td>'
+                +'</tr>';
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
