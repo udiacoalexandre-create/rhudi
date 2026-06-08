@@ -453,7 +453,7 @@ function afterRender(id){
   if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
   if(id==='ben-lancamento'){ popularLanFiltros(); renderLancamento(); }
   if(id==='ben-historico') renderHistorico();
-  if(id==='folha-view') renderFolhaView();
+  if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
   if(id==='dash-main') renderDashMain();
 }
@@ -1906,14 +1906,6 @@ function pgFolhaImport(){
     </div>`;
 }
 
-function pgFolhaView(){
-  return `
-    <div class="page-header"><h2> Folha de Pagamento</h2><p id="folha-sub">Importe um relat\u00F3rio para visualizar.</p></div>
-    <div id="folha-content">
-      <div class="alert alert-warning">\u26A0\uFE0F Nenhuma folha importada ainda. Acesse "Importar Relat\u00F3rio" para come\u00E7ar.</div>
-    </div>`;
-}
-
 function processarFolha(event){
   const file=event.target.files[0]; if(!file) return;
   const reader=new FileReader();
@@ -1950,61 +1942,16 @@ function processarFolha(event){
       }
     });
     folhaData=Object.values(porColab);
+    folhaCompetencia=getFolhaComp();
     const prev=document.getElementById('folha-import-preview');
     if(prev) prev.innerHTML=`<div class="alert alert-success">
       \u2705 <strong>${folhaData.length} colaboradores</strong> processados.
-      <button class="btn btn-primary btn-sm" onclick="switchModule('folha');showPage('folha-view')" style="margin-left:10px">Ver Folha \u2192</button>
+      <button class="btn btn-primary btn-sm" onclick="if(currentModule!=='folha'){switchModule('folha');}showPage('folha-view')" style="margin-left:10px">Ver Folha \u2192</button>
     </div>`;
     toast('\u2705 Folha processada: '+folhaData.length+' colaboradores','success');
     event.target.value='';
   };
   reader.readAsBinaryString(file);
-}
-
-function renderFolhaView(){
-  if(!folhaData||folhaData.length===0) return;
-  const todosEv=[...new Set(folhaData.flatMap(d=>Object.keys(d.eventos||{})))].sort((a,b)=>parseInt(a)-parseInt(b));
-  const sub=document.getElementById('folha-sub');
-  if(sub) sub.textContent=`${folhaData.length} colaboradores \u00B7 ${todosEv.length} tipos de eventos`;
-  const cont=document.getElementById('folha-content');
-  if(!cont) return;
-  cont.innerHTML=`
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-      <input type="text" id="folha-q" placeholder=" Buscar..." oninput="filtrarFolha()"
-        style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-      <button class="btn btn-success btn-sm" onclick="exportarFolhaExcel()"> Exportar Excel</button>
-    </div>
-    <div id="folha-count" class="text-xs text-muted" style="margin-bottom:8px">${folhaData.length} colaboradores</div>
-    <div class="folha-wrap">
-      <table class="folha-tbl">
-        <thead>
-          <tr>
-            <th style="min-width:80px;position:sticky;left:0;z-index:2;background:var(--blue-dark)">Matr\u00EDcula</th>
-            <th style="min-width:160px;position:sticky;left:80px;z-index:2;background:var(--blue-dark)">Nome</th>
-            <th style="min-width:120px">CPF</th>
-            <th style="min-width:100px">Departamento</th>
-            ${todosEv.map(ev=>`<th title="${EVENTOS_MAP[ev]||ev}" style="min-width:80px">${EVENTOS_MAP[ev]||('Ev.'+ev)}</th>`).join('')}
-            <th style="background:#1B5E20;min-width:80px">VR\uFE0F VR</th>
-            <th style="background:#1B5E20;min-width:80px">\u2615 Caf\u00E9</th>
-            <th style="background:#1B5E20;min-width:80px">\u26FD Comb.</th>
-            <th style="background:#1B5E20;min-width:80px">VT</th>
-          </tr>
-        </thead>
-        <tbody id="folha-tbody">
-          ${folhaData.map((d,i)=>`<tr style="background:${i%2===0?'#F8F9FB':''}">
-            <td style="text-align:left;position:sticky;left:0;background:${i%2===0?'#F8F9FB':'#fff'}"><code>${d.mat}</code></td>
-            <td style="text-align:left;position:sticky;left:80px;background:${i%2===0?'#F8F9FB':'#fff'};max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${d.nome}">${d.nome}</td>
-            <td style="text-align:left"><code style="font-size:9px">${d.cpf||'\u2014'}</code></td>
-            <td style="text-align:left;font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis">${d.depto||'\u2014'}</td>
-            ${todosEv.map(ev=>d.eventos[ev]?`<td style="color:${fnum(d.eventos[ev])<0?'var(--red)':'inherit'}">${brl(d.eventos[ev])}</td>`:'<td style="color:#d1d5db">\u2014</td>').join('')}
-            <td style="color:var(--orange)">${d.ben?.vr>0?brl(d.ben.vr):'\u2014'}</td>
-            <td style="color:var(--yellow)">${d.ben?.cafe>0?brl(d.ben.cafe):'\u2014'}</td>
-            <td style="color:var(--orange)">${d.ben?.comb>0?brl(d.ben.comb):'\u2014'}</td>
-            <td style="color:var(--blue)">${d.ben?.vt>0?brl(d.ben.vt):'\u2014'}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
 }
 
 function filtrarFolha(){
@@ -2959,53 +2906,12 @@ function adicionarEventoManual(){
   document.getElementById('novo-ev-nome').value='';
 }
 
-function pgFolhaView(){
-  return `
-    <div class="page-header"><h2> Folha de Pagamento</h2>
-    <p id="folha-sub">Importe um relatorio para visualizar.</p></div>
-    <div id="folha-content">
-      <div class="alert alert-warning">Nenhuma folha importada. Va em "Importar Relatorio" primeiro.</div>
-    </div>`;
-}
-
 function renderFolhaView(){
   if(!folhaData||folhaData.length===0) return;
-
+  // Atualizar subtitle
   const sub=document.getElementById('folha-sub');
-  if(sub) sub.textContent=folhaData.length+' colaboradores importados';
-
-  const cont=document.getElementById('folha-content'); if(!cont) return;
-
-  // Filtros
-  const empresas=getEmpresaList();
-  const deptos=getDeptoList();
-
-  cont.innerHTML=`
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end">
-      <div style="display:flex;flex-direction:column;gap:3px;flex:1">
-        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Buscar</label>
-        <input type="text" id="folha-q" placeholder="Nome ou matricula..." oninput="filtrarFolha()"
-          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px">
-        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Empresa</label>
-        <select id="folha-emp" onchange="filtrarFolha()" style="padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todas</option>${empresas.map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
-        </select>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px">
-        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Aba</label>
-        <select id="folha-aba" onchange="filtrarFolha()" style="padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="proventos">Proventos</option>
-          <option value="encargos">Encargos</option>
-          <option value="adiantamento">Adiantamento</option>
-          <option value="descontos">Descontos</option>
-        </select>
-      </div>
-      <button class="btn btn-success btn-sm" onclick="exportarFolhaExcel()">Excel (modelo completo)</button>
-    </div>
-    <div id="folha-tabela"></div>`;
-
+  if(sub) sub.textContent=folhaData.length+' colaboradores | '+folhaCompetencia;
+  // Renderizar a tabela diretamente no folha-tabela
   renderTabelaFolha();
 }
 
