@@ -346,7 +346,7 @@ const MODULES = {
     {id:'base-lista',icon:'👥',label:'Colaboradores'},
     {id:'base-sync',icon:'🔄',label:'Sync Senior'},
     {id:'base-carga',icon:'📥',label:'Carga em Lote'},
-    {id:'base-novo',icon:'\u2795',label:'Novo Colaborador'},
+    {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'📅',label:'Lan\u00E7amento Mensal'},
@@ -382,11 +382,11 @@ function buildSidebar(mod){
   const nav=document.getElementById('sidebar-nav');
   if(!nav) return;
   const pages=MODULES[mod]?.pages||[];
-  nav.innerHTML=pages.map(p=>
-    `<button class="sidebar-btn" id="snav-${p.id}" onclick="showPage('${p.id}')">
-      <span class="s-icon">${p.icon}</span>${p.label}
-    </button>`
-  ).join('');
+  nav.innerHTML=pages.map(p=>{
+    const onclick='showPage(\''+p.id+'\')';
+    const icon=p.icon?'<span class="s-icon">'+p.icon+'</span> ':'';
+    return '<button class="sidebar-btn" id="snav-'+p.id+'" onclick="'+onclick+'">'+icon+p.label+'</button>';
+  }).join('');
 }
 
 function showPage(id){
@@ -417,6 +417,7 @@ function renderPage(id){
 
 function afterRender(id){
   if(id==='base-lista') renderColabList();
+  if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
   if(id==='ben-lancamento'){ popularLanFiltros(); renderLancamento(); }
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') renderFolhaView();
@@ -587,7 +588,7 @@ function pgBaseNovo(){
     <div id="novo-alert"></div>
     ${formColabHTML('f', null)}
     <div class="btn-row">
-      <button class="btn btn-primary" onclick="salvarNovoColab()">[save] Salvar</button>
+      <button class="btn btn-primary" onclick="salvarNovoColab()">Salvar</button>
       <button class="btn btn-ghost" onclick="limparFormColab('f')">\u2716 Limpar</button>
     </div>`;
 }
@@ -1296,7 +1297,7 @@ async function fecharCompetencia(){
 // ============================================================
 function pgBenImportar(){
   return `
-    <div class="page-header"><h2>[list] Importar Faltas</h2><p>Upload da planilha de faltas para atualizar o lan\u00E7amento.</p></div>
+    <div class="page-header"><h2>Importar Faltas</h2><p>Upload da planilha de faltas para atualizar o lan\u00E7amento.</p></div>
     <div class="card">
       <div class="upload-zone" onclick="document.getElementById('faltas-file').click()">
         <input type="file" id="faltas-file" accept=".xlsx,.xls" onchange="importarFaltas(event)">
@@ -3195,7 +3196,7 @@ const MODULES_OVERRIDE = {
   base:{pages:[
     {id:'base-lista',icon:'[colab]',label:'Colaboradores'},
     {id:'base-import',icon:'[sync]',label:'Importar / Sync'},
-    {id:'base-novo',icon:'+',label:'Novo Colaborador'},
+    {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'[cal]',label:'Lancamento Mensal'},
