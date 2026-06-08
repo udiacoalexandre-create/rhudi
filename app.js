@@ -214,10 +214,10 @@ function formColabHTML(prefix, c){
 function elegCheckHTML(prefix, c){
   const eleg=c?.elegibilidade||{};
   const items=[
-    {id:'vr',    label:'VR\uFE0F Vale Refei\u00E7\u00E3o',      checked:eleg.vr!==undefined?eleg.vr:fnum(c?.vr)>0},
-    {id:'cafe',  label:'\u2615 Caf\u00E9 da Manh\u00E3',        checked:eleg.cafe!==undefined?eleg.cafe:fnum(c?.cafe)>0},
-    {id:'mobilidade',label:'Mob Mobilidade',       checked:eleg.mobilidade!==undefined?eleg.mobilidade:(fnum(c?.comb)>0||[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0))},
-    {id:'folha', label:'💰 Folha de Pagamento',   checked:eleg.folha!==undefined?eleg.folha:true},
+    {id:'vr',    label:'Vale Refeicao',      checked:eleg.vr!==undefined?eleg.vr:fnum(c?.vr)>0},
+    {id:'cafe',  label:'Cafe da Manha',        checked:eleg.cafe!==undefined?eleg.cafe:fnum(c?.cafe)>0},
+    {id:'mobilidade',label:'Mobilidade',       checked:eleg.mobilidade!==undefined?eleg.mobilidade:(fnum(c?.comb)>0||[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0))},
+    {id:'folha', label:'Folha de Pagamento',   checked:eleg.folha!==undefined?eleg.folha:true},
   ];
   return items.map(item=>`
     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid ${item.checked?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);cursor:pointer;background:${item.checked?'var(--blue-light)':'var(--surface2)'};transition:all .15s" onclick="toggleEleg(this)">
@@ -1036,7 +1036,7 @@ function getCfg(){
 }
 
 function calcBen(c, dr, du){
-  if(c.status==='Inativo') return {vr:0,cafe:0,comb:0,vt:0};
+  if(c.status==='Inativo') return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
@@ -1049,7 +1049,7 @@ function calcBen(c, dr, du){
   }
   const vt=(eleg.mobilidade!==false&&mob==='vt')
     ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
-  const cesta=(c.elegibilidade?.cesta!==false&&c.status!=='Inativo')?185:0;
+  const cesta=(c.status!=='Inativo')?185:0; // todos os colaboradores ativos tem cesta
   return {vr,cafe,comb,vt,cesta};
 }
 
@@ -1178,6 +1178,75 @@ function popularLanFiltros(){
   const elComp=document.getElementById('lan-comp');
   if(elComp&&!elComp.value)
     elComp.value=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+  // Verificar colaboradores em ferias e exibir alerta
+  setTimeout(()=>verificarColabsEmFerias(), 300);
+}
+
+function verificarColabsEmFerias(){
+  const emFerias=colaboradores.filter(c=>c.status==='Ferias'||c.status==='F\u00E9rias');
+  if(emFerias.length===0) return;
+
+  // Mostrar banner de alerta no topo do lancamento
+  const area=document.getElementById('ferias-alert-area');
+  if(!area) return;
+
+  area.innerHTML=`
+    <div style="background:#FEF3C7;border:1.5px solid #FDE68A;border-radius:var(--radius);
+      padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div>
+        <div style="font-weight:700;font-size:14px;color:#92400E;margin-bottom:6px">
+          Atencao: ${emFerias.length} colaborador${emFerias.length>1?'es':''}  em ferias nesta competencia
+        </div>
+        <div style="font-size:12px;color:#92400E;margin-bottom:10px">
+          Deseja retornar algum deles para Ativo?
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">
+          ${emFerias.map((c,i)=>`
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;
+              background:rgba(255,255,255,.6);padding:6px 10px;border-radius:6px">
+              <input type="checkbox" id="fer-retorno-${i}" data-id="${c._id}"
+                style="accent-color:var(--blue);width:15px;height:15px">
+              <strong>${c.nome}</strong>
+              <span style="color:var(--text2);font-size:11px">${c.mat||''} | ${c.depto||''}</span>
+              ${c.ferFim?'<span style="font-size:11px;color:var(--text2)">Prev. retorno: '+c.ferFim+'</span>':''}
+            </label>`).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary btn-sm" onclick="retornarColabsFerias()">
+            Marcar selecionados como Ativo
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ferias-alert-area').innerHTML=''">
+            Ignorar por agora
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="selecionarTodosRetorno(true)">Selecionar todos</button>
+          <button class="btn btn-ghost btn-sm" onclick="selecionarTodosRetorno(false)">Desmarcar todos</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function selecionarTodosRetorno(sel){
+  document.querySelectorAll('[id^="fer-retorno-"]').forEach(cb=>cb.checked=sel);
+}
+
+async function retornarColabsFerias(){
+  const checks=document.querySelectorAll('[id^="fer-retorno-"]:checked');
+  if(checks.length===0){toast('Nenhum colaborador selecionado','error');return;}
+
+  const b=window._writeBatch(window._db);
+  let n=0;
+  checks.forEach(cb=>{
+    const id=cb.dataset.id;
+    const c=colaboradores.find(x=>x._id===id);
+    if(!c) return;
+    c.status='Ativo';
+    b.set(window._doc('colaboradores',id),c);
+    n++;
+  });
+  await b.commit();
+  toast(n+' colaborador'+( n>1?'es retornaram':' retornou')+' de ferias!','success');
+  document.getElementById('ferias-alert-area').innerHTML='';
+  renderLancamento();
 }
 
 function limparFiltrosLan(){
@@ -1203,7 +1272,7 @@ function getLanAtivos(){
 function renderLancamento(){
   const du=fnum(g('lan-du'))||22;
   const ativos=getLanAtivos();
-  let tVR=0,tCafe=0,tComb=0,tVT=0;
+  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
   ativos.forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
@@ -1245,18 +1314,15 @@ function renderLancamento(){
   }
   tbody.innerHTML=ativos.map((c,i)=>{
     const l=lancamento[c.mat]||{};
-    const locked=l.locked||false;
     const du2=l.duteis!==undefined?fnum(l.duteis):du;
     const fat=fnum(l.faltas),fev=fnum(l.ferias),ext=fnum(l.extras);
     const dr=Math.max(0,du2-fat-fev+ext);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
     const total=vr+cafe+comb+vt+cesta;
-    const dis=locked?'disabled':'' ;
     return `<tr>
       <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${c.nome}">${c.nome}</td>
-      <td style="text-align:center"><input type="checkbox" ${locked?'checked':''} title="${locked?'Desbloquear':'Travar'}" onchange="toggleLock('${c.mat}',this.checked)" style="cursor:pointer;accent-color:var(--yellow)"></td>
-      <td><input type="number" value="${du2}" min="0" max="31" class="input-du ${locked?'cell-locked':''}" ${dis} onchange="setLan('${c.mat}','duteis',this.value)"></td>
+      <td><input type="number" value="${du2}" min="0" max="31" class="input-du" onchange="setLan('${c.mat}','duteis',this.value)"></td>
       <td><input type="number" value="${fat}" min="0" max="31" class="input-falta" onchange="setLan('${c.mat}','faltas',this.value)"></td>
       <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)"></td>
       <td><input type="number" value="${ext}" min="0" max="31" class="input-extras" onchange="setLan('${c.mat}','extras',this.value)" title="Dias extras"></td>
@@ -1271,12 +1337,7 @@ function renderLancamento(){
   }).join('');
 }
 
-async function toggleLock(mat,locked){
-  if(!lancamento[mat]) lancamento[mat]={};
-  lancamento[mat].locked=locked;
-  try{ await fsSetLan(mat,lancamento[mat]); }catch(e){}
-  renderLancamento();
-}
+
 
 async function setLan(mat,campo,val){
   if(!lancamento[mat]) lancamento[mat]={};
@@ -1290,7 +1351,7 @@ async function aplicarDiasUteis(){
   const b=window._writeBatch(window._db);
   let travados=0;
   colaboradores.forEach(c=>{
-    if(lancamento[c.mat]?.locked||c.diasFixos){travados++;return;} // pula travados e diasFixos
+    if(c.diasFixos){travados++;return;} // pula colaboradores com dias fixos no cadastro
     if(!lancamento[c.mat]) lancamento[c.mat]={};
     lancamento[c.mat].duteis=du;
     b.set(window._doc('lancamento',c.mat),lancamento[c.mat]);
@@ -1306,7 +1367,7 @@ async function fecharCompetencia(){
   if(!confirm(`Fechar compet\u00EAncia ${comp}? Isso salva um snapshot dos dados atuais.`)) return;
   const du=fnum(g('lan-du'))||22;
   const ativos=colaboradores.filter(c=>c.status!=='Inativo');
-  let tVR=0,tCafe=0,tComb=0,tVT=0;
+  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
   const detalhes=ativos.map(c=>{
     const du2=getLanDU(c.mat,du);
     const dr=getLanDR(c.mat,du);
@@ -1449,7 +1510,7 @@ function exportarCajuCompleto(){
   getCajuAtivos(empSel).forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
-    const alim=vr+cafe, mob=comb+vt;
+    const alim=vr+cafe+cesta, mob=comb+vt;
     if(alim===0&&mob===0) return;
     const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
     linhas.push([cpf,c.mat||'',fmtValCaju(alim),'0',fmtValCaju(mob),'0','0','0','0','0','0','0','0'].join(SEP));
@@ -1599,14 +1660,14 @@ function exportarSenior(tipo){
   const comp=g('lan-comp')||'MES';
   const empSel=document.getElementById('exp-senior-emp')?.value||'';
   const du=fnum(g('lan-du'))||22;
-  const nomes={vr:'VR',cafe:'Cafe_Manha',comb:'Mobilidade',vt:'VT'};
+  const nomes={vr:'VR',cafe:'Cafe_Manha',comb:'Mobilidade',vt:'VT',cesta:'Cesta_Basica'};
   const linhas=['CPF,Empresa,Valor'];
   let f=colaboradores.filter(c=>c.status!=='Inativo');
   if(empSel) f=f.filter(c=>String(c.mat||'').startsWith(empSel));
   f.forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
-    const val=tipo==='vr'?vr:tipo==='cafe'?cafe:tipo==='comb'?comb:vt;
+    const val=tipo==='vr'?vr:tipo==='cafe'?cafe:tipo==='comb'?comb:tipo==='cesta'?cesta:vt;
     if(val>0){
       const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
       const emp=String(c.mat||'').substring(0,4)||'0000';
@@ -1622,7 +1683,7 @@ function exportarSenior(tipo){
 }
 
 function exportarTodosSenior(){
-  ['vr','cafe','comb','vt'].forEach((t,i)=>setTimeout(()=>exportarSenior(t),i*400));
+  ['vr','cafe','comb','vt','cesta'].forEach((t,i)=>setTimeout(()=>exportarSenior(t),i*400));
   setTimeout(()=>toast('\u2705 Todos os CSVs Senior!','success'),1800);
 }
 
@@ -1699,8 +1760,8 @@ function pgBenConfig(){
       <div class="card-title">$ Tipo de c\u00E1lculo por benef\u00EDcio</div>
       <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         ${[
-          {name:'cfg-vr',label:'VR\uFE0F Vale Refei\u00E7\u00E3o',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
-          {name:'cfg-cafe',label:'\u2615 Caf\u00E9 da Manh\u00E3',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
+          {name:'cfg-vr',label:'Vale Refeicao',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
+          {name:'cfg-cafe',label:'Cafe da Manha',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
           {name:'cfg-comb',label:'\u26FD Combust\u00EDvel',sub:'L\u00F3gica proporcional /30 com arredondamento especial',opts:[{v:'prop',l:'Proporcional \u00F730 (recomendado)'},{v:'fixo',l:'Sempre fixo'}],def:'prop'},
           {name:'cfg-vt',label:'VT Vale Transporte',sub:'(Val linha \u00D7 viagens) \u00D7 dias',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
         ].map((r,i)=>`
@@ -2189,7 +2250,7 @@ function renderDashMain(){
   const inativos=colaboradores.filter(c=>c.status==='Inativo');
 
   // Totais benef\u00EDcios
-  let tVR=0,tCafe=0,tComb=0,tVT=0;
+  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
   colaboradores.filter(c=>c.status!=='Inativo').forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
@@ -2804,13 +2865,19 @@ function processarFolha(event){
 
     folhaData=Object.values(porColab);
 
+    folhaCompetencia=getFolhaComp();
     const prev=document.getElementById('folha-import-preview');
     if(prev){
-      let html='<div class="alert alert-success">'+folhaData.length+' colaboradores processados. ';
+      let html='<div class="alert alert-success">Folha '+folhaCompetencia+' importada: <strong>'+folhaData.length+' colaboradores</strong>. ';
       if(eventosNaoMapeados.size>0){
-        html+='<strong>'+eventosNaoMapeados.size+' eventos nao mapeados.</strong>';
+        html+='<strong>'+eventosNaoMapeados.size+' evento(s) nao mapeado(s).</strong>';
       }
-      html+='<button class="btn btn-primary btn-sm" onclick="showPage(\'folha-view\')" style="margin-left:10px">Ver Folha</button></div>';
+      html+='</div>';
+      html+='<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
+      html+='<button class="btn btn-primary btn-sm" onclick="showPage(\'folha-view\')">Ver Folha</button>';
+      html+='<button class="btn btn-warning btn-sm" onclick="document.getElementById(\'folha-file\').click()">Reimportar (sobrepor)</button>';
+      html+='<button class="btn btn-danger btn-sm" onclick="deletarFolhaCompetencia()">Deletar competencia</button>';
+      html+='</div>';
       if(eventosNaoMapeados.size>0){
         html+='<div class="card" style="margin-top:12px"><div class="card-title" style="color:var(--red)">Eventos nao mapeados — clique para classificar</div>';
         eventosNaoMapeados.forEach(ev=>{
@@ -2833,6 +2900,16 @@ function processarFolha(event){
           html+='<script>document.getElementById("ev-tab-'+ev+'").addEventListener("change",function(){popularGrupos("'+ev+'",this.value)});<\/script>';
         });
         html+='</div>';
+        // Card para adicionar evento manual
+        html+='<div class="card" style="margin-top:12px"><div class="card-title">Adicionar evento manualmente</div>';
+        html+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
+        html+='<div class="fg"><label>Codigo</label><input type="text" id="novo-ev-cod" placeholder="ex: 999" style="width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></div>';
+        html+='<div class="fg"><label>Nome</label><input type="text" id="novo-ev-nome" placeholder="ex: Bonus" style="min-width:180px;padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"></div>';
+        html+='<div class="fg"><label>Aba</label><select id="novo-ev-tab" onchange="popularGrupos(\'novo-ev\',this.value)" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px">';
+        html+='<option value="">-- Aba --</option><option value="proventos">Proventos</option><option value="encargos">Encargos</option><option value="adiantamento">Adiantamento</option><option value="descontos">Descontos</option></select></div>';
+        html+='<div class="fg"><label>Grupo</label><select id="novo-ev-grupo" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:13px"><option value="">-- Grupo --</option></select></div>';
+        html+='<button class="btn btn-primary btn-sm" onclick="adicionarEventoManual()">Adicionar</button>';
+        html+='</div></div>';
       }
       prev.innerHTML=html;
     }
@@ -2843,7 +2920,9 @@ function processarFolha(event){
 }
 
 function popularGrupos(ev, tab){
-  const sel=document.getElementById('ev-grupo-'+ev); if(!sel) return;
+  // Suporta 'novo-ev' como prefix especial
+  const selId=ev==='novo-ev'?'novo-ev-grupo':'ev-grupo-'+ev;
+  const sel=document.getElementById(selId); if(!sel) return;
   const grupos=tab&&EVENTOS_FOLHA[tab]?Object.keys(EVENTOS_FOLHA[tab]):[];
   sel.innerHTML='<option value="">-- Grupo --</option>'+grupos.map(g=>'<option value="'+g+'">'+g+'</option>').join('');
 }
@@ -2853,11 +2932,31 @@ function mapearEvento(ev){
   const grupo=document.getElementById('ev-grupo-'+ev)?.value;
   const nome=document.getElementById('ev-nome-'+ev)?.value.trim();
   if(!tab||!grupo||!nome){toast('Preencha todos os campos','error');return;}
+  if(!EVENTOS_FOLHA[tab]) EVENTOS_FOLHA[tab]={};
   if(!EVENTOS_FOLHA[tab][grupo]) EVENTOS_FOLHA[tab][grupo]={};
   EVENTOS_FOLHA[tab][grupo][ev]=nome;
   EVENTOS_FLAT[ev]=nome;
-  eventosCustom[ev]=nome;
-  toast('Evento '+ev+' ('+nome+') adicionado em '+tab+' > '+grupo,'success');
+  eventosCustom[ev]={aba:tab,grupo,nome};
+  // Remover da lista de nao mapeados
+  const row=document.getElementById('ev-row-'+ev);
+  if(row) row.style.background='#F0FDF4';
+  toast('Evento '+ev+' salvo em '+tab+' > '+grupo,'success');
+}
+
+function adicionarEventoManual(){
+  const tab=document.getElementById('novo-ev-tab')?.value;
+  const grupo=document.getElementById('novo-ev-grupo')?.value;
+  const cod=document.getElementById('novo-ev-cod')?.value.trim();
+  const nome=document.getElementById('novo-ev-nome')?.value.trim();
+  if(!tab||!grupo||!cod||!nome){toast('Preencha todos os campos','error');return;}
+  if(!EVENTOS_FOLHA[tab]) EVENTOS_FOLHA[tab]={};
+  if(!EVENTOS_FOLHA[tab][grupo]) EVENTOS_FOLHA[tab][grupo]={};
+  EVENTOS_FOLHA[tab][grupo][cod]=nome;
+  EVENTOS_FLAT[cod]=nome;
+  eventosCustom[cod]={aba:tab,grupo,nome};
+  toast('Evento '+cod+' ('+nome+') adicionado!','success');
+  document.getElementById('novo-ev-cod').value='';
+  document.getElementById('novo-ev-nome').value='';
 }
 
 function pgFolhaView(){
@@ -2930,89 +3029,124 @@ function renderTabelaFolha(){
   const grupos=EVENTOS_FOLHA[aba]||{};
   const tbl=document.getElementById('folha-tabela'); if(!tbl) return;
 
-  // Colunas = todos os eventos desta aba que aparecem nos dados
-  const todasCols=[];
+  const coresGrupo={
+    "REMUNERACAO FIXA":"#1D4ED8","JORNADAS / HORAS ADICIONAIS":"#7C3AED",
+    "AFASTAMENTOS":"#DB2777","FERIAS":"#059669","13o SALARIO":"#D97706",
+    "REEMBOLSOS / AJUSTES":"#0891B2","RESCISORIOS":"#DC2626",
+    "ENCARGOS EMPRESA":"#9333EA","ADIANTAMENTO SALARIAL":"#EA580C",
+    "ENCARGOS OBRIGATORIOS":"#DC2626","DESCONTOS JORNADA":"#B45309",
+    "DESCONTOS BENEFICIOS":"#0369A1","DESCONTOS EMPRESTIMOS":"#7C3AED",
+    "DESCONTOS FERIAS":"#059669","SINDICAIS / ASSISTENCIAIS":"#6B7280",
+    "PENSAO":"#DC2626","OUTROS":"#374151"
+  };
+
+  // Montar colunas agrupadas
+  const colsPorGrupo={};
   Object.entries(grupos).forEach(([grupo,evs])=>{
     Object.keys(evs).forEach(ev=>{
       if(dados.some(d=>d.eventos&&d.eventos[ev])){
-        todasCols.push({grupo,ev,nome:evs[ev]});
-      }
-    });
-    // Eventos custom nesta aba
-    Object.entries(eventosCustom).forEach(([ev,nome])=>{
-      if(EVENTOS_FOLHA[aba]&&Object.values(EVENTOS_FOLHA[aba]).some(g=>g[ev])&&dados.some(d=>d.eventos&&d.eventos[ev])){
-        if(!todasCols.find(c=>c.ev===ev)) todasCols.push({grupo:'OUTROS',ev,nome});
+        if(!colsPorGrupo[grupo]) colsPorGrupo[grupo]=[];
+        colsPorGrupo[grupo].push({ev,nome:evs[ev]});
       }
     });
   });
+  // Eventos customizados desta aba
+  Object.entries(eventosCustom).forEach(([ev,info])=>{
+    if(info.aba===aba&&dados.some(d=>d.eventos&&d.eventos[ev])){
+      const g=info.grupo||'OUTROS';
+      if(!colsPorGrupo[g]) colsPorGrupo[g]=[];
+      if(!colsPorGrupo[g].find(c=>c.ev===ev)) colsPorGrupo[g].push({ev,nome:info.nome});
+    }
+  });
 
+  const todasCols=Object.values(colsPorGrupo).flat();
   if(todasCols.length===0){
-    tbl.innerHTML='<div class="alert alert-info">Nenhum evento desta aba encontrado nos dados importados.</div>';
+    tbl.innerHTML='<div class="alert alert-info">Nenhum evento desta aba nos dados importados.</div>';
     return;
   }
 
-  // Agrupar colunas por grupo
-  const colPorGrupo={};
+  // Totais por coluna
+  const totCols={};
+  todasCols.forEach(c=>{ totCols[c.ev]=dados.reduce((s,d)=>s+fnum(d.eventos?.[c.ev]),0); });
+
+  // Totais por grupo
+  const totGrupos={};
+  Object.entries(colsPorGrupo).forEach(([g,cols])=>{
+    totGrupos[g]=cols.reduce((s,c)=>s+totCols[c.ev],0);
+  });
+  const totalGeral=todasCols.reduce((s,c)=>s+totCols[c.ev],0);
+
+  // ── Totalizadores no topo ──
+  const totalCards=Object.entries(colsPorGrupo).map(([g,cols])=>{
+    const cor=coresGrupo[g]||'#374151';
+    const tot=totGrupos[g];
+    return '<div style="border-left:4px solid '+cor+';background:var(--surface);border-radius:var(--radius-sm);'+
+      'padding:10px 14px;min-width:160px">'+
+      '<div style="font-size:10px;font-weight:700;color:'+cor+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">'+g+'</div>'+
+      '<div style="font-size:16px;font-weight:700;color:var(--text);font-family:monospace">'+brl(tot)+'</div>'+
+      '<div style="font-size:10px;color:var(--text2)">'+cols.length+' evento(s)</div></div>';
+  }).join('');
+
+  // ── Tabela com sticky header ──
+  let thead='<thead>';
+  // Linha 1: grupos (cor)
+  thead+='<tr>';
+  thead+='<th colspan="4" style="background:#0f2d52;position:sticky;left:0;z-index:4">Colaborador</th>';
+  Object.entries(colsPorGrupo).forEach(([g,cols])=>{
+    const cor=coresGrupo[g]||'#374151';
+    thead+='<th colspan="'+cols.length+'" style="background:'+cor+';text-align:center;'
+      +'border-left:2px solid rgba(255,255,255,.2);font-size:9px;letter-spacing:.5px;white-space:nowrap">'+g+'</th>';
+  });
+  thead+='<th style="background:#1B5E20;color:#fff;position:sticky;right:0">TOTAL</th></tr>';
+  // Linha 2: nomes dos eventos
+  thead+='<tr>';
+  thead+='<th style="background:#162B52;position:sticky;left:0;z-index:3;min-width:70px">Mat.</th>';
+  thead+='<th style="background:#162B52;position:sticky;left:70px;z-index:3;min-width:160px">Nome</th>';
+  thead+='<th style="background:#162B52;min-width:100px">CPF</th>';
+  thead+='<th style="background:#162B52;min-width:100px">Depto</th>';
   todasCols.forEach(c=>{
-    if(!colPorGrupo[c.grupo]) colPorGrupo[c.grupo]=[];
-    colPorGrupo[c.grupo].push(c);
+    const grupo=Object.entries(colsPorGrupo).find(([g,cols])=>cols.find(x=>x.ev===c.ev));
+    const cor=grupo?coresGrupo[grupo[0]]||'#374151':'#374151';
+    thead+='<th style="background:'+cor+'CC;font-size:9px;white-space:nowrap;max-width:80px;'+
+      'overflow:hidden;text-overflow:ellipsis;border-left:1px solid rgba(255,255,255,.15)" title="'+c.nome+'">'+c.nome+'</th>';
   });
-
-  // Calcular totais por coluna
-  const totais={};
-  todasCols.forEach(c=>{
-    totais[c.ev]=dados.reduce((s,d)=>s+fnum(d.eventos?.[c.ev]),0);
-  });
-
-  let html='<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
-    +'<table style="border-collapse:collapse;font-size:11px;width:100%">';
-
-  // Linha de grupos
-  html+='<thead><tr style="background:#0f2d52;color:rgba(255,255,255,.5)">'
-    +'<th colspan="4" style="padding:6px 10px;text-align:left;background:#0f2d52;position:sticky;left:0;z-index:3">Colaborador</th>';
-  Object.entries(colPorGrupo).forEach(([grupo,cols])=>{
-    html+='<th colspan="'+cols.length+'" style="padding:6px 10px;text-align:center;border-left:2px solid rgba(255,255,255,.1);font-size:9px;letter-spacing:.5px">'+grupo+'</th>';
-  });
-  html+='<th style="padding:6px 10px;text-align:right;background:#1B5E20;color:#fff">TOTAL</th></tr>';
-
-  // Linha de nomes de eventos
-  html+='<tr style="background:#1D4ED8;color:#fff">'
-    +'<th style="padding:8px 10px;text-align:left;position:sticky;left:0;z-index:3;background:#1D4ED8">Mat.</th>'
-    +'<th style="padding:8px 10px;text-align:left;min-width:160px;position:sticky;left:60px;z-index:3;background:#1D4ED8">Nome</th>'
-    +'<th style="padding:8px 10px">CPF</th>'
-    +'<th style="padding:8px 10px">Depto</th>';
-  todasCols.forEach(c=>{
-    html+='<th style="padding:6px 8px;font-size:9px;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis" title="'+c.nome+'">'+c.nome+'</th>';
-  });
-  html+='<th style="padding:8px 10px;text-align:right;background:#1B5E20">Total</th></tr></thead><tbody>';
+  thead+='<th style="background:#1B5E20;position:sticky;right:0;min-width:90px">Total</th></tr>';
+  thead+='</thead>';
 
   // Linhas de dados
+  let tbody='<tbody>';
   dados.forEach((d,i)=>{
-    const rowTotal=todasCols.reduce((s,c)=>s+fnum(d.eventos?.[c.ev]),0);
-    html+='<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
-      +'<td style="padding:7px 10px;position:sticky;left:0;background:'+(i%2===0?'#F8F9FB':'#fff')+'"><code style="font-size:10px">'+d.mat+'</code></td>'
-      +'<td style="padding:7px 10px;position:sticky;left:60px;background:'+(i%2===0?'#F8F9FB':'#fff')+';min-width:160px;max-width:180px;overflow:hidden;text-overflow:ellipsis;font-weight:500" title="'+d.nome+'">'+d.nome+'</td>'
-      +'<td style="padding:7px 10px;font-size:10px">'+( d.cpf||'—')+'</td>'
-      +'<td style="padding:7px 10px;font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis">'+( d.depto||'—')+'</td>';
+    const rowTot=todasCols.reduce((s,c)=>s+fnum(d.eventos?.[c.ev]),0);
+    tbody+='<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">';
+    tbody+='<td style="padding:7px 10px;position:sticky;left:0;background:'+(i%2===0?'#F8F9FB':'#fff')+'"><code style="font-size:10px">'+(d.mat||'—')+'</code></td>';
+    tbody+='<td style="padding:7px 10px;position:sticky;left:70px;background:'+(i%2===0?'#F8F9FB':'#fff')+';font-weight:500;min-width:160px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+d.nome+'">'+d.nome+'</td>';
+    tbody+='<td style="padding:7px 10px;font-size:10px">'+(d.cpf||'—')+'</td>';
+    tbody+='<td style="padding:7px 10px;font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis">'+(d.depto||'—')+'</td>';
     todasCols.forEach(c=>{
-      const val=fnum(d.eventos?.[c.ev]);
-      html+='<td style="padding:7px 8px;text-align:right;font-family:monospace;color:'+(val<0?'var(--red)':val===0?'#ccc':'inherit')+'">'+(val!==0?brl(val):'—')+'</td>';
+      const v=fnum(d.eventos?.[c.ev]);
+      tbody+='<td style="padding:7px 8px;text-align:right;font-family:monospace;font-size:11px;color:'+(v<0?'var(--red)':v===0?'#ccc':'inherit')+'">'+( v!==0?brl(v):'—')+'</td>';
     });
-    html+='<td style="padding:7px 10px;text-align:right;font-weight:700;font-family:monospace;color:var(--blue)">'+(rowTotal!==0?brl(rowTotal):'—')+'</td>'
-    +'</tr>';
+    tbody+='<td style="padding:7px 10px;text-align:right;font-weight:700;font-family:monospace;color:var(--blue);position:sticky;right:0;background:'+(i%2===0?'#F0F4FF':'#E8EEFF')+'">'+brl(rowTot)+'</td>';
+    tbody+='</tr>';
   });
 
   // Linha de totais
-  html+='<tr style="background:#1D4ED8;color:#fff;font-weight:700;font-family:monospace">'
-    +'<td colspan="4" style="padding:8px 10px;font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.7)">'+dados.length+' colaboradores</td>';
+  tbody+='<tr style="background:#1D4ED8;color:#fff;font-weight:700;font-family:monospace">';
+  tbody+='<td colspan="4" style="padding:8px 10px;font-family:sans-serif;font-size:11px;color:rgba(255,255,255,.7)">'+dados.length+' colaboradores</td>';
   todasCols.forEach(c=>{
-    html+='<td style="padding:8px;text-align:right;font-size:10px">'+(totais[c.ev]?brl(totais[c.ev]):'—')+'</td>';
+    tbody+='<td style="padding:8px;text-align:right;font-size:10px">'+(totCols[c.ev]?brl(totCols[c.ev]):'—')+'</td>';
   });
-  const totalGeral=todasCols.reduce((s,c)=>s+totais[c.ev],0);
-  html+='<td style="padding:8px 10px;text-align:right;background:#1B5E20;color:#86EFAC;font-size:13px">'+brl(totalGeral)+'</td></tr>';
+  tbody+='<td style="padding:8px 10px;text-align:right;background:#1B5E20;color:#86EFAC;font-size:13px;position:sticky;right:0">'+brl(totalGeral)+'</td>';
+  tbody+='</tr></tbody>';
 
-  html+='</tbody></table></div>';
-  tbl.innerHTML=html;
+  tbl.innerHTML=
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:12px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">'+
+    totalCards+
+    '<div style="border-left:4px solid var(--green);background:var(--surface);border-radius:var(--radius-sm);padding:10px 14px;min-width:160px">'+
+    '<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">TOTAL GERAL</div>'+
+    '<div style="font-size:18px;font-weight:700;color:var(--green);font-family:monospace">'+brl(totalGeral)+'</div></div></div>'+
+    '<div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);max-height:520px">'+
+    '<table style="border-collapse:collapse;font-size:11px;width:100%">'+thead+tbody+'</table></div>';
 }
 
 function exportarFolhaExcel(){
@@ -3269,32 +3403,73 @@ Object.assign(MODULES, MODULES_OVERRIDE);
 
 
 function pgFolhaImport(){
+  const anos=[2024,2025,2026,2027];
+  const anoAtual=new Date().getFullYear();
+  const mesAtual=new Date().getMonth()+1;
+  const meses=[{v:1,l:'Janeiro'},{v:2,l:'Fevereiro'},{v:3,l:'Marco'},{v:4,l:'Abril'},
+    {v:5,l:'Maio'},{v:6,l:'Junho'},{v:7,l:'Julho'},{v:8,l:'Agosto'},
+    {v:9,l:'Setembro'},{v:10,l:'Outubro'},{v:11,l:'Novembro'},{v:12,l:'Dezembro'}];
+
   return `
-    <div class="page-header"><h2>Importar Relatorio Senior</h2>
-    <p>Classifica os eventos em 4 tabelas: Proventos, Encargos, Adiantamento e Descontos.</p></div>
+    <div class="page-header"><h2>Folha de Pagamento</h2>
+    <p>Importe o relatorio de eventos da Senior por competencia.</p></div>
+
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Competencia</div>
+      <div class="card-title">Selecione a competencia</div>
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="fg"><label>Mes/Ano</label>
-          <input type="text" id="folha-comp" placeholder="MM/AAAA" style="width:120px"
-            oninput="folhaCompetencia=this.value">
+        <div class="fg">
+          <label>Mes</label>
+          <select id="folha-mes" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;min-width:130px">
+            ${meses.map(m=>'<option value="'+m.v+'" '+(m.v===mesAtual?'selected':'')+'>'+m.l+'</option>').join('')}
+          </select>
         </div>
-        <p class="text-sm text-muted">Defina a competencia antes de importar. Use o botao Fechar Competencia apos verificar os dados.</p>
+        <div class="fg">
+          <label>Ano</label>
+          <select id="folha-ano" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+            ${anos.map(a=>'<option value="'+a+'" '+(a===anoAtual?'selected':'')+'>'+a+'</option>').join('')}
+          </select>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="carregarFolhaSalva()">Carregar salva</button>
       </div>
     </div>
+
+    <div id="folha-competencia-info"></div>
+
     <div class="card">
+      <div class="card-title">Importar relatorio</div>
       <div class="alert alert-info" style="margin-bottom:14px">
-        Formato esperado: <strong>Cadastro | Nome | Evento | Descricao | Valor</strong>
+        Formato: <strong>Cadastro | Nome | Evento | Descricao | Valor</strong>
       </div>
       <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
         <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
-        <div class="upload-icon"></div>
-        <div class="upload-text">Selecionar relatorio de eventos</div>
+        <div style="font-size:28px;margin-bottom:8px">&#8679;</div>
+        <div class="upload-text">Clique para selecionar o relatorio</div>
         <div class="upload-sub">.xlsx ou .xls</div>
       </div>
       <div id="folha-import-preview" style="margin-top:14px"></div>
     </div>`;
 }
+
+function getFolhaComp(){
+  const mes=document.getElementById('folha-mes')?.value||String(new Date().getMonth()+1);
+  const ano=document.getElementById('folha-ano')?.value||String(new Date().getFullYear());
+  return String(mes).padStart(2,'0')+'/'+ano;
+}
+
+async function carregarFolhaSalva(){
+  const comp=getFolhaComp();
+  try{
+    const snap=await window._getDocs(window._col('historico'));
+    let found=null;
+    snap.forEach(d=>{ if(d.id==='folha_'+comp.replace('/','_')) found=d.data(); });
+    if(!found){ toast('Nenhuma folha salva para '+comp,'warning'); return; }
+    folhaData=found.detalhes||[];
+    folhaCompetencia=comp;
+    toast('Folha '+comp+' carregada!','success');
+    showPage('folha-view');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
 
 // ── FIX: Premio com competência ──────────────────────────────────
 
@@ -3356,6 +3531,19 @@ async function fecharCompetenциаPremio(){
 }
 
 // ── FIX: Fechar competência da folha ────────────────────────────
+
+async function deletarFolhaCompetencia(){
+  if(!confirm('Deletar a folha de '+folhaCompetencia+'? Esta acao nao pode ser desfeita.')) return;
+  try{
+    await fsDel('historico','folha_'+folhaCompetencia.replace('/','_'));
+    folhaData=null;
+    folhaCompetencia='';
+    document.getElementById('folha-import-preview').innerHTML=
+      '<div class="alert alert-success">Competencia deletada com sucesso.</div>';
+    toast('Competencia deletada!','success');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
 async function fecharCompetenciaFolha(){
   if(!folhaData||folhaData.length===0){toast('Importe um relatorio primeiro','error');return;}
   const comp=document.getElementById('folha-comp')?.value||folhaCompetencia;
@@ -3389,298 +3577,42 @@ async function fecharCompetenciaFolha(){
 
 // ── FIX: pgFolhaView com botão fechar competência ───────────────
 function pgFolhaView(){
-  return `
-    <div class="page-header">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-        <div>
-          <h2>Folha de Pagamento</h2>
-          <p id="folha-sub">Importe um relatorio para visualizar.</p>
-        </div>
-        <button class="btn btn-success btn-sm" onclick="fecharCompetenciaFolha()">Fechar Competencia</button>
-      </div>
-    </div>
-    <div id="folha-content">
-      <div class="alert alert-warning">Nenhuma folha importada. Va em "Importar Relatorio" primeiro.</div>
-    </div>`;
-}
-
-// ── FIX: Controle de férias — Kanban ────────────────────────────
-function pgFerRadar(){
   const empresas=getEmpresaList();
-  const deptos=getDeptoList();
   return `
-    <div class="page-header"><h2>Radar de Ferias</h2><p>Visualizacao kanban por status de vencimento.</p></div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
-      <div class="filter-group" style="flex:1">
-        <label>Buscar</label>
-        <input type="text" id="fer-q" placeholder="Nome ou matricula..." oninput="renderFerRadar()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700">${folhaCompetencia?'Folha '+folhaCompetencia:'Folha de Pagamento'}</h2>
+        <p id="folha-sub" class="text-sm text-muted">Importe um relatorio para visualizar.</p>
       </div>
-      <div class="filter-group">
-        <label>Empresa</label>
-        <select id="fer-emp" onchange="renderFerRadar()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-          <option value="">Todas</option>
-          ${empresas.map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
-        </select>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="showPage('folha-import')">Importar nova</button>
+        <button class="btn btn-danger btn-sm" onclick="deletarFolhaCompetencia()">Deletar</button>
+        <button class="btn btn-success btn-sm" onclick="fecharCompetenciaFolha()">Fechar competencia</button>
       </div>
-      <div class="filter-group">
-        <label>Departamento</label>
-        <select id="fer-dep" onchange="renderFerRadar()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-          <option value="">Todos</option>
-          ${deptos.map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
-        </select>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">Excel</button>
     </div>
-    <div id="fer-stats" style="margin-bottom:14px"></div>
-    <div id="fer-kanban"></div>`;
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:3px;flex:1">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Buscar</label>
+        <input type="text" id="folha-q" placeholder="Nome ou matricula..." oninput="filtrarFolha()"
+          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Empresa</label>
+        <select id="folha-emp" onchange="filtrarFolha()" style="padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todas</option>${empresas.map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase">Tabela</label>
+        <select id="folha-aba" onchange="filtrarFolha()" style="padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="proventos">Proventos</option>
+          <option value="encargos">Encargos</option>
+          <option value="adiantamento">Adiantamento</option>
+          <option value="descontos">Descontos</option>
+        </select>
+      </div>
+      <button class="btn btn-success btn-sm" onclick="exportarFolhaExcel()">Excel (4 abas)</button>
+    </div>
+    <div id="folha-tabela"></div>`;
 }
 
-function renderFerRadar(){
-  const empF=document.getElementById('fer-emp')?.value||'';
-  const depF=document.getElementById('fer-dep')?.value||'';
-  const q=(document.getElementById('fer-q')?.value||'').toLowerCase();
-
-  let f=colaboradores.filter(c=>c.status!=='Inativo');
-  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
-  if(depF) f=f.filter(c=>(c.depto||'')===depF);
-  if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').includes(q));
-
-  const comFarol=f.map(c=>({...c,farol:getFarol(c)}));
-
-  // Stats
-  const stats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0};
-  comFarol.forEach(c=>{ const cor=c.farol.cor; stats[cor]=(stats[cor]||0)+1; });
-
-  const statsEl=document.getElementById('fer-stats');
-  if(statsEl) statsEl.innerHTML=`
-    <div class="stats-grid" style="margin-bottom:0">
-      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Verde - OK</div></div>
-      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Amarelo 1-9m</div></div>
-      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Laranja 10-12m</div></div>
-      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vermelho +12m</div></div>
-      <div class="stat-card"><div class="stat-val" style="color:var(--text3)">${stats.sem}</div><div class="stat-label">Sem dados</div></div>
-    </div>`;
-
-  // Kanban
-  const kanbanEl=document.getElementById('fer-kanban'); if(!kanbanEl) return;
-  const colunas=[
-    {id:'verde',label:'Verde — OK',cor:'var(--green)',bg:'var(--green-light)',border:'#A7F3D0'},
-    {id:'amarelo',label:'Amarelo — 1 a 9 meses',cor:'var(--yellow)',bg:'var(--yellow-light)',border:'#FDE68A'},
-    {id:'laranja',label:'Laranja — 10 a 12 meses',cor:'var(--orange)',bg:'var(--orange-light)',border:'#FED7AA'},
-    {id:'vermelho',label:'Vermelho — mais de 12 meses',cor:'var(--red)',bg:'var(--red-light)',border:'#FECACA'},
-    {id:'sem',label:'Sem dados de ferias',cor:'var(--text3)',bg:'var(--bg)',border:'var(--border)'},
-  ];
-
-  kanbanEl.innerHTML='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start">'
-    +colunas.map(col=>{
-      const cards=comFarol.filter(c=>c.farol.cor===col.id);
-      return '<div style="background:var(--surface);border:1.5px solid '+col.border+';border-radius:var(--radius);overflow:hidden">'
-        +'<div style="background:'+col.bg+';padding:10px 12px;border-bottom:1.5px solid '+col.border+';display:flex;justify-content:space-between;align-items:center">'
-        +'<span style="font-size:12px;font-weight:700;color:'+col.cor+'">'+col.label+'</span>'
-        +'<span style="background:'+col.cor+';color:#fff;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">'+cards.length+'</span>'
-        +'</div>'
-        +'<div style="padding:8px;max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">'
-        +(cards.length===0?'<div style="text-align:center;padding:16px;font-size:12px;color:var(--text3)">Nenhum</div>'
-          :cards.map(c=>{
-            const f=c.farol;
-            return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px">'
-              +'<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px">'+c.nome+'</div>'
-              +'<div style="font-size:10px;color:var(--text2)">Mat: '+(c.mat||'—')+' | '+( c.depto||'—')+'</div>'
-              +'<div style="font-size:11px;margin-top:5px;display:flex;justify-content:space-between">'
-              +'<span style="color:var(--text2)">Venc: <strong>'+f.vencStr+'</strong></span>'
-              +'<span style="color:'+col.cor+';font-weight:700">'+f.dias+' dias</span>'
-              +'</div>'
-              +(c.admissao?'<div style="font-size:10px;color:var(--text3);margin-top:2px">Adm: '+c.admissao+'</div>':'')
-              +'</div>';
-          }).join(''))
-        +'</div></div>';
-    }).join('')
-    +'</div>';
-}
-
-// ── FIX: Dashboard completo ──────────────────────────────────────
-function pgDashMain(){
-  return `
-    <div class="page-header"><h2>Dashboard Geral</h2><p>Visao consolidada de todos os modulos.</p></div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
-      <div class="filter-group">
-        <label>Empresa</label>
-        <select id="dash-emp" onchange="renderDashMain()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-          <option value="">Todas</option>
-          ${getEmpresaList().map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
-        </select>
-      </div>
-      <div class="filter-group">
-        <label>Departamento</label>
-        <select id="dash-dep" onchange="renderDashMain()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-          <option value="">Todos</option>
-          ${getDeptoList().map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
-        </select>
-      </div>
-      <div class="filter-group">
-        <label>Status</label>
-        <select id="dash-status" onchange="renderDashMain()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-          <option value="">Todos</option>
-          <option value="Ativo">Ativos</option>
-          <option value="Inativo">Inativos</option>
-          <option value="Ferias">Em Ferias</option>
-        </select>
-      </div>
-    </div>
-    <div id="dash-content"></div>`;
-}
-
-function renderDashMain(){
-  const du=fnum(document.getElementById('lan-du')?.value)||22;
-  const empF=document.getElementById('dash-emp')?.value||'';
-  const depF=document.getElementById('dash-dep')?.value||'';
-  const stF=document.getElementById('dash-status')?.value||'';
-
-  let f=colaboradores;
-  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
-  if(depF) f=f.filter(c=>(c.depto||'')===depF);
-  if(stF) f=f.filter(c=>c.status===stF);
-
-  const ativos=f.filter(c=>c.status==='Ativo');
-  const inativos=f.filter(c=>c.status==='Inativo');
-  const emFerias=f.filter(c=>['Ferias','Férias'].includes(c.status));
-
-  // Calcular totais benefícios
-  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
-  f.filter(c=>c.status!=='Inativo').forEach(c=>{
-    const dr=getLanDR(c.mat,du);
-    const b=calcBen(c,dr,getLanDU(c.mat,du));
-    tVR+=b.vr; tCafe+=b.cafe; tCesta+=b.cesta||0; tComb+=b.comb; tVT+=b.vt;
-  });
-  const tBen=tVR+tCafe+tCesta+tComb+tVT;
-
-  // Farol de férias
-  const ferStats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0};
-  f.forEach(c=>{ferStats[getFarol(c).cor]=(ferStats[getFarol(c).cor]||0)+1;});
-
-  // Por empresa
-  const empresas=getEmpresaList().filter(e=>!empF||e.cod===empF);
-
-  const el=document.getElementById('dash-content'); if(!el) return;
-
-  el.innerHTML=`
-    <!-- COLABORADORES -->
-    <div class="dash-section">
-      <div class="dash-section-title">Colaboradores</div>
-      <div class="stats-grid">
-        <div class="stat-card blue"><div class="stat-val">${f.length}</div><div class="stat-label">Total filtrado</div></div>
-        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ativos.length}</div><div class="stat-label">Ativos</div><div class="stat-sub">${((ativos.length/Math.max(f.length,1))*100).toFixed(0)}% do total</div></div>
-        <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${emFerias.length}</div><div class="stat-label">Em Ferias</div></div>
-        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${inativos.length}</div><div class="stat-label">Inativos</div></div>
-        <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${f.filter(c=>c.filtro==='MEI').length}</div><div class="stat-label">MEI</div></div>
-        <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${f.filter(c=>c.filtro==='SOC').length}</div><div class="stat-label">Socios</div></div>
-        <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${f.filter(c=>c.filtro==='PART').length}</div><div class="stat-label">Particulares</div></div>
-      </div>
-    </div>
-
-    <!-- BENEFÍCIOS -->
-    <div class="dash-section">
-      <div class="dash-section-title">Beneficios — Competencia atual</div>
-      <div class="stats-grid">
-        <div class="stat-card" style="border-left:4px solid var(--orange)">
-          <div class="stat-val" style="font-size:16px;color:var(--orange)">${brl(tVR)}</div>
-          <div class="stat-label">Vale Refeicao</div>
-          <div class="stat-sub">${f.filter(c=>fnum(c.vr)>0).length} colaboradores</div>
-        </div>
-        <div class="stat-card" style="border-left:4px solid var(--yellow)">
-          <div class="stat-val" style="font-size:16px;color:var(--yellow)">${brl(tCafe)}</div>
-          <div class="stat-label">Cafe da Manha</div>
-          <div class="stat-sub">${f.filter(c=>fnum(c.cafe)>0).length} colaboradores</div>
-        </div>
-        <div class="stat-card" style="border-left:4px solid #7B5E00">
-          <div class="stat-val" style="font-size:16px;color:#7B5E00">${brl(tCesta)}</div>
-          <div class="stat-label">Cesta Basica</div>
-          <div class="stat-sub">R$ 185,00 por colaborador</div>
-        </div>
-        <div class="stat-card" style="border-left:4px solid var(--orange)">
-          <div class="stat-val" style="font-size:16px;color:var(--orange)">${brl(tComb)}</div>
-          <div class="stat-label">Combustivel</div>
-          <div class="stat-sub">${f.filter(c=>fnum(c.comb)>0).length} colaboradores</div>
-        </div>
-        <div class="stat-card" style="border-left:4px solid var(--blue)">
-          <div class="stat-val" style="font-size:16px;color:var(--blue)">${brl(tVT)}</div>
-          <div class="stat-label">Vale Transporte</div>
-          <div class="stat-sub">${f.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0)).length} colaboradores</div>
-        </div>
-        <div class="stat-card green" style="grid-column:span 2">
-          <div class="stat-val" style="font-size:22px;color:var(--green)">${brl(tBen)}</div>
-          <div class="stat-label">Total Geral de Beneficios</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- FERIAS FAROL -->
-    <div class="dash-section">
-      <div class="dash-section-title">Controle de Ferias</div>
-      <div class="stats-grid" style="margin-bottom:12px">
-        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ferStats.verde}</div><div class="stat-label">Verde - OK</div></div>
-        <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${ferStats.amarelo}</div><div class="stat-label">Amarelo 1-9m</div></div>
-        <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${ferStats.laranja}</div><div class="stat-label">Laranja 10-12m</div></div>
-        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${ferStats.vermelho}</div><div class="stat-label">Vermelho +12m</div></div>
-      </div>
-      <!-- Mini kanban -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        ${[
-          {id:'vermelho',label:'Urgente (+12m)',cor:'var(--red)',bg:'var(--red-light)'},
-          {id:'laranja',label:'Atencao (10-12m)',cor:'var(--orange)',bg:'var(--orange-light)'},
-          {id:'amarelo',label:'Vencido (1-9m)',cor:'var(--yellow)',bg:'var(--yellow-light)'},
-          {id:'verde',label:'OK',cor:'var(--green)',bg:'var(--green-light)'},
-        ].map(col=>{
-          const cards=f.map(c=>({...c,farol:getFarol(c)})).filter(c=>c.farol.cor===col.id).slice(0,8);
-          return '<div style="background:'+col.bg+';border-radius:var(--radius);padding:10px">'
-            +'<div style="font-size:11px;font-weight:700;color:'+col.cor+';margin-bottom:8px">'+col.label+' ('+ferStats[col.id]+')</div>'
-            +cards.map(c=>'<div style="background:rgba(255,255,255,.7);border-radius:4px;padding:5px 8px;margin-bottom:4px;font-size:11px">'
-              +'<strong>'+c.nome.split(' ')[0]+'</strong> — '+c.farol.vencStr+'</div>').join('')
-            +(ferStats[col.id]>8?'<div style="font-size:10px;color:'+col.cor+';text-align:center;margin-top:4px">+mais '+(ferStats[col.id]-8)+'...</div>':'')
-            +'</div>';
-        }).join('')}
-      </div>
-    </div>
-
-    <!-- POR EMPRESA -->
-    <div class="dash-section">
-      <div class="dash-section-title">Por Empresa</div>
-      <div class="tbl-wrap">
-        <table class="tbl">
-          <thead><tr>
-            <th>Empresa</th><th>Total</th><th>Ativos</th><th>Em Ferias</th><th>Inativos</th>
-            <th>VR</th><th>Cafe</th><th>Cesta</th><th>Comb.</th><th>VT</th><th>Total Ben.</th>
-          </tr></thead>
-          <tbody>
-            ${empresas.map(emp=>{
-              const ec=f.filter(c=>String(c.mat||'').startsWith(emp.cod));
-              const ea=ec.filter(c=>c.status==='Ativo').length;
-              const ef=ec.filter(c=>['Ferias','Férias'].includes(c.status)).length;
-              const ei=ec.filter(c=>c.status==='Inativo').length;
-              let evr=0,ecafe=0,ecesta=0,ecomb=0,evt=0;
-              ec.filter(c=>c.status!=='Inativo').forEach(c=>{
-                const b=calcBen(c,getLanDR(c.mat,du),getLanDU(c.mat,du));
-                evr+=b.vr;ecafe+=b.cafe;ecesta+=b.cesta||0;ecomb+=b.comb;evt+=b.vt;
-              });
-              return '<tr>'
-                +'<td><strong>'+emp.cod+'</strong></td>'
-                +'<td>'+ec.length+'</td><td>'+ea+'</td><td>'+ef+'</td><td>'+ei+'</td>'
-                +'<td class="mono text-right">'+(evr?brl(evr):'—')+'</td>'
-                +'<td class="mono text-right">'+(ecafe?brl(ecafe):'—')+'</td>'
-                +'<td class="mono text-right">'+(ecesta?brl(ecesta):'—')+'</td>'
-                +'<td class="mono text-right">'+(ecomb?brl(ecomb):'—')+'</td>'
-                +'<td class="mono text-right">'+(evt?brl(evt):'—')+'</td>'
-                +'<td class="mono text-right" style="font-weight:700;color:var(--green)">'+brl(evr+ecafe+ecesta+ecomb+evt)+'</td>'
-                +'</tr>';
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-}
