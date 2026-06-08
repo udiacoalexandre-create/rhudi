@@ -1275,7 +1275,7 @@ function renderLancamento(){
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
   ativos.forEach(c=>{
     const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
+    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
     tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
   });
   // Atualizar rodap\u00E9
@@ -1371,7 +1371,7 @@ async function fecharCompetencia(){
   const detalhes=ativos.map(c=>{
     const du2=getLanDU(c.mat,du);
     const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt}=calcBen(c,dr,du2);
+    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
     tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
     return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',
       du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),
@@ -1509,7 +1509,7 @@ function exportarCajuCompleto(){
   const linhas=[header];
   getCajuAtivos(empSel).forEach(c=>{
     const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
+    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
     const alim=vr+cafe+cesta, mob=comb+vt;
     if(alim===0&&mob===0) return;
     const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
@@ -1613,7 +1613,7 @@ function exportarPorEmpresaCaju(){
       const linhas=[header];
       colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp.cod)).forEach(c=>{
         const dr=getLanDR(c.mat,du);
-        const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
+        const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
         const alim=vr+cafe,mob=comb+vt;
         if(alim===0&&mob===0) return;
         const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
@@ -1666,7 +1666,7 @@ function exportarSenior(tipo){
   if(empSel) f=f.filter(c=>String(c.mat||'').startsWith(empSel));
   f.forEach(c=>{
     const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
+    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
     const val=tipo==='vr'?vr:tipo==='cafe'?cafe:tipo==='comb'?comb:tipo==='cesta'?cesta:vt;
     if(val>0){
       const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
@@ -1842,7 +1842,7 @@ function exportarLancamentoExcel(){
     ...ativos.map(c=>{
       const du2=getLanDU(c.mat,du);
       const dr=getLanDR(c.mat,du);
-      const {vr,cafe,comb,vt}=calcBen(c,dr,du2);
+      const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
       return [c.mat,c.nome,c.cpf||'',c.depto||'',du2,fnum(lancamento[c.mat]?.faltas),fnum(lancamento[c.mat]?.ferias),fnum(lancamento[c.mat]?.extras),dr,vr,cafe,comb,vt,vr+cafe+comb+vt];
     })];
   const wb=XLSX.utils.book_new();
@@ -1937,7 +1937,7 @@ function processarFolha(event){
       if(c){
         porColab[mat].depto=c.depto||''; porColab[mat].cargo=c.cargo||''; porColab[mat].cpf=c.cpf||'';
         const dr=getLanDR(mat,du);
-        const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(mat,du));
+        const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(mat,du));
         porColab[mat].ben={vr,cafe,comb,vt};
       }
     });
@@ -2200,7 +2200,7 @@ function renderDashMain(){
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
   colaboradores.filter(c=>c.status!=='Inativo').forEach(c=>{
     const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
+    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
     tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
   });
 
@@ -2265,7 +2265,7 @@ function renderDashMain(){
               let tot=0;
               fc.filter(c=>c.status!=='Inativo').forEach(c=>{
                 const dr=getLanDR(c.mat,du);
-                const {vr,cafe,comb,vt}=calcBen(c,dr,getLanDU(c.mat,du));
+                const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
                 tot+=vr+cafe+comb+vt;
               });
               return `<tr>
