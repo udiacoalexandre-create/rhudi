@@ -343,29 +343,28 @@ async function excluirColab(id,nome){
 // ============================================================
 const MODULES = {
   base:{pages:[
-    {id:'base-lista',icon:'👥',label:'Colaboradores'},
-    {id:'base-sync',icon:'🔄',label:'Sync Senior'},
-    {id:'base-carga',icon:'📥',label:'Carga em Lote'},
+    {id:'base-lista',icon:'',label:'Colaboradores'},
+    {id:'base-import',icon:'',label:'Importar / Sync'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
   beneficios:{pages:[
-    {id:'ben-lancamento',icon:'📅',label:'Lan\u00E7amento Mensal'},
-    {id:'ben-importar',icon:'📋',label:'Importar Faltas'},
-    {id:'ben-exportar-caju',icon:'📤',label:'Exportar Caju & VT'},
-    {id:'ben-exportar-senior',icon:'🏢',label:'Exportar Senior'},
-    {id:'ben-historico',icon:'[hist]\uFE0F',label:'Hist\u00F3rico'},
-    {id:'ben-config',icon:'\u2699\uFE0F',label:'Configura\u00E7\u00F5es'},
+    {id:'ben-lancamento',icon:'',label:'Lan\u00E7amento Mensal'},
+    {id:'ben-importar',icon:'',label:'Importar Faltas'},
+    {id:'ben-exportar-caju',icon:'',label:'Exportar Caju & VT'},
+    {id:'ben-exportar-senior',icon:'',label:'Exportar Senior'},
+    {id:'ben-historico',icon:'',label:'Hist\u00F3rico'},
+    {id:'ben-config',icon:'',label:'Configura\u00E7\u00F5es'},
   ]},
   folha:{pages:[
-    {id:'folha-import',icon:'📥',label:'Importar Relat\u00F3rio'},
-    {id:'folha-view',icon:'📊',label:'Visualizar Folha'},
+    {id:'folha-import',icon:'',label:'Importar Relat\u00F3rio'},
+    {id:'folha-view',icon:'',label:'Visualizar Folha'},
   ]},
   ferias:{pages:[
-    {id:'fer-radar',icon:'🎯',label:'Radar de F\u00E9rias'},
-    {id:'fer-import',icon:'📥',label:'Importar Dados'},
+    {id:'fer-radar',icon:'',label:'Radar de F\u00E9rias'},
+    {id:'fer-import',icon:'',label:'Importar Dados'},
   ]},
   dashboard:{pages:[
-    {id:'dash-main',icon:'📊',label:'Dashboard Geral'},
+    {id:'dash-main',icon:'',label:'Dashboard Geral'},
   ]}
 };
 
@@ -433,23 +432,23 @@ function pgBaseLista(){
   const deptos=getDeptoList();
   return `
     <div class="page-header">
-      <h2>[colab] Base de Colaboradores</h2>
+      <h2> Base de Colaboradores</h2>
       <p>Gerencie todos os colaboradores da empresa</p>
     </div>
     <div class="filter-bar">
       <div class="filter-group" style="flex:1">
-        <label>[search] Buscar</label>
+        <label> Buscar</label>
         <input type="text" id="bl-q" placeholder="Nome, matr\u00EDcula ou CPF..." oninput="renderColabList()">
       </div>
       <div class="filter-group">
-        <label>[emp] Empresa</label>
+        <label> Empresa</label>
         <select id="bl-emp" onchange="renderColabList()">
           <option value="">Todas</option>
           ${empresas.map(e=>`<option value="${e.cod}">${e.cod} (${e.qtd})</option>`).join('')}
         </select>
       </div>
       <div class="filter-group">
-        <label>[dept] Departamento</label>
+        <label> Departamento</label>
         <select id="bl-dep" onchange="renderColabList()">
           <option value="">Todos</option>
           ${deptos.map(d=>`<option value="${d}">${d}</option>`).join('')}
@@ -479,8 +478,8 @@ function pgBaseLista(){
         </select>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()">\u2716</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()">[chart] Excel</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarBase()">[save] Base</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()"> Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportarBase()"> Base</button>
     </div>
     <div id="bl-count" class="text-sm text-muted" style="margin-bottom:8px"></div>
     <div class="tbl-wrap">
@@ -534,7 +533,7 @@ function renderColabList(){
   if(cnt) cnt.textContent=f.length+' de '+colaboradores.length+' colaboradores';
   const tbody=document.getElementById('bl-tbody'); if(!tbody) return;
   if(f.length===0){
-    tbody.innerHTML='<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">[search]</div><p>Nenhum resultado.</p></div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="10"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>';
     return;
   }
   tbody.innerHTML=f.map(c=>`<tr>
@@ -551,7 +550,7 @@ function renderColabList(){
     <td>${mobBadge(c)}</td>
     <td>
       <button class="btn btn-ghost btn-xs" onclick="abrirEditar('${c._id}')">\u270F\uFE0F</button>
-      <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${c.nome.replace(/'/g,"\\'")}')">[del]</button>
+      <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${c.nome.replace(/'/g,"\\'")}')"></button>
     </td>
   </tr>`).join('');
 }
@@ -562,7 +561,7 @@ function renderColabList(){
 function pgBaseSync(){
   return `
     <div class="page-header">
-      <h2>[sync] Sincroniza\u00E7\u00E3o com Senior</h2>
+      <h2> Sincroniza\u00E7\u00E3o com Senior</h2>
       <p>Importe o relat\u00F3rio da Senior para atualizar a base.</p>
     </div>
     <div class="card">
@@ -571,7 +570,7 @@ function pgBaseSync(){
       </div>
       <div class="upload-zone" onclick="document.getElementById('sync-file').click()">
         <input type="file" id="sync-file" accept=".xlsx,.xls" onchange="processarSync(event)">
-        <div class="upload-icon">[sync]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Clique para selecionar o relat\u00F3rio</div>
         <div class="upload-sub">.xlsx ou .xls</div>
       </div>
@@ -693,7 +692,7 @@ function syncIgnorar(tipo, idx){
 function pgBaseCarga(){
   return `
     <div class="page-header">
-      <h2>[imp] Importar & Reconciliar Base</h2>
+      <h2> Importar & Reconciliar Base</h2>
       <p>Importe uma planilha completa de colaboradores. O sistema compara com a base atual e prop\u00F5e as a\u00E7\u00F5es necess\u00E1rias.</p>
     </div>
     <div class="card">
@@ -706,7 +705,7 @@ function pgBaseCarga(){
       </div>
       <div class="upload-zone" onclick="document.getElementById('carga-file').click()">
         <input type="file" id="carga-file" accept=".xlsx,.xls" onchange="processarCarga(event)">
-        <div class="upload-icon">[list]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Clique para selecionar a planilha de colaboradores</div>
         <div class="upload-sub">Colunas: Matr\u00EDcula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC), VR/dia, Caf\u00E9/dia, Combust\u00EDvel, Mobilidade</div>
       </div>
@@ -817,7 +816,7 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
   // INCLUIR
   if(paraIncluir.length>0){
     html+=`<div class="card" style="margin-bottom:12px">
-      <div class="card-title" style="color:var(--blue)">[new] Novos colaboradores \u2014 selecione os que deseja incluir</div>
+      <div class="card-title" style="color:var(--blue)"> Novos colaboradores \u2014 selecione os que deseja incluir</div>
       <div style="display:flex;gap:8px;margin-bottom:10px">
         <button class="btn btn-ghost btn-sm" onclick="selecionarTodosIncluir(true)">\u2705 Selecionar todos</button>
         <button class="btn btn-ghost btn-sm" onclick="selecionarTodosIncluir(false)">\u2610 Desmarcar todos</button>
@@ -1051,13 +1050,13 @@ function pgBenLancamento(){
   const deptos=getDeptoList();
   return `
     <div class="page-header">
-      <h2>[cal] Lan\u00E7amento Mensal</h2>
+      <h2> Lan\u00E7amento Mensal</h2>
       <p>Informe faltas, f\u00E9rias e dias extras para calcular os benef\u00EDcios.</p>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
       <div class="card" style="margin-bottom:0">
-        <div class="card-title">[cal] Compet\u00EAncia & Dias</div>
+        <div class="card-title"> Compet\u00EAncia & Dias</div>
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
           <div class="fg"><label>M\u00EAs/Ano</label>
             <input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:120px" oninput="renderLancamento()">
@@ -1077,18 +1076,18 @@ function pgBenLancamento(){
 
     <div class="filter-bar">
       <div class="filter-group">
-        <label>[emp] Empresa</label>
+        <label> Empresa</label>
         <select id="lan-emp" onchange="renderLancamento()">
           <option value="">Todas</option>
           ${empresas.map(e=>`<option value="${e.cod}">${e.cod} (${e.qtd})</option>`).join('')}
         </select>
       </div>
       <div class="filter-group" style="flex:1">
-        <label>[search] Buscar</label>
+        <label> Buscar</label>
         <input type="text" id="lan-q" placeholder="Nome ou matr\u00EDcula..." oninput="renderLancamento()">
       </div>
       <div class="filter-group">
-        <label>[dept] Departamento</label>
+        <label> Departamento</label>
         <select id="lan-dep" onchange="renderLancamento()">
           <option value="">Todos</option>
           ${deptos.map(d=>`<option value="${d}">${d}</option>`).join('')}
@@ -1105,7 +1104,7 @@ function pgBenLancamento(){
         </select>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()">\u2716</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()">[chart] Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()"> Excel</button>
     </div>
 
     <div class="tbl-wrap">
@@ -1118,7 +1117,7 @@ function pgBenLancamento(){
         <tbody id="lan-tbody"></tbody>
         <tfoot id="lan-tfoot" style="display:none">
           <tr class="total-row-label">
-            <td colspan="3">[chart] <span id="lan-tot-label"></span></td>
+            <td colspan="3"> <span id="lan-tot-label"></span></td>
             <td colspan="5" style="text-align:center">\u2014</td>
             <td style="text-align:center">VR</td>
             <td style="text-align:center">Caf\u00E9</td>
@@ -1207,7 +1206,7 @@ function renderLancamento(){
 
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
   if(ativos.length===0){
-    tbody.innerHTML=`<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">[cal]</div><p>Nenhum resultado.</p></div></td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML=ativos.map((c,i)=>{
@@ -1301,7 +1300,7 @@ function pgBenImportar(){
     <div class="card">
       <div class="upload-zone" onclick="document.getElementById('faltas-file').click()">
         <input type="file" id="faltas-file" accept=".xlsx,.xls" onchange="importarFaltas(event)">
-        <div class="upload-icon">[list]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Clique para selecionar a planilha de faltas</div>
         <div class="upload-sub">Colunas: Matr\u00EDcula | Nome | CPF | N\u00BA de Faltas</div>
       </div>
@@ -1359,7 +1358,7 @@ function gerarModeloFaltas(){
 function pgBenExportarCaju(){
   const empresas=getEmpresaList();
   return `
-    <div class="page-header"><h2>[exp] Exportar \u2014 Caju & VT</h2><p>Gere os arquivos de pagamento de benef\u00EDcios.</p></div>
+    <div class="page-header"><h2> Exportar \u2014 Caju & VT</h2><p>Gere os arquivos de pagamento de benef\u00EDcios.</p></div>
 
     <div class="card" style="border:2px solid var(--green);background:var(--green-light)">
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -1372,7 +1371,7 @@ function pgBenExportarCaju(){
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-success" onclick="exportarCajuCompleto()">\u2B07 pedidos_caju.csv</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportarPorEmpresaCaju()">[emp] Um por empresa</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportarPorEmpresaCaju()"> Um por empresa</button>
         </div>
       </div>
     </div>
@@ -1394,8 +1393,8 @@ function pgBenExportarCaju(){
       <div class="export-card"><div class="ex-icon">\u2615</div><h3>Caf\u00E9 da Manh\u00E3</h3><p>Confer\u00EAncia individual</p><button class="btn btn-ghost btn-sm" onclick="exportarCajuTipo('cafe')">\u2B07 Caf\u00E9</button></div>
       <div class="export-card"><div class="ex-icon">\u26FD</div><h3>Combust\u00EDvel</h3><p>Confer\u00EAncia individual</p><button class="btn btn-ghost btn-sm" onclick="exportarCajuTipo('comb')">\u2B07 Comb.</button></div>
       <div class="export-card"><div class="ex-icon">VT</div><h3>Vale Transporte</h3><p>Com PEC/TOP e c\u00F3digos</p><button class="btn btn-accent btn-sm" onclick="exportarVT()">\u2B07 Exportar VT</button></div>
-      <div class="export-card"><div class="ex-icon">[pkg]</div><h3>Tudo de uma vez</h3><p>Todos separados</p><button class="btn btn-primary btn-sm" onclick="exportarTudo()">\u2B07 Todos</button></div>
-      <div class="export-card"><div class="ex-icon">[emp]</div><h3>Por Empresa</h3><p>Um arquivo por empresa</p><button class="btn btn-warning btn-sm" onclick="exportarPorEmpresa()">\u2B07 Por Empresa</button></div>
+      <div class="export-card"><div class="ex-icon"></div><h3>Tudo de uma vez</h3><p>Todos separados</p><button class="btn btn-primary btn-sm" onclick="exportarTudo()">\u2B07 Todos</button></div>
+      <div class="export-card"><div class="ex-icon"></div><h3>Por Empresa</h3><p>Um arquivo por empresa</p><button class="btn btn-warning btn-sm" onclick="exportarPorEmpresa()">\u2B07 Por Empresa</button></div>
     </div>`;
 }
 
@@ -1541,7 +1540,7 @@ function exportarPorEmpresaCaju(){
 function pgBenExportarSenior(){
   const empresas=getEmpresaList();
   return `
-    <div class="page-header"><h2>[emp] Exportar \u2014 Sistema Senior</h2><p>CSVs para integra\u00E7\u00E3o com o Senior.</p></div>
+    <div class="page-header"><h2> Exportar \u2014 Sistema Senior</h2><p>CSVs para integra\u00E7\u00E3o com o Senior.</p></div>
     <div class="alert alert-info">Formato: CPF (11 d\u00EDgitos com zeros \u00E0 esquerda) | Empresa (4 d\u00EDgitos) | Valor (0,00)</div>
     <div class="card" style="margin-top:14px">
       <div class="card-title">Filtrar por empresa</div>
@@ -1558,7 +1557,7 @@ function pgBenExportarSenior(){
       <div class="export-card"><div class="ex-icon">\u2615</div><h3>Caf\u00E9 \u2014 Senior</h3><p>CSV</p><button class="btn btn-primary btn-sm" onclick="exportarSenior('cafe')">\u2B07 Cafe_Senior.csv</button></div>
       <div class="export-card"><div class="ex-icon">\u26FD</div><h3>Mobilidade \u2014 Senior</h3><p>CSV</p><button class="btn btn-primary btn-sm" onclick="exportarSenior('comb')">\u2B07 Mob_Senior.csv</button></div>
       <div class="export-card"><div class="ex-icon">VT</div><h3>VT \u2014 Senior</h3><p>CSV</p><button class="btn btn-warning btn-sm" onclick="exportarSenior('vt')">\u2B07 VT_Senior.csv</button></div>
-      <div class="export-card"><div class="ex-icon">[pkg]</div><h3>Tudo Senior</h3><p>4 CSVs de uma vez</p><button class="btn btn-success btn-sm" onclick="exportarTodosSenior()">\u2B07 Todos</button></div>
+      <div class="export-card"><div class="ex-icon"></div><h3>Tudo Senior</h3><p>4 CSVs de uma vez</p><button class="btn btn-success btn-sm" onclick="exportarTodosSenior()">\u2B07 Todos</button></div>
     </div>`;
 }
 
@@ -1598,8 +1597,8 @@ function exportarTodosSenior(){
 // ============================================================
 function pgBenHistorico(){
   return `
-    <div class="page-header"><h2>[hist]\uFE0F Hist\u00F3rico de Compet\u00EAncias</h2><p>Compet\u00EAncias fechadas \u2014 compare m\u00EAs a m\u00EAs.</p></div>
-    <div id="hist-lista"><div class="empty-state"><div class="empty-icon">[hist]\uFE0F</div><p>Carregando...</p></div></div>`;
+    <div class="page-header"><h2>\uFE0F Hist\u00F3rico de Compet\u00EAncias</h2><p>Compet\u00EAncias fechadas \u2014 compare m\u00EAs a m\u00EAs.</p></div>
+    <div id="hist-lista"><div class="empty-state"><div class="empty-icon">\uFE0F</div><p>Carregando...</p></div></div>`;
 }
 
 async function renderHistorico(){
@@ -1608,14 +1607,14 @@ async function renderHistorico(){
   items.sort((a,b)=>b.fechadoEm.localeCompare(a.fechadoEm));
   const el=document.getElementById('hist-lista'); if(!el) return;
   if(items.length===0){
-    el.innerHTML='<div class="empty-state"><div class="empty-icon">[hist]\uFE0F</div><p>Nenhuma compet\u00EAncia fechada ainda.</p></div>';
+    el.innerHTML='<div class="empty-state"><div class="empty-icon">\uFE0F</div><p>Nenhuma compet\u00EAncia fechada ainda.</p></div>';
     return;
   }
   el.innerHTML=items.map(h=>`
     <div class="card" style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
         <div>
-          <div style="font-weight:700;font-size:16px;color:var(--blue)">[cal] ${h.competencia}</div>
+          <div style="font-weight:700;font-size:16px;color:var(--blue)"> ${h.competencia}</div>
           <div class="text-sm text-muted" style="margin-top:2px">${h.totalColaboradores} colaboradores \u00B7 ${new Date(h.fechadoEm).toLocaleDateString('pt-BR')}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
             <span class="badge badge-orange">VR\uFE0F ${brl(h.totais.vr)}</span>
@@ -1627,8 +1626,8 @@ async function renderHistorico(){
         <div style="text-align:right">
           <div style="font-weight:700;font-size:18px;color:var(--green)">${brl(h.totais.geral)}</div>
           <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="btn btn-ghost btn-sm" onclick="exportarHistExcel('${h.competencia}')">[chart] Excel</button>
-            <button class="btn btn-danger btn-sm" onclick="excluirHist('${h.competencia}')">[del]</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportarHistExcel('${h.competencia}')"> Excel</button>
+            <button class="btn btn-danger btn-sm" onclick="excluirHist('${h.competencia}')"></button>
           </div>
         </div>
       </div>
@@ -1690,8 +1689,8 @@ function pgBenConfig(){
       <div class="card-title">\uFE0F Base de Dados</div>
       <p class="text-sm text-muted" style="margin-bottom:14px">Exporte a base completa para backup ou migra\u00E7\u00E3o.</p>
       <div class="btn-row" style="margin-top:0">
-        <button class="btn btn-ghost" onclick="exportarBase()">[save] Exportar base completa (.xlsx)</button>
-        <button class="btn btn-ghost" onclick="document.getElementById('import-base-file').click()">[exp] Importar base</button>
+        <button class="btn btn-ghost" onclick="exportarBase()"> Exportar base completa (.xlsx)</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('import-base-file').click()"> Importar base</button>
         <input type="file" id="import-base-file" accept=".xlsx,.xls" style="display:none" onchange="importarBase(event)">
       </div>
     </div>`;
@@ -1797,7 +1796,7 @@ async function importarBase(event){
 // ============================================================
 function pgFolhaImport(){
   return `
-    <div class="page-header"><h2>[imp] Importar Relat\u00F3rio Senior</h2><p>Transforme o relat\u00F3rio de eventos em folha por colaborador.</p></div>
+    <div class="page-header"><h2> Importar Relat\u00F3rio Senior</h2><p>Transforme o relat\u00F3rio de eventos em folha por colaborador.</p></div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px">
         Formato esperado: <strong>Cadastro | Nome | Evento | Descri\u00E7\u00E3o | Valor</strong>
@@ -1814,7 +1813,7 @@ function pgFolhaImport(){
 
 function pgFolhaView(){
   return `
-    <div class="page-header"><h2>[chart] Folha de Pagamento</h2><p id="folha-sub">Importe um relat\u00F3rio para visualizar.</p></div>
+    <div class="page-header"><h2> Folha de Pagamento</h2><p id="folha-sub">Importe um relat\u00F3rio para visualizar.</p></div>
     <div id="folha-content">
       <div class="alert alert-warning">\u26A0\uFE0F Nenhuma folha importada ainda. Acesse "Importar Relat\u00F3rio" para come\u00E7ar.</div>
     </div>`;
@@ -1876,9 +1875,9 @@ function renderFolhaView(){
   if(!cont) return;
   cont.innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-      <input type="text" id="folha-q" placeholder="[search] Buscar..." oninput="filtrarFolha()"
+      <input type="text" id="folha-q" placeholder=" Buscar..." oninput="filtrarFolha()"
         style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-      <button class="btn btn-success btn-sm" onclick="exportarFolhaExcel()">[chart] Exportar Excel</button>
+      <button class="btn btn-success btn-sm" onclick="exportarFolhaExcel()"> Exportar Excel</button>
     </div>
     <div id="folha-count" class="text-xs text-muted" style="margin-bottom:8px">${folhaData.length} colaboradores</div>
     <div class="folha-wrap">
@@ -1949,7 +1948,7 @@ function exportarFolhaExcel(){
 function pgFerRadar(){
   return `
     <div class="page-header">
-      <h2>[radar] Radar de F\u00E9rias</h2>
+      <h2> Radar de F\u00E9rias</h2>
       <p>Visualiza\u00E7\u00E3o do status de f\u00E9rias por colaborador.</p>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
@@ -1968,7 +1967,7 @@ function pgFerRadar(){
           <option value="">Todos os deptos</option>
           ${getDeptoList().map(d=>`<option value="${d}">${d}</option>`).join('')}
         </select>
-        <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">[chart] Excel</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()"> Excel</button>
       </div>
     </div>
     <div id="fer-stats" style="margin-bottom:16px"></div>
@@ -2046,7 +2045,7 @@ function renderFerRadar(){
   // Tabela
   const tbl=document.getElementById('fer-tabela');
   if(tbl) tbl.innerHTML=`
-    <div class="card-title" style="margin-bottom:10px">[list] Tabela Detalhada</div>
+    <div class="card-title" style="margin-bottom:10px"> Tabela Detalhada</div>
     <div class="tbl-wrap">
       <table class="tbl">
         <thead><tr>
@@ -2076,7 +2075,7 @@ function renderFerRadar(){
 
 function pgFerImport(){
   return `
-    <div class="page-header"><h2>[imp] Importar Dados de F\u00E9rias</h2><p>Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
+    <div class="page-header"><h2> Importar Dados de F\u00E9rias</h2><p>Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px">
         Colunas esperadas: <strong>Matr\u00EDcula, Nome, Data In\u00EDcio, Data Fim, Data Vencimento, Dias Dispon\u00EDveis</strong>
@@ -2143,8 +2142,8 @@ function exportarFeriasExcel(){
 // ============================================================
 function pgDashMain(){
   return `
-    <div class="page-header"><h2>[chart] Dashboard Geral</h2><p>Vis\u00E3o consolidada de todos os m\u00F3dulos.</p></div>
-    <div id="dash-content"><div class="empty-state"><div class="empty-icon">[chart]</div><p>Carregando...</p></div></div>`;
+    <div class="page-header"><h2> Dashboard Geral</h2><p>Vis\u00E3o consolidada de todos os m\u00F3dulos.</p></div>
+    <div id="dash-content"><div class="empty-state"><div class="empty-icon"></div><p>Carregando...</p></div></div>`;
 }
 
 function renderDashMain(){
@@ -2180,7 +2179,7 @@ function renderDashMain(){
   if(!el) return;
   el.innerHTML=`
     <div class="dash-section">
-      <div class="dash-section-title">[colab] Colaboradores</div>
+      <div class="dash-section-title"> Colaboradores</div>
       <div class="stats-grid">
         <div class="stat-card blue"><div class="stat-val">${colaboradores.length}</div><div class="stat-label">Total na Base</div></div>
         <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ativos.length}</div><div class="stat-label">Ativos</div></div>
@@ -2190,7 +2189,7 @@ function renderDashMain(){
     </div>
 
     <div class="dash-section">
-      <div class="dash-section-title">[ben] Benef\u00EDcios \u2014 Compet\u00EAncia ${comp}</div>
+      <div class="dash-section-title"> Benef\u00EDcios \u2014 Compet\u00EAncia ${comp}</div>
       <div class="stats-grid">
         <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tVR)}</div><div class="stat-label">VR\uFE0F Vale Refei\u00E7\u00E3o</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.vr)>0).length} colaboradores</div></div>
         <div class="stat-card yellow"><div class="stat-val" style="font-size:18px;color:var(--yellow)">${brl(tCafe)}</div><div class="stat-label">\u2615 Caf\u00E9 da Manh\u00E3</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.cafe)>0).length} colaboradores</div></div>
@@ -2211,7 +2210,7 @@ function renderDashMain(){
     </div>
 
     <div class="dash-section">
-      <div class="dash-section-title">[emp] Por Empresa</div>
+      <div class="dash-section-title"> Por Empresa</div>
       <div class="tbl-wrap">
         <table class="tbl">
           <thead><tr><th>Empresa</th><th>Total</th><th>Ativos</th><th>Inativos</th><th>Em F\u00E9rias</th><th>Total Benef\u00EDcios</th></tr></thead>
@@ -2352,7 +2351,7 @@ waitFirebase(()=>{
 function pgBaseImport(){
   return `
     <div class="page-header">
-      <h2>[sync] Importar / Sincronizar Base</h2>
+      <h2> Importar / Sincronizar Base</h2>
       <p>Dois modos: Sync Senior (status/demissoes/ferias) ou Carga Completa (reconciliacao total).</p>
     </div>
     <div class="card" style="margin-bottom:14px">
@@ -2380,7 +2379,7 @@ function pgBaseImport(){
       </div>
       <div class="upload-zone" onclick="document.getElementById('import-file').click()">
         <input type="file" id="import-file" accept=".xlsx,.xls" onchange="processarImport(event)">
-        <div class="upload-icon">[sync]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Clique para selecionar o arquivo</div>
         <div class="upload-sub">.xlsx ou .xls</div>
       </div>
@@ -2455,7 +2454,7 @@ function pgPremioAssiduidade(){
     <div class="card">
       <div class="upload-zone" onclick="document.getElementById('premio-file').click()">
         <input type="file" id="premio-file" accept=".xlsx,.xls" onchange="processarPremio(event)">
-        <div class="upload-icon">[list]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Clique para selecionar o relatorio de assiduidade</div>
         <div class="upload-sub">Colunas: Cadastro, Nome, CPF, Situacao, Atraso, Saida Antecipada, Atestado, Atestado Horas, Atestado Noturno, Faltas, Abono Gestor</div>
       </div>
@@ -2707,7 +2706,7 @@ function fazerLogout(){
 
 function pgFolhaImport(){
   return `
-    <div class="page-header"><h2>[imp] Importar Relatorio Senior</h2>
+    <div class="page-header"><h2> Importar Relatorio Senior</h2>
     <p>O relatorio sera classificado em 4 tabelas: Proventos, Encargos, Adiantamento e Descontos.</p></div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px">
@@ -2715,7 +2714,7 @@ function pgFolhaImport(){
       </div>
       <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
         <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
-        <div class="upload-icon">[$]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Selecionar relatorio de eventos</div>
         <div class="upload-sub">.xlsx ou .xls</div>
       </div>
@@ -2829,7 +2828,7 @@ function mapearEvento(ev){
 
 function pgFolhaView(){
   return `
-    <div class="page-header"><h2>[chart] Folha de Pagamento</h2>
+    <div class="page-header"><h2> Folha de Pagamento</h2>
     <p id="folha-sub">Importe um relatorio para visualizar.</p></div>
     <div id="folha-content">
       <div class="alert alert-warning">Nenhuma folha importada. Va em "Importar Relatorio" primeiro.</div>
@@ -3194,31 +3193,31 @@ function renderFarois(dados){
 // Override do MODULES para incluir premio
 const MODULES_OVERRIDE = {
   base:{pages:[
-    {id:'base-lista',icon:'[colab]',label:'Colaboradores'},
-    {id:'base-import',icon:'[sync]',label:'Importar / Sync'},
+    {id:'base-lista',icon:'',label:'Colaboradores'},
+    {id:'base-import',icon:'',label:'Importar / Sync'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
   beneficios:{pages:[
-    {id:'ben-lancamento',icon:'[cal]',label:'Lancamento Mensal'},
-    {id:'ben-importar',icon:'[list]',label:'Importar Faltas'},
-    {id:'ben-exportar-caju',icon:'[exp]',label:'Exportar Caju e VT'},
-    {id:'ben-exportar-senior',icon:'[emp]',label:'Exportar Senior'},
-    {id:'ben-historico',icon:'[hist]',label:'Historico'},
-    {id:'ben-config',icon:'[cfg]',label:'Configuracoes'},
+    {id:'ben-lancamento',icon:'',label:'Lancamento Mensal'},
+    {id:'ben-importar',icon:'',label:'Importar Faltas'},
+    {id:'ben-exportar-caju',icon:'',label:'Exportar Caju e VT'},
+    {id:'ben-exportar-senior',icon:'',label:'Exportar Senior'},
+    {id:'ben-historico',icon:'',label:'Historico'},
+    {id:'ben-config',icon:'',label:'Configuracoes'},
   ]},
   folha:{pages:[
-    {id:'folha-import',icon:'[imp]',label:'Importar Relatorio'},
-    {id:'folha-view',icon:'[chart]',label:'Visualizar Folha'},
+    {id:'folha-import',icon:'',label:'Importar Relatorio'},
+    {id:'folha-view',icon:'',label:'Visualizar Folha'},
   ]},
   ferias:{pages:[
-    {id:'fer-radar',icon:'[radar]',label:'Radar de Ferias'},
-    {id:'fer-import',icon:'[imp]',label:'Importar Dados'},
+    {id:'fer-radar',icon:'',label:'Radar de Ferias'},
+    {id:'fer-import',icon:'',label:'Importar Dados'},
   ]},
   premio:{pages:[
-    {id:'premio-main',icon:'[list]',label:'Premio Assiduidade'},
+    {id:'premio-main',icon:'',label:'Premio Assiduidade'},
   ]},
   dashboard:{pages:[
-    {id:'dash-main',icon:'[chart]',label:'Dashboard Geral'},
+    {id:'dash-main',icon:'',label:'Dashboard Geral'},
   ]}
 };
 
@@ -3255,7 +3254,7 @@ function pgFolhaImport(){
       </div>
       <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
         <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
-        <div class="upload-icon">[$]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Selecionar relatorio de eventos</div>
         <div class="upload-sub">.xlsx ou .xls</div>
       </div>
@@ -3293,7 +3292,7 @@ function pgPremioAssiduidade(){
     <div class="card">
       <div class="upload-zone" onclick="document.getElementById('premio-file').click()">
         <input type="file" id="premio-file" accept=".xlsx,.xls" onchange="processarPremio(event)">
-        <div class="upload-icon">[list]</div>
+        <div class="upload-icon"></div>
         <div class="upload-text">Clique para selecionar o relatorio de assiduidade</div>
         <div class="upload-sub">Colunas: Cadastro, Nome, CPF, Situacao, Atraso, Saida Antecipada, Atestado, Atestado Horas, Atestado Noturno, Faltas, Abono Gestor</div>
       </div>
