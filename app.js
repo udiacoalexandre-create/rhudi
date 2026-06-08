@@ -2936,15 +2936,25 @@ function renderTabelaFolha(){
   const tbl=document.getElementById('folha-tabela'); if(!tbl) return;
 
   const coresGrupo={
-    "REMUNERACAO FIXA":"#1D4ED8","JORNADAS / HORAS ADICIONAIS":"#7C3AED",
-    "AFASTAMENTOS":"#DB2777","FERIAS":"#059669","13o SALARIO":"#D97706",
-    "REEMBOLSOS / AJUSTES":"#0891B2","RESCISORIOS":"#DC2626",
-    "ENCARGOS EMPRESA":"#9333EA","ADIANTAMENTO SALARIAL":"#EA580C",
-    "ENCARGOS OBRIGATORIOS":"#DC2626","DESCONTOS JORNADA":"#B45309",
-    "DESCONTOS BENEFICIOS":"#0369A1","DESCONTOS EMPRESTIMOS":"#7C3AED",
-    "DESCONTOS FERIAS":"#059669","SINDICAIS / ASSISTENCIAIS":"#6B7280",
-    "PENSAO":"#DC2626","OUTROS":"#374151"
+    "REMUNERACAO FIXA":{bg:"#DBEAFE",text:"#1E3A8A"},
+    "JORNADAS / HORAS ADICIONAIS":{bg:"#EDE9FE",text:"#4C1D95"},
+    "AFASTAMENTOS":{bg:"#FCE7F3",text:"#831843"},
+    "FERIAS":{bg:"#D1FAE5",text:"#064E3B"},
+    "13o SALARIO":{bg:"#FEF3C7",text:"#78350F"},
+    "REEMBOLSOS / AJUSTES":{bg:"#CFFAFE",text:"#164E63"},
+    "RESCISORIOS":{bg:"#FEE2E2",text:"#7F1D1D"},
+    "ENCARGOS EMPRESA":{bg:"#F3E8FF",text:"#4A044E"},
+    "ADIANTAMENTO SALARIAL":{bg:"#FFEDD5",text:"#7C2D12"},
+    "ENCARGOS OBRIGATORIOS":{bg:"#FEE2E2",text:"#7F1D1D"},
+    "DESCONTOS JORNADA":{bg:"#FEF9C3",text:"#713F12"},
+    "DESCONTOS BENEFICIOS":{bg:"#DBEAFE",text:"#1E3A8A"},
+    "DESCONTOS EMPRESTIMOS":{bg:"#EDE9FE",text:"#4C1D95"},
+    "DESCONTOS FERIAS":{bg:"#D1FAE5",text:"#064E3B"},
+    "SINDICAIS / ASSISTENCIAIS":{bg:"#F3F4F6",text:"#374151"},
+    "PENSAO":{bg:"#FEE2E2",text:"#7F1D1D"},
+    "OUTROS":{bg:"#F9FAFB",text:"#374151"}
   };
+  const getCor=(g)=>coresGrupo[g]||{bg:"#F3F4F6",text:"#374151"};
 
   // Montar colunas agrupadas
   const colsPorGrupo={};
@@ -2986,11 +2996,12 @@ function renderTabelaFolha(){
   const totalCards=Object.entries(colsPorGrupo).map(([g,cols])=>{
     const cor=coresGrupo[g]||'#374151';
     const tot=totGrupos[g];
-    return '<div style="border-left:4px solid '+cor+';background:var(--surface);border-radius:var(--radius-sm);'+
+    const cg=getCor(g);
+    return '<div style="border-left:4px solid '+cg.text+';background:'+cg.bg+';border-radius:var(--radius-sm);'+
       'padding:10px 14px;min-width:160px">'+
-      '<div style="font-size:10px;font-weight:700;color:'+cor+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">'+g+'</div>'+
-      '<div style="font-size:16px;font-weight:700;color:var(--text);font-family:monospace">'+brl(tot)+'</div>'+
-      '<div style="font-size:10px;color:var(--text2)">'+cols.length+' evento(s)</div></div>';
+      '<div style="font-size:10px;font-weight:700;color:'+cg.text+';text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">'+g+'</div>'+
+      '<div style="font-size:15px;font-weight:700;color:'+cg.text+';font-family:monospace">'+brl(tot)+'</div>'+
+      '<div style="font-size:10px;color:'+cg.text+';opacity:.7">'+cols.length+' evento(s)</div></div>';
   }).join('');
 
   // ── Tabela com sticky header ──
@@ -2999,22 +3010,25 @@ function renderTabelaFolha(){
   thead+='<tr>';
   thead+='<th colspan="4" style="background:#0f2d52;position:sticky;left:0;z-index:4">Colaborador</th>';
   Object.entries(colsPorGrupo).forEach(([g,cols])=>{
-    const cor=coresGrupo[g]||'#374151';
-    thead+='<th colspan="'+cols.length+'" style="background:'+cor+';text-align:center;'
-      +'border-left:2px solid rgba(255,255,255,.2);font-size:9px;letter-spacing:.5px;white-space:nowrap">'+g+'</th>';
+    const c2=getCor(g);
+    thead+='<th colspan="'+cols.length+'" style="background:'+c2.bg+';color:'+c2.text+';text-align:center;'
+      +'border-left:2px solid rgba(0,0,0,.08);font-size:10px;font-weight:700;letter-spacing:.4px;'
+      +'white-space:nowrap;padding:8px 6px">'+g+'</th>';
   });
   thead+='<th style="background:#1B5E20;color:#fff;position:sticky;right:0">TOTAL</th></tr>';
   // Linha 2: nomes dos eventos
   thead+='<tr>';
-  thead+='<th style="background:#162B52;position:sticky;left:0;z-index:3;min-width:70px">Mat.</th>';
-  thead+='<th style="background:#162B52;position:sticky;left:70px;z-index:3;min-width:160px">Nome</th>';
-  thead+='<th style="background:#162B52;min-width:100px">CPF</th>';
-  thead+='<th style="background:#162B52;min-width:100px">Depto</th>';
+  const thStyle='background:#1E3A8A;color:#fff;padding:8px 10px;font-size:11px;font-weight:600;';
+  thead+='<th style="'+thStyle+'position:sticky;left:0;z-index:3;min-width:70px">Mat.</th>';
+  thead+='<th style="'+thStyle+'position:sticky;left:70px;z-index:3;min-width:160px">Nome</th>';
+  thead+='<th style="'+thStyle+'min-width:100px">CPF</th>';
+  thead+='<th style="'+thStyle+'min-width:120px">Departamento</th>';
   todasCols.forEach(c=>{
-    const grupo=Object.entries(colsPorGrupo).find(([g,cols])=>cols.find(x=>x.ev===c.ev));
-    const cor=grupo?coresGrupo[grupo[0]]||'#374151':'#374151';
-    thead+='<th style="background:'+cor+'CC;font-size:9px;white-space:nowrap;max-width:80px;'+
-      'overflow:hidden;text-overflow:ellipsis;border-left:1px solid rgba(255,255,255,.15)" title="'+c.nome+'">'+c.nome+'</th>';
+    const grupoEntry=Object.entries(colsPorGrupo).find(([g,cols])=>cols.find(x=>x.ev===c.ev));
+    const c3=grupoEntry?getCor(grupoEntry[0]):{bg:"#F3F4F6",text:"#374151"};
+    thead+='<th style="background:'+c3.bg+';color:'+c3.text+';font-size:9px;white-space:nowrap;'+
+      'max-width:90px;overflow:hidden;text-overflow:ellipsis;padding:6px 5px;'+
+      'border-left:1px solid rgba(0,0,0,.06);font-weight:600" title="'+c.nome+'">'+c.nome+'</th>';
   });
   thead+='<th style="background:#1B5E20;position:sticky;right:0;min-width:90px">Total</th></tr>';
   thead+='</thead>';
