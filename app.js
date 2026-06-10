@@ -3640,7 +3640,7 @@ function parsearApuracaoTexto(texto, prevEl){
     const resto = mMat[3];
 
     // Extrair nome: texto antes do primeiro código de 3 dígitos
-    const mNome = resto.match(/^([A-ZÀ-ÿ][A-ZÀ-ÿ\s]+?)(?=\s+\d{3}\s)/);
+    const mNome = resto.match(/^([\w\s\u00C0-\u00FF]+?)(?=\s+\d{3}\s)/);
     const nome = mNome ? mNome[1].trim().replace(/\s+/g,' ') : resto.substring(0,50).trim();
 
     if(!resultado[mat]){
