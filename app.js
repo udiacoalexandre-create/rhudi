@@ -456,6 +456,7 @@ function afterRender(id){
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
   if(id==='dash-main') renderDashMain();
+  if(id==='premio-main') afterRenderPremio();
 }
 
 // ============================================================
@@ -2479,32 +2480,6 @@ function initDeptoAutocomplete(prefix){
 // ════════════════════════════════════════════════════════════════
 
 
-function pgPremioAssiduidade(){
-  return `
-    <div class="page-header">
-      <h2>Premio de Assiduidade</h2>
-      <p>Importar relatorio da Senior e calcular elegibilidade. Valor fixo: R$ 226,00</p>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px" id="premio-stats">
-      <div class="stat-card green"><div class="stat-val" id="ps-elegivel">-</div><div class="stat-label">Tem direito</div></div>
-      <div class="stat-card red"><div class="stat-val" id="ps-nao">-</div><div class="stat-label">Nao tem direito</div></div>
-      <div class="stat-card yellow"><div class="stat-val" id="ps-analisar">-</div><div class="stat-label">Analisar</div></div>
-      <div class="stat-card blue"><div class="stat-val" id="ps-total-val">-</div><div class="stat-label">Total a pagar</div></div>
-    </div>
-
-    <div class="card">
-      <div class="upload-zone" onclick="document.getElementById('premio-file').click()">
-        <input type="file" id="premio-file" accept=".xlsx,.xls" onchange="processarPremio(event)">
-        <div class="upload-icon"></div>
-        <div class="upload-text">Clique para selecionar o relatorio de assiduidade</div>
-        <div class="upload-sub">Colunas: Cadastro, Nome, CPF, Situacao, Atraso, Saida Antecipada, Atestado, Atestado Horas, Atestado Noturno, Faltas, Abono Gestor</div>
-      </div>
-    </div>
-
-    <div id="premio-content" style="margin-top:14px"></div>`;
-}
-
 function parseHora(val){
   if(!val) return 0;
   const s=String(val).trim();
@@ -2513,132 +2488,6 @@ function parseHora(val){
   const m=s.match(/(\d+):(\d+)/);
   if(m) return parseInt(m[1])*60+parseInt(m[2]);
   return parseFloat(s)||0;
-}
-
-function processarPremio(event){
-  const file=event.target.files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const wb=XLSX.read(e.target.result,{type:'binary'});
-    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
-    let hi=0;
-    for(let i=0;i<Math.min(5,data.length);i++){
-      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
-    }
-    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
-    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
-    const iNome=hs.findIndex(h=>h.includes('nome'));
-    const iCPF=hs.findIndex(h=>h.includes('cpf'));
-    const iSit=hs.findIndex(h=>h.includes('situa'));
-    const iAtr=hs.findIndex(h=>h.includes('atraso'));
-    const iSaida=hs.findIndex(h=>h.includes('saida')||h.includes('saída'));
-    const iAtest=hs.findIndex(h=>h.includes('atestado')&&!h.includes('hora')&&!h.includes('notur'));
-    const iAHor=hs.findIndex(h=>h.includes('atestado hora'));
-    const iANot=hs.findIndex(h=>h.includes('atestado notur'));
-    const iFalt=hs.findIndex(h=>h.includes('falta'));
-    const iAbono=hs.findIndex(h=>h.includes('abono'));
-
-    const resultado=[];
-    for(let i=hi+1;i<data.length;i++){
-      const r=data[i]; if(!r||!r[iNome]) continue;
-      const mat=String(r[iMat]||'').trim();
-      const nome=String(r[iNome]||'').trim().toUpperCase();
-      const cpf=String(r[iCPF]||'').trim().replace(/[^0-9]/g,'');
-      const sit=String(r[iSit]||'').trim();
-
-      // Excluidos automaticamente
-      if(['afastado','inativo','n/a'].some(x=>sit.toLowerCase().includes(x))){
-        resultado.push({mat,nome,cpf,sit,status:'NA',motivo:'Situacao: '+sit,
-          atraso:0,saida:0,atestado:0,aHoras:0,aNoturno:0,faltas:0,abono:0});
-        continue;
-      }
-
-      const atraso=parseHora(r[iAtr]);
-      const saida=parseHora(r[iSaida]);
-      const atestado=parseHora(r[iAtest]);
-      const aHoras=parseHora(r[iAHor]);
-      const aNoturno=parseHora(r[iANot]);
-      const faltas=parseHora(r[iFalt]);
-      const abono=parseHora(r[iAbono]);
-
-      let status, motivo='';
-
-      // Nao tem direito automaticamente
-      if(atestado>0||aHoras>0||aNoturno>0||abono>0){
-        status='NAO';
-        const motivos=[];
-        if(atestado>0) motivos.push('Atestado');
-        if(aHoras>0) motivos.push('Atestado Horas');
-        if(aNoturno>0) motivos.push('Atestado Noturno');
-        if(abono>0) motivos.push('Abono Gestor');
-        motivo=motivos.join(', ');
-      }
-      // Atraso/saida <= 10 min = tem direito
-      else if((atraso===0||atraso<=10)&&(saida===0||saida<=10)){
-        status='SIM';
-        if(atraso>0) motivo='Atraso ate 10min (OK)';
-        if(saida>0) motivo=(motivo?motivo+', ':'')+'Saida antecip. ate 10min (OK)';
-      }
-      // Atraso/saida > 10 min = analisar
-      else if(atraso>10||saida>10){
-        status='ANALISAR';
-        const motivos=[];
-        if(atraso>10) motivos.push('Atraso '+Math.floor(atraso/60)+'h'+String(atraso%60).padStart(2,'0')+'min');
-        if(saida>10) motivos.push('Saida antecip. '+Math.floor(saida/60)+'h'+String(saida%60).padStart(2,'0')+'min');
-        motivo=motivos.join(', ');
-      }
-      else { status='SIM'; }
-
-      resultado.push({mat,nome,cpf,sit,status,motivo,atraso,saida,atestado,aHoras,aNoturno,faltas,abono});
-    }
-
-    premioData=resultado;
-    renderPremioTabela(resultado);
-    event.target.value='';
-  };
-  reader.readAsBinaryString(file);
-}
-
-function renderPremioTabela(dados){
-  const sim=dados.filter(d=>d.status==='SIM').length;
-  const nao=dados.filter(d=>d.status==='NAO').length;
-  const analisar=dados.filter(d=>d.status==='ANALISAR').length;
-  const total=sim*226;
-
-  const setStat=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
-  setStat('ps-elegivel',sim);
-  setStat('ps-nao',nao);
-  setStat('ps-analisar',analisar);
-  setStat('ps-total-val',brl(total));
-
-  const content=document.getElementById('premio-content'); if(!content) return;
-  content.innerHTML=`
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-      <input type="text" id="premio-q" placeholder="Buscar nome ou matricula..." oninput="filtrarPremio()"
-        style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-      <select id="premio-filtro" onchange="filtrarPremio()"
-        style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
-        <option value="">Todos</option>
-        <option value="SIM">Tem direito</option>
-        <option value="NAO">Nao tem direito</option>
-        <option value="ANALISAR">Analisar</option>
-      </select>
-      <button class="btn btn-success btn-sm" onclick="exportarPremioCaju()">Exportar Caju CSV</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarPremioExcel()">Excel</button>
-    </div>
-    <div class="tbl-wrap">
-      <table class="tbl" id="premio-tbl">
-        <thead><tr>
-          <th>Matricula</th><th>Nome</th><th>CPF</th><th>Situacao</th>
-          <th>Atraso</th><th>Saida Antec.</th><th>Atestado</th><th>Ates.Horas</th>
-          <th>Ates.Noturn</th><th>Faltas</th><th>Abono Gest.</th>
-          <th>Resultado</th><th>Motivo</th><th>Valor</th>
-        </tr></thead>
-        <tbody id="premio-tbody">
-          ${renderPremioRows(dados)}
-        </tbody>
-      </table>
-    </div>`;
 }
 
 function fmtMin(min){
@@ -2671,59 +2520,6 @@ function renderPremioRows(dados){
   }).join('');
 }
 
-function filtrarPremio(){
-  if(!premioData) return;
-  const q=(document.getElementById('premio-q')?.value||'').toLowerCase();
-  const f=document.getElementById('premio-filtro')?.value||'';
-  let dados=premioData;
-  if(q) dados=dados.filter(d=>d.nome.toLowerCase().includes(q)||d.mat.includes(q));
-  if(f) dados=dados.filter(d=>d.status===f);
-  const tbody=document.getElementById('premio-tbody');
-  if(tbody) tbody.innerHTML=renderPremioRows(dados);
-}
-
-function exportarPremioCaju(){
-  if(!premioData){toast('Nenhum dado carregado','error');return;}
-  const NL2=String.fromCharCode(10);
-  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
-  const linhas=[header];
-  premioData.filter(d=>d.status==='SIM').forEach(d=>{
-    const cpf=(d.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
-    linhas.push([cpf,d.mat||'','226.00','0','0','0','0','0','0','0','0','0','0'].join(';'));
-  });
-  const blob=new Blob([linhas.join(NL2)],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download='Premio_Assiduidade_Caju.csv';
-  a.click(); URL.revokeObjectURL(url);
-  toast('CSV Caju exportado!','success');
-}
-
-function exportarPremioExcel(){
-  if(!premioData){toast('Nenhum dado','error');return;}
-  const rows=[['Matricula','Nome','CPF','Situacao','Atraso','Saida Antec.','Atestado','Ates.Horas','Ates.Noturno','Faltas','Abono Gestor','Resultado','Motivo','Valor'],
-    ...premioData.map(d=>[d.mat,d.nome,d.cpf,d.sit,fmtMin(d.atraso),fmtMin(d.saida),fmtMin(d.atestado),fmtMin(d.aHoras),fmtMin(d.aNoturno),fmtMin(d.faltas),fmtMin(d.abono),d.status,d.motivo,d.status==='SIM'?226:0])];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Premio Assiduidade');
-  XLSX.writeFile(wb,'Premio_Assiduidade.xlsx');
-  toast('Excel exportado!','success');
-}
-
-// ════════════════════════════════════════════════════════════════
-// FOLHA DE PAGAMENTO — 4 TABELAS COM GRUPOS
-// ════════════════════════════════════════════════════════════════
-const EVENTOS_FOLHA = {"proventos":{"REMUNERA\u00c7\u00c3O FIXA":{"1":"Sal\u00e1rio Normal","1600":"Pr\u00f3-Labore","1952":"Periculosidade","1962":"Diferen\u00e7a de Sal\u00e1rio"},"JORNADAS / HORAS ADICIONAIS":{"301":"Horas Extras 60%","257":"Horas Extras 50%","259":"Horas Extras 100%","391":"Hora Extra Noturno 60%","261":"Hora Extra Noturno 50%","265":"DSR Reflexo H.Extras","1950":"Adicional Noturno","1968":"DSR Adicional Noturno","264":"Horas Extras c/100% Noturno","317":"Diferen\u00e7a Hora Extra","601":"M\u00e9dia H.Extras Abono Pec.","273":"Diferen\u00e7a Horas Extras 60"},"AFASTAMENTOS":{"14":"Atestado at\u00e9 15 dias","13":"Horas Licen\u00e7a Paternidade","9":"Horas Acidente Trabalho"},"F\u00c9RIAS":{"5":"Horas F\u00e9rias Diurnas","104":"Horas F\u00e9rias Noturnas","551":"M\u00e9dia Horas Extras F\u00e9rias","553":"Adic.Noturno F\u00e9rias","555":"Periculosidade F\u00e9rias","558":"1/3 F\u00e9rias","600":"Abono Pecuni\u00e1rio F\u00e9rias","606":"Adic.Noturno Abono Pec. F\u00e9rias","609":"1/3 Abono Pecuni\u00e1rio F\u00e9r"},"13\u00ba SAL\u00c1RIO":{"750":"13o Sal\u00e1rio Adiantado","312":"13o Sal S/variav F\u00e9rias"},"REEMBOLSOS / AJUSTES":{"1701":"Estouro do M\u00eas","307":"Reembolso Desc Indevido","389":"Reembolso de DSR","1753":"Devolu\u00e7\u00e3o de INSS","390":"Reembolso de falta(s)","380":"Bolsa Aux\u00edlio (Faculdade)","2151":"Estouro M\u00eas Anterior"},"RESCIS\u00d3RIOS":{"650":"F\u00e9rias Vencidas Rescis\u00e3o","652":"M\u00e9dia H.Extra F\u00e9rias Resc.","659":"1/3 F\u00e9rias Rescis\u00e3o","851":"M\u00e9dia H.Extras 13\u00ba Prop.","900":"13\u00ba Indenizado Rescis\u00e3o","906":"Adic. Noturno 13\u00ba Inden.","951":"M\u00e9dia Horas Extras A.P.I.","1400":"F\u00e9rias Indenizad. Rescis\u00e3o","1406":"Adic. Not. F\u00e9rias Ind. Resc.","1550":"Saldo de Sal\u00e1rio","651":"F\u00e9rias Proporc. Rescis\u00e3o","656":"Adic. Noturno F\u00e9rias Resc.","850":"13\u00ba Sal\u00e1rio Proporc. Resc.","856":"Adic. Noturno 13\u00ba Prop.","901":"M\u00e9dia H.Extras 13\u00ba Inden.","950":"Aviso Pr\u00e9vio Indenizado","956":"Adic. Noturno A.P.I.","1401":"M\u00e9dia H.Ext. F\u00e9r. Ind. Resc.","1408":"1/3 F\u00e9rias Ind. Rescis\u00e3o"}},"encargos":{"ENCARGOS EMPRESA":{"2500":"FGTS","2505":"FGTS 13o Sal\u00e1rio","1555":"FGTS Rescis\u00e3o Depositado","1556":"FGTS 40% Depositado","1557":"FGTS 13o Sal. Dep\u00f3sito","INSS_PAT":"INSS Patronal"}},"adiantamento":{"ADIANTAMENTO SALARIAL":{"2464":"Desc.Adto Salarial"}},"descontos":{"ENCARGOS OBRIGAT\u00d3RIOS":{"2000":"INSS","2001":"INSS Diretor Carn\u00ea","2003":"INSS 13o Sal\u00e1rio","2004":"IRRF","2006":"IRRF Adto Salarial"},"DESCONTOS JORNADA":{"3":"Faltas Integral","4":"Faltas DSR","2457":"Falta Parcial"},"DESCONTOS BENEF\u00cdCIOS":{"343":"Plano De Saude-depend","2453":"Vale Transporte","324":"Coparticip Pl Saude Amil","2462":"Vale Parcelado","347":"Vale"},"DESCONTOS EMPR\u00c9STIMOS":{"680":"Empr Cred do Trabal - 1","681":"Empr Cred do Trabal - 2","682":"Empr Cred do Trabal - 3","692":"Dif Empr Cred Trabal - 3","683":"Empr Cred do Trabal - 4","693":"Dif Empr Cred Trabal - 4","684":"Empr Cred do Trabal - 5","694":"Dif Empr Cred Trabal - 5","685":"Empr Cred do Trabal - 6","695":"Dif Empr Cred Trabal - 6","686":"Empr Cred do Trabal - 7","696":"Dif Empr Cred Trabal - 7","687":"Empr Cred do Trabal - 8","688":"Dif Empr Cred Trabal - 9","698":"Dif Empr Cred Trabal - 9","690":"Dif Empr Cred Trabal - 1","691":"Dif Empr Cred Trabal - 2"},"DESCONTOS F\u00c9RIAS":{"2014":"IRRF F\u00e9rias","2002":"INSS F\u00e9rias","2251":"Pens\u00e3o Judicial F\u00e9rias","2101":"Desconto Adto F\u00e9rias"},"RESCIS\u00d3RIOS":{"1000":"Aviso Pr\u00e9vio Reavido","2454":"L\u00edquido Rescis\u00e3o"},"SINDICAIS / ASSISTENCIAIS":{"341":"Gremio Recreativo","2050":"Mensalidade Sindicato","2055":"Taxa Assistencial"},"PENS\u00c3O":{"2250":"Pens\u00e3o Judicial"}}};
-
-// Flat map para lookup rapido
-const EVENTOS_FLAT = {};
-Object.values(EVENTOS_FOLHA).forEach(tab=>Object.values(tab).forEach(g=>Object.assign(EVENTOS_FLAT,g)));
-
-// Eventos nao mapeados (adicionados pelo usuario via sessao)
-
-
-// ════════════════════════════════════════════════════════════════
-// AUTH
-// ════════════════════════════════════════════════════════════════
 function fazerLogin(){
   const email=document.getElementById('login-email')?.value.trim()||'';
   const senha=document.getElementById('login-senha')?.value||'';
@@ -3007,22 +2803,23 @@ function renderTabelaFolha(){
   // ── Tabela com sticky header ──
   let thead='<thead>';
   // Linha 1: grupos (cor)
+  // Linha 1: grupos — sticky no topo (top:0)
   thead+='<tr>';
-  thead+='<th colspan="4" style="background:#0f2d52;position:sticky;left:0;z-index:4">Colaborador</th>';
+  thead+='<th colspan="4" style="background:#1E3A8A;color:#fff;position:sticky;top:0;left:0;z-index:6;padding:8px 10px;font-size:11px">Colaborador</th>';
   Object.entries(colsPorGrupo).forEach(([g,cols])=>{
     const c2=getCor(g);
     thead+='<th colspan="'+cols.length+'" style="background:'+c2.bg+';color:'+c2.text+';text-align:center;'
+      +'position:sticky;top:0;z-index:2;'
       +'border-left:2px solid rgba(0,0,0,.08);font-size:10px;font-weight:700;letter-spacing:.4px;'
       +'white-space:nowrap;padding:8px 6px">'+g+'</th>';
   });
-  thead+='<th style="background:#1B5E20;color:#fff;position:sticky;right:0">TOTAL</th></tr>';
-  // Linha 2: nomes dos eventos
+  thead+='<th style="background:#1B5E20;color:#fff;position:sticky;top:0;right:0;z-index:3;padding:8px 10px">TOTAL</th></tr>';
+  // Linha 2: eventos — sticky no topo (top:37px = altura da linha 1)
   thead+='<tr>';
-  const thStyle='background:#1E3A8A;color:#fff;padding:8px 10px;font-size:11px;font-weight:600;';
-  thead+='<th style="'+thStyle+'position:sticky;left:0;z-index:3;min-width:70px">Mat.</th>';
-  thead+='<th style="'+thStyle+'position:sticky;left:70px;z-index:3;min-width:160px">Nome</th>';
-  thead+='<th style="'+thStyle+'min-width:100px">CPF</th>';
-  thead+='<th style="'+thStyle+'min-width:120px">Departamento</th>';
+  thead+='<th style="background:#1E3A8A;color:#fff;padding:8px 10px;font-size:11px;font-weight:600;position:sticky;top:37px;left:0;z-index:5;min-width:70px">Mat.</th>';
+  thead+='<th style="background:#1E3A8A;color:#fff;padding:8px 10px;font-size:11px;font-weight:600;position:sticky;top:37px;left:70px;z-index:5;min-width:160px">Nome</th>';
+  thead+='<th style="background:#1E3A8A;color:#fff;padding:8px 10px;font-size:11px;font-weight:600;position:sticky;top:37px;z-index:2;min-width:100px">CPF</th>';
+  thead+='<th style="background:#1E3A8A;color:#fff;padding:8px 10px;font-size:11px;font-weight:600;position:sticky;top:37px;z-index:2;min-width:120px">Departamento</th>';
   todasCols.forEach(c=>{
     const grupoEntry=Object.entries(colsPorGrupo).find(([g,cols])=>cols.find(x=>x.ev===c.ev));
     const c3=grupoEntry?getCor(grupoEntry[0]):{bg:"#F3F4F6",text:"#374151"};
@@ -3394,108 +3191,6 @@ async function carregarFolhaSalva(){
 // ── FIX: Premio com competência ──────────────────────────────────
 
 
-function pgPremioAssiduidade(){
-  return `
-    <div class="page-header">
-      <h2>Premio de Assiduidade</h2>
-      <p>Importar relatorio da Senior. Valor fixo: R$ 226,00</p>
-    </div>
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Competencia</div>
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-        <div class="fg"><label>Mes/Ano</label>
-          <input type="text" id="premio-comp" placeholder="MM/AAAA" style="width:120px"
-            oninput="premioCompetencia=this.value">
-        </div>
-        <button class="btn btn-success btn-sm" onclick="fecharCompetenциаPremio()">Fechar Competencia</button>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px">
-      <div class="stat-card green"><div class="stat-val" id="ps-elegivel">-</div><div class="stat-label">Tem direito</div></div>
-      <div class="stat-card red"><div class="stat-val" id="ps-nao">-</div><div class="stat-label">Nao tem direito</div></div>
-      <div class="stat-card yellow"><div class="stat-val" id="ps-analisar">-</div><div class="stat-label">Analisar</div></div>
-      <div class="stat-card blue"><div class="stat-val" id="ps-total-val">-</div><div class="stat-label">Total a pagar</div></div>
-    </div>
-
-    <div class="card">
-      <div class="upload-zone" onclick="document.getElementById('premio-file').click()">
-        <input type="file" id="premio-file" accept=".xlsx,.xls" onchange="processarPremio(event)">
-        <div class="upload-icon"></div>
-        <div class="upload-text">Clique para selecionar o relatorio de assiduidade</div>
-        <div class="upload-sub">Colunas: Cadastro, Nome, CPF, Situacao, Atraso, Saida Antecipada, Atestado, Atestado Horas, Atestado Noturno, Faltas, Abono Gestor</div>
-      </div>
-    </div>
-    <div id="premio-content" style="margin-top:14px"></div>`;
-}
-
-async function fecharCompetenциаPremio(){
-  if(!premioData||premioData.length===0){toast('Importe um relatorio primeiro','error');return;}
-  const comp=document.getElementById('premio-comp')?.value||premioCompetencia;
-  if(!comp){toast('Informe a competencia (MM/AAAA)','error');return;}
-  if(!confirm('Fechar competencia '+comp+' do Premio de Assiduidade?')) return;
-  const sim=premioData.filter(d=>d.status==='SIM');
-  const snap={
-    competencia:comp, modulo:'premio',
-    fechadoEm:new Date().toISOString(),
-    totalElegiveis:sim.length,
-    totalNaoElegiveis:premioData.filter(d=>d.status==='NAO').length,
-    totalAnalisar:premioData.filter(d=>d.status==='ANALISAR').length,
-    valorTotal:sim.length*226,
-    detalhes:premioData
-  };
-  try{
-    await fsSet('historico','premio_'+comp.replace('/','_'),snap);
-    toast('Competencia '+comp+' fechada!','success');
-  }catch(e){toast('Erro: '+e.message,'error');}
-}
-
-// ── FIX: Fechar competência da folha ────────────────────────────
-
-async function deletarFolhaCompetencia(){
-  if(!confirm('Deletar a folha de '+folhaCompetencia+'? Esta acao nao pode ser desfeita.')) return;
-  try{
-    await fsDel('historico','folha_'+folhaCompetencia.replace('/','_'));
-    folhaData=null;
-    folhaCompetencia='';
-    document.getElementById('folha-import-preview').innerHTML=
-      '<div class="alert alert-success">Competencia deletada com sucesso.</div>';
-    toast('Competencia deletada!','success');
-  }catch(e){ toast('Erro: '+e.message,'error'); }
-}
-
-async function fecharCompetenciaFolha(){
-  if(!folhaData||folhaData.length===0){toast('Importe um relatorio primeiro','error');return;}
-  const comp=document.getElementById('folha-comp')?.value||folhaCompetencia;
-  if(!comp){toast('Informe a competencia','error');return;}
-  if(!confirm('Fechar competencia '+comp+' da Folha?')) return;
-
-  // Calcular totais por aba
-  const totais={proventos:0,encargos:0,adiantamento:0,descontos:0};
-  folhaData.forEach(d=>{
-    Object.entries(EVENTOS_FOLHA).forEach(([aba,grupos])=>{
-      Object.values(grupos).forEach(evs=>{
-        Object.keys(evs).forEach(ev=>{
-          totais[aba]=(totais[aba]||0)+fnum(d.eventos?.[ev]);
-        });
-      });
-    });
-  });
-
-  const snap={
-    competencia:comp, modulo:'folha',
-    fechadoEm:new Date().toISOString(),
-    totalColaboradores:folhaData.length,
-    totais,
-    detalhes:folhaData.map(d=>({mat:d.mat,nome:d.nome,cpf:d.cpf,depto:d.depto,eventos:d.eventos}))
-  };
-  try{
-    await fsSet('historico','folha_'+comp.replace('/','_'),snap);
-    toast('Competencia '+comp+' da Folha fechada!','success');
-  }catch(e){toast('Erro: '+e.message,'error');}
-}
-
-// ── FIX: pgFolhaView com botão fechar competência ───────────────
 function pgFolhaView(){
   const empresas=getEmpresaList();
   return `
@@ -3536,3 +3231,668 @@ function pgFolhaView(){
     <div id="folha-tabela"></div>`;
 }
 
+
+// ================================================================
+// PREMIO DE ASSIDUIDADE — FLUXO 7 PASSOS
+// ================================================================
+
+// Estado do processo
+let premioState = {
+  passo: 1,
+  competencia: '',
+  baseAtualizada: false,
+  afastados: [],      // lidos do PDF de afastados
+  apontamentos: [],   // lidos do PDF de apuração
+  tabela: [],         // tabela final com regras aplicadas
+};
+
+// Códigos do PDF de apuração → campo
+const APURACAO_MAP = {
+  '014': 'atestado',
+  '015': 'faltas',
+  '020': 'aHoras',
+  '064': 'aNoturno',
+  '101': 'saida',
+  '103': 'atraso',
+  '107': 'faltaParcial',
+  '108': 'abono',
+};
+
+// Converter "HHH:MM" em minutos
+function hhmm2min(s){
+  if(!s) return 0;
+  const m = String(s).trim().match(/(\d+):(\d+)/);
+  if(!m) return 0;
+  return parseInt(m[1])*60 + parseInt(m[2]);
+}
+
+// Formatar minutos em "Xh MMmin"
+function min2str(min){
+  if(!min) return '—';
+  const h=Math.floor(min/60), m=min%60;
+  if(h>0) return h+'h '+String(m).padStart(2,'0')+'min';
+  return m+'min';
+}
+
+// ── Página principal — wizard de 7 passos ────────────────────────
+function pgPremioAssiduidade(){
+  return `
+    <div class="page-header">
+      <h2>Premio de Assiduidade</h2>
+      <p>Siga os 7 passos para calcular e exportar o premio. Valor fixo: R$ 226,00</p>
+    </div>
+    <div id="premio-wizard"></div>`;
+}
+
+function afterRenderPremio(){
+  renderPremioWizard();
+}
+
+function renderPremioWizard(){
+  const el = document.getElementById('premio-wizard');
+  if(!el) return;
+
+  const passos = [
+    {n:1, label:'Atualizar Base'},
+    {n:2, label:'Iniciar Apuracao'},
+    {n:3, label:'Importar Apontamentos'},
+    {n:4, label:'Analise dos Dados'},
+    {n:5, label:'Aplicar Regras'},
+    {n:6, label:'Exportar Caju'},
+    {n:7, label:'Fechar Competencia'},
+  ];
+
+  const atual = premioState.passo;
+
+  // Barra de progresso
+  const barraHtml = '<div style="display:flex;gap:0;margin-bottom:24px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)">'
+    + passos.map(p=>{
+        const done = p.n < atual;
+        const active = p.n === atual;
+        const bg = done?'var(--green)':active?'var(--blue)':'var(--surface2)';
+        const color = (done||active)?'#fff':'var(--text3)';
+        return '<div style="flex:1;padding:8px 4px;background:'+bg+';text-align:center;cursor:'+(done?'pointer':'default')+';border-right:1px solid rgba(0,0,0,.1)" '
+          +(done?'onclick="premioIrPasso('+p.n+')"':'')+'>'
+          +'<div style="font-size:11px;font-weight:700;color:'+color+'">'+p.n+'</div>'
+          +'<div style="font-size:9px;color:'+color+';opacity:.85">'+p.label+'</div>'
+          +'</div>';
+      }).join('')
+    + '</div>';
+
+  let conteudo = '';
+
+  if(atual === 1){
+    // ── PASSO 1: Atualizar Base ──
+    const afastadosBase = colaboradores.filter(c=>c.status==='Afastado').length;
+    const ativos = colaboradores.filter(c=>c.status==='Ativo').length;
+
+    conteudo = `
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Passo 1 — Atualizar Base de Colaboradores</div>
+        <p class="text-sm text-muted" style="margin-bottom:16px">
+          Importe o relatorio de afastados da Senior para atualizar o status dos colaboradores antes de iniciar o calculo.
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
+          <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ativos}</div><div class="stat-label">Ativos na base</div></div>
+          <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${afastadosBase}</div><div class="stat-label">Ja marcados afastados</div></div>
+          <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${colaboradores.length}</div><div class="stat-label">Total na base</div></div>
+        </div>
+
+        <div style="background:#FEF3C7;border:1.5px solid #FDE68A;border-radius:var(--radius);padding:14px;margin-bottom:16px">
+          <div style="font-weight:600;font-size:13px;color:#92400E;margin-bottom:6px">Deseja atualizar a base com o relatorio de afastados?</div>
+          <p class="text-xs" style="color:#92400E;margin-bottom:12px">O sistema vai: marcar afastados, verificar novos contratados e demitidos com base no PDF da Senior.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text2)">PDF de Afastados (Senior):</div>
+              <label class="btn btn-primary btn-sm" style="cursor:pointer">
+                Selecionar PDF de Afastados
+                <input type="file" id="premio-afastados-file" accept=".pdf,.xlsx,.xls" style="display:none" onchange="processarAfastadosPremio(event)">
+              </label>
+            </div>
+          </div>
+          <div id="premio-afastados-preview" style="margin-top:12px"></div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-ghost" onclick="premioIrPasso(2)">Pular (base ja esta atualizada)</button>
+          <button class="btn btn-primary" onclick="premioConfirmarBase()" ${premioState.baseAtualizada?'':'disabled'} id="btn-passo1-ok">
+            Base atualizada — Ir para Passo 2
+          </button>
+        </div>
+      </div>`;
+
+  } else if(atual === 2){
+    // ── PASSO 2: Competência ──
+    const anos=[2024,2025,2026,2027];
+    const anoAtual=new Date().getFullYear();
+    const mesAtual=new Date().getMonth()+1;
+    const meses=[{v:1,l:'Janeiro'},{v:2,l:'Fevereiro'},{v:3,l:'Marco'},{v:4,l:'Abril'},
+      {v:5,l:'Maio'},{v:6,l:'Junho'},{v:7,l:'Julho'},{v:8,l:'Agosto'},
+      {v:9,l:'Setembro'},{v:10,l:'Outubro'},{v:11,l:'Novembro'},{v:12,l:'Dezembro'}];
+
+    conteudo = `
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Passo 2 — Definir Competencia</div>
+        <p class="text-sm text-muted" style="margin-bottom:16px">Selecione o mes e ano de referencia para o calculo do premio.</p>
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px">
+          <div class="fg">
+            <label>Mes</label>
+            <select id="premio-mes" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px;min-width:140px">
+              ${meses.map(m=>'<option value="'+m.v+'" '+(m.v===mesAtual?'selected':'')+'>'+m.l+'</option>').join('')}
+            </select>
+          </div>
+          <div class="fg">
+            <label>Ano</label>
+            <select id="premio-ano" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px">
+              ${anos.map(a=>'<option value="'+a+'" '+(a===anoAtual?'selected':'')+'>'+a+'</option>').join('')}
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:space-between">
+          <button class="btn btn-ghost" onclick="premioIrPasso(1)">Voltar</button>
+          <button class="btn btn-primary" onclick="premioIniciarApuracao()">Iniciar Apuracao — Ir para Passo 3</button>
+        </div>
+      </div>`;
+
+  } else if(atual === 3){
+    // ── PASSO 3: Importar PDF ──
+    conteudo = `
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Passo 3 — Importar Apontamentos</div>
+        <div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--radius);padding:12px;margin-bottom:16px">
+          <strong style="font-size:13px">Competencia: ${premioState.competencia}</strong>
+          <p class="text-xs text-muted" style="margin-top:4px">Importe o relatorio "Apuracao Colaborador" gerado pela Senior (PDF).</p>
+        </div>
+        <div style="background:#F0FDF4;border:1.5px solid #A7F3D0;border-radius:var(--radius);padding:12px;margin-bottom:16px;font-size:12px">
+          <strong>De/Para dos codigos do relatorio:</strong><br>
+          014 = Atestado &nbsp;|&nbsp; 015 = Faltas &nbsp;|&nbsp; 020 = Atestado Horas &nbsp;|&nbsp;
+          064 = Atestado Noturno &nbsp;|&nbsp; 101 = Saida Antecipada &nbsp;|&nbsp;
+          103 = Atraso &nbsp;|&nbsp; 107 = Falta Parcial &nbsp;|&nbsp; 108 = Abono Gestor
+        </div>
+        <div class="upload-zone" onclick="document.getElementById('premio-apuracao-file').click()">
+          <input type="file" id="premio-apuracao-file" accept=".pdf,.xlsx,.xls,.txt,.csv" style="display:none" onchange="processarApuracaoPremio(event)">
+          <div style="font-size:28px;margin-bottom:8px">&#8679;</div>
+          <div class="upload-text">Selecionar PDF de Apuracao</div>
+          <div class="upload-sub">Relatorio "HRAP001.APU" da Senior — PDF ou Excel</div>
+        </div>
+        <div id="premio-apuracao-preview" style="margin-top:14px"></div>
+        <div style="display:flex;gap:10px;justify-content:space-between;margin-top:16px">
+          <button class="btn btn-ghost" onclick="premioIrPasso(2)">Voltar</button>
+        </div>
+      </div>`;
+
+  } else if(atual === 4){
+    // ── PASSO 4: Tabela de análise ──
+    conteudo = renderPremioTabelaHTML();
+
+  } else if(atual === 5){
+    // ── PASSO 5: Regras aplicadas ──
+    conteudo = renderPremioTabelaHTML(true);
+
+  } else if(atual === 6){
+    // ── PASSO 6: Exportar Caju ──
+    const sim = premioState.tabela.filter(r=>r.recebe==='SIM');
+    const nao = premioState.tabela.filter(r=>r.recebe==='NAO');
+    const analisar = premioState.tabela.filter(r=>r.recebe==='ANALISAR');
+
+    conteudo = `
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Passo 6 — Exportar Arquivo Caju</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+          <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${sim.length}</div><div class="stat-label">Recebem</div></div>
+          <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${nao.length}</div><div class="stat-label">Nao recebem</div></div>
+          <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${analisar.length}</div><div class="stat-label">Analisar</div></div>
+          <div class="stat-card green"><div class="stat-val" style="color:var(--green);font-size:16px">${brl(sim.length*226)}</div><div class="stat-label">Total a pagar</div></div>
+        </div>
+        <div style="background:#F0FDF4;border:1.5px solid #A7F3D0;border-radius:var(--radius);padding:14px;margin-bottom:16px">
+          <p class="text-sm">O arquivo CSV sera gerado no formato do Caju com CPF e valor R$ 226,00 para cada colaborador elegivel.</p>
+          ${analisar.length>0?'<p class="text-sm" style="color:var(--yellow);margin-top:8px"><strong>Atencao:</strong> '+analisar.length+' colaboradores marcados como "Analisar" nao serao incluidos no CSV. Revise no Passo 4 antes de exportar.</p>':''}
+        </div>
+        <div style="display:flex;gap:10px;justify-content:space-between">
+          <button class="btn btn-ghost" onclick="premioIrPasso(4)">Voltar e revisar</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportarPremioExcel()">Excel (todos)</button>
+            <button class="btn btn-success" onclick="exportarPremioCaju()">Exportar CSV Caju (${sim.length} colaboradores)</button>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;justify-content:flex-end">
+          <button class="btn btn-primary" onclick="premioIrPasso(7)">Ir para Fechar Competencia</button>
+        </div>
+      </div>`;
+
+  } else if(atual === 7){
+    // ── PASSO 7: Fechar competência ──
+    const sim = premioState.tabela.filter(r=>r.recebe==='SIM').length;
+    conteudo = `
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Passo 7 — Fechar Competencia</div>
+        <div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--radius);padding:14px;margin-bottom:16px">
+          <div style="font-size:15px;font-weight:700">Competencia: ${premioState.competencia}</div>
+          <div style="font-size:13px;margin-top:6px">${premioState.tabela.length} colaboradores analisados</div>
+          <div style="font-size:13px">${sim} receberao o premio — Total: ${brl(sim*226)}</div>
+        </div>
+        <p class="text-sm text-muted" style="margin-bottom:16px">
+          Ao fechar, os dados serao salvos no historico e estarao disponiveis para o dashboard e indicadores.
+          Esta acao nao impede novas importacoes para a mesma competencia.
+        </p>
+        <div style="display:flex;gap:10px;justify-content:space-between">
+          <button class="btn btn-ghost" onclick="premioIrPasso(6)">Voltar</button>
+          <button class="btn btn-success" onclick="fecharCompetencionPremio()">Fechar Competencia ${premioState.competencia}</button>
+        </div>
+      </div>`;
+  }
+
+  el.innerHTML = barraHtml + conteudo;
+}
+
+function premioIrPasso(n){
+  premioState.passo = n;
+  renderPremioWizard();
+}
+
+function premioIniciarApuracao(){
+  const mes = document.getElementById('premio-mes')?.value;
+  const ano = document.getElementById('premio-ano')?.value;
+  if(!mes||!ano){toast('Selecione mes e ano','error');return;}
+  const nomeMes = ['Janeiro','Fevereiro','Marco','Abril','Maio','Junho',
+    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][parseInt(mes)-1];
+  premioState.competencia = String(mes).padStart(2,'0')+'/'+ano;
+  premioState.compLabel = nomeMes+' '+ano;
+  premioState.passo = 3;
+  renderPremioWizard();
+}
+
+function premioConfirmarBase(){
+  premioState.passo = 2;
+  renderPremioWizard();
+}
+
+// ── Processar PDF de afastados (texto extraído ou xlsx) ──────────
+async function processarAfastadosPremio(event){
+  const file = event.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    let afastados = [];
+    if(file.name.endsWith('.pdf')){
+      // PDF lido como texto — extrair matrículas e nomes
+      const text = e.target.result;
+      const linhas = text.split('\n');
+      const re = /(\d{4}\.\d{4})\s+([A-Z][A-Z\s]+?)\s+[\d.,]+\s+[A-Z]/;
+      linhas.forEach(l=>{
+        const m = l.match(/(\d{4})\.(\d{4})\s+(.+?)(?:\s+[\d.,]+\s)/);
+        if(m){
+          afastados.push({mat:m[1]+'.'+m[2], nome:m[3].trim()});
+        }
+      });
+    } else {
+      // Excel
+      const wb = XLSX.read(e.target.result,{type:'binary'});
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+      data.forEach(row=>{
+        if(row[0]&&String(row[0]).match(/\d{4}\.\d{4}/))
+          afastados.push({mat:String(row[0]).trim(), nome:String(row[1]||'').trim()});
+      });
+    }
+
+    // Atualizar status no Firebase
+    if(afastados.length===0){
+      document.getElementById('premio-afastados-preview').innerHTML=
+        '<div class="alert alert-warning">Nenhum afastado identificado. Verifique o arquivo.</div>';
+      return;
+    }
+
+    const b = window._writeBatch(window._db);
+    let atualizados = 0;
+    afastados.forEach(af=>{
+      const mat = af.mat.replace('.','');
+      // Tentar encontrar pelo formato completo ou só o número
+      const c = colaboradores.find(x=>x.mat===af.mat||x.mat===mat||x.mat===af.mat.split('.')[0]+af.mat.split('.')[1]);
+      if(c&&c.status==='Ativo'){
+        c.status='Afastado';
+        b.set(window._doc('colaboradores',c._id),c);
+        atualizados++;
+      }
+    });
+    await b.commit();
+
+    premioState.afastados = afastados;
+    premioState.baseAtualizada = true;
+    document.getElementById('premio-afastados-preview').innerHTML=
+      '<div class="alert alert-success"><strong>'+afastados.length+'</strong> afastados identificados. <strong>'+atualizados+'</strong> atualizados na base.</div>';
+    const btn = document.getElementById('btn-passo1-ok');
+    if(btn) btn.removeAttribute('disabled');
+    event.target.value='';
+  };
+  if(file.name.endsWith('.pdf')) reader.readAsText(file);
+  else reader.readAsBinaryString(file);
+}
+
+// ── Processar PDF de apuração ────────────────────────────────────
+function processarApuracaoPremio(event){
+  const file = event.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const linhas = text.split('\n').map(l=>l.trim()).filter(l=>l);
+
+    const resultado = {};
+    let matAtual = null, nomeAtual = null;
+
+    linhas.forEach(linha=>{
+      // Linha de colaborador: "1000.0990 NOME DO COLABORADOR"
+      const mColab = linha.match(/^(\d{4})\.(\d{4})\s+([A-Z][A-Z\s]+)$/);
+      if(mColab){
+        matAtual = mColab[1]+'.'+mColab[2];
+        nomeAtual = mColab[3].trim();
+        if(!resultado[matAtual]){
+          resultado[matAtual] = {
+            mat: matAtual,
+            matNum: mColab[1]+mColab[2],
+            nome: nomeAtual,
+            atestado:0, faltas:0, aHoras:0, aNoturno:0,
+            saida:0, atraso:0, faltaParcial:0, abono:0
+          };
+        }
+        return;
+      }
+
+      // Linha de apontamento: "014 Atestado 004:00" ou "103 Atraso 000:38"
+      if(matAtual){
+        const mApont = linha.match(/^(\d{3})\s+.+?\s+(\d{3}:\d{2})$/);
+        if(mApont){
+          const cod = mApont[1];
+          const min = hhmm2min(mApont[2]);
+          const campo = APURACAO_MAP[cod];
+          if(campo && resultado[matAtual]){
+            resultado[matAtual][campo] = (resultado[matAtual][campo]||0) + min;
+          }
+        }
+        // Linha "Total Colaborador:" — reset matAtual para próximo
+        if(linha.includes('Total Colaborador:')) matAtual = null;
+      }
+    });
+
+    const apontamentos = Object.values(resultado);
+
+    if(apontamentos.length === 0){
+      document.getElementById('premio-apuracao-preview').innerHTML=
+        '<div class="alert alert-warning">Nenhum apontamento lido. O PDF pode ter layout diferente. Tente exportar como Excel da Senior.</div>';
+      return;
+    }
+
+    premioState.apontamentos = apontamentos;
+
+    // Montar tabela cruzando com base de colaboradores
+    montarTabelaPremio();
+
+    document.getElementById('premio-apuracao-preview').innerHTML=
+      '<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos do relatorio. '
+      +'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)" style="margin-left:10px">Ver Tabela (Passo 4)</button></div>';
+    event.target.value='';
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function montarTabelaPremio(){
+  // Cruzar apontamentos com base de colaboradores
+  // Todos da base ativa + afastados são incluídos
+  const base = colaboradores.filter(c=>c.status!=='Inativo');
+
+  const tabela = base.map(c=>{
+    // Buscar apontamentos pelo número da matrícula
+    const mat = c.mat||'';
+    // Formato da matrícula na base: "10000990" ou "1000.0990"
+    const apont = premioState.apontamentos.find(a=>{
+      return a.mat===mat || a.matNum===mat ||
+        a.mat===mat.substring(0,4)+'.'+mat.substring(4) ||
+        a.matNum===mat.replace('.','');
+    });
+
+    // Situação para o prêmio
+    let situacao = 'Ativo';
+    if(c.status==='Afastado') situacao = 'Afastado';
+    else if(c.filtro==='MEI') situacao = 'MEI';
+    else if(c.filtro==='SOC'||c.filtro==='PART') situacao = 'N/A';
+
+    return {
+      _id: c._id,
+      mat: mat,
+      nome: c.nome,
+      cpf: c.cpf||'',
+      situacao,
+      filtro: c.filtro||'OK',
+      recebe: '',  // será preenchido ao aplicar regras
+      atestado: apont?.atestado||0,
+      faltas: apont?.faltas||0,
+      aHoras: apont?.aHoras||0,
+      aNoturno: apont?.aNoturno||0,
+      saida: apont?.saida||0,
+      atraso: apont?.atraso||0,
+      faltaParcial: apont?.faltaParcial||0,
+      abono: apont?.abono||0,
+      editavel: false,
+    };
+  });
+
+  premioState.tabela = tabela;
+}
+
+// ── Renderizar tabela de análise (Passo 4 e 5) ──────────────────
+function renderPremioTabelaHTML(comRegras){
+  const t = premioState.tabela;
+  if(!t||t.length===0) return '<div class="alert alert-warning">Nenhum dado. Volte ao Passo 3 e importe os apontamentos.</div>';
+
+  const sim = t.filter(r=>r.recebe==='SIM').length;
+  const nao = t.filter(r=>r.recebe==='NAO').length;
+  const analisar = t.filter(r=>r.recebe==='ANALISAR').length;
+  const vazio = t.filter(r=>!r.recebe).length;
+
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div>
+          <div class="card-title" style="color:var(--blue)">Passo ${comRegras?'5 — Regras Aplicadas':'4 — Analise dos Dados'}</div>
+          <div class="text-sm text-muted">Competencia: <strong>${premioState.competencia}</strong> | ${t.length} colaboradores</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${comRegras?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(6)">Ir para Exportar (Passo 6)</button>':''}
+          <button class="btn btn-warning btn-sm" onclick="aplicarRegrasPremio()">Aplicar Regras Automaticas</button>
+          <button class="btn btn-ghost btn-sm" onclick="premioIrPasso(${comRegras?4:2})">Voltar</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="stat-card green" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--green)">${sim}</div><div style="font-size:11px">Sim</div></div>
+        <div class="stat-card red" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--red)">${nao}</div><div style="font-size:11px">Nao</div></div>
+        <div class="stat-card yellow" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--yellow)">${analisar}</div><div style="font-size:11px">Analisar</div></div>
+        <div class="stat-card" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--text3)">${vazio}</div><div style="font-size:11px">Pendente</div></div>
+        <div class="stat-card green" style="padding:8px 12px"><div style="font-size:14px;font-weight:700;color:var(--green)">${brl(sim*226)}</div><div style="font-size:11px">Total</div></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input type="text" id="premio-q" placeholder="Buscar nome ou matricula..." oninput="filtrarTabelaPremio()"
+          style="flex:1;min-width:200px;padding:7px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+        <select id="premio-f-sit" onchange="filtrarTabelaPremio()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todas as situacoes</option>
+          <option value="Ativo">Ativo</option>
+          <option value="Afastado">Afastado</option>
+          <option value="MEI">MEI</option>
+          <option value="N/A">N/A</option>
+        </select>
+        <select id="premio-f-rec" onchange="filtrarTabelaPremio()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos os resultados</option>
+          <option value="SIM">Recebe</option>
+          <option value="NAO">Nao recebe</option>
+          <option value="ANALISAR">Analisar</option>
+          <option value="">Pendente</option>
+        </select>
+      </div>
+
+      <div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);max-height:520px">
+        <table style="border-collapse:collapse;font-size:11px;width:100%">
+          <thead>
+            <tr style="background:#1E3A8A;color:#fff;position:sticky;top:0;z-index:2">
+              <th style="padding:9px 8px;text-align:left;position:sticky;left:0;background:#1E3A8A;min-width:70px">Mat.</th>
+              <th style="padding:9px 8px;text-align:left;position:sticky;left:70px;background:#1E3A8A;min-width:180px">Nome</th>
+              <th style="padding:9px 8px;min-width:100px">CPF</th>
+              <th style="padding:9px 8px;min-width:90px">Situacao</th>
+              <th style="padding:9px 8px;min-width:90px;background:#1B5E20">Recebe</th>
+              <th style="padding:9px 8px;min-width:70px">Atraso</th>
+              <th style="padding:9px 8px;min-width:70px">Saida Ant.</th>
+              <th style="padding:9px 8px;min-width:70px">Atestado</th>
+              <th style="padding:9px 8px;min-width:70px">Ates.Horas</th>
+              <th style="padding:9px 8px;min-width:70px">Ates.Not.</th>
+              <th style="padding:9px 8px;min-width:70px">Faltas</th>
+              <th style="padding:9px 8px;min-width:70px">Ft.Parcial</th>
+              <th style="padding:9px 8px;min-width:70px">Abono</th>
+            </tr>
+          </thead>
+          <tbody id="premio-tbody">
+            ${renderPremioLinhas(t)}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderPremioLinhas(dados){
+  return dados.map((r,i)=>{
+    const bg = i%2===0?'#F8F9FB':'';
+    const corRec = r.recebe==='SIM'?'var(--green)':r.recebe==='NAO'?'var(--red)':r.recebe==='ANALISAR'?'var(--yellow)':'var(--text3)';
+    const badgeRec = r.recebe==='SIM'?'badge-green':r.recebe==='NAO'?'badge-red':r.recebe==='ANALISAR'?'badge-yellow':'badge-gray';
+    const labelRec = r.recebe||'—';
+
+    const corCampo = (v,limite)=> v>limite?'color:var(--red);font-weight:700':v>0?'color:var(--yellow)':'color:#ccc';
+
+    return '<tr style="border-bottom:1px solid var(--border);background:'+bg+'" id="premio-row-'+i+'">'
+      +'<td style="padding:8px;position:sticky;left:0;background:'+( bg||'#fff')+'"><code style="font-size:10px">'+r.mat+'</code></td>'
+      +'<td style="padding:8px;position:sticky;left:70px;background:'+( bg||'#fff')+';font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+r.nome+'">'+r.nome+'</td>'
+      +'<td style="padding:8px;font-size:10px">'+r.cpf+'</td>'
+      +'<td style="padding:8px"><span class="badge '+(r.situacao==='Ativo'?'badge-green':r.situacao==='Afastado'?'badge-red':r.situacao==='MEI'?'badge-yellow':'badge-gray')+'">'+r.situacao+'</span></td>'
+      +'<td style="padding:8px;background:'+(bg?'#F0FFF4':'#E8FFF0')+';text-align:center">'
+        +'<select onchange="editarRecebeRow('+i+',this.value)" style="padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:transparent;color:'+corRec+';font-weight:700">'
+        +'<option value="" '+(r.recebe===''?'selected':'')+'>—</option>'
+        +'<option value="SIM" '+(r.recebe==='SIM'?'selected':'')+'>SIM</option>'
+        +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+'>NAO</option>'
+        +'<option value="ANALISAR" '+(r.recebe==='ANALISAR'?'selected':'')+'>ANALISAR</option>'
+        +'</select>'
+      +'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.atraso,10)+'">'+min2str(r.atraso)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.saida,10)+'">'+min2str(r.saida)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.atestado,0)+'">'+min2str(r.atestado)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.aHoras,0)+'">'+min2str(r.aHoras)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.aNoturno,0)+'">'+min2str(r.aNoturno)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.faltas,0)+'">'+min2str(r.faltas)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.faltaParcial,0)+'">'+min2str(r.faltaParcial)+'</td>'
+      +'<td style="padding:8px;text-align:center;'+corCampo(r.abono,59)+'">'+min2str(r.abono)+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function filtrarTabelaPremio(){
+  const q = (document.getElementById('premio-q')?.value||'').toLowerCase();
+  const fSit = document.getElementById('premio-f-sit')?.value||'';
+  const fRec = document.getElementById('premio-f-rec')?.value||'';
+  let dados = premioState.tabela;
+  if(q) dados = dados.filter(r=>r.nome.toLowerCase().includes(q)||r.mat.includes(q));
+  if(fSit) dados = dados.filter(r=>r.situacao===fSit);
+  if(fRec) dados = dados.filter(r=>r.recebe===fRec);
+  const tbody = document.getElementById('premio-tbody');
+  if(tbody) tbody.innerHTML = renderPremioLinhas(dados);
+}
+
+function editarRecebeRow(idx, valor){
+  if(premioState.tabela[idx]) premioState.tabela[idx].recebe = valor;
+}
+
+function aplicarRegrasPremio(){
+  premioState.tabela = premioState.tabela.map(r=>{
+    let recebe = 'SIM';
+    let motivo = '';
+
+    // Nao recebe automaticamente
+    if(['Afastado','N/A'].includes(r.situacao)){
+      recebe='NAO'; motivo='Situacao: '+r.situacao;
+    } else if(r.atestado>0){
+      recebe='NAO'; motivo='Atestado';
+    } else if(r.aHoras>0){
+      recebe='NAO'; motivo='Atestado Horas';
+    } else if(r.aNoturno>0){
+      recebe='NAO'; motivo='Atestado Noturno';
+    } else if(r.faltas>0 && r.situacao!=='MEI'){
+      recebe='NAO'; motivo='Faltas';
+    } else if(r.abono>=60){
+      recebe='NAO'; motivo='Abono >= 1h';
+    } else if(r.atraso>10){
+      recebe='ANALISAR'; motivo='Atraso '+min2str(r.atraso);
+    } else if(r.saida>10){
+      recebe='ANALISAR'; motivo='Saida antecip. '+min2str(r.saida);
+    }
+
+    return {...r, recebe, motivo};
+  });
+
+  premioState.passo = 5;
+  renderPremioWizard();
+  toast('Regras aplicadas com sucesso!','success');
+}
+
+function exportarPremioCaju(){
+  const sim = premioState.tabela.filter(r=>r.recebe==='SIM');
+  if(sim.length===0){toast('Nenhum colaborador elegivel','error');return;}
+  const NL2=String.fromCharCode(10);
+  const header='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+  const linhas=[header];
+  sim.forEach(r=>{
+    const cpf=(r.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
+    linhas.push([cpf,r.mat||'','226.00','0','0','0','0','0','0','0','0','0','0'].join(';'));
+  });
+  const blob=new Blob([linhas.join(NL2)],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='Premio_Assiduidade_Caju_'+premioState.competencia.replace('/','_')+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('CSV Caju exportado: '+sim.length+' colaboradores','success');
+}
+
+function exportarPremioExcel(){
+  if(!premioState.tabela.length){toast('Nenhum dado','error');return;}
+  const rows=[
+    ['Competencia: '+premioState.competencia],
+    ['Matricula','Nome','CPF','Situacao','Recebe','Atraso','Saida Antec.','Atestado','Ates.Horas','Ates.Not.','Faltas','Ft.Parcial','Abono','Valor'],
+    ...premioState.tabela.map(r=>[r.mat,r.nome,r.cpf,r.situacao,r.recebe,
+      min2str(r.atraso),min2str(r.saida),min2str(r.atestado),min2str(r.aHoras),
+      min2str(r.aNoturno),min2str(r.faltas),min2str(r.faltaParcial),min2str(r.abono),
+      r.recebe==='SIM'?226:0])
+  ];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Premio Assiduidade');
+  XLSX.writeFile(wb,'Premio_Assiduidade_'+premioState.competencia.replace('/','_')+'.xlsx');
+  toast('Excel exportado!','success');
+}
+
+async function fecharCompetencionPremio(){
+  if(!premioState.tabela.length){toast('Nenhum dado para fechar','error');return;}
+  if(!confirm('Fechar competencia '+premioState.competencia+'?')) return;
+  const sim=premioState.tabela.filter(r=>r.recebe==='SIM');
+  const snap={
+    competencia:premioState.competencia,
+    modulo:'premio',
+    fechadoEm:new Date().toISOString(),
+    totalColaboradores:premioState.tabela.length,
+    totalElegiveis:sim.length,
+    totalNaoElegiveis:premioState.tabela.filter(r=>r.recebe==='NAO').length,
+    totalAnalisar:premioState.tabela.filter(r=>r.recebe==='ANALISAR').length,
+    valorTotal:sim.length*226,
+    detalhes:premioState.tabela,
+  };
+  try{
+    await fsSet('historico','premio_'+premioState.competencia.replace('/','_'),snap);
+    toast('Competencia '+premioState.competencia+' fechada!','success');
+    // Reset estado para novo processo
+    premioState={passo:1,competencia:'',baseAtualizada:false,afastados:[],apontamentos:[],tabela:[]};
+    renderPremioWizard();
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
