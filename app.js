@@ -3578,42 +3578,33 @@ function processarApuracaoPremio(event){
       let textoCompleto = '';
 
       if(file.name.toLowerCase().endsWith('.pdf')){
-        // Usar PDF.js para extrair texto
-        const pdfjsLib = window['pdfjs-dist/build/pdf'];
-        if(!pdfjsLib){
-          // Carregar PDF.js dinamicamente
-          await new Promise((resolve,reject)=>{
-            const s=document.createElement('script');
-            s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            s.onload=resolve; s.onerror=reject;
-            document.head.appendChild(s);
-          });
-          window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc=
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        // Verificar se PDF.js esta disponivel
+        if(!window.pdfjsLib){
+          prev.innerHTML='<div class="alert alert-warning">PDF.js nao carregou. Recarregue a pagina e tente novamente.</div>';
+          return;
         }
-
-        const pdfLib = window['pdfjs-dist/build/pdf'];
         const arrayBuf = e.target.result;
-        const pdf = await pdfLib.getDocument({data: new Uint8Array(arrayBuf)}).promise;
+        const loadingTask = pdfjsLib.getDocument({data: new Uint8Array(arrayBuf)});
+        const pdf = await loadingTask.promise;
 
         for(let p=1; p<=pdf.numPages; p++){
           const page = await pdf.getPage(p);
           const content = await page.getTextContent();
-          const linhasPag = content.items.map(i=>i.str).join(' ');
-          textoCompleto += linhasPag + String.fromCharCode(10);
+          // Juntar items mantendo espacamento
+          const pageText = content.items.map(item=>item.str).join(' ');
+          textoCompleto += pageText + '\n';
         }
       } else {
-        // Excel ou CSV
+        // Excel
         const wb = XLSX.read(e.target.result,{type:'binary'});
         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
         textoCompleto = data.map(r=>r.join(' ')).join('\n');
       }
 
       parsearApuracaoTexto(textoCompleto, prev);
-
     }catch(err){
-      prev.innerHTML='<div class="alert alert-warning">Erro ao ler o arquivo: '+err.message+'<br>Tente exportar o relatorio como Excel (.xlsx) na Senior.</div>';
-      console.error(err);
+      prev.innerHTML='<div class="alert alert-warning">Erro ao ler: '+err.message+'</div>';
+      console.error('Erro PDF:', err);
     }
     event.target.value='';
   };
@@ -3624,112 +3615,77 @@ function processarApuracaoPremio(event){
     reader.readAsBinaryString(file);
 }
 
+
 function parsearApuracaoTexto(texto, prevEl){
-  // O PDF da Senior tem o texto em blocos por colaborador
-  // Padrão: "XXXX.XXXX NOME ..." depois "014 Atestado 004:00" etc.
-  // PDF.js junta tudo numa linha — precisamos identificar os padrões
-
   const resultado = {};
-  let matAtual = null;
 
-  // Dividir em tokens e processar sequencialmente
-  // Padrão de matrícula: 4 dígitos ponto 4 dígitos
-  const reMAT = /\b(\d{4})\.(\d{4})\b/g;
-  const reAPONT = /\b(014|015|020|064|101|103|107|108)\b[\s\S]{1,60}?(\d{3}:\d{2})/g;
+  // O PDF da Senior tem por colaborador uma linha como:
+  // "1000.0990 ADENILDO GONCALVES SANTOS Total Colaborador: 101 Saida Antecipada 002:55"
+  // ou multiplos apontamentos na mesma linha
 
-  // Abordagem: varrer linha por linha
-  const linhas = texto.split(/[\n\r]+/).map(l=>l.trim()).filter(l=>l);
+  // Separar o texto em blocos por matricula
+  // Regex para encontrar matriculas: 4 digitos ponto 4 digitos
+  const blocos = texto.split(/(?=\d{4}\.\d{4})/);
 
-  for(let i=0; i<linhas.length; i++){
-    const linha = linhas[i];
+  blocos.forEach(bloco => {
+    bloco = bloco.trim();
+    if(!bloco) return;
 
-    // Detectar linha de colaborador: começa com XXXX.XXXX
-    const mMat = linha.match(/^(\d{4})\.(\d{4})\s+(.+)/);
-    if(mMat){
-      const mat = mMat[1]+'.'+mMat[2];
-      const restante = mMat[3].trim();
-      // Nome: tudo até o primeiro número (salário, etc.)
-      const nome = restante.split(/\s+\d/)[0].trim().replace(/\s+/g,' ');
-      matAtual = mat;
-      if(!resultado[mat]){
-        resultado[mat]={
-          mat, matNum:mMat[1]+mMat[2], nome,
-          atestado:0,faltas:0,aHoras:0,aNoturno:0,
-          saida:0,atraso:0,faltaParcial:0,abono:0
-        };
-      }
-      continue;
+    // Verificar se comeca com matricula
+    const mMat = bloco.match(/^(\d{4})\.(\d{4})\s+([\s\S]+)/);
+    if(!mMat) return;
+
+    const mat = mMat[1]+'.'+mMat[2];
+    const resto = mMat[3];
+
+    // Extrair nome: texto antes de "Total Colaborador" ou de um codigo de 3 digitos
+    let nome = '';
+    const mNome = resto.match(/^([A-Z][A-Z\s]+?)(?=\s+Total\s+Colaborador|\s+\d{3}\s+|\s*$)/);
+    if(mNome) nome = mNome[1].trim().replace(/\s+/g,' ');
+    if(!nome) nome = resto.substring(0,40).trim();
+
+    if(!resultado[mat]){
+      resultado[mat]={
+        mat, matNum:mMat[1]+mMat[2], nome,
+        atestado:0, faltas:0, aHoras:0, aNoturno:0,
+        saida:0, atraso:0, faltaParcial:0, abono:0
+      };
     }
 
-    // Detectar linha de apontamento: começa com código 3 dígitos
-    // Formatos possíveis do PDF.js:
-    // "014 Atestado 004:00"  ou  "103 Atraso 000:38"  ou apenas "014 004:00"
-    if(matAtual){
-      // Tentar extrair código + tempo da linha
-      const mCod = linha.match(/^(\d{3})(?:\s+\S+)?\s+(\d{3}:\d{2})/);
-      if(mCod){
-        const cod=mCod[1], min=hhmm2min(mCod[2]);
-        const campo=APURACAO_MAP[cod];
-        if(campo) resultado[matAtual][campo]=(resultado[matAtual][campo]||0)+min;
-      }
-
-      // "Total Colaborador" = próximo colaborador
-      if(/Total\s+Colaborador/i.test(linha)){
-        // Verificar se há apontamentos na mesma linha do Total
-        // "Total Colaborador: 103 Atraso 000:38"
-        const mInline = linha.match(/(\d{3})\s+\S+\s+(\d{3}:\d{2})/g);
-        if(mInline) mInline.forEach(m=>{
-          const mm=m.match(/(\d{3})\s+\S+\s+(\d{3}:\d{2})/);
-          if(mm){ const campo=APURACAO_MAP[mm[1]]; if(campo) resultado[matAtual][campo]=(resultado[matAtual][campo]||0)+hhmm2min(mm[2]); }
-        });
-        // Não zera matAtual pois próxima linha pode ser continuação
-      }
-    }
-
-    // Detectar linha "Total Colaborador: 014 Atestado 004:00" (formato compacto do PDF)
-    const mTotal = linha.match(/Total\s+Colaborador:\s*(\d{3})\s+\S+\s+(\d{3}:\d{2})/);
-    if(mTotal && matAtual){
-      const campo=APURACAO_MAP[mTotal[1]];
-      if(campo) resultado[matAtual][campo]=(resultado[matAtual][campo]||0)+hhmm2min(mTotal[2]);
-    }
-  }
-
-  // Segunda passagem: o PDF.js pode juntar tudo numa linha só
-  // Varrer o texto completo procurando padrões
-  if(Object.keys(resultado).length === 0){
-    // Tentar extrair diretamente do texto completo
-    const reColab = /(\d{4}\.\d{4})\s+([A-Z][A-Z\s]{5,50?}?)(?=\d|$)/gm;
+    // Extrair todos os apontamentos do bloco
+    // Formato: "014 Atestado 004:00" ou "103 Atraso 000:38"
+    // O PDF.js pode juntar como: "014 Atestado 004:00 064 Atestado Noturno 004:10"
+    const reApont = /(014|015|020|064|101|103|107|108)[^0-9]*?(\d{3}:\d{2})/g;
     let m;
-    while((m=reColab.exec(texto))!==null){
-      const mat=m[1], nome=m[2].trim();
-      if(!resultado[mat]) resultado[mat]={mat,matNum:mat.replace('.',''),nome,atestado:0,faltas:0,aHoras:0,aNoturno:0,saida:0,atraso:0,faltaParcial:0,abono:0};
-    }
-    // Associar apontamentos por proximidade no texto
-    const reCodMin = /(014|015|020|064|101|103|107|108)\s+(?:\S+\s+)?(\d{3}:\d{2})/g;
-    // Simplificado: pegar todos os pares cod+tempo e associar ao último colaborador antes deles
-    const mats = [...texto.matchAll(/(\d{4}\.\d{4})/g)].map(m=>({mat:m[1],pos:m.index}));
-    const codigos = [...texto.matchAll(/(014|015|020|064|101|103|107|108)[^\n]*?(\d{3}:\d{2})/g)].map(m=>({cod:m[1],min:hhmm2min(m[2]),pos:m.index}));
-    codigos.forEach(ap=>{
-      // Encontrar mat mais próxima antes deste apontamento
-      const antecedente=mats.filter(m=>m.pos<ap.pos).slice(-1)[0];
-      if(antecedente&&resultado[antecedente.mat]){
-        const campo=APURACAO_MAP[ap.cod];
-        if(campo) resultado[antecedente.mat][campo]=(resultado[antecedente.mat][campo]||0)+ap.min;
+    while((m=reApont.exec(bloco))!==null){
+      const cod = m[1];
+      const min = hhmm2min(m[2]);
+      const campo = APURACAO_MAP[cod];
+      if(campo && min > 0){
+        resultado[mat][campo] = (resultado[mat][campo]||0) + min;
       }
-    });
-  }
+    }
+  });
 
-  const apontamentos = Object.values(resultado).filter(a=>a.nome);
+  // Filtrar apenas registros com nome valido
+  const apontamentos = Object.values(resultado).filter(a=>a.nome && a.nome.length > 2);
+
+  console.log('Apontamentos lidos:', apontamentos.length);
+  console.log('Texto (primeiros 500):', texto.substring(0,500));
 
   if(apontamentos.length === 0){
-    prevEl.innerHTML='<div class="alert alert-warning">Nao foi possivel ler o PDF. Por favor, no Senior, exporte o mesmo relatorio em formato <strong>Excel (.xlsx)</strong> e importe aqui.</div>';
+    prevEl.innerHTML='<div class="alert alert-warning">'
+      +'Nao foi possivel identificar colaboradores no PDF.<br>'
+      +'<strong>Solucao:</strong> No Senior, exporte o relatorio "Apuracao Colaborador" '
+      +'em formato <strong>Excel (.xlsx)</strong> e importe aqui — funciona 100%.'
+      +'</div>';
     return;
   }
 
   premioState.apontamentos = apontamentos;
   montarTabelaPremio();
 
-  prevEl.innerHTML='<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos. '
+  prevEl.innerHTML='<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos do relatorio. '
     +'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)" style="margin-left:10px">Ver Tabela (Passo 4)</button></div>';
 }
 

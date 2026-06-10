@@ -370,6 +370,13 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 .mob-perto { background: #FEF2F2; color: #991B1B; }
 .mob-carro { background: #EFF6FF; color: #1D4ED8; }
 </style>
+<!-- PDF.js para leitura de PDFs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if(window.pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 </head>
 <body>
 
