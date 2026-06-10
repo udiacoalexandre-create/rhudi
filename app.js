@@ -153,6 +153,15 @@ function onVTSelect(n,prefix){
 // ============================================================
 // FORMUL\u00C1RIO DE COLABORADOR
 // ============================================================
+
+function buildStatusSelect(prefix, c){
+  var opts = STATUS_LIST.map(function(s){
+    var sel = (c && c.status === s.v) ? ' selected' : '';
+    return '<option value="' + s.v + '"' + sel + '>' + s.label + '</option>';
+  }).join('');
+  return '<select id="' + prefix + '-status">' + opts + '</select>';
+}
+
 function formColabHTML(prefix, c){
   const mob=c?inferMob(c):'perto';
   const fil=c?.filtro||'OK';
@@ -166,10 +175,7 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
-        <div class="fg"><label>Status</label>
-          <select id="${prefix}-status">
-            ${STATUS_LIST.map(s=>'<option value="'+s.v+'" '+(c?.status===s.v?'selected':'')+'>'+s.label+'</option>').join('')}
-          </select>
+        <div class="fg"><label>Status</label>\n          " + buildStatusSelect(prefix, c) + "
         </div>
         <div class="fg"><label>Filtro / Tipo</label>
           <select id="${prefix}-filtro">
