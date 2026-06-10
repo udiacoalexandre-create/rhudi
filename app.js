@@ -1203,8 +1203,7 @@ function verificarColabsEmFerias(){
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">
           ${emFerias.map((c,i)=>`
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;
-              background:rgba(255,255,255,.6);padding:6px 10px;border-radius:6px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;\n              background:rgba(255,255,255,.6);padding:6px 10px;border-radius:6px">
               <input type="checkbox" id="fer-retorno-${i}" data-id="${c._id}"
                 style="accent-color:var(--blue);width:15px;height:15px">
               <strong>${c.nome}</strong>
@@ -3570,68 +3569,170 @@ async function processarAfastadosPremio(event){
 // ── Processar PDF de apuração ────────────────────────────────────
 function processarApuracaoPremio(event){
   const file = event.target.files[0]; if(!file) return;
+  const prev = document.getElementById('premio-apuracao-preview');
+  prev.innerHTML='<div class="alert alert-info">Lendo PDF... aguarde.</div>';
+
   const reader = new FileReader();
-  reader.onload = e => {
-    const text = e.target.result;
-    const linhas = text.split('\n').map(l=>l.trim()).filter(l=>l);
+  reader.onload = async e => {
+    try{
+      let textoCompleto = '';
 
-    const resultado = {};
-    let matAtual = null, nomeAtual = null;
-
-    linhas.forEach(linha=>{
-      // Linha de colaborador: "1000.0990 NOME DO COLABORADOR"
-      const mColab = linha.match(/^(\d{4})\.(\d{4})\s+([A-Z][A-Z\s]+)$/);
-      if(mColab){
-        matAtual = mColab[1]+'.'+mColab[2];
-        nomeAtual = mColab[3].trim();
-        if(!resultado[matAtual]){
-          resultado[matAtual] = {
-            mat: matAtual,
-            matNum: mColab[1]+mColab[2],
-            nome: nomeAtual,
-            atestado:0, faltas:0, aHoras:0, aNoturno:0,
-            saida:0, atraso:0, faltaParcial:0, abono:0
-          };
+      if(file.name.toLowerCase().endsWith('.pdf')){
+        // Usar PDF.js para extrair texto
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        if(!pdfjsLib){
+          // Carregar PDF.js dinamicamente
+          await new Promise((resolve,reject)=>{
+            const s=document.createElement('script');
+            s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            s.onload=resolve; s.onerror=reject;
+            document.head.appendChild(s);
+          });
+          window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc=
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
-        return;
+
+        const pdfLib = window['pdfjs-dist/build/pdf'];
+        const arrayBuf = e.target.result;
+        const pdf = await pdfLib.getDocument({data: new Uint8Array(arrayBuf)}).promise;
+
+        for(let p=1; p<=pdf.numPages; p++){
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          const linhasPag = content.items.map(i=>i.str).join(' ');
+          textoCompleto += linhasPag + String.fromCharCode(10);
+        }
+      } else {
+        // Excel ou CSV
+        const wb = XLSX.read(e.target.result,{type:'binary'});
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+        textoCompleto = data.map(r=>r.join(' ')).join('\n');
       }
 
-      // Linha de apontamento: "014 Atestado 004:00" ou "103 Atraso 000:38"
-      if(matAtual){
-        const mApont = linha.match(/^(\d{3})\s+.+?\s+(\d{3}:\d{2})$/);
-        if(mApont){
-          const cod = mApont[1];
-          const min = hhmm2min(mApont[2]);
-          const campo = APURACAO_MAP[cod];
-          if(campo && resultado[matAtual]){
-            resultado[matAtual][campo] = (resultado[matAtual][campo]||0) + min;
-          }
-        }
-        // Linha "Total Colaborador:" — reset matAtual para próximo
-        if(linha.includes('Total Colaborador:')) matAtual = null;
-      }
-    });
+      parsearApuracaoTexto(textoCompleto, prev);
 
-    const apontamentos = Object.values(resultado);
-
-    if(apontamentos.length === 0){
-      document.getElementById('premio-apuracao-preview').innerHTML=
-        '<div class="alert alert-warning">Nenhum apontamento lido. O PDF pode ter layout diferente. Tente exportar como Excel da Senior.</div>';
-      return;
+    }catch(err){
+      prev.innerHTML='<div class="alert alert-warning">Erro ao ler o arquivo: '+err.message+'<br>Tente exportar o relatorio como Excel (.xlsx) na Senior.</div>';
+      console.error(err);
     }
-
-    premioState.apontamentos = apontamentos;
-
-    // Montar tabela cruzando com base de colaboradores
-    montarTabelaPremio();
-
-    document.getElementById('premio-apuracao-preview').innerHTML=
-      '<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos do relatorio. '
-      +'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)" style="margin-left:10px">Ver Tabela (Passo 4)</button></div>';
     event.target.value='';
   };
-  reader.readAsText(file, 'utf-8');
+
+  if(file.name.toLowerCase().endsWith('.pdf'))
+    reader.readAsArrayBuffer(file);
+  else
+    reader.readAsBinaryString(file);
 }
+
+function parsearApuracaoTexto(texto, prevEl){
+  // O PDF da Senior tem o texto em blocos por colaborador
+  // Padrão: "XXXX.XXXX NOME ..." depois "014 Atestado 004:00" etc.
+  // PDF.js junta tudo numa linha — precisamos identificar os padrões
+
+  const resultado = {};
+  let matAtual = null;
+
+  // Dividir em tokens e processar sequencialmente
+  // Padrão de matrícula: 4 dígitos ponto 4 dígitos
+  const reMAT = /\b(\d{4})\.(\d{4})\b/g;
+  const reAPONT = /\b(014|015|020|064|101|103|107|108)\b[\s\S]{1,60}?(\d{3}:\d{2})/g;
+
+  // Abordagem: varrer linha por linha
+  const linhas = texto.split(/[\n\r]+/).map(l=>l.trim()).filter(l=>l);
+
+  for(let i=0; i<linhas.length; i++){
+    const linha = linhas[i];
+
+    // Detectar linha de colaborador: começa com XXXX.XXXX
+    const mMat = linha.match(/^(\d{4})\.(\d{4})\s+(.+)/);
+    if(mMat){
+      const mat = mMat[1]+'.'+mMat[2];
+      const restante = mMat[3].trim();
+      // Nome: tudo até o primeiro número (salário, etc.)
+      const nome = restante.split(/\s+\d/)[0].trim().replace(/\s+/g,' ');
+      matAtual = mat;
+      if(!resultado[mat]){
+        resultado[mat]={
+          mat, matNum:mMat[1]+mMat[2], nome,
+          atestado:0,faltas:0,aHoras:0,aNoturno:0,
+          saida:0,atraso:0,faltaParcial:0,abono:0
+        };
+      }
+      continue;
+    }
+
+    // Detectar linha de apontamento: começa com código 3 dígitos
+    // Formatos possíveis do PDF.js:
+    // "014 Atestado 004:00"  ou  "103 Atraso 000:38"  ou apenas "014 004:00"
+    if(matAtual){
+      // Tentar extrair código + tempo da linha
+      const mCod = linha.match(/^(\d{3})(?:\s+\S+)?\s+(\d{3}:\d{2})/);
+      if(mCod){
+        const cod=mCod[1], min=hhmm2min(mCod[2]);
+        const campo=APURACAO_MAP[cod];
+        if(campo) resultado[matAtual][campo]=(resultado[matAtual][campo]||0)+min;
+      }
+
+      // "Total Colaborador" = próximo colaborador
+      if(/Total\s+Colaborador/i.test(linha)){
+        // Verificar se há apontamentos na mesma linha do Total
+        // "Total Colaborador: 103 Atraso 000:38"
+        const mInline = linha.match(/(\d{3})\s+\S+\s+(\d{3}:\d{2})/g);
+        if(mInline) mInline.forEach(m=>{
+          const mm=m.match(/(\d{3})\s+\S+\s+(\d{3}:\d{2})/);
+          if(mm){ const campo=APURACAO_MAP[mm[1]]; if(campo) resultado[matAtual][campo]=(resultado[matAtual][campo]||0)+hhmm2min(mm[2]); }
+        });
+        // Não zera matAtual pois próxima linha pode ser continuação
+      }
+    }
+
+    // Detectar linha "Total Colaborador: 014 Atestado 004:00" (formato compacto do PDF)
+    const mTotal = linha.match(/Total\s+Colaborador:\s*(\d{3})\s+\S+\s+(\d{3}:\d{2})/);
+    if(mTotal && matAtual){
+      const campo=APURACAO_MAP[mTotal[1]];
+      if(campo) resultado[matAtual][campo]=(resultado[matAtual][campo]||0)+hhmm2min(mTotal[2]);
+    }
+  }
+
+  // Segunda passagem: o PDF.js pode juntar tudo numa linha só
+  // Varrer o texto completo procurando padrões
+  if(Object.keys(resultado).length === 0){
+    // Tentar extrair diretamente do texto completo
+    const reColab = /(\d{4}\.\d{4})\s+([A-Z][A-Z\s]{5,50?}?)(?=\d|$)/gm;
+    let m;
+    while((m=reColab.exec(texto))!==null){
+      const mat=m[1], nome=m[2].trim();
+      if(!resultado[mat]) resultado[mat]={mat,matNum:mat.replace('.',''),nome,atestado:0,faltas:0,aHoras:0,aNoturno:0,saida:0,atraso:0,faltaParcial:0,abono:0};
+    }
+    // Associar apontamentos por proximidade no texto
+    const reCodMin = /(014|015|020|064|101|103|107|108)\s+(?:\S+\s+)?(\d{3}:\d{2})/g;
+    // Simplificado: pegar todos os pares cod+tempo e associar ao último colaborador antes deles
+    const mats = [...texto.matchAll(/(\d{4}\.\d{4})/g)].map(m=>({mat:m[1],pos:m.index}));
+    const codigos = [...texto.matchAll(/(014|015|020|064|101|103|107|108)[^\n]*?(\d{3}:\d{2})/g)].map(m=>({cod:m[1],min:hhmm2min(m[2]),pos:m.index}));
+    codigos.forEach(ap=>{
+      // Encontrar mat mais próxima antes deste apontamento
+      const antecedente=mats.filter(m=>m.pos<ap.pos).slice(-1)[0];
+      if(antecedente&&resultado[antecedente.mat]){
+        const campo=APURACAO_MAP[ap.cod];
+        if(campo) resultado[antecedente.mat][campo]=(resultado[antecedente.mat][campo]||0)+ap.min;
+      }
+    });
+  }
+
+  const apontamentos = Object.values(resultado).filter(a=>a.nome);
+
+  if(apontamentos.length === 0){
+    prevEl.innerHTML='<div class="alert alert-warning">Nao foi possivel ler o PDF. Por favor, no Senior, exporte o mesmo relatorio em formato <strong>Excel (.xlsx)</strong> e importe aqui.</div>';
+    return;
+  }
+
+  premioState.apontamentos = apontamentos;
+  montarTabelaPremio();
+
+  prevEl.innerHTML='<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos. '
+    +'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)" style="margin-left:10px">Ver Tabela (Passo 4)</button></div>';
+}
+
 
 function montarTabelaPremio(){
   // Cruzar apontamentos com base de colaboradores
