@@ -3620,6 +3620,11 @@ function parsearApuracaoTexto(texto, prevEl){
   // Normalizar: substituir non-breaking spaces e multiplos espacos por espaco simples
   texto = texto.replace(/\u00a0/g,' ').replace(/\s+/g,' ');
 
+  // DEBUG — mostrar info no console
+  const partesTeste = texto.split(/(?=\b\d{4}\.\d{4}\b)/);
+  console.log('Total partes apos split:', partesTeste.length);
+  partesTeste.slice(0,5).forEach((p,i)=>console.log('Parte '+i+':', p.substring(0,80)));
+
   const resultado = {};
   const APURACAO_MAP_LOCAL = {
     '014':'atestado','015':'faltas','020':'aHoras','064':'aNoturno',
