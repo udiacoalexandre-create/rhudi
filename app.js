@@ -3671,14 +3671,16 @@ function parsearApuracaoTexto(texto, prevEl){
   const apontamentos = Object.values(resultado).filter(a=>a.nome && a.nome.length > 2);
 
   console.log('Apontamentos lidos:', apontamentos.length);
-  console.log('Texto (primeiros 500):', texto.substring(0,500));
+  console.log('Texto extraido (500 chars):', texto.substring(0,500));
 
   if(apontamentos.length === 0){
-    prevEl.innerHTML='<div class="alert alert-warning">'
-      +'Nao foi possivel identificar colaboradores no PDF.<br>'
-      +'<strong>Solucao:</strong> No Senior, exporte o relatorio "Apuracao Colaborador" '
-      +'em formato <strong>Excel (.xlsx)</strong> e importe aqui — funciona 100%.'
-      +'</div>';
+    // Mostrar texto extraído para debug
+    const amostra = texto.substring(0,800).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    prevEl.innerHTML='<div class="alert alert-warning" style="margin-bottom:10px">'
+      +'Nao foi possivel identificar colaboradores no PDF.</div>'
+      +'<div class="card"><div class="card-title" style="color:var(--red)">Texto extraido do PDF (debug):</div>'
+      +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap">'+amostra+'</pre>'
+      +'<p class="text-sm" style="margin-top:8px">Envie este texto para o suporte para ajustar o parser.</p></div>';
     return;
   }
 
