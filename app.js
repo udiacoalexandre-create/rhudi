@@ -3619,45 +3619,52 @@ function processarApuracaoPremio(event){
 function parsearApuracaoTexto(texto, prevEl){
   const resultado = {};
 
-  // O PDF da Senior tem por colaborador uma linha como:
-  // "1000.0990 ADENILDO GONCALVES SANTOS Total Colaborador: 101 Saida Antecipada 002:55"
-  // ou multiplos apontamentos na mesma linha
+  // Formato real extraido pelo PDF.js:
+  // "1000.0990   ADENILDO GONCALVES SANTOS  101   Saida Antecipada Total Colaborador:   002:55"
+  // "1000.0966   ANDRE DA SILVA RODRIGUES  014   Atestado Total Colaborador:   012:00 015   008:10 Faltas 064   016:05 Atestado Noturno"
+  //
+  // Padrão: MATRICULA NOME [COD DESCRICAO Total Colaborador: TEMPO] [COD TEMPO DESCRICAO ...]
 
-  // Separar o texto em blocos por matricula
-  // Regex para encontrar matriculas: 4 digitos ponto 4 digitos
-  const blocos = texto.split(/(?=\d{4}\.\d{4})/);
+  // Dividir por matrículas
+  const partes = texto.split(/(?=\d{4}\.\d{4})/);
 
-  blocos.forEach(bloco => {
-    bloco = bloco.trim();
+  partes.forEach(bloco => {
+    bloco = bloco.replace(/\s+/g,' ').trim();
     if(!bloco) return;
 
-    // Verificar se comeca com matricula
-    const mMat = bloco.match(/^(\d{4})\.(\d{4})\s+([\s\S]+)/);
+    // Extrair matrícula
+    const mMat = bloco.match(/^(\d{4})\.(\d{4})\s+(.+)/);
     if(!mMat) return;
 
     const mat = mMat[1]+'.'+mMat[2];
     const resto = mMat[3];
 
-    // Extrair nome: texto antes de "Total Colaborador" ou de um codigo de 3 digitos
-    let nome = '';
-    const mNome = resto.match(/^([A-Z][A-Z\s]+?)(?=\s+Total\s+Colaborador|\s+\d{3}\s+|\s*$)/);
-    if(mNome) nome = mNome[1].trim().replace(/\s+/g,' ');
-    if(!nome) nome = resto.substring(0,40).trim();
+    // Extrair nome: texto antes do primeiro código de 3 dígitos
+    const mNome = resto.match(/^([A-ZÀ-ÿ][A-ZÀ-ÿ\s]+?)(?=\s+\d{3}\s)/);
+    const nome = mNome ? mNome[1].trim().replace(/\s+/g,' ') : resto.substring(0,50).trim();
 
     if(!resultado[mat]){
-      resultado[mat]={
-        mat, matNum:mMat[1]+mMat[2], nome,
+      resultado[mat] = {
+        mat, matNum: mMat[1]+mMat[2], nome,
         atestado:0, faltas:0, aHoras:0, aNoturno:0,
         saida:0, atraso:0, faltaParcial:0, abono:0
       };
     }
 
-    // Extrair todos os apontamentos do bloco
-    // Formato: "014 Atestado 004:00" ou "103 Atraso 000:38"
-    // O PDF.js pode juntar como: "014 Atestado 004:00 064 Atestado Noturno 004:10"
-    const reApont = /(014|015|020|064|101|103|107|108)[^0-9]*?(\d{3}:\d{2})/g;
+    // Extrair apontamentos do bloco
+    // Caso 1: "101 Saida Antecipada Total Colaborador: 002:55"
+    //   -> codigo aparece ANTES do tempo, separado por "Total Colaborador:"
+    // Caso 2: "014 Atestado Total Colaborador: 012:00 015 008:10 Faltas 064 016:05 Atestado Noturno"
+    //   -> primeiro par tem "Total Colaborador:" depois vem COD TEMPO DESCR
+
+    // Estratégia: encontrar TODOS os pares (codigo, tempo) no bloco
+    // Os tempos estão no formato DDD:DD
+    // Os codigos estão no formato DDD (3 digitos conhecidos)
+
+    const codigos = ['014','015','020','064','101','103','107','108'];
+    const reGlobal = /(014|015|020|064|101|103|107|108)[\s\S]*?(\d{3}:\d{2})/g;
     let m;
-    while((m=reApont.exec(bloco))!==null){
+    while((m = reGlobal.exec(bloco)) !== null){
       const cod = m[1];
       const min = hhmm2min(m[2]);
       const campo = APURACAO_MAP[cod];
@@ -3667,27 +3674,20 @@ function parsearApuracaoTexto(texto, prevEl){
     }
   });
 
-  // Filtrar apenas registros com nome valido
-  const apontamentos = Object.values(resultado).filter(a=>a.nome && a.nome.length > 2);
-
-  console.log('Apontamentos lidos:', apontamentos.length);
-  console.log('Texto extraido (500 chars):', texto.substring(0,500));
+  const apontamentos = Object.values(resultado).filter(a => a.nome && a.nome.length > 2);
 
   if(apontamentos.length === 0){
-    // Mostrar texto extraído para debug
-    const amostra = texto.substring(0,800).replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    prevEl.innerHTML='<div class="alert alert-warning" style="margin-bottom:10px">'
-      +'Nao foi possivel identificar colaboradores no PDF.</div>'
-      +'<div class="card"><div class="card-title" style="color:var(--red)">Texto extraido do PDF (debug):</div>'
-      +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap">'+amostra+'</pre>'
-      +'<p class="text-sm" style="margin-top:8px">Envie este texto para o suporte para ajustar o parser.</p></div>';
+    const amostra = texto.substring(0,600).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    prevEl.innerHTML='<div class="alert alert-warning">Nao foi possivel identificar colaboradores.</div>'
+      +'<div class="card"><div class="card-title" style="color:var(--red)">Texto extraido (debug):</div>'
+      +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap">'+amostra+'</pre></div>';
     return;
   }
 
   premioState.apontamentos = apontamentos;
   montarTabelaPremio();
 
-  prevEl.innerHTML='<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos do relatorio. '
+  prevEl.innerHTML='<div class="alert alert-success"><strong>'+apontamentos.length+'</strong> colaboradores lidos. '
     +'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)" style="margin-left:10px">Ver Tabela (Passo 4)</button></div>';
 }
 
