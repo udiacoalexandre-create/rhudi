@@ -166,7 +166,10 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
-        <div class="fg"><label>Status</label>\n          <select id="${prefix}-status">\n            ${STATUS_LIST.map(s=>'<option value="'+s.v+'" '+(c?.status===s.v?'selected':'')+'>"+s.label+"</option>').join('')}\n          </select>
+        <div class="fg"><label>Status</label>
+          <select id="${prefix}-status">
+            ${STATUS_LIST.map(s=>'<option value="'+s.v+'" '+(c?.status===s.v?'selected':'')+'>'+s.label+'</option>').join('')}
+          </select>
         </div>
         <div class="fg"><label>Filtro / Tipo</label>
           <select id="${prefix}-filtro">
