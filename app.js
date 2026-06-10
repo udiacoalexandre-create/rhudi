@@ -3617,31 +3617,34 @@ function processarApuracaoPremio(event){
 
 
 function parsearApuracaoTexto(texto, prevEl){
+  // Normalizar: substituir non-breaking spaces e multiplos espacos por espaco simples
+  texto = texto.replace(/\u00a0/g,' ').replace(/\s+/g,' ');
+
   const resultado = {};
+  const APURACAO_MAP_LOCAL = {
+    '014':'atestado','015':'faltas','020':'aHoras','064':'aNoturno',
+    '101':'saida','103':'atraso','107':'faltaParcial','108':'abono'
+  };
 
-  // Formato real extraido pelo PDF.js:
-  // "1000.0990   ADENILDO GONCALVES SANTOS  101   Saida Antecipada Total Colaborador:   002:55"
-  // "1000.0966   ANDRE DA SILVA RODRIGUES  014   Atestado Total Colaborador:   012:00 015   008:10 Faltas 064   016:05 Atestado Noturno"
-  //
-  // Padrão: MATRICULA NOME [COD DESCRICAO Total Colaborador: TEMPO] [COD TEMPO DESCRICAO ...]
-
-  // Dividir por matrículas
-  const partes = texto.split(/(?=\d{4}\.\d{4})/);
+  // Dividir por matrículas XXXX.XXXX
+  const partes = texto.split(/(?=\b\d{4}\.\d{4}\b)/);
 
   partes.forEach(bloco => {
-    bloco = bloco.replace(/\s+/g,' ').trim();
+    bloco = bloco.trim();
     if(!bloco) return;
 
-    // Extrair matrícula
+    // Extrair matrícula: 4 digitos . 4 digitos
     const mMat = bloco.match(/^(\d{4})\.(\d{4})\s+(.+)/);
     if(!mMat) return;
 
     const mat = mMat[1]+'.'+mMat[2];
-    const resto = mMat[3];
+    const resto = mMat[3].trim();
 
-    // Extrair nome: texto antes do primeiro código de 3 dígitos
-    const mNome = resto.match(/^([\w\s\u00C0-\u00FF]+?)(?=\s+\d{3}\s)/);
-    const nome = mNome ? mNome[1].trim().replace(/\s+/g,' ') : resto.substring(0,50).trim();
+    // Extrair nome: texto antes do primeiro código conhecido (3 dígitos seguidos de espaço)
+    const mNome = resto.match(/^(.*?)(?=\s+(?:014|015|020|064|101|103|107|108)\s)/);
+    const nome = mNome ? mNome[1].trim() : resto.substring(0,50).trim();
+
+    if(!nome || nome.length < 2) return;
 
     if(!resultado[mat]){
       resultado[mat] = {
@@ -3651,23 +3654,13 @@ function parsearApuracaoTexto(texto, prevEl){
       };
     }
 
-    // Extrair apontamentos do bloco
-    // Caso 1: "101 Saida Antecipada Total Colaborador: 002:55"
-    //   -> codigo aparece ANTES do tempo, separado por "Total Colaborador:"
-    // Caso 2: "014 Atestado Total Colaborador: 012:00 015 008:10 Faltas 064 016:05 Atestado Noturno"
-    //   -> primeiro par tem "Total Colaborador:" depois vem COD TEMPO DESCR
-
-    // Estratégia: encontrar TODOS os pares (codigo, tempo) no bloco
-    // Os tempos estão no formato DDD:DD
-    // Os codigos estão no formato DDD (3 digitos conhecidos)
-
-    const codigos = ['014','015','020','064','101','103','107','108'];
-    const reGlobal = /(014|015|020|064|101|103|107|108)[\s\S]*?(\d{3}:\d{2})/g;
+    // Extrair TODOS os apontamentos: procurar código seguido (em algum momento) de HHH:MM
+    const reApont = /\b(014|015|020|064|101|103|107|108)\b[^0-9]{1,60}?(\d{3}:\d{2})/g;
     let m;
-    while((m = reGlobal.exec(bloco)) !== null){
+    while((m = reApont.exec(bloco)) !== null){
       const cod = m[1];
       const min = hhmm2min(m[2]);
-      const campo = APURACAO_MAP[cod];
+      const campo = APURACAO_MAP_LOCAL[cod];
       if(campo && min > 0){
         resultado[mat][campo] = (resultado[mat][campo]||0) + min;
       }
