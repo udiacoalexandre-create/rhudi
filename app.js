@@ -3339,7 +3339,11 @@ function renderPremioWizard(){
 
         <div style="background:#FEF3C7;border:1.5px solid #FDE68A;border-radius:var(--radius);padding:14px;margin-bottom:16px">
           <div style="font-weight:600;font-size:13px;color:#92400E;margin-bottom:6px">Deseja atualizar a base com o relatorio de afastados?</div>
-          <p class="text-xs" style="color:#92400E;margin-bottom:12px">O sistema vai: marcar afastados, verificar novos contratados e demitidos com base no PDF da Senior.</p>
+          <p class="text-xs" style="color:#92400E;margin-bottom:12px">
+          O sistema vai marcar como Afastado os colaboradores que constam no relatorio.<br>
+          <strong>Importante:</strong> Colaboradores com filtro SOC, PART serao automaticamente N/A.
+          Colaboradores Afastados serao automaticamente NAO no premio.
+        </p>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text2)">PDF de Afastados (Senior):</div>
@@ -3714,9 +3718,11 @@ function montarTabelaPremio(){
 
     // Situação para o prêmio
     let situacao = 'Ativo';
-    if(c.status==='Afastado') situacao = 'Afastado';
+    if(c.status==='Afastado' || c.status==='afastado') situacao = 'Afastado';
+    else if(c.status==='Inativo') situacao = 'N/A';
+    else if(c.filtro==='SOC' || c.filtro==='PART') situacao = 'N/A';
     else if(c.filtro==='MEI') situacao = 'MEI';
-    else if(c.filtro==='SOC'||c.filtro==='PART') situacao = 'N/A';
+    else if(c.filtro==='DUP') situacao = 'DUP';
 
     return {
       _id: c._id,
@@ -3780,8 +3786,10 @@ function renderPremioTabelaHTML(comRegras){
           style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
           <option value="">Todas as situacoes</option>
           <option value="Ativo">Ativo</option>
+          <option value="Ativo">Ativo</option>
           <option value="Afastado">Afastado</option>
           <option value="MEI">MEI</option>
+          <option value="DUP">DUP</option>
           <option value="N/A">N/A</option>
         </select>
         <select id="premio-f-rec" onchange="filtrarTabelaPremio()"
@@ -3877,7 +3885,7 @@ function aplicarRegrasPremio(){
     let motivo = '';
 
     // Nao recebe automaticamente
-    if(['Afastado','N/A'].includes(r.situacao)){
+    if(['Afastado','N/A','Inativo'].includes(r.situacao)){
       recebe='NAO'; motivo='Situacao: '+r.situacao;
     } else if(r.atestado>0){
       recebe='NAO'; motivo='Atestado';
