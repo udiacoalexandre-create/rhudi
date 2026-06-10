@@ -3617,62 +3617,69 @@ function processarApuracaoPremio(event){
 
 
 function parsearApuracaoTexto(texto, prevEl){
-  // Normalizar: substituir non-breaking spaces e multiplos espacos por espaco simples
-  texto = texto.replace(/\u00a0/g,' ').replace(/\s+/g,' ');
-
-  // DEBUG — mostrar info no console
-  const partesTeste = texto.split(/(?=\b\d{4}\.\d{4}\b)/);
-  console.log('Total partes apos split:', partesTeste.length);
-  partesTeste.slice(0,5).forEach((p,i)=>console.log('Parte '+i+':', p.substring(0,80)));
+  // Normalizar espacos
+  texto = texto.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
 
   const resultado = {};
-  const APURACAO_MAP_LOCAL = {
-    '014':'atestado','015':'faltas','020':'aHoras','064':'aNoturno',
-    '101':'saida','103':'atraso','107':'faltaParcial','108':'abono'
-  };
+  const MAP = {'014':'atestado','015':'faltas','020':'aHoras','064':'aNoturno',
+               '101':'saida','103':'atraso','107':'faltaParcial','108':'abono'};
 
-  // Dividir por matrículas XXXX.XXXX
-  const partes = texto.split(/(?=\b\d{4}\.\d{4}\b)/);
+  // Encontrar todas as matriculas e suas posicoes
+  const reMAT = /\d{4}\.\d{4}/g;
+  const posicoes = [];
+  let m;
+  while((m = reMAT.exec(texto)) !== null){
+    posicoes.push({pos: m.index, mat: m[0]});
+  }
 
-  partes.forEach(bloco => {
-    bloco = bloco.trim();
-    if(!bloco) return;
+  console.log('Matriculas encontradas:', posicoes.length);
 
-    // Extrair matrícula: 4 digitos . 4 digitos
-    const mMat = bloco.match(/^(\d{4})\.(\d{4})\s+(.+)/);
-    if(!mMat) return;
+  if(posicoes.length === 0){
+    prevEl.innerHTML='<div class="alert alert-warning">PDF lido mas nenhuma matricula encontrada (formato XXXX.XXXX).</div>';
+    return;
+  }
 
-    const mat = mMat[1]+'.'+mMat[2];
-    const resto = mMat[3].trim();
+  // Fatiar o texto entre posicoes de matriculas
+  posicoes.forEach((item, i) => {
+    const inicio = item.pos;
+    const fim = i+1 < posicoes.length ? posicoes[i+1].pos : texto.length;
+    const bloco = texto.substring(inicio, fim).trim();
+    const mat = item.mat;
 
-    // Extrair nome: texto antes do primeiro código conhecido (3 dígitos seguidos de espaço)
-    const mNome = resto.match(/^(.*?)(?=\s+(?:014|015|020|064|101|103|107|108)\s)/);
-    const nome = mNome ? mNome[1].trim() : resto.substring(0,50).trim();
+    // Extrair nome: texto entre a matricula e o primeiro codigo conhecido
+    const reNome = new RegExp('^' + mat.replace('.', '\\.') + '\\s+(.+?)(?=\\s+(?:014|015|020|064|101|103|107|108)\\s)');
+    const mNome = bloco.match(reNome);
+    const nome = mNome ? mNome[1].trim() : bloco.substring(mat.length).split(/\d{3}\s/)[0].trim();
 
     if(!nome || nome.length < 2) return;
 
     if(!resultado[mat]){
       resultado[mat] = {
-        mat, matNum: mMat[1]+mMat[2], nome,
+        mat,
+        matNum: mat.replace('.',''),
+        nome,
         atestado:0, faltas:0, aHoras:0, aNoturno:0,
         saida:0, atraso:0, faltaParcial:0, abono:0
       };
     }
 
-    // Extrair TODOS os apontamentos: procurar código seguido (em algum momento) de HHH:MM
-    const reApont = /\b(014|015|020|064|101|103|107|108)\b[^0-9]{1,60}?(\d{3}:\d{2})/g;
-    let m;
-    while((m = reApont.exec(bloco)) !== null){
-      const cod = m[1];
-      const min = hhmm2min(m[2]);
-      const campo = APURACAO_MAP_LOCAL[cod];
+    // Extrair apontamentos: codigo + tempo no formato DDD:DD
+    const reApont = /\b(014|015|020|064|101|103|107|108)\b[^0-9]{0,50}?(\d{3}:\d{2})/g;
+    let a;
+    while((a = reApont.exec(bloco)) !== null){
+      const campo = MAP[a[1]];
+      const min = hhmm2min(a[2]);
       if(campo && min > 0){
         resultado[mat][campo] = (resultado[mat][campo]||0) + min;
       }
     }
   });
 
-  const apontamentos = Object.values(resultado).filter(a => a.nome && a.nome.length > 2);
+  const apontamentos = Object.values(resultado).filter(a => a.nome && a.nome.length > 1);
+  console.log('Apontamentos processados:', apontamentos.length);
+  if(apontamentos.length > 0){
+    console.log('Exemplo:', apontamentos[0]);
+  }
 
   if(apontamentos.length === 0){
     const amostra = texto.substring(0,600).replace(/</g,'&lt;').replace(/>/g,'&gt;');
