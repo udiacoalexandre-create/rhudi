@@ -1,5 +1,33 @@
 
 // ============================================================
+// STATUS DE COLABORADORES — regras de beneficios
+// ============================================================
+const STATUS_LIST = [
+  {v:'Trabalhando',    label:'Trabalhando',        cor:'#065F46', bg:'#D1FAE5'},
+  {v:'Ferias',        label:'Ferias',              cor:'#1D4ED8', bg:'#DBEAFE'},
+  {v:'Ferias Coletiva',label:'Ferias Coletiva',    cor:'#1D4ED8', bg:'#DBEAFE'},
+  {v:'Afastado',      label:'Afastado',            cor:'#92400E', bg:'#FEF3C7'},
+  {v:'Auxilio Doenca',label:'Auxilio Doenca',      cor:'#92400E', bg:'#FEF3C7'},
+  {v:'Acidente Trabalho',label:'Acidente Trabalho',cor:'#92400E', bg:'#FEF3C7'},
+  {v:'Lic. Maternidade',label:'Lic. Maternidade',  cor:'#6D28D9', bg:'#EDE9FE'},
+  {v:'Lic. Paternidade',label:'Lic. Paternidade',  cor:'#6D28D9', bg:'#EDE9FE'},
+  {v:'Auxilio Reclusao',label:'Auxilio Reclusao',  cor:'#7F1D1D', bg:'#FEE2E2'},
+  {v:'Demitido',      label:'Demitido',            cor:'#374151', bg:'#F3F4F6'},
+  {v:'N/A',           label:'N/A',                 cor:'#6B7280', bg:'#F9FAFB'},
+];
+
+// Grupos de status para regras de beneficios
+const STATUS_RECEBE_TUDO    = ['Trabalhando','Ferias','Ferias Coletiva'];
+const STATUS_SO_CESTA       = ['Afastado','Auxilio Doenca','Acidente Trabalho',
+                               'Lic. Maternidade','Lic. Paternidade','Auxilio Reclusao'];
+const STATUS_NAO_RECEBE     = ['Demitido','N/A'];
+
+function getStatusInfo(v){
+  return STATUS_LIST.find(s=>s.v===v) || {v,label:v,cor:'#6B7280',bg:'#F9FAFB'};
+}
+
+
+// ============================================================
 // DADOS & ESTADO GLOBAL
 // ============================================================
 const VT_LINHAS = [
@@ -138,12 +166,7 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
-        <div class="fg"><label>Status</label>
-          <select id="${prefix}-status">
-            <option value="Ativo" ${(c?.status||'Ativo')==='Ativo'?'selected':''}>Ativo</option>
-            <option value="Inativo" ${c?.status==='Inativo'?'selected':''}>Inativo</option>
-            <option value="Férias" ${(c?.status==='Férias'||c?.status==='Férias')?'selected':''}>F\u00E9rias</option>
-          </select>
+        <div class="fg"><label>Status</label>\n          <select id="${prefix}-status">\n            ${STATUS_LIST.map(s=>'<option value="'+s.v+'" '+(c?.status===s.v?'selected':'')+'>"+s.label+"</option>').join('')}\n          </select>
         </div>
         <div class="fg"><label>Filtro / Tipo</label>
           <select id="${prefix}-filtro">
@@ -378,6 +401,7 @@ async function excluirColab(id,nome){
 const MODULES = {
   base:{pages:[
     {id:'base-lista',icon:'',label:'Colaboradores'},
+    {id:'base-atualizacao',icon:'',label:'Atualizacao Mensal'},
     {id:'base-import',icon:'',label:'Importar / Sync'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
@@ -435,7 +459,7 @@ function showPage(id){
 
 function renderPage(id){
   const pages={
-    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-novo':pgBaseNovo,'premio-main':pgPremioAssiduidade,
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
@@ -1037,12 +1061,20 @@ function getCfg(){
 }
 
 function calcBen(c, dr, du){
-  if(c.status==='Inativo') return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
+  const st = c.status||'Trabalhando';
+
+  // N/A e Demitido: nada
+  if(STATUS_NAO_RECEBE.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
+
+  // Afastados: só cesta
+  if(STATUS_SO_CESTA.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:185};
+
+  // Trabalhando, Ferias, Ferias Coletiva: cálculo normal
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
-  const vr  = (eleg.vr!==false&&fnum(c.vr)>0)  ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))   : 0;
-  const cafe = (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
+  const vr   = (eleg.vr!==false&&fnum(c.vr)>0)   ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))   : 0;
+  const cafe  = (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
   let comb=0;
   if(eleg.mobilidade!==false&&mob==='combustivel'&&fnum(c.comb)>0){
     if(cfg.comb==='fixo') comb=fnum(c.comb);
@@ -1050,8 +1082,7 @@ function calcBen(c, dr, du){
   }
   const vt=(eleg.mobilidade!==false&&mob==='vt')
     ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
-  const cesta=(c.status!=='Inativo')?185:0; // todos os colaboradores ativos tem cesta
-  return {vr,cafe,comb,vt,cesta};
+  return {vr,cafe,comb,vt,cesta:185};
 }
 
 function calcMob(val,dr,du){
@@ -1258,7 +1289,7 @@ function getLanAtivos(){
   const du=fnum(g('lan-du'))||22;
   const q=(g('lan-q')||'').toLowerCase();
   const empF=g('lan-emp'),depF=g('lan-dep'),benF=g('lan-ben');
-  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
   if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
   if(depF) f=f.filter(c=>(c.depto||'')===depF);
@@ -1496,7 +1527,7 @@ function pgBenExportarCaju(){
 function fmtValCaju(v){ return (parseFloat(v)||0).toFixed(2); }
 
 function getCajuAtivos(empSel){
-  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
   if(empSel) f=f.filter(c=>String(c.mat||'').startsWith(empSel));
   return f;
 }
@@ -1662,7 +1693,7 @@ function exportarSenior(tipo){
   const du=fnum(g('lan-du'))||22;
   const nomes={vr:'VR',cafe:'Cafe_Manha',comb:'Mobilidade',vt:'VT',cesta:'Cesta_Basica'};
   const linhas=['CPF,Empresa,Valor'];
-  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
   if(empSel) f=f.filter(c=>String(c.mat||'').startsWith(empSel));
   f.forEach(c=>{
     const dr=getLanDR(c.mat,du);
@@ -2021,7 +2052,7 @@ function renderFerRadar(){
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const empF=document.getElementById('fer-emp')?.value||'';
   const depF=document.getElementById('fer-dep')?.value||'';
-  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
   if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
   if(depF) f=f.filter(c=>(c.depto||'')===depF);
 
@@ -2988,7 +3019,7 @@ function renderFerRadar(){
   const depF=document.getElementById('fer-dep')?.value||'';
   const stF=document.getElementById('fer-status-filter')?.value||'';
 
-  let f=colaboradores.filter(c=>c.status!=='Inativo');
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
   if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
   if(depF) f=f.filter(c=>(c.depto||'')===depF);
 
@@ -3078,6 +3109,7 @@ function renderFarois(dados){
 const MODULES_OVERRIDE = {
   base:{pages:[
     {id:'base-lista',icon:'',label:'Colaboradores'},
+    {id:'base-atualizacao',icon:'',label:'Atualizacao Mensal'},
     {id:'base-import',icon:'',label:'Importar / Sync'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
@@ -3716,13 +3748,19 @@ function montarTabelaPremio(){
         a.matNum===mat.replace('.','');
     });
 
-    // Situação para o prêmio
-    let situacao = 'Ativo';
-    if(c.status==='Afastado' || c.status==='afastado') situacao = 'Afastado';
-    else if(c.status==='Inativo') situacao = 'N/A';
-    else if(c.filtro==='SOC' || c.filtro==='PART') situacao = 'N/A';
-    else if(c.filtro==='MEI') situacao = 'MEI';
-    else if(c.filtro==='DUP') situacao = 'DUP';
+    // Situação para o prêmio — baseada no status do colaborador
+    let situacao = 'Trabalhando';
+    if(STATUS_NAO_RECEBE.includes(c.status)||c.filtro==='SOC'||c.filtro==='PART'){
+      situacao = 'N/A';
+    } else if(STATUS_SO_CESTA.includes(c.status)){
+      situacao = c.status; // Afastado, Auxilio Doenca etc
+    } else if(c.filtro==='MEI'){
+      situacao = 'MEI';
+    } else if(c.filtro==='DUP'){
+      situacao = 'DUP';
+    } else {
+      situacao = c.status||'Trabalhando';
+    }
 
     return {
       _id: c._id,
@@ -3885,7 +3923,7 @@ function aplicarRegrasPremio(){
     let motivo = '';
 
     // Nao recebe automaticamente
-    if(['Afastado','N/A','Inativo'].includes(r.situacao)){
+    if(r.situacao==='N/A'||STATUS_SO_CESTA.some(s=>r.situacao.includes(s.split(' ')[0]))){
       recebe='NAO'; motivo='Situacao: '+r.situacao;
     } else if(r.atestado>0){
       recebe='NAO'; motivo='Atestado';
@@ -3967,4 +4005,291 @@ async function fecharCompetencionPremio(){
     premioState={passo:1,competencia:'',baseAtualizada:false,afastados:[],apontamentos:[],tabela:[]};
     renderPremioWizard();
   }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+// ================================================================
+// ATUALIZAÇÃO MENSAL DA BASE — Excel da Senior
+// ================================================================
+
+function pgBaseAtualizacao(){
+  const anos=[2024,2025,2026,2027];
+  const anoAtual=new Date().getFullYear();
+  const mesAtual=new Date().getMonth()+1;
+  const meses=[{v:1,l:'Janeiro'},{v:2,l:'Fevereiro'},{v:3,l:'Marco'},{v:4,l:'Abril'},
+    {v:5,l:'Maio'},{v:6,l:'Junho'},{v:7,l:'Julho'},{v:8,l:'Agosto'},
+    {v:9,l:'Setembro'},{v:10,l:'Outubro'},{v:11,l:'Novembro'},{v:12,l:'Dezembro'}];
+
+  return `
+    <div class="page-header">
+      <h2>Atualizacao Mensal da Base</h2>
+      <p>Importe o Excel da Senior para sincronizar admissoes, demissoes e afastamentos.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Competencia de referencia</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="fg"><label>Mes</label>
+          <select id="atu-mes" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+            ${meses.map(m=>'<option value="'+m.v+'" '+(m.v===mesAtual?'selected':'')+'>'+m.l+'</option>').join('')}
+          </select>
+        </div>
+        <div class="fg"><label>Ano</label>
+          <select id="atu-ano" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+            ${anos.map(a=>'<option value="'+a+'" '+(a===anoAtual?'selected':'')+'>'+a+'</option>').join('')}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Importar relatorio da Senior</div>
+      <div class="alert alert-info" style="margin-bottom:12px">
+        <strong>Colunas esperadas:</strong> Cadastro (matricula), Nome, Situacao/Status<br>
+        O sistema vai comparar com a base atual e identificar: novos, demitidos, mudancas de status.
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('atu-file').click()">
+        <input type="file" id="atu-file" accept=".xlsx,.xls" style="display:none" onchange="processarAtualizacao(event)">
+        <div style="font-size:28px;margin-bottom:8px">&#8679;</div>
+        <div class="upload-text">Selecionar Excel da Senior</div>
+        <div class="upload-sub">.xlsx ou .xls</div>
+      </div>
+      <div id="atu-preview" style="margin-top:14px"></div>
+    </div>`;
+}
+
+// Mapeamento de status da Senior para o sistema
+function mapearStatusSenior(statusSenior){
+  if(!statusSenior) return 'Trabalhando';
+  const s = String(statusSenior).toLowerCase().trim();
+  if(s.includes('auxilio doenca')||s.includes('auxílio doença')||s==='003') return 'Auxilio Doenca';
+  if(s.includes('acidente')||s==='004') return 'Acidente Trabalho';
+  if(s.includes('maternidade')) return 'Lic. Maternidade';
+  if(s.includes('paternidade')) return 'Lic. Paternidade';
+  if(s.includes('reclusao')||s.includes('reclusão')||s==='028') return 'Auxilio Reclusao';
+  if(s.includes('ferias coletiva')||s.includes('férias coletiva')) return 'Ferias Coletiva';
+  if(s.includes('ferias')||s.includes('férias')) return 'Ferias';
+  if(s.includes('afasta')) return 'Afastado';
+  if(s.includes('ativo')||s.includes('trabalhando')||s.includes('normal')) return 'Trabalhando';
+  if(s.includes('demit')||s.includes('rescis')) return 'Demitido';
+  return 'Trabalhando';
+}
+
+let atuPendente = {novos:[],demitidos:[],mudancas:[],iguais:0};
+
+async function processarAtualizacao(event){
+  const file=event.target.files[0]; if(!file) return;
+  const prev=document.getElementById('atu-preview');
+  prev.innerHTML='<div class="alert alert-info">Processando...</div>';
+
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+
+    // Detectar header
+    let hi=0;
+    for(let i=0;i<Math.min(5,data.length);i++){
+      if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}
+    }
+    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
+    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
+    const iNome=hs.findIndex(h=>h.includes('nome'));
+    const iSit=hs.findIndex(h=>h.includes('situa')||h.includes('status'));
+    const iAdm=hs.findIndex(h=>h.includes('admiss'));
+
+    if(iMat<0||iNome<0){
+      prev.innerHTML='<div class="alert alert-warning">Colunas Cadastro/Nome nao encontradas. Verifique o arquivo.</div>';
+      return;
+    }
+
+    // Ler dados do Excel
+    const seniorMap={};
+    for(let i=hi+1;i<data.length;i++){
+      const r=data[i]; if(!r||!r[iMat]||!r[iNome]) continue;
+      const matRaw=String(r[iMat]).trim();
+      // Normalizar matrícula: pode vir como "1000.0162" ou "10000162"
+      const mat=matRaw.includes('.')?matRaw:matRaw.substring(0,4)+'.'+matRaw.substring(4);
+      const nome=String(r[iNome]).trim().toUpperCase();
+      const statusRaw=iSit>=0?String(r[iSit]||'').trim():'';
+      const status=mapearStatusSenior(statusRaw);
+      const admissao=iAdm>=0&&r[iAdm]?new Date(r[iAdm]).toISOString().split('T')[0]:'';
+      seniorMap[mat]={mat,nome,status,admissao};
+    }
+
+    // Comparar com base atual
+    const baseMap={};
+    colaboradores.forEach(c=>{ if(c.mat) baseMap[c.mat]=c; });
+
+    const novos=[], demitidos=[], mudancas=[];
+    let iguais=0;
+
+    // Novos: estão na Senior mas não na base
+    Object.values(seniorMap).forEach(s=>{
+      if(!baseMap[s.mat]){
+        novos.push(s);
+      } else {
+        const c=baseMap[s.mat];
+        if(c.status!==s.status){
+          mudancas.push({colab:c, novoStatus:s.status, statusAnterior:c.status});
+        } else {
+          iguais++;
+        }
+      }
+    });
+
+    // Demitidos: estão na base como Trabalhando mas não aparecem na Senior
+    colaboradores.filter(c=>c.mat&&c.status==='Trabalhando').forEach(c=>{
+      if(!seniorMap[c.mat]) demitidos.push(c);
+    });
+
+    atuPendente={novos,demitidos,mudancas,iguais};
+    renderAtuPreview(novos,demitidos,mudancas,iguais);
+    event.target.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function renderAtuPreview(novos,demitidos,mudancas,iguais){
+  const prev=document.getElementById('atu-preview'); if(!prev) return;
+
+  let html=`
+    <div class="stats-grid" style="margin-bottom:16px">
+      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${iguais}</div><div class="stat-label">Sem alteracao</div></div>
+      <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${novos.length}</div><div class="stat-label">Novos admitidos</div></div>
+      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${demitidos.length}</div><div class="stat-label">Possiveis demissoes</div></div>
+      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${mudancas.length}</div><div class="stat-label">Mudancas de status</div></div>
+    </div>`;
+
+  // Mudanças de status
+  if(mudancas.length>0){
+    html+=`<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="color:var(--yellow)">Mudancas de Status (${mudancas.length})</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosMudancas(true)">Selecionar todos</button>
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosMudancas(false)">Desmarcar todos</button>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Aplicar?</th><th>Matricula</th><th>Nome</th><th>Status Atual</th><th>Novo Status</th></tr></thead>
+        <tbody>${mudancas.map((m,i)=>`<tr>
+          <td><input type="checkbox" id="mud-${i}" class="mud-check" checked style="accent-color:var(--blue)"></td>
+          <td><code>${m.colab.mat}</code></td>
+          <td>${m.colab.nome}</td>
+          <td>${statusBadge(m.statusAnterior)}</td>
+          <td>${statusBadge(m.novoStatus)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // Novos admitidos
+  if(novos.length>0){
+    html+=`<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="color:var(--blue)">Novos Admitidos (${novos.length})</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosNovos(true)">Selecionar todos</button>
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosNovos(false)">Desmarcar todos</button>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Incluir?</th><th>Matricula</th><th>Nome</th><th>Status</th><th>Admissao</th></tr></thead>
+        <tbody>${novos.map((n,i)=>`<tr>
+          <td><input type="checkbox" id="nov-${i}" class="nov-check" checked style="accent-color:var(--blue)"></td>
+          <td><code>${n.mat}</code></td>
+          <td>${n.nome}</td>
+          <td>${statusBadge(n.status)}</td>
+          <td>${n.admissao||'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // Possíveis demitidos
+  if(demitidos.length>0){
+    html+=`<div class="card" style="margin-bottom:12px">
+      <div class="card-title" style="color:var(--red)">Nao aparecem no relatorio (${demitidos.length})</div>
+      <div class="alert alert-warning" style="margin-bottom:8px">Estes estavam como Trabalhando na base mas nao constam no relatorio. Marque os que foram demitidos.</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosDemitidos(true)">Marcar todos como Demitido</button>
+        <button class="btn btn-ghost btn-sm" onclick="selecionarTodosDemitidos(false)">Desmarcar todos</button>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Demitido?</th><th>Matricula</th><th>Nome</th><th>Departamento</th><th>Status atual</th></tr></thead>
+        <tbody>${demitidos.map((d,i)=>`<tr>
+          <td><input type="checkbox" id="dem-${i}" class="dem-check" style="accent-color:var(--red)"></td>
+          <td><code>${d.mat}</code></td>
+          <td>${d.nome}</td>
+          <td class="text-sm text-muted">${d.depto||'—'}</td>
+          <td>${statusBadge(d.status)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  html+=`<div class="btn-row">
+    <button class="btn btn-ghost" onclick="document.getElementById('atu-preview').innerHTML=''">Cancelar</button>
+    <button class="btn btn-primary" onclick="aplicarAtualizacao()">Aplicar alteracoes selecionadas</button>
+  </div>`;
+
+  prev.innerHTML=html;
+  prev._novos=novos;
+  prev._demitidos=demitidos;
+  prev._mudancas=mudancas;
+}
+
+function selecionarTodosMudancas(sel){ document.querySelectorAll('.mud-check').forEach(c=>c.checked=sel); }
+function selecionarTodosNovos(sel){ document.querySelectorAll('.nov-check').forEach(c=>c.checked=sel); }
+function selecionarTodosDemitidos(sel){ document.querySelectorAll('.dem-check').forEach(c=>c.checked=sel); }
+
+async function aplicarAtualizacao(){
+  const prev=document.getElementById('atu-preview');
+  const novos=prev._novos||[];
+  const demitidos=prev._demitidos||[];
+  const mudancas=prev._mudancas||[];
+
+  const b=window._writeBatch(window._db);
+  let nMud=0, nNov=0, nDem=0;
+
+  // Aplicar mudancas de status
+  mudancas.forEach((m,i)=>{
+    if(!document.getElementById('mud-'+i)?.checked) return;
+    m.colab.status=m.novoStatus;
+    b.set(window._doc('colaboradores',m.colab._id),m.colab);
+    const idx=colaboradores.findIndex(c=>c._id===m.colab._id);
+    if(idx>=0) colaboradores[idx].status=m.novoStatus;
+    nMud++;
+  });
+
+  // Incluir novos
+  novos.forEach((n,i)=>{
+    if(!document.getElementById('nov-'+i)?.checked) return;
+    const id=n.mat.replace('.','_')+'_'+Date.now()+'_'+i;
+    const c={_id:id,mat:n.mat,nome:n.nome,status:n.status,admissao:n.admissao||'',
+      filtro:'OK',cargo:'',depto:'',cpf:'',vr:0,cafe:0,comb:0,
+      mobilidade:'perto',elegibilidade:{vr:false,cafe:false,mobilidade:false,folha:true}};
+    b.set(window._doc('colaboradores',id),c);
+    colaboradores.push(c);
+    nNov++;
+  });
+
+  // Marcar demitidos
+  demitidos.forEach((d,i)=>{
+    if(!document.getElementById('dem-'+i)?.checked) return;
+    d.status='Demitido';
+    b.set(window._doc('colaboradores',d._id),d);
+    const idx=colaboradores.findIndex(c=>c._id===d._id);
+    if(idx>=0) colaboradores[idx].status='Demitido';
+    nDem++;
+  });
+
+  await b.commit();
+
+  prev.innerHTML=`<div class="alert alert-success">
+    Atualizacao concluida!<br>
+    <strong>${nMud}</strong> status atualizados &middot;
+    <strong>${nNov}</strong> novos incluidos &middot;
+    <strong>${nDem}</strong> marcados como Demitido<br>
+    Base atual: <strong>${colaboradores.length}</strong> colaboradores
+  </div>`;
+
+  setSS('${colaboradores.length} colaboradores','ok');
+  toast('Base atualizada!','success');
 }
