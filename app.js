@@ -3445,7 +3445,7 @@ function renderPremioWizard(){
         </div>
         <div style="background:#F0FDF4;border:1.5px solid #A7F3D0;border-radius:var(--radius);padding:14px;margin-bottom:16px">
           <p class="text-sm">O arquivo CSV sera gerado no formato do Caju com CPF e valor R$ 226,00 para cada colaborador elegivel.</p>
-          ${analisar.length>0?'<p class="text-sm" style="color:var(--yellow);margin-top:8px"><strong>Atencao:</strong> '+analisar.length+' colaboradores marcados como "Analisar" nao serao incluidos no CSV. Revise no Passo 4 antes de exportar.</p>':''}
+
         </div>
         <div style="display:flex;gap:10px;justify-content:space-between">
           <button class="btn btn-ghost" onclick="premioIrPasso(4)">Voltar e revisar</button>
@@ -3761,7 +3761,7 @@ function renderPremioTabelaHTML(comRegras){
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div class="stat-card green" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--green)">${sim}</div><div style="font-size:11px">Sim</div></div>
         <div class="stat-card red" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--red)">${nao}</div><div style="font-size:11px">Nao</div></div>
-        <div class="stat-card yellow" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--yellow)">${analisar}</div><div style="font-size:11px">Analisar</div></div>
+
         <div class="stat-card" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--text3)">${vazio}</div><div style="font-size:11px">Pendente</div></div>
         <div class="stat-card green" style="padding:8px 12px"><div style="font-size:14px;font-weight:700;color:var(--green)">${brl(sim*226)}</div><div style="font-size:11px">Total</div></div>
       </div>
@@ -3782,7 +3782,7 @@ function renderPremioTabelaHTML(comRegras){
           <option value="">Todos os resultados</option>
           <option value="SIM">Recebe</option>
           <option value="NAO">Nao recebe</option>
-          <option value="ANALISAR">Analisar</option>
+
           <option value="">Pendente</option>
         </select>
       </div>
@@ -3833,7 +3833,7 @@ function renderPremioLinhas(dados){
         +'<option value="" '+(r.recebe===''?'selected':'')+'>—</option>'
         +'<option value="SIM" '+(r.recebe==='SIM'?'selected':'')+'>SIM</option>'
         +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+'>NAO</option>'
-        +'<option value="ANALISAR" '+(r.recebe==='ANALISAR'?'selected':'')+'>ANALISAR</option>'
+
         +'</select>'
       +'</td>'
       +'<td style="padding:8px;text-align:center;'+corCampo(r.atraso,10)+'">'+min2str(r.atraso)+'</td>'
@@ -3883,9 +3883,9 @@ function aplicarRegrasPremio(){
     } else if(r.abono>=60){
       recebe='NAO'; motivo='Abono >= 1h';
     } else if(r.atraso>10){
-      recebe='ANALISAR'; motivo='Atraso '+min2str(r.atraso);
+      recebe='NAO'; motivo='Atraso '+min2str(r.atraso);
     } else if(r.saida>10){
-      recebe='ANALISAR'; motivo='Saida antecip. '+min2str(r.saida);
+      recebe='NAO'; motivo='Saida antecip. '+min2str(r.saida);
     }
 
     return {...r, recebe, motivo};
