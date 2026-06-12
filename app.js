@@ -3957,8 +3957,8 @@ function aplicarRegrasPremio(){
       recebe='NAO'; motivo='Atestado Horas';
     } else if(r.aNoturno>0){
       recebe='NAO'; motivo='Atestado Noturno';
-    } else if(r.faltas>0 && r.situacao!=='MEI'){
-      recebe='NAO'; motivo='Faltas';
+    } else if((r.faltas>0||r.faltaParcial>0) && r.situacao!=='MEI'){
+      recebe='NAO'; motivo=r.faltas>0?'Faltas':'Falta Parcial';
     } else if(r.abono>=60){
       recebe='NAO'; motivo='Abono >= 1h';
     } else if(r.atraso>10){
