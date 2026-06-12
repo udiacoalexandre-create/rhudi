@@ -3749,7 +3749,11 @@ function montarTabelaPremio(){
   // Cruzar apontamentos com base de colaboradores
   // Todos da base ativa + afastados são incluídos
   // Incluir apenas quem participa do premio (excluir Demitido e N/A)
-  const base = colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
+  // Debug: contar quem tem premio=false
+  const semPremio = colaboradores.filter(c=>c.elegibilidade?.premio===false);
+  console.log('Colaboradores sem premio:', semPremio.length, semPremio.map(c=>c.nome));
+  const base = colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo' && c.elegibilidade?.premio!==false);
+  console.log('Base para premio:', base.length);
 
   const tabela = base.map(c=>{
     // Normalizar status legado
