@@ -175,7 +175,8 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
-        <div class="fg"><label>Status</label>\n          " + buildStatusSelect(prefix, c) + "
+        <div class="fg"><label>Status</label>
+          ${buildStatusSelect(prefix, c)}
         </div>
         <div class="fg"><label>Filtro / Tipo</label>
           <select id="${prefix}-filtro">
