@@ -3746,9 +3746,12 @@ function parsearApuracaoTexto(texto, prevEl){
 function montarTabelaPremio(){
   // Cruzar apontamentos com base de colaboradores
   // Todos da base ativa + afastados são incluídos
-  const base = colaboradores.filter(c=>c.status!=='Inativo');
+  // Incluir apenas quem participa do premio (excluir Demitido e N/A)
+  const base = colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
 
   const tabela = base.map(c=>{
+    // Normalizar status legado
+    const statusNorm = c.status==='Ativo'?'Trabalhando':c.status;
     // Buscar apontamentos pelo número da matrícula
     const mat = c.mat||'';
     // Formato da matrícula na base: "10000990" ou "1000.0990"
@@ -3760,16 +3763,16 @@ function montarTabelaPremio(){
 
     // Situação para o prêmio — baseada no status do colaborador
     let situacao = 'Trabalhando';
-    if(STATUS_NAO_RECEBE.includes(c.status)||c.filtro==='SOC'||c.filtro==='PART'){
+    if(STATUS_NAO_RECEBE.includes(statusNorm)||c.filtro==='SOC'||c.filtro==='PART'){
       situacao = 'N/A';
-    } else if(STATUS_SO_CESTA.includes(c.status)){
+    } else if(STATUS_SO_CESTA.includes(statusNorm)){
       situacao = c.status; // Afastado, Auxilio Doenca etc
     } else if(c.filtro==='MEI'){
       situacao = 'MEI';
     } else if(c.filtro==='DUP'){
       situacao = 'DUP';
     } else {
-      situacao = c.status||'Trabalhando';
+      situacao = statusNorm||'Trabalhando';
     }
 
     return {
@@ -3778,7 +3781,7 @@ function montarTabelaPremio(){
       nome: c.nome,
       cpf: c.cpf||'',
       situacao,
-      statusBase: c.status||'',
+      statusBase: statusNorm||'',
       filtro: c.filtro||'OK',
       recebe: '',  // será preenchido ao aplicar regras
       atestado: apont?.atestado||0,
@@ -3936,7 +3939,11 @@ function aplicarRegrasPremio(){
     let motivo = '';
 
     // Nao recebe automaticamente
-    if(r.situacao==='N/A'||STATUS_SO_CESTA.some(s=>r.situacao.includes(s.split(' ')[0]))){
+    // NAO: N/A, afastados de qualquer tipo, ou status base que indica afastamento
+    const statusBaseNAO = STATUS_NAO_RECEBE.includes(r.statusBase)||r.statusBase==='Inativo';
+    const statusBaseCesta = STATUS_SO_CESTA.includes(r.statusBase);
+    if(r.situacao==='N/A'||statusBaseNAO||statusBaseCesta||
+       STATUS_SO_CESTA.some(s=>r.situacao===s)||r.situacao==='Demitido'){
       recebe='NAO'; motivo='Situacao: '+r.situacao;
     } else if(r.atestado>0){
       recebe='NAO'; motivo='Atestado';
