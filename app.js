@@ -251,6 +251,7 @@ function elegCheckHTML(prefix, c){
     {id:'cafe',  label:'Cafe da Manha',        checked:eleg.cafe!==undefined?eleg.cafe:fnum(c?.cafe)>0},
     {id:'mobilidade',label:'Mobilidade',       checked:eleg.mobilidade!==undefined?eleg.mobilidade:(fnum(c?.comb)>0||[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0))},
     {id:'folha', label:'Folha de Pagamento',   checked:eleg.folha!==undefined?eleg.folha:true},
+    {id:'premio', label:'Premio Assiduidade',  checked:eleg.premio!==undefined?eleg.premio:true},
   ];
   return items.map(item=>`
     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid ${item.checked?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);cursor:pointer;background:${item.checked?'var(--blue-light)':'var(--surface2)'};transition:all .15s" onclick="toggleEleg(this)">
@@ -295,6 +296,7 @@ function getColabFromForm(prefix){
     cafe:    document.getElementById(prefix+'-eleg-cafe')?.checked||false,
     mobilidade: document.getElementById(prefix+'-eleg-mobilidade')?.checked||false,
     folha:   document.getElementById(prefix+'-eleg-folha')?.checked!==false,
+    premio:  document.getElementById(prefix+'-eleg-premio')?.checked!==false,
   };
   return {
     mat:    document.getElementById(prefix+'-mat')?.value.trim()||'',
