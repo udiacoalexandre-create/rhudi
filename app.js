@@ -3778,6 +3778,7 @@ function montarTabelaPremio(){
       nome: c.nome,
       cpf: c.cpf||'',
       situacao,
+      statusBase: c.status||'',
       filtro: c.filtro||'OK',
       recebe: '',  // será preenchido ao aplicar regras
       atestado: apont?.atestado||0,
@@ -3815,6 +3816,7 @@ function renderPremioTabelaHTML(comRegras){
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${comRegras?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(6)">Ir para Exportar (Passo 6)</button>':''}
           <button class="btn btn-warning btn-sm" onclick="aplicarRegrasPremio()">Aplicar Regras Automaticas</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportarDiagnosticoPremio()">Exportar diagnostico</button>
           <button class="btn btn-ghost btn-sm" onclick="premioIrPasso(${comRegras?4:2})">Voltar</button>
         </div>
       </div>
@@ -3858,6 +3860,7 @@ function renderPremioTabelaHTML(comRegras){
               <th style="padding:9px 8px;text-align:left;position:sticky;left:70px;background:#1E3A8A;min-width:180px">Nome</th>
               <th style="padding:9px 8px;min-width:100px">CPF</th>
               <th style="padding:9px 8px;min-width:90px">Situacao</th>
+              <th style="padding:9px 8px;min-width:80px">Status Base</th>
               <th style="padding:9px 8px;min-width:90px;background:#1B5E20">Recebe</th>
               <th style="padding:9px 8px;min-width:70px">Atraso</th>
               <th style="padding:9px 8px;min-width:70px">Saida Ant.</th>
@@ -3957,6 +3960,27 @@ function aplicarRegrasPremio(){
   premioState.passo = 5;
   renderPremioWizard();
   toast('Regras aplicadas com sucesso!','success');
+}
+
+
+function exportarDiagnosticoPremio(){
+  if(!premioState.tabela.length){toast('Nenhum dado','error');return;}
+  // Mostrar apenas os SIM para verificação
+  const sim = premioState.tabela.filter(r=>r.recebe==='SIM');
+  const rows=[
+    ['Matricula','Nome','CPF','Situacao','Status na Base','Filtro',
+     'Atraso','Saida Ant.','Atestado','Ates.Horas','Ates.Not.','Faltas','Abono','Recebe'],
+    ...premioState.tabela.map(r=>[
+      r.mat,r.nome,r.cpf,r.situacao,r.statusBase||'',r.filtro||'',
+      min2str(r.atraso),min2str(r.saida),min2str(r.atestado),
+      min2str(r.aHoras),min2str(r.aNoturno),min2str(r.faltas),min2str(r.abono),
+      r.recebe||'pendente'
+    ])
+  ];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Diagnostico');
+  XLSX.writeFile(wb,'Premio_Diagnostico_'+premioState.competencia.replace('/','_')+'.xlsx');
+  toast('Diagnostico exportado!','success');
 }
 
 function exportarPremioCaju(){
