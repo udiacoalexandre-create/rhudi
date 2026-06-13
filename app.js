@@ -3341,17 +3341,20 @@ function renderPremioWizard(){
     {n:3, label:'Importar Apontamentos'},
     {n:4, label:'Analise dos Dados'},
     {n:5, label:'Aplicar Regras'},
+    {n:'5b', label:'Revisao MEI'},
     {n:6, label:'Exportar Caju'},
     {n:7, label:'Fechar Competencia'},
   ];
+  const passoAtualStr = String(atual);
 
   const atual = premioState.passo;
 
   // Barra de progresso
   const barraHtml = '<div style="display:flex;gap:0;margin-bottom:24px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)">'
     + passos.map(p=>{
-        const done = p.n < atual;
-        const active = p.n === atual;
+        const pn = String(p.n);
+        const done = (pn < passoAtualStr && pn !== '5b') || (passoAtualStr === '6' && pn === '5b') || (passoAtualStr === '7' && pn === '5b');
+        const active = pn === passoAtualStr;
         const bg = done?'var(--green)':active?'var(--blue)':'var(--surface2)';
         const color = (done||active)?'#fff':'var(--text3)';
         return '<div style="flex:1;padding:8px 4px;background:'+bg+';text-align:center;cursor:'+(done?'pointer':'default')+';border-right:1px solid rgba(0,0,0,.1)" '
@@ -3475,6 +3478,70 @@ function renderPremioWizard(){
   } else if(atual === 5){
     // ── PASSO 5: Regras aplicadas ──
     conteudo = renderPremioTabelaHTML(true);
+
+  } else if(atual === '5b'){
+    // ── PASSO 5b: Revisão MEI ──
+    const meis = premioState.tabela.filter(r=>r.situacao==='MEI');
+    if(meis.length === 0){
+      premioState.passo = 6;
+      renderPremioWizard();
+      return;
+    }
+    conteudo = `
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">Revisao dos Colaboradores MEI</div>
+        <p class="text-sm text-muted" style="margin-bottom:16px">
+          Os colaboradores MEI sao elegíveis por padrao. Altere para NAO os que perderam o premio por apontamentos externos ao sistema.
+        </p>
+        <div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:16px">
+          <table style="border-collapse:collapse;font-size:12px;width:100%">
+            <thead>
+              <tr style="background:#1E3A8A;color:#fff">
+                <th style="padding:10px 12px;text-align:left;min-width:80px">Matricula</th>
+                <th style="padding:10px 12px;text-align:left;min-width:200px">Nome</th>
+                <th style="padding:10px 12px;text-align:left;min-width:100px">CPF</th>
+                <th style="padding:10px 12px;text-align:center;min-width:70px">Atraso</th>
+                <th style="padding:10px 12px;text-align:center;min-width:70px">Saida</th>
+                <th style="padding:10px 12px;text-align:center;min-width:70px">Atestado</th>
+                <th style="padding:10px 12px;text-align:center;min-width:70px">Faltas</th>
+                <th style="padding:10px 12px;text-align:center;min-width:70px">Abono</th>
+                <th style="padding:10px 12px;text-align:center;min-width:100px;background:#1B5E20">Recebe</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${meis.map((r,i)=>{
+                const corRec = r.recebe==='SIM'?'var(--green)':'var(--red)';
+                const idx = premioState.tabela.findIndex(x=>x.mat===r.mat);
+                return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
+                  +'<td style="padding:9px 12px"><code style="font-size:11px">'+r.mat+'</code></td>'
+                  +'<td style="padding:9px 12px;font-weight:500">'+r.nome+'</td>'
+                  +'<td style="padding:9px 12px;font-size:11px;color:var(--text2)">'+r.cpf+'</td>'
+                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.atraso>10?'var(--red)':r.atraso>0?'var(--yellow)':'#ccc')+'">'+min2str(r.atraso)+'</td>'
+                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.saida>10?'var(--red)':r.saida>0?'var(--yellow)':'#ccc')+'">'+min2str(r.saida)+'</td>'
+                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.atestado>0?'var(--red)':'#ccc')+'">'+min2str(r.atestado)+'</td>'
+                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.faltas>0?'var(--red)':'#ccc')+'">'+min2str(r.faltas)+'</td>'
+                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.abono>=60?'var(--red)':'#ccc')+'">'+min2str(r.abono)+'</td>'
+                  +'<td style="padding:9px 12px;text-align:center;background:'+(i%2===0?'#F0FFF4':'#E8FFF0')+'">'
+                  +'<select onchange="editarRecebeRow('+idx+',this.value);atualizarMeiRow(this)" '
+                  +'style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-weight:700;color:'+corRec+';background:transparent">'
+                  +'<option value="SIM" '+(r.recebe==='SIM'?'selected':'')+' style="color:var(--green)">SIM</option>'
+                  +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+' style="color:var(--red)">NAO</option>'
+                  +'</select>'
+                  +'</td>'
+                  +'</tr>';
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="background:#EFF6FF;border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue)">
+          <strong>${meis.filter(r=>r.recebe==='SIM').length}</strong> MEI receberao o premio (${brl(meis.filter(r=>r.recebe==='SIM').length*226)}) &nbsp;|&nbsp;
+          <strong>${meis.filter(r=>r.recebe==='NAO').length}</strong> nao receberao
+        </div>
+        <div style="display:flex;gap:10px;justify-content:space-between">
+          <button class="btn btn-ghost" onclick="premioIrPasso(5)">Voltar</button>
+          <button class="btn btn-primary" onclick="premioIrPasso(6)">Confirmar e Ir para Exportar</button>
+        </div>
+      </div>`;
 
   } else if(atual === 6){
     // ── PASSO 6: Exportar Caju ──
@@ -3823,7 +3890,7 @@ function renderPremioTabelaHTML(comRegras){
           <div class="text-sm text-muted">Competencia: <strong>${premioState.competencia}</strong> | ${t.length} colaboradores</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${comRegras?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(6)">Ir para Exportar (Passo 6)</button>':''}
+          ${comRegras?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(\'5b\')">Ir para Revisao MEI</button>':''}
           <button class="btn btn-warning btn-sm" onclick="aplicarRegrasPremio()">Aplicar Regras Automaticas</button>
           <button class="btn btn-ghost btn-sm" onclick="exportarDiagnosticoPremio()">Exportar diagnostico</button>
           <button class="btn btn-ghost btn-sm" onclick="premioIrPasso(${comRegras?4:2})">Voltar</button>
@@ -3944,6 +4011,18 @@ function filtrarTabelaPremio(){
   if(fRec) dados = dados.filter(r=>r.recebe===fRec);
   const tbody = document.getElementById('premio-tbody');
   if(tbody) tbody.innerHTML = renderPremioLinhas(dados);
+}
+
+
+function atualizarMeiRow(sel){
+  sel.style.color = sel.value==='SIM'?'var(--green)':'var(--red)';
+  // Atualizar o resumo
+  const meis = premioState.tabela.filter(r=>r.situacao==='MEI');
+  const sim = meis.filter(r=>r.recebe==='SIM').length;
+  const nao = meis.filter(r=>r.recebe==='NAO').length;
+  // Tentar atualizar o resumo na tela
+  const resumo = document.querySelector('[data-mei-resumo]');
+  if(resumo) resumo.textContent = sim+' MEI receberao ('+brl(sim*226)+') | '+nao+' nao receberao';
 }
 
 function editarRecebeRow(idx, valor){
