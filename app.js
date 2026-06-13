@@ -3838,6 +3838,17 @@ function renderPremioTabelaHTML(comRegras){
         <div class="stat-card green" style="padding:8px 12px"><div style="font-size:14px;font-weight:700;color:var(--green)">${brl(sim*226)}</div><div style="font-size:11px">Total</div></div>
       </div>
 
+      ${(()=>{
+        const meis=t.filter(r=>r.situacao==="MEI"&&r.recebe==="SIM");
+        if(!meis.length) return "";
+        return '<div style="background:#FEF3C7;border:1.5px solid #FDE68A;border-radius:8px;padding:12px 16px;margin-bottom:12px">'
+          +'<div style="font-weight:700;font-size:13px;color:#92400E;margin-bottom:6px">MEI — Revisao Manual Necessaria ('+meis.length+')</div>'
+          +'<p style="font-size:12px;color:#92400E;margin-bottom:8px">Verifique os apontamentos externos e altere para NAO os que perderam o premio.</p>'
+          +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
+          +meis.map(r=>'<span style="background:#fff;border:1px solid #FDE68A;border-radius:6px;padding:4px 10px;font-size:12px"><strong>'+r.nome.split(" ")[0]+' '+r.nome.split(" ").slice(-1)[0]+'</strong> <code style="font-size:10px;color:#999">'+r.mat+'</code></span>').join("")
+          +'</div></div>';
+      })()}
+
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <input type="text" id="premio-q" placeholder="Buscar nome ou matricula..." oninput="filtrarTabelaPremio()"
           style="flex:1;min-width:200px;padding:7px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
