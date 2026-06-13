@@ -3845,11 +3845,15 @@ function montarTabelaPremio(){
     });
 
     // Situação para o prêmio — baseada no status do colaborador
+    // elegibilidade.premio===true explícito sobrescreve regra de filtro SOC/PART
+    const premioExplicito = c.elegibilidade?.premio === true;
     let situacao = 'Trabalhando';
-    if(STATUS_NAO_RECEBE.includes(statusNorm)||c.filtro==='SOC'||c.filtro==='PART'){
+    if(c.elegibilidade?.premio===false){
+      situacao = 'N/A';
+    } else if(!premioExplicito && (STATUS_NAO_RECEBE.includes(statusNorm)||c.filtro==='SOC'||c.filtro==='PART')){
       situacao = 'N/A';
     } else if(STATUS_SO_CESTA.includes(statusNorm)){
-      situacao = c.status; // Afastado, Auxilio Doenca etc
+      situacao = c.status;
     } else if(c.filtro==='MEI'){
       situacao = 'MEI';
     } else if(c.filtro==='DUP'){
