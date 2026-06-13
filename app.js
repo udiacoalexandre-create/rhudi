@@ -3341,19 +3341,19 @@ function renderPremioWizard(){
     {n:3, label:'Importar Apontamentos'},
     {n:4, label:'Analise dos Dados'},
     {n:5, label:'Aplicar Regras'},
-    {n:'5b', label:'Revisao MEI'},
+    {n:55, label:'Revisao MEI'},
     {n:6, label:'Exportar Caju'},
     {n:7, label:'Fechar Competencia'},
   ];
-  const passoAtualStr = String(atual);
 
   const atual = premioState.passo;
+  const passoAtualStr = String(atual);
 
   // Barra de progresso
   const barraHtml = '<div style="display:flex;gap:0;margin-bottom:24px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)">'
     + passos.map(p=>{
         const pn = String(p.n);
-        const done = (pn < passoAtualStr && pn !== '5b') || (passoAtualStr === '6' && pn === '5b') || (passoAtualStr === '7' && pn === '5b');
+        const done = (pn < passoAtualStr && pn !== '55') || (passoAtualStr === '6' && pn === 55) || (passoAtualStr === '7' && pn === 55);
         const active = pn === passoAtualStr;
         const bg = done?'var(--green)':active?'var(--blue)':'var(--surface2)';
         const color = (done||active)?'#fff':'var(--text3)';
@@ -3479,7 +3479,7 @@ function renderPremioWizard(){
     // ── PASSO 5: Regras aplicadas ──
     conteudo = renderPremioTabelaHTML(true);
 
-  } else if(atual === '5b'){
+  } else if(atual === 55){
     // ── PASSO 5b: Revisão MEI ──
     const meis = premioState.tabela.filter(r=>r.situacao==='MEI');
     if(meis.length === 0){
@@ -3890,7 +3890,7 @@ function renderPremioTabelaHTML(comRegras){
           <div class="text-sm text-muted">Competencia: <strong>${premioState.competencia}</strong> | ${t.length} colaboradores</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${comRegras?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(\'5b\')">Ir para Revisao MEI</button>':''}
+          ${comRegras?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso(55)">Ir para Revisao MEI</button>':''}
           <button class="btn btn-warning btn-sm" onclick="aplicarRegrasPremio()">Aplicar Regras Automaticas</button>
           <button class="btn btn-ghost btn-sm" onclick="exportarDiagnosticoPremio()">Exportar diagnostico</button>
           <button class="btn btn-ghost btn-sm" onclick="premioIrPasso(${comRegras?4:2})">Voltar</button>
