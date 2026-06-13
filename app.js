@@ -3846,8 +3846,12 @@ function montarTabelaPremio(){
 
     // Situação para o prêmio — baseada no status do colaborador
     // elegibilidade.premio===true explícito sobrescreve regra de filtro SOC/PART
-    // premio!==false significa: não foi explicitamente desmarcado
-    const premioExplicito = c.elegibilidade?.premio !== false;
+        // SOC/PART: só recebe se premio===true explícito (marcado manualmente)
+    // MEI/OK/DUP: recebe por padrão (premio!==false)
+    const ehSOC = c.filtro==='SOC'||c.filtro==='PART';
+    const premioExplicito = ehSOC
+      ? c.elegibilidade?.premio === true          // SOC precisa de marcação explícita
+      : c.elegibilidade?.premio !== false;        // outros: padrão é receber
     let situacao = 'Trabalhando';
     if(c.elegibilidade?.premio===false){
       situacao = 'N/A';
