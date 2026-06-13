@@ -3489,88 +3489,94 @@ function renderPremioWizard(){
     }
     conteudo = `
       <div class="card">
-        <div class="card-title" style="color:var(--blue)">Revisao dos Colaboradores MEI</div>
-        <p class="text-sm text-muted" style="margin-bottom:16px">
-          Os colaboradores MEI sao elegíveis por padrao. Altere para NAO os que perderam o premio por apontamentos externos ao sistema.
+        <div class="card-title" style="color:var(--blue)">Revisao dos Colaboradores MEI (${meis.length})</div>
+        <p class="text-sm text-muted" style="margin-bottom:12px">
+          MEI recebem por padrao. Mude para NAO os que perderam por apontamentos externos.
         </p>
-        <div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:16px">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input type="text" id="mei-q" placeholder="Buscar nome ou matricula..."
+            oninput="filtrarTabelaMei()"
+            style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <div style="background:#EFF6FF;border-radius:var(--radius-sm);padding:8px 14px;font-size:13px;color:var(--blue);white-space:nowrap" id="mei-resumo">
+            ${meis.filter(r=>r.recebe==='SIM').length} SIM &nbsp;|&nbsp; ${meis.filter(r=>r.recebe==='NAO').length} NAO &nbsp;|&nbsp; ${brl(meis.filter(r=>r.recebe==='SIM').length*226)}
+          </div>
+        </div>
+        <div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);max-height:420px;margin-bottom:14px">
           <table style="border-collapse:collapse;font-size:12px;width:100%">
             <thead>
-              <tr style="background:#1E3A8A;color:#fff">
-                <th style="padding:10px 12px;text-align:left;min-width:80px">Matricula</th>
-                <th style="padding:10px 12px;text-align:left;min-width:200px">Nome</th>
-                <th style="padding:10px 12px;text-align:left;min-width:100px">CPF</th>
-                <th style="padding:10px 12px;text-align:center;min-width:70px">Atraso</th>
-                <th style="padding:10px 12px;text-align:center;min-width:70px">Saida</th>
-                <th style="padding:10px 12px;text-align:center;min-width:70px">Atestado</th>
-                <th style="padding:10px 12px;text-align:center;min-width:70px">Faltas</th>
-                <th style="padding:10px 12px;text-align:center;min-width:70px">Abono</th>
-                <th style="padding:10px 12px;text-align:center;min-width:100px;background:#1B5E20">Recebe</th>
+              <tr style="background:#1E3A8A;color:#fff;position:sticky;top:0;z-index:2">
+                <th style="padding:9px 12px;text-align:left;min-width:80px">Matricula</th>
+                <th style="padding:9px 12px;text-align:left;min-width:180px">Nome</th>
+                <th style="padding:9px 12px;text-align:center;min-width:65px">Atraso</th>
+                <th style="padding:9px 12px;text-align:center;min-width:65px">Saida</th>
+                <th style="padding:9px 12px;text-align:center;min-width:65px">Atestado</th>
+                <th style="padding:9px 12px;text-align:center;min-width:65px">Faltas</th>
+                <th style="padding:9px 12px;text-align:center;min-width:65px">Abono</th>
+                <th style="padding:9px 12px;text-align:center;min-width:90px;background:#1B5E20">Recebe</th>
               </tr>
             </thead>
-            <tbody>
-              ${meis.map((r,i)=>{
-                const corRec = r.recebe==='SIM'?'var(--green)':'var(--red)';
-                const idx = premioState.tabela.findIndex(x=>x.mat===r.mat);
-                return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
-                  +'<td style="padding:9px 12px"><code style="font-size:11px">'+r.mat+'</code></td>'
-                  +'<td style="padding:9px 12px;font-weight:500">'+r.nome+'</td>'
-                  +'<td style="padding:9px 12px;font-size:11px;color:var(--text2)">'+r.cpf+'</td>'
-                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.atraso>10?'var(--red)':r.atraso>0?'var(--yellow)':'#ccc')+'">'+min2str(r.atraso)+'</td>'
-                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.saida>10?'var(--red)':r.saida>0?'var(--yellow)':'#ccc')+'">'+min2str(r.saida)+'</td>'
-                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.atestado>0?'var(--red)':'#ccc')+'">'+min2str(r.atestado)+'</td>'
-                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.faltas>0?'var(--red)':'#ccc')+'">'+min2str(r.faltas)+'</td>'
-                  +'<td style="padding:9px 12px;text-align:center;font-size:11px;color:'+(r.abono>=60?'var(--red)':'#ccc')+'">'+min2str(r.abono)+'</td>'
-                  +'<td style="padding:9px 12px;text-align:center;background:'+(i%2===0?'#F0FFF4':'#E8FFF0')+'">'
-                  +'<select onchange="editarRecebeRow('+idx+',this.value);atualizarMeiRow(this)" '
-                  +'style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-weight:700;color:'+corRec+';background:transparent">'
-                  +'<option value="SIM" '+(r.recebe==='SIM'?'selected':'')+' style="color:var(--green)">SIM</option>'
-                  +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+' style="color:var(--red)">NAO</option>'
-                  +'</select>'
-                  +'</td>'
-                  +'</tr>';
-              }).join('')}
+            <tbody id="mei-tbody">
+              ${renderMeiLinhas(meis)}
             </tbody>
           </table>
         </div>
-        <div style="background:#EFF6FF;border-radius:var(--radius);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue)">
-          <strong>${meis.filter(r=>r.recebe==='SIM').length}</strong> MEI receberao o premio (${brl(meis.filter(r=>r.recebe==='SIM').length*226)}) &nbsp;|&nbsp;
-          <strong>${meis.filter(r=>r.recebe==='NAO').length}</strong> nao receberao
-        </div>
         <div style="display:flex;gap:10px;justify-content:space-between">
           <button class="btn btn-ghost" onclick="premioIrPasso(5)">Voltar</button>
-          <button class="btn btn-primary" onclick="premioIrPasso(6)">Confirmar e Ir para Exportar</button>
+          <button class="btn btn-primary" onclick="premioIrPasso(6)">Confirmar e Ver Lista Completa</button>
         </div>
       </div>`;
 
   } else if(atual === 6){
-    // ── PASSO 6: Exportar Caju ──
+    // ── PASSO 6: Lista completa + Exportar Caju ──
     const sim = premioState.tabela.filter(r=>r.recebe==='SIM');
     const nao = premioState.tabela.filter(r=>r.recebe==='NAO');
-    const analisar = premioState.tabela.filter(r=>r.recebe==='ANALISAR');
 
     conteudo = `
       <div class="card">
-        <div class="card-title" style="color:var(--blue)">Passo 6 — Exportar Arquivo Caju</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
-          <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${sim.length}</div><div class="stat-label">Recebem</div></div>
-          <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${nao.length}</div><div class="stat-label">Nao recebem</div></div>
-          <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${analisar.length}</div><div class="stat-label">Analisar</div></div>
+        <div class="card-title" style="color:var(--blue)">Passo 6 — Lista Final e Exportar Caju</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+          <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${sim.length}</div><div class="stat-label">Receberao</div></div>
+          <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${nao.length}</div><div class="stat-label">Nao receberao</div></div>
           <div class="stat-card green"><div class="stat-val" style="color:var(--green);font-size:16px">${brl(sim.length*226)}</div><div class="stat-label">Total a pagar</div></div>
         </div>
-        <div style="background:#F0FDF4;border:1.5px solid #A7F3D0;border-radius:var(--radius);padding:14px;margin-bottom:16px">
-          <p class="text-sm">O arquivo CSV sera gerado no formato do Caju com CPF e valor R$ 226,00 para cada colaborador elegivel.</p>
-
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input type="text" id="passo6-q" placeholder="Buscar nome ou matricula..."
+            oninput="filtrarPasso6()"
+            style="flex:1;min-width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+          <select id="passo6-f" onchange="filtrarPasso6()"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
+            <option value="">Todos</option>
+            <option value="SIM">SIM</option>
+            <option value="NAO">NAO</option>
+            <option value="MEI">MEI</option>
+          </select>
         </div>
-        <div style="display:flex;gap:10px;justify-content:space-between">
-          <button class="btn btn-ghost" onclick="premioIrPasso(4)">Voltar e revisar</button>
+        <div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);max-height:380px;margin-bottom:14px">
+          <table style="border-collapse:collapse;font-size:11px;width:100%">
+            <thead>
+              <tr style="background:#1E3A8A;color:#fff;position:sticky;top:0;z-index:2">
+                <th style="padding:8px 10px;text-align:left;min-width:70px">Matricula</th>
+                <th style="padding:8px 10px;text-align:left;min-width:160px">Nome</th>
+                <th style="padding:8px 10px;text-align:left;min-width:80px">Situacao</th>
+                <th style="padding:8px 10px;text-align:center;min-width:90px;background:#1B5E20">Recebe</th>
+                <th style="padding:8px 10px;text-align:right;min-width:80px;background:#1B5E20">Valor</th>
+              </tr>
+            </thead>
+            <tbody id="passo6-tbody">
+              ${renderPasso6Linhas(premioState.tabela)}
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
           <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" onclick="exportarPremioExcel()">Excel (todos)</button>
-            <button class="btn btn-success" onclick="exportarPremioCaju()">Exportar CSV Caju (${sim.length} colaboradores)</button>
+            <button class="btn btn-ghost" onclick="premioIrPasso(55)">Voltar para MEI</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportarPremioExcel()">Excel (completo)</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportarDiagnosticoPremio()">Diagnostico</button>
           </div>
-        </div>
-        <div style="margin-top:12px;display:flex;justify-content:flex-end">
-          <button class="btn btn-primary" onclick="premioIrPasso(7)">Ir para Fechar Competencia</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-success" onclick="exportarPremioCaju()">Exportar CSV Caju (${sim.length} colaboradores)</button>
+            <button class="btn btn-primary" onclick="premioIrPasso(7)">Fechar Competencia</button>
+          </div>
         </div>
       </div>`;
 
@@ -3819,7 +3825,11 @@ function montarTabelaPremio(){
   // Debug: contar quem tem premio=false
   const semPremio = colaboradores.filter(c=>c.elegibilidade?.premio===false);
   console.log('Colaboradores sem premio:', semPremio.length, semPremio.map(c=>c.nome));
-  const base = colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo' && c.elegibilidade?.premio!==false);
+  const base = colaboradores.filter(c=>
+    c.status!=='Inativo' &&
+    !STATUS_NAO_RECEBE.includes(c.status) &&
+    c.elegibilidade?.premio!==false
+  );
   console.log('Base para premio:', base.length);
 
   const tabela = base.map(c=>{
@@ -4429,4 +4439,83 @@ async function aplicarAtualizacao(){
 
   setSS('${colaboradores.length} colaboradores','ok');
   toast('Base atualizada!','success');
+}
+
+// ── Funções auxiliares do wizard MEI e Passo 6 ──────────────────
+
+function renderMeiLinhas(dados){
+  return dados.map((r,i)=>{
+    const idx = premioState.tabela.findIndex(x=>x.mat===r.mat);
+    const corRec = r.recebe==='SIM'?'var(--green)':'var(--red)';
+    return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'" data-mat="'+r.mat+'" data-nome="'+r.nome.toLowerCase()+'">'
+      +'<td style="padding:8px 12px"><code style="font-size:11px">'+r.mat+'</code></td>'
+      +'<td style="padding:8px 12px;font-weight:500">'+r.nome+'</td>'
+      +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.atraso>10?'var(--red)':r.atraso>0?'var(--yellow)':'#ccc')+'">'+min2str(r.atraso)+'</td>'
+      +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.saida>10?'var(--red)':r.saida>0?'var(--yellow)':'#ccc')+'">'+min2str(r.saida)+'</td>'
+      +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.atestado>0?'var(--red)':'#ccc')+'">'+min2str(r.atestado)+'</td>'
+      +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.faltas>0||r.faltaParcial>0?'var(--red)':'#ccc')+'">'+min2str(r.faltas+r.faltaParcial)+'</td>'
+      +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.abono>=60?'var(--red)':'#ccc')+'">'+min2str(r.abono)+'</td>'
+      +'<td style="padding:8px 12px;text-align:center;background:'+(i%2===0?'#F0FFF4':'#E8FFF0')+'">'
+        +'<select onchange="editarRecebeRow('+idx+',this.value);atualizarResumoMei()" '
+        +'style="padding:4px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-weight:700;color:'+corRec+';background:transparent;cursor:pointer">'
+        +'<option value="SIM" '+(r.recebe==='SIM'?'selected':'')+'>SIM</option>'
+        +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+'>NAO</option>'
+        +'</select>'
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function filtrarTabelaMei(){
+  const q = (document.getElementById('mei-q')?.value||'').toLowerCase();
+  const rows = document.querySelectorAll('#mei-tbody tr');
+  rows.forEach(row=>{
+    const mat = row.dataset.mat||'';
+    const nome = row.dataset.nome||'';
+    row.style.display = (!q||mat.includes(q)||nome.includes(q)) ? '' : 'none';
+  });
+}
+
+function atualizarResumoMei(){
+  const meis = premioState.tabela.filter(r=>r.situacao==='MEI');
+  const sim = meis.filter(r=>r.recebe==='SIM').length;
+  const nao = meis.filter(r=>r.recebe==='NAO').length;
+  const el = document.getElementById('mei-resumo');
+  if(el) el.innerHTML = sim+' SIM &nbsp;|&nbsp; '+nao+' NAO &nbsp;|&nbsp; '+brl(sim*226);
+}
+
+function renderPasso6Linhas(dados){
+  return dados.map((r,i)=>{
+    const idx = premioState.tabela.findIndex(x=>x.mat===r.mat);
+    const corRec = r.recebe==='SIM'?'var(--green)':'var(--red)';
+    const bgRec = r.recebe==='SIM'?'#F0FFF4':'#FFF0F0';
+    return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'" data-mat="'+r.mat+'" data-nome="'+r.nome.toLowerCase()+'" data-recebe="'+r.recebe+'" data-sit="'+r.situacao+'">'
+      +'<td style="padding:7px 10px"><code style="font-size:10px">'+r.mat+'</code></td>'
+      +'<td style="padding:7px 10px;font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis">'+r.nome+'</td>'
+      +'<td style="padding:7px 10px"><span style="background:'+(r.situacao==='MEI'?'#FEF3C7':r.situacao==='Trabalhando'?'#D1FAE5':'#F3F4F6')+';color:'+(r.situacao==='MEI'?'#78350F':r.situacao==='Trabalhando'?'#065F46':'#374151')+';padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">'+r.situacao+'</span></td>'
+      +'<td style="padding:7px 10px;text-align:center;background:'+bgRec+'">'
+        +'<select onchange="editarRecebeRow('+idx+',this.value);this.style.color=this.value===\'SIM\'?\'var(--green)\":\'var(--red)\';this.closest(\'tr\').dataset.recebe=this.value;filtrarPasso6()" '
+        +'style="padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-weight:700;color:'+corRec+';background:transparent;cursor:pointer">'
+        +'<option value="SIM" '+(r.recebe==='SIM'?'selected':'')+'>SIM</option>'
+        +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+'>NAO</option>'
+        +'</select>'
+      +'</td>'
+      +'<td style="padding:7px 10px;text-align:right;font-weight:600;font-family:monospace;color:var(--green)">'+(r.recebe==='SIM'?brl(226):'—')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function filtrarPasso6(){
+  const q = (document.getElementById('passo6-q')?.value||'').toLowerCase();
+  const f = document.getElementById('passo6-f')?.value||'';
+  const rows = document.querySelectorAll('#passo6-tbody tr');
+  rows.forEach(row=>{
+    const mat = row.dataset.mat||'';
+    const nome = row.dataset.nome||'';
+    const recebe = row.dataset.recebe||'';
+    const sit = row.dataset.sit||'';
+    const matchQ = !q||mat.includes(q)||nome.includes(q);
+    const matchF = !f||(f==='MEI'?sit==='MEI':recebe===f);
+    row.style.display = (matchQ&&matchF)?'':'none';
+  });
 }
