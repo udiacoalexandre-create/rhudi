@@ -3846,7 +3846,8 @@ function montarTabelaPremio(){
 
     // Situação para o prêmio — baseada no status do colaborador
     // elegibilidade.premio===true explícito sobrescreve regra de filtro SOC/PART
-    const premioExplicito = c.elegibilidade?.premio === true;
+    // premio!==false significa: não foi explicitamente desmarcado
+    const premioExplicito = c.elegibilidade?.premio !== false;
     let situacao = 'Trabalhando';
     if(c.elegibilidade?.premio===false){
       situacao = 'N/A';
