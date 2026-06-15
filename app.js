@@ -433,8 +433,12 @@ const MODULES = {
     {id:'fer-radar',icon:'',label:'Radar de F\u00E9rias'},
     {id:'fer-import',icon:'',label:'Importar Dados'},
   ]},
+  premio:{pages:[
+    {id:'premio-main',icon:'',label:'Premio Assiduidade'},
+  ]},
   dashboard:{pages:[
     {id:'dash-main',icon:'',label:'Dashboard Geral'},
+    {id:'teste-senior',icon:'',label:'Teste Senior API'},
   ]}
 };
 
@@ -3119,39 +3123,7 @@ function renderFarois(dados){
 // MODULOS — ADICIONAR PREMIO ASSIDUIDADE
 // ════════════════════════════════════════════════════════════════
 // Override do MODULES para incluir premio
-const MODULES_OVERRIDE = {
-  base:{pages:[
-    {id:'base-lista',icon:'',label:'Colaboradores'},
-    {id:'base-atualizacao',icon:'',label:'Atualizacao Mensal'},
-    {id:'base-import',icon:'',label:'Importar / Sync'},
-    {id:'base-novo',icon:'',label:'Novo Colaborador'},
-  ]},
-  beneficios:{pages:[
-    {id:'ben-lancamento',icon:'',label:'Lancamento Mensal'},
-    {id:'ben-importar',icon:'',label:'Importar Faltas'},
-    {id:'ben-exportar-caju',icon:'',label:'Exportar Caju e VT'},
-    {id:'ben-exportar-senior',icon:'',label:'Exportar Senior'},
-    {id:'ben-historico',icon:'',label:'Historico'},
-    {id:'ben-config',icon:'',label:'Configuracoes'},
-  ]},
-  folha:{pages:[
-    {id:'folha-import',icon:'',label:'Importar Relatorio'},
-    {id:'folha-view',icon:'',label:'Visualizar Folha'},
-  ]},
-  ferias:{pages:[
-    {id:'fer-radar',icon:'',label:'Radar de Ferias'},
-    {id:'fer-import',icon:'',label:'Importar Dados'},
-  ]},
-  premio:{pages:[
-    {id:'premio-main',icon:'',label:'Premio Assiduidade'},
-  ]},
-  dashboard:{pages:[
-    {id:'dash-main',icon:'',label:'Dashboard Geral'},
-  ]}
-};
 
-// Substituir MODULES
-Object.assign(MODULES, MODULES_OVERRIDE);
 
 // Novas paginas registradas diretamente (sem override recursivo)
 
