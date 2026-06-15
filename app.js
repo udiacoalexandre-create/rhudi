@@ -3064,27 +3064,50 @@ function renderFerRadar(){
 }
 
 function renderFarois(dados){
-  // Ordenar: vermelho > laranja > amarelo > verde > sem
+  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)'};
+  const bgMap={verde:'#ECFDF5',amarelo:'#FEFCE8',laranja:'#FFF7ED',vermelho:'#FEF2F2',sem:'#F9FAFB'};
+
+  const colunas=[
+    {cor:'verde',titulo:'Ferias OK',icone:''},
+    {cor:'amarelo',titulo:'Vencida 1-9m',icone:''},
+    {cor:'laranja',titulo:'Vencida 10-12m',icone:''},
+    {cor:'vermelho',titulo:'Vencida +12m',icone:''},
+    {cor:'sem',titulo:'Sem dados',icone:''},
+  ];
+
+  const grid=document.getElementById('fer-radar-grid');
+  if(grid){
+    grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start">'
+      +colunas.map(col=>{
+        const itens=dados.filter(c=>c.farol.cor===col.cor);
+        return '<div style="background:'+bgMap[col.cor]+';border:1.5px solid '+corMap[col.cor]+'33;border-radius:var(--radius);padding:10px;min-height:120px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1.5px solid '+corMap[col.cor]+'33">'
+          +'<span style="font-size:12px;font-weight:700;color:'+corMap[col.cor]+'">'+col.titulo+'</span>'
+          +'<span style="background:'+corMap[col.cor]+';color:#fff;font-size:12px;font-weight:700;border-radius:20px;padding:2px 9px;min-width:24px;text-align:center">'+itens.length+'</span>'
+          +'</div>'
+          +'<div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">'
+          +itens.map(c=>{
+            const f=c.farol;
+            return '<div style="background:#fff;border:1px solid '+corMap[col.cor]+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
+              +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
+              +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</div>'
+              +'<div style="font-size:10px;color:var(--text2);margin-top:2px">'
+              +(f.cor!=='sem'?'Venc: '+f.vencStr:'Sem admissao/venc.')
+              +(c.ferMes?' &middot; Agendado: '+c.ferMes:'')
+              +'</div>'
+              +(c.ferSaldo?'<div style="font-size:10px;color:'+corMap[col.cor]+';font-weight:700;margin-top:2px">Saldo: '+c.ferSaldo+' dias</div>':'')
+              +'</div>';
+          }).join('')
+          +'</div></div>';
+      }).join('')
+      +'</div>';
+  }
+
+  // Tabela detalhada
+  const tbl=document.getElementById('fer-tabela');
   const order={vermelho:0,laranja:1,amarelo:2,verde:3,sem:4};
   const sorted=[...dados].sort((a,b)=>(order[a.farol.cor]||4)-(order[b.farol.cor]||4));
 
-  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--border)'};
-
-  const grid=document.getElementById('fer-radar-grid');
-  if(grid) grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">'+
-    sorted.map(c=>{
-      const f=c.farol;
-      const cor=corMap[f.cor];
-      return '<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;cursor:default" title="'+c.nome+' — Venc: '+f.vencStr+'">'
-        +'<div style="width:36px;height:36px;border-radius:50%;background:'+cor+';margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff">'+f.label+'</div>'
-        +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome.split(' ')[0]+' '+c.nome.split(' ').slice(-1)[0]+'</div>'
-        +'<div style="font-size:10px;color:var(--text2)">Venc: '+f.vencStr+'</div>'
-        +'<div style="font-size:11px;font-weight:600;margin-top:4px;color:'+cor+'">'+f.dias+' dias</div>'
-        +'</div>';
-    }).join('')+'</div>';
-
-  // Tabela
-  const tbl=document.getElementById('fer-tabela');
   if(tbl) tbl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Tabela Detalhada</div>'
     +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
     +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
@@ -3094,30 +3117,130 @@ function renderFarois(dados){
     +'<th style="padding:9px 10px;text-align:left">Nome</th>'
     +'<th style="padding:9px 10px;text-align:left">Departamento</th>'
     +'<th style="padding:9px 10px;text-align:left">Admissao</th>'
-    +'<th style="padding:9px 10px;text-align:left">Em Ferias</th>'
-    +'<th style="padding:9px 10px;text-align:left">Inicio</th>'
-    +'<th style="padding:9px 10px;text-align:left">Fim</th>'
     +'<th style="padding:9px 10px;text-align:left">Vencimento</th>'
-    +'<th style="padding:9px 10px;text-align:right">Dias Disp.</th>'
+    +'<th style="padding:9px 10px;text-align:right">Saldo (dias)</th>'
+    +'<th style="padding:9px 10px;text-align:left">Mes Agendado</th>'
+    +'<th style="padding:9px 10px;text-align:center">Acoes</th>'
     +'</tr></thead><tbody>'
     +sorted.map((c,i)=>{
       const f=c.farol;
       const cor=corMap[f.cor];
-      const emFer=(c.status==='Ferias'||c.status==='Ferias')?'<span class="badge badge-blue">Sim</span>':'—';
       return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
-        +'<td style="padding:8px 10px"><div style="width:20px;height:20px;border-radius:50%;background:'+cor+';display:inline-block;vertical-align:middle;margin-right:6px"></div></td>'
-        +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
+        +'<td style="padding:8px 10px"><div style="width:18px;height:18px;border-radius:50%;background:'+cor+';display:inline-block;vertical-align:middle"></div></td>'
+        +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'\u2014')+'</code></td>'
         +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+( c.depto||'—')+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px">'+( c.admissao||'—')+'</td>'
-        +'<td style="padding:8px 10px">'+emFer+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px">'+( c.ferInicio||'—')+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px">'+( c.ferFim||'—')+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'\u2014')+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px">'+(c.admissao||'\u2014')+'</td>'
         +'<td style="padding:8px 10px;font-size:11px;font-weight:600;color:'+cor+'">'+f.vencStr+'</td>'
-        +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+f.dias+'</td>'
+        +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'</td>'
+        +'<td style="padding:8px 10px;font-size:11px">'+(c.ferMes||'\u2014')+'</td>'
+        +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Editar</button></td>'
         +'</tr>';
     }).join('')+'</tbody></table></div>';
 }
+
+// ── Modal de detalhe/edicao de ferias de um colaborador ─────────
+function abrirDetalheFerias(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const f=getFarol(c);
+  const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  const html=`
+    <div class="modal-overlay" id="modal-ferias-detalhe" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
+      <div class="modal-box" style="max-width:480px">
+        <h3 style="margin-bottom:14px">Ferias - ${c.nome}</h3>
+        <div style="background:var(--surface2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px">
+          <div><strong>Matricula:</strong> ${c.mat||'\u2014'}</div>
+          <div><strong>Admissao:</strong> ${c.admissao||'\u2014'}</div>
+          <div><strong>Vencimento atual:</strong> ${f.vencStr} (${f.label})</div>
+        </div>
+        <div class="fg">
+          <label>Saldo de dias acumulados</label>
+          <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
+          <p class="text-xs text-muted" style="margin-top:4px">Dias de ferias vencidas acumuladas. Sera reduzido automaticamente quando o relatorio de ferias der baixa.</p>
+        </div>
+        <div class="fg" style="margin-top:12px">
+          <label>Mes agendado para tirar ferias</label>
+          <select id="ferd-mes" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
+            <option value="">-- Nao agendado --</option>
+            ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
+          </select>
+        </div>
+        <div class="fg" style="margin-top:12px">
+          <label>Data de vencimento (proximo ciclo)</label>
+          <input type="date" id="ferd-venc" value="${c.ferVenc||''}"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
+          <p class="text-xs text-muted" style="margin-top:4px">Deixe vazio para calcular automaticamente pela admissao.</p>
+        </div>
+        <div id="ferd-alertas" style="margin-top:10px"></div>
+        <div class="btn-row" style="margin-top:18px">
+          <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Cancelar</button>
+          <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')">Salvar</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+  verificarAlertasFerias(id);
+}
+
+// Verifica se ha conflito de funcao no mesmo mes ao mudar o agendamento
+function verificarAlertasFerias(id){
+  const sel=document.getElementById('ferd-mes');
+  if(!sel) return;
+  sel.addEventListener('change', ()=>{
+    const c=colaboradores.find(x=>x._id===id);
+    const novoMes=sel.value;
+    const alertasEl=document.getElementById('ferd-alertas');
+    if(!novoMes||!c){ alertasEl.innerHTML=''; return; }
+
+    // Verificar outros colaboradores da mesma funcao/cargo no mesmo mes
+    const mesmoCargo=colaboradores.filter(x=>
+      x._id!==id &&
+      x.cargo && c.cargo &&
+      x.cargo.toUpperCase()===c.cargo.toUpperCase() &&
+      x.ferMes===novoMes &&
+      !STATUS_NAO_RECEBE.includes(x.status)
+    );
+
+    if(mesmoCargo.length>0){
+      alertasEl.innerHTML='<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;font-size:12px;color:#92400E">'
+        +'<strong>Atencao:</strong> '+mesmoCargo.length+' colaborador(es) com a mesma funcao ja estao agendados para '+novoMes+': '
+        +mesmoCargo.map(x=>x.nome).join(', ')
+        +'</div>';
+    } else {
+      alertasEl.innerHTML='';
+    }
+  });
+}
+
+async function salvarDetalheFerias(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const saldo=fnum(document.getElementById('ferd-saldo')?.value);
+  const mes=document.getElementById('ferd-mes')?.value||'';
+  const venc=document.getElementById('ferd-venc')?.value||'';
+
+  c.ferSaldo=saldo;
+  c.ferMes=mes;
+  if(venc) c.ferVenc=venc;
+
+  try{
+    await fsSet('colaboradores',id,c);
+    toast('Ferias atualizadas!','success');
+    closeModal('modal-ferias-detalhe');
+    if(currentPage==='fer-radar') renderFerRadar();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// MODULOS — ADICIONAR PREMIO ASSIDUIDADE
+// ════════════════════════════════════════════════════════════════
+// Override do MODULES para incluir premio
+
+
+// Novas paginas registradas diretamente (sem override recursivo)
+
 
 // ════════════════════════════════════════════════════════════════
 // MODULOS — ADICIONAR PREMIO ASSIDUIDADE
