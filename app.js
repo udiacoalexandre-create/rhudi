@@ -252,6 +252,7 @@ function elegCheckHTML(prefix, c){
     {id:'mobilidade',label:'Mobilidade',       checked:eleg.mobilidade!==undefined?eleg.mobilidade:(fnum(c?.comb)>0||[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0))},
     {id:'folha', label:'Folha de Pagamento',   checked:eleg.folha!==undefined?eleg.folha:true},
     {id:'premio', label:'Premio Assiduidade',  checked:eleg.premio!==undefined?eleg.premio:true},
+    {id:'ferias', label:'Controle de Ferias',  checked:eleg.ferias!==undefined?eleg.ferias:true},
   ];
   return items.map(item=>`
     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid ${item.checked?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);cursor:pointer;background:${item.checked?'var(--blue-light)':'var(--surface2)'};transition:all .15s" onclick="toggleEleg(this)">
@@ -297,6 +298,7 @@ function getColabFromForm(prefix){
     mobilidade: document.getElementById(prefix+'-eleg-mobilidade')?.checked||false,
     folha:   document.getElementById(prefix+'-eleg-folha')?.checked!==false,
     premio:  document.getElementById(prefix+'-eleg-premio')?.checked!==false,
+    ferias:  document.getElementById(prefix+'-eleg-ferias')?.checked!==false,
   };
   return {
     mat:    document.getElementById(prefix+'-mat')?.value.trim()||'',
@@ -354,6 +356,18 @@ async function salvarNovoColab(){
   if(c.mat&&colaboradores.some(x=>x.mat===c.mat)){if(!confirm('Matr\u00EDcula '+c.mat+' j\u00E1 existe. Continuar?'))return;}
   const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
   c._id=id; c.mobilidade=c.mobilidade||inferMob(c);
+
+  // Sugerir mes de ferias (ponto 5): primeiro verifica vaga deixada
+  // por demissao na mesma funcao/depto, senao usa o mes mais comum
+  if(!c.ferMes && c.cargo){
+    let mesSugerido=await consultarVagaFerias(c.cargo, c.depto);
+    if(!mesSugerido) mesSugerido=sugerirMesFeriasNovo(c.cargo);
+    if(mesSugerido){
+      c.ferMes=mesSugerido;
+      toast('Mes de ferias sugerido automaticamente: '+mesSugerido,'success');
+    }
+  }
+
   try{await fsSet('colaboradores',id,c);colaboradores.push(c);toast('Colaborador salvo!','success');limparFormColab('f');}
   catch(e){toast('Erro: '+e.message,'error');}
 }
@@ -389,6 +403,14 @@ async function salvarColabModal(){
   const dados=getColabFromForm('e');
   dados._id=editColabId;
   dados.mobilidade=dados.mobilidade||inferMob(dados);
+
+  // Se o colaborador esta sendo marcado como Demitido e tinha mes de ferias agendado,
+  // registrar a vaga para sugerir ao substituto da mesma funcao (ponto 4.3)
+  const statusAnterior=colaboradores[idx].status;
+  if(dados.status==='Demitido' && statusAnterior!=='Demitido' && colaboradores[idx].ferMes){
+    registrarVagaFerias(colaboradores[idx]);
+  }
+
   Object.assign(colaboradores[idx],dados);
   try{
     await fsSet('colaboradores',editColabId,colaboradores[idx]);
@@ -2035,134 +2057,6 @@ function exportarFolhaExcel(){
 // ============================================================
 // CONTROLE DE F\u00C9RIAS
 // ============================================================
-function pgFerRadar(){
-  return `
-    <div class="page-header">
-      <h2> Radar de F\u00E9rias</h2>
-      <p>Visualiza\u00E7\u00E3o do status de f\u00E9rias por colaborador.</p>
-    </div>
-    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--green)"></div>F\u00E9rias n\u00E3o vencida</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--yellow)"></div>Vencida (1-10 meses)</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--orange)"></div>Vencida (11-12 meses)</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencida (+12 meses)</div>
-      </div>
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <select id="fer-emp" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todas as empresas</option>
-          ${getEmpresaList().map(e=>`<option value="${e.cod}">${e.cod}</option>`).join('')}
-        </select>
-        <select id="fer-dep" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todos os deptos</option>
-          ${getDeptoList().map(d=>`<option value="${d}">${d}</option>`).join('')}
-        </select>
-        <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()"> Excel</button>
-      </div>
-    </div>
-    <div id="fer-stats" style="margin-bottom:16px"></div>
-    <div id="fer-radar-grid"></div>
-    <div id="fer-tabela" style="margin-top:20px"></div>`;
-}
-
-function renderFerRadar(){
-  const hoje=new Date(); hoje.setHours(0,0,0,0);
-  const empF=document.getElementById('fer-emp')?.value||'';
-  const depF=document.getElementById('fer-dep')?.value||'';
-  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
-  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
-  if(depF) f=f.filter(c=>(c.depto||'')===depF);
-
-  function getDotClass(c){
-    if(!c.ferVenc) return null;
-    const venc=new Date(c.ferVenc);
-    const meses=(hoje-venc)/(1000*60*60*24*30);
-    if(meses<0) return {cls:'dot-green',label:'OK',meses:Math.abs(Math.round(meses))};
-    if(meses<=10) return {cls:'dot-yellow',label:Math.round(meses)+'m venc.',meses:Math.round(meses)};
-    if(meses<=12) return {cls:'dot-orange',label:Math.round(meses)+'m venc.',meses:Math.round(meses)};
-    return {cls:'dot-red',label:Math.round(meses)+'m venc.',meses:Math.round(meses)};
-  }
-
-  const comFerias=f.filter(c=>c.ferVenc);
-  const semFerias=f.filter(c=>!c.ferVenc);
-  const stats={verde:0,amarelo:0,laranja:0,vermelho:0};
-  comFerias.forEach(c=>{
-    const d=getDotClass(c);
-    if(d?.cls==='dot-green')stats.verde++;
-    else if(d?.cls==='dot-yellow')stats.amarelo++;
-    else if(d?.cls==='dot-orange')stats.laranja++;
-    else if(d?.cls==='dot-red')stats.vermelho++;
-  });
-
-  const statsEl=document.getElementById('fer-stats');
-  if(statsEl) statsEl.innerHTML=`
-    <div class="stats-grid" style="margin-bottom:0">
-      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">\u2705 F\u00E9rias OK</div></div>
-      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">\u26A0\uFE0F Vencida 1-10m</div></div>
-      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label"> Vencida 11-12m</div></div>
-      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label"> Vencida +12m</div></div>
-      <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${semFerias.length}</div><div class="stat-label">Sem dados de f\u00E9rias</div></div>
-    </div>`;
-
-  const grid=document.getElementById('fer-radar-grid');
-  if(grid){
-    const comDados=comFerias.sort((a,b)=>{
-      const da=getDotClass(a),db=getDotClass(b);
-      const order={null:-1,'dot-green':0,'dot-yellow':1,'dot-orange':2,'dot-red':3};
-      return (order[db?.cls]||0)-(order[da?.cls]||0);
-    });
-    grid.innerHTML=`
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">
-        ${comDados.length} colaboradores com dados de f\u00E9rias
-      </div>
-      <div class="radar-container">
-        ${comDados.map(c=>{
-          const d=getDotClass(c);
-          if(!d) return '';
-          const diasDisp=c.ferDias||30;
-          return `<div class="radar-item" title="${c.nome} \u2014 Venc: ${c.ferVenc||'\u2014'}">
-            <div class="radar-dot ${d.cls}">${d.meses}m</div>
-            <div class="radar-name">${c.nome.split(' ')[0]} ${c.nome.split(' ').slice(-1)[0]}</div>
-            <div class="radar-venc">Venc: ${c.ferVenc||'\u2014'}</div>
-            <div class="radar-dias" style="color:${d.cls==='dot-green'?'var(--green)':d.cls==='dot-yellow'?'var(--yellow)':d.cls==='dot-orange'?'var(--orange)':'var(--red)'}">
-              ${diasDisp} dias
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
-  }
-
-  // Tabela
-  const tbl=document.getElementById('fer-tabela');
-  if(tbl) tbl.innerHTML=`
-    <div class="card-title" style="margin-bottom:10px"> Tabela Detalhada</div>
-    <div class="tbl-wrap">
-      <table class="tbl">
-        <thead><tr>
-          <th>Status</th><th>Matr\u00EDcula</th><th>Nome</th><th>Departamento</th>
-          <th>Em F\u00E9rias</th><th>In\u00EDcio</th><th>Fim</th><th>Vencimento</th><th>Dias Disp.</th>
-        </tr></thead>
-        <tbody>
-          ${f.map((c,i)=>{
-            const d=getDotClass(c);
-            const dot=d?`<div class="radar-dot ${d.cls}" style="width:24px;height:24px;font-size:9px;margin:0">${d.meses}m</div>`:'<div style="width:24px;height:24px;border-radius:50%;background:var(--border);margin:0"></div>';
-            return `<tr>
-              <td>${dot}</td>
-              <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
-              <td style="font-size:12px;font-weight:500">${c.nome}</td>
-              <td class="text-xs text-muted">${c.depto||'\u2014'}</td>
-              <td>${c.status==='Férias'||c.status==='Férias'?'<span class="badge badge-blue">Ferias\uFE0F Sim</span>':'\u2014'}</td>
-              <td class="text-xs">${c.ferInicio||'\u2014'}</td>
-              <td class="text-xs">${c.ferFim||'\u2014'}</td>
-              <td class="text-xs">${c.ferVenc||'\u2014'}</td>
-              <td class="text-xs">${c.ferDias||'\u2014'}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
-
 function pgFerImport(){
   return `
     <div class="page-header"><h2> Importar Dados de F\u00E9rias</h2><p>Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
@@ -2993,6 +2887,10 @@ function pgFerRadar(){
 }
 
 function getFarol(c){
+  // Nao se aplica - socios/consultores
+  if(c.elegibilidade?.ferias===false){
+    return {cor:'na',cls:'dot-na',meses:0,label:'N/A',vencStr:'\u2014',dias:0};
+  }
   // Prioridade: dados de ferVenc (importados) ou calcular por admissao
   const hoje=new Date(); hoje.setHours(0,0,0,0);
 
@@ -3031,41 +2929,37 @@ function getFarol(c){
 }
 
 function renderFerRadar(){
-  const hoje=new Date(); hoje.setHours(0,0,0,0);
   const empF=document.getElementById('fer-emp')?.value||'';
   const depF=document.getElementById('fer-dep')?.value||'';
-  const stF=document.getElementById('fer-status-filter')?.value||'';
 
-  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
+  // Sempre busca da base de colaboradores (Firebase) atualizada em memoria
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
   if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
   if(depF) f=f.filter(c=>(c.depto||'')===depF);
 
   const comFarol=f.map(c=>({...c,farol:getFarol(c)}));
 
-  if(stF) {
-    const filtered=comFarol.filter(c=>c.farol.cor===stF);
-    renderFarois(filtered);
-  } else {
-    renderFarois(comFarol);
-  }
+  renderFarois(comFarol);
+  renderAlertasFeriasMes(comFarol);
 
   // Stats
-  const stats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0};
+  const stats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0,na:0};
   comFarol.forEach(c=>stats[c.farol.cor]=(stats[c.farol.cor]||0)+1);
   const statsEl=document.getElementById('fer-stats');
   if(statsEl) statsEl.innerHTML=`
     <div class="stats-grid" style="margin-bottom:0">
-      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Verde - OK</div></div>
-      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Amarelo 1-9m</div></div>
-      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Laranja 10-12m</div></div>
-      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vermelho +12m</div></div>
+      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Ferias OK</div></div>
+      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Vencida 1-9m</div></div>
+      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Vencida 10-12m</div></div>
+      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vencida +12m</div></div>
       <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${stats.sem}</div><div class="stat-label">Sem dados</div></div>
+      <div class="stat-card"><div class="stat-val" style="color:#9CA3AF">${stats.na}</div><div class="stat-label">N/A</div></div>
     </div>`;
 }
 
 function renderFarois(dados){
-  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)'};
-  const bgMap={verde:'#ECFDF5',amarelo:'#FEFCE8',laranja:'#FFF7ED',vermelho:'#FEF2F2',sem:'#F9FAFB'};
+  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
+  const bgMap={verde:'#ECFDF5',amarelo:'#FEFCE8',laranja:'#FFF7ED',vermelho:'#FEF2F2',sem:'#F9FAFB',na:'#F3F4F6'};
 
   const colunas=[
     {cor:'verde',titulo:'Ferias OK',icone:''},
@@ -3073,11 +2967,12 @@ function renderFarois(dados){
     {cor:'laranja',titulo:'Vencida 10-12m',icone:''},
     {cor:'vermelho',titulo:'Vencida +12m',icone:''},
     {cor:'sem',titulo:'Sem dados',icone:''},
+    {cor:'na',titulo:'N/A',icone:''},
   ];
 
   const grid=document.getElementById('fer-radar-grid');
   if(grid){
-    grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start">'
+    grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:start">'
       +colunas.map(col=>{
         const itens=dados.filter(c=>c.farol.cor===col.cor);
         return '<div style="background:'+bgMap[col.cor]+';border:1.5px solid '+corMap[col.cor]+'33;border-radius:var(--radius);padding:10px;min-height:120px">'
@@ -4716,4 +4611,105 @@ function pgTesteSenior(){
       <button class="btn btn-primary" onclick="testarConexaoSenior()">Testar Conexao</button>
       <div id="senior-test-result" style="margin-top:14px"></div>
     </div>`;
+}
+
+// ── Filtro de busca na tabela de ferias ──────────────────────────
+function filtrarTabelaFerias(){
+  const q=(document.getElementById('fer-q')?.value||'').toLowerCase();
+  const rows=document.querySelectorAll('#fer-tabela tbody tr');
+  rows.forEach(row=>{
+    const txt=row.textContent.toLowerCase();
+    row.style.display = (!q||txt.includes(q)) ? '' : 'none';
+  });
+}
+
+// ── Alertas mensais no topo do Radar de Ferias ───────────────────
+function renderAlertasFeriasMes(dados){
+  const el=document.getElementById('fer-alertas-mes');
+  if(!el) return;
+
+  const vencidas=dados.filter(c=>['amarelo','laranja','vermelho'].includes(c.farol.cor));
+  const aVencer=dados.filter(c=>{
+    if(!c.ferVenc||c.farol.cor!=='verde') return false;
+    const venc=new Date(c.ferVenc);
+    const hoje=new Date();
+    const diffMeses=(venc-hoje)/(1000*60*60*24*30);
+    return diffMeses<=2 && diffMeses>=0; // vence nos proximos 2 meses
+  });
+
+  const mesAtualNome=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][new Date().getMonth()];
+  const agendadosMes=dados.filter(c=>c.ferMes===mesAtualNome);
+
+  if(vencidas.length===0 && aVencer.length===0 && agendadosMes.length===0){
+    el.innerHTML='';
+    return;
+  }
+
+  let html='<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">';
+
+  if(vencidas.length>0){
+    html+='<div style="background:#FEF2F2;border:1.5px solid #FECACA;border-radius:var(--radius);padding:10px 14px;font-size:13px;color:#991B1B">'
+      +'<strong>'+vencidas.length+' colaborador(es) com ferias vencidas</strong> ou a vencer em breve. Verifique o Kanban abaixo.'
+      +'</div>';
+  }
+
+  if(aVencer.length>0){
+    html+='<div style="background:#FEFCE8;border:1.5px solid #FDE68A;border-radius:var(--radius);padding:10px 14px;font-size:13px;color:#92400E">'
+      +'<strong>'+aVencer.length+' colaborador(es)</strong> terao ferias vencendo nos proximos 2 meses: '
+      +aVencer.map(c=>c.nome.split(' ')[0]+' '+c.nome.split(' ').slice(-1)[0]).join(', ')
+      +'</div>';
+  }
+
+  if(agendadosMes.length>0){
+    html+='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--radius);padding:10px 14px;font-size:13px;color:#1E3A8A">'
+      +'<strong>'+agendadosMes.length+' colaborador(es) agendados para tirar ferias em '+mesAtualNome+':</strong> '
+      +agendadosMes.map(c=>c.nome.split(' ')[0]+' '+c.nome.split(' ').slice(-1)[0]).join(', ')
+      +'</div>';
+  }
+
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+// ── Sugestao de mes para novo colaborador (ponto 5) ───────────────
+// Chamada ao salvar um NOVO colaborador (cadastro)
+function sugerirMesFeriasNovo(cargo){
+  if(!cargo) return null;
+  // Buscar colaboradores da mesma funcao que tem mes agendado
+  const mesmosCargo=colaboradores.filter(c=>
+    c.cargo && c.cargo.toUpperCase()===cargo.toUpperCase() &&
+    c.ferMes &&
+    !STATUS_NAO_RECEBE.includes(c.status)
+  );
+  if(mesmosCargo.length===0) return null;
+  // Retornar o mes mais comum entre eles
+  const contagem={};
+  mesmosCargo.forEach(c=>{ contagem[c.ferMes]=(contagem[c.ferMes]||0)+1; });
+  const maisComum=Object.entries(contagem).sort((a,b)=>b[1]-a[1])[0];
+  return maisComum ? maisComum[0] : null;
+}
+
+// ── Sucessao de vaga (ponto 4.3) ─────────────────────────────────
+// Quando um colaborador e marcado como Demitido, guarda o mes de ferias
+// vago para sugerir ao substituto da mesma funcao. Salvo no Firebase
+// na colecao 'config', doc 'feriasVagas'.
+async function registrarVagaFerias(colab){
+  if(!colab.ferMes || !colab.cargo) return;
+  try{
+    const key=colab.cargo.toUpperCase()+'|'+(colab.depto||'');
+    const snap=await window._getDoc(window._doc('config','feriasVagas'));
+    const vagas=snap.exists()?(snap.data().vagas||{}):{};
+    vagas[key]=colab.ferMes;
+    await fsSet('config','feriasVagas',{vagas});
+  }catch(e){ console.error('Erro ao registrar vaga:', e); }
+}
+
+async function consultarVagaFerias(cargo, depto){
+  try{
+    const key=(cargo||'').toUpperCase()+'|'+(depto||'');
+    const snap=await window._getDoc(window._doc('config','feriasVagas'));
+    if(!snap.exists()) return null;
+    const vagas=snap.data().vagas||{};
+    return vagas[key]||null;
+  }catch(e){ return null; }
 }
