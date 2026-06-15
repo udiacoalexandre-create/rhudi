@@ -477,7 +477,7 @@ function renderPage(id){
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-import':pgFerImport,
-    'dash-main':pgDashMain,
+    'dash-main':pgDashMain,'teste-senior':pgTesteSenior,
   };
   const fn=pages[id];
   if(fn) return fn();
@@ -493,6 +493,7 @@ function afterRender(id){
   if(id==='fer-radar') renderFerRadar();
   if(id==='dash-main') renderDashMain();
   if(id==='premio-main') afterRenderPremio();
+  if(id==='teste-senior') {} // sem afterRender especifico
 }
 
 // ============================================================
@@ -4527,4 +4528,97 @@ function filtrarPasso6(){
     const matchF = !f||(f==='MEI'?sit==='MEI':recebe===f);
     row.style.display = (matchQ&&matchF)?'':'none';
   });
+}
+
+
+// ================================================================
+// TESTE DE CONEXAO WEB SERVICE SENIOR (SOAP)
+// ================================================================
+
+async function testarConexaoSenior(){
+  const url = "https://ocweb08s1p.seniorcloud.com.br:30331/g5-senior-services/rubi_Synccom_senior_g5_rh_fp_bi";
+  const user = document.getElementById('senior-user')?.value || '';
+  const pass = document.getElementById('senior-pass')?.value || '';
+
+  if(!user || !pass){
+    toast('Preencha usuario e senha','error');
+    return;
+  }
+
+  const body = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:ser="http://services.senior.com.br" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <ser:getEmpresa>
+      <user>${user}</user>
+      <password>${pass}</password>
+      <encryption>0</encryption>
+      <parameters>
+        <eNumEmp></eNumEmp>
+      </parameters>
+    </ser:getEmpresa>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const resultDiv = document.getElementById('senior-test-result');
+  resultDiv.innerHTML = '<div class="alert alert-info">Testando conexao...</div>';
+
+  try{
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+        'SOAPAction': 'getEmpresa'
+      },
+      body: body
+    });
+
+    const text = await resp.text();
+
+    if(resp.ok){
+      resultDiv.innerHTML = '<div class="alert alert-success">'
+        +'<strong>Conexao OK!</strong> Status: '+resp.status+'<br>'
+        +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:300px;white-space:pre-wrap;margin-top:8px">'
+        +text.substring(0,2000).replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        +'</pre></div>';
+    } else {
+      resultDiv.innerHTML = '<div class="alert alert-warning">'
+        +'<strong>Erro HTTP '+resp.status+'</strong><br>'
+        +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:300px;white-space:pre-wrap;margin-top:8px">'
+        +text.substring(0,1000).replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        +'</pre></div>';
+    }
+  }catch(err){
+    let msg = err.message;
+    let dica = '';
+    if(msg.includes('CORS')||msg.includes('Failed to fetch')){
+      dica = '<br><strong>Possivel causa:</strong> O servidor Senior nao permite chamadas de outros dominios (CORS). '
+        +'Sera necessario um proxy/intermediario para fazer essa chamada.';
+    }
+    resultDiv.innerHTML = '<div class="alert alert-warning">'
+      +'<strong>Erro de conexao:</strong> '+msg+dica
+      +'</div>';
+  }
+}
+
+function pgTesteSenior(){
+  return `
+    <div class="page-header">
+      <h2>Teste de Conexao - Web Service Senior</h2>
+      <p>Testa a conectividade direta com o servico SOAP da Senior (getEmpresa).</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Credenciais</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="fg"><label>Usuario</label>
+          <input type="text" id="senior-user" placeholder="ex: ahmad.samir"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;min-width:200px">
+        </div>
+        <div class="fg"><label>Senha</label>
+          <input type="password" id="senior-pass" placeholder="senha"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;min-width:200px">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="testarConexaoSenior()">Testar Conexao</button>
+      <div id="senior-test-result" style="margin-top:14px"></div>
+    </div>`;
 }
