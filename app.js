@@ -86,7 +86,12 @@ function setSS(txt,cls){
 }
 
 function openModal(id){ document.getElementById(id)?.classList.add('open'); }
-function closeModal(id){ document.getElementById(id)?.classList.remove('open'); }
+function closeModal(id){
+  const el=document.getElementById(id);
+  if(!el) return;
+  if(el.dataset.dynamic==='1'){ el.remove(); }
+  else { el.classList.remove('open'); }
+}
 
 function getEmpresaList(){
   const g2={};
@@ -453,6 +458,7 @@ const MODULES = {
   ]},
   ferias:{pages:[
     {id:'fer-radar',icon:'',label:'Radar de F\u00E9rias'},
+    {id:'fer-agendadas',icon:'',label:'F\u00E9rias Agendadas'},
     {id:'fer-import',icon:'',label:'Importar Dados'},
   ]},
   premio:{pages:[
@@ -502,7 +508,7 @@ function renderPage(id){
     'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
-    'fer-radar':pgFerRadar,'fer-import':pgFerImport,
+    'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,
   };
   const fn=pages[id];
@@ -517,6 +523,7 @@ function afterRender(id){
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
+  if(id==='fer-agendadas') renderFeriasAgendadas();
   if(id==='dash-main') renderDashMain();
   if(id==='premio-main') afterRenderPremio();
   if(id==='teste-senior') {} // sem afterRender especifico
@@ -1078,9 +1085,9 @@ async function importarSemDuplic(){
 function gerarModeloCarga(){
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet([
-    ['Matr\u00EDcula','Nome','CPF','Cargo','Departamento','Status','VR/dia','Caf\u00E9/dia','Combust\u00EDvel','Mobilidade'],
-    ['10001234','EXEMPLO DA SILVA','123.456.789-00','MOTORISTA','Motoristas','Ativo',0,0,295,'combustivel'],
-    ['10001235','OUTRO EXEMPLO','234.567.890-11','AJUDANTE','Produ\u00E7\u00E3o','Ativo',35,15,0,'vt'],
+    ['Matr\u00EDcula','Nome','CPF','Cargo','Departamento','Status','Admiss\u00E3o','VR/dia','Caf\u00E9/dia','Combust\u00EDvel','Mobilidade'],
+    ['10001234','EXEMPLO DA SILVA','123.456.789-00','MOTORISTA','Motoristas','Ativo','2023-01-15',0,0,295,'combustivel'],
+    ['10001235','OUTRO EXEMPLO','234.567.890-11','AJUDANTE','Produ\u00E7\u00E3o','Ativo','2024-06-03',35,15,0,'vt'],
   ]);
   XLSX.utils.book_append_sheet(wb,ws,'Modelo');
   XLSX.writeFile(wb,'Modelo_Carga_Colaboradores.xlsx');
@@ -1957,104 +1964,6 @@ async function importarBase(event){
 }
 
 // ============================================================
-// FOLHA DE PAGAMENTO
-// ============================================================
-function pgFolhaImport(){
-  return `
-    <div class="page-header"><h2> Importar Relat\u00F3rio Senior</h2><p>Transforme o relat\u00F3rio de eventos em folha por colaborador.</p></div>
-    <div class="card">
-      <div class="alert alert-info" style="margin-bottom:14px">
-        Formato esperado: <strong>Cadastro | Nome | Evento | Descri\u00E7\u00E3o | Valor</strong>
-      </div>
-      <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
-        <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
-        <div class="upload-icon">$</div>
-        <div class="upload-text">Clique para selecionar o relat\u00F3rio de eventos</div>
-        <div class="upload-sub">Formato .xlsx ou .xls</div>
-      </div>
-      <div id="folha-import-preview" style="margin-top:14px"></div>
-    </div>`;
-}
-
-function processarFolha(event){
-  const file=event.target.files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const wb=XLSX.read(e.target.result,{type:'binary'});
-    const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
-    let hi=0;
-    for(let i=0;i<Math.min(5,data.length);i++){
-      if(data[i].some(v=>String(v||'').toLowerCase().includes('cadastro')||String(v||'').toLowerCase().includes('evento'))){hi=i;break;}
-    }
-    const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
-    const iMat=hs.findIndex(h=>h.includes('cadastro')||h.includes('matr'));
-    const iNome=hs.findIndex(h=>h.includes('nome'));
-    const iEv=hs.findIndex(h=>h==='evento'||(h.includes('evento')&&!h.includes('descri')));
-    const iValor=hs.findIndex(h=>h.includes('valor'));
-    const porColab={};
-    for(let i=hi+1;i<data.length;i++){
-      const r=data[i]; if(!r||!r[iMat]) continue;
-      const mat=String(r[iMat]||'').trim();
-      const nome=String(r[iNome]||'').trim().toUpperCase();
-      const ev=String(r[iEv]||'').trim();
-      const val=fnum(r[iValor]);
-      if(!porColab[mat]) porColab[mat]={mat,nome,eventos:{}};
-      if(ev) porColab[mat].eventos[ev]=(porColab[mat].eventos[ev]||0)+val;
-    }
-    const du=fnum(g('lan-du'))||22;
-    Object.keys(porColab).forEach(mat=>{
-      const c=colaboradores.find(x=>x.mat===mat);
-      if(c){
-        porColab[mat].depto=c.depto||''; porColab[mat].cargo=c.cargo||''; porColab[mat].cpf=c.cpf||'';
-        const dr=getLanDR(mat,du);
-        const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(mat,du));
-        porColab[mat].ben={vr,cafe,comb,vt};
-      }
-    });
-    folhaData=Object.values(porColab);
-    folhaCompetencia=getFolhaComp();
-    const prev=document.getElementById('folha-import-preview');
-    if(prev) prev.innerHTML=`<div class="alert alert-success">
-      \u2705 <strong>${folhaData.length} colaboradores</strong> processados.
-      <button class="btn btn-primary btn-sm" onclick="if(currentModule!=='folha'){switchModule('folha');}showPage('folha-view')" style="margin-left:10px">Ver Folha \u2192</button>
-    </div>`;
-    toast('\u2705 Folha processada: '+folhaData.length+' colaboradores','success');
-    event.target.value='';
-  };
-  reader.readAsBinaryString(file);
-}
-
-function filtrarFolha(){
-  const q=(document.getElementById('folha-q')?.value||'').toLowerCase();
-  const rows=document.querySelectorAll('#folha-tbody tr');
-  let vis=0;
-  rows.forEach(row=>{
-    const show=row.textContent.toLowerCase().includes(q);
-    row.style.display=show?'':'none';
-    if(show)vis++;
-  });
-  const cnt=document.getElementById('folha-count');
-  if(cnt) cnt.textContent=vis+' colaboradores';
-}
-
-function exportarFolhaExcel(){
-  if(!folhaData||folhaData.length===0){toast('Nenhuma folha','error');return;}
-  const todosEv=[...new Set(folhaData.flatMap(d=>Object.keys(d.eventos||{})))].sort((a,b)=>parseInt(a)-parseInt(b));
-  const header=['Matr\u00EDcula','Nome','CPF','Departamento',...todosEv.map(ev=>EVENTOS_MAP[ev]||('Evento '+ev)),'VR','Caf\u00E9','Combust\u00EDvel','VT','Total Benef\u00EDcios'];
-  const rows=[header,...folhaData.map(d=>{
-    const row=[d.mat,d.nome,d.cpf||'',d.depto||''];
-    todosEv.forEach(ev=>row.push(d.eventos[ev]||''));
-    const b=d.ben||{};
-    row.push(b.vr||'',b.cafe||'',b.comb||'',b.vt||'',((b.vr||0)+(b.cafe||0)+(b.comb||0)+(b.vt||0))||'');
-    return row;
-  })];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Folha por Equipes');
-  XLSX.writeFile(wb,'Folha_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'_')+'.xlsx');
-  toast('\u2705 Folha exportada!','success');
-}
-
-// ============================================================
 // CONTROLE DE F\u00C9RIAS
 // ============================================================
 function pgFerImport(){
@@ -2062,7 +1971,8 @@ function pgFerImport(){
     <div class="page-header"><h2> Importar Dados de F\u00E9rias</h2><p>Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px">
-        Colunas esperadas: <strong>Matr\u00EDcula, Nome, Data In\u00EDcio, Data Fim, Data Vencimento, Dias Dispon\u00EDveis</strong>
+        Colunas esperadas: <strong>Matr\u00EDcula, Nome, Data Admiss\u00E3o (opcional), Data In\u00EDcio, Data Fim, Data Vencimento, Dias Dispon\u00EDveis</strong><br>
+        Se a coluna <strong>Admiss\u00E3o</strong> estiver presente, ela ser\u00E1 usada para calcular automaticamente o vencimento dos colaboradores que ainda nao tem essa informa\u00E7\u00E3o.
       </div>
       <div class="upload-zone" onclick="document.getElementById('fer-file').click()">
         <input type="file" id="fer-file" accept=".xlsx,.xls" onchange="importarFeriasData(event)">
@@ -2084,16 +1994,18 @@ async function importarFeriasData(event){
     for(let i=0;i<Math.min(5,data.length);i++){if(data[i].some(v=>String(v||'').toLowerCase().includes('nome'))){hi=i;break;}}
     const hs=data[hi].map(h=>String(h||'').toLowerCase().trim());
     const iMat=hs.findIndex(h=>h.includes('matr')||h.includes('cadastro'));
+    const iAdm=hs.findIndex(h=>h.includes('admiss'));
     const iIni=hs.findIndex(h=>h.includes('inicio')||h.includes('in\u00EDcio')||h.includes('ini'));
     const iFim=hs.findIndex(h=>h.includes('fim')||h.includes('retorno'));
     const iVenc=hs.findIndex(h=>h.includes('venc'));
     const iDias=hs.findIndex(h=>h.includes('dias'));
-    const b=window._writeBatch(window._db); let ok=0;
+    const b=window._writeBatch(window._db); let ok=0,admOk=0;
     for(let i=hi+1;i<data.length;i++){
       const r=data[i]; if(!r||!r[iMat]) continue;
       const mat=String(r[iMat]||'').trim();
       const c=colaboradores.find(x=>x.mat===mat); if(!c) continue;
       try{
+        if(iAdm>=0&&r[iAdm]&&!c.admissao){ c.admissao=new Date(r[iAdm]).toISOString().split('T')[0]; admOk++; }
         if(r[iIni]) c.ferInicio=new Date(r[iIni]).toISOString().split('T')[0];
         if(r[iFim])  c.ferFim   =new Date(r[iFim]).toISOString().split('T')[0];
         if(r[iVenc]) c.ferVenc  =new Date(r[iVenc]).toISOString().split('T')[0];
@@ -2103,7 +2015,8 @@ async function importarFeriasData(event){
     }
     await b.commit();
     document.getElementById('fer-import-prev').innerHTML=
-      `<div class="alert alert-success">\u2705 <strong>${ok} colaboradores</strong> atualizados com dados de f\u00E9rias.</div>`;
+      `<div class="alert alert-success">\u2705 <strong>${ok} colaboradores</strong> atualizados com dados de f\u00E9rias`
+      +(admOk>0?` (${admOk} com data de admiss\u00E3o preenchida)`:'')+`.</div>`;
     toast('\u2705 F\u00E9rias importadas: '+ok,'success');
     event.target.value='';
   };
@@ -2482,24 +2395,6 @@ function fazerLogout(){
   document.getElementById('login-screen').style.display='flex';
 }
 
-
-function pgFolhaImport(){
-  return `
-    <div class="page-header"><h2> Importar Relatorio Senior</h2>
-    <p>O relatorio sera classificado em 4 tabelas: Proventos, Encargos, Adiantamento e Descontos.</p></div>
-    <div class="card">
-      <div class="alert alert-info" style="margin-bottom:14px">
-        Formato esperado: <strong>Cadastro | Nome | Evento | Descricao | Valor</strong>
-      </div>
-      <div class="upload-zone" onclick="document.getElementById('folha-file').click()">
-        <input type="file" id="folha-file" accept=".xlsx,.xls" onchange="processarFolha(event)">
-        <div class="upload-icon"></div>
-        <div class="upload-text">Selecionar relatorio de eventos</div>
-        <div class="upload-sub">.xlsx ou .xls</div>
-      </div>
-      <div id="folha-import-preview" style="margin-top:14px"></div>
-    </div>`;
-}
 
 function processarFolha(event){
   const file=event.target.files[0]; if(!file) return;
@@ -3040,16 +2935,24 @@ function abrirDetalheFerias(id){
   const f=getFarol(c);
   const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
+  // Remove modal anterior se ainda existir (evita duplicatas)
+  document.getElementById('modal-ferias-detalhe')?.remove();
+
   const html=`
-    <div class="modal-overlay" id="modal-ferias-detalhe" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
+    <div class="modal-overlay" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
       <div class="modal-box" style="max-width:480px">
         <h3 style="margin-bottom:14px">Ferias - ${c.nome}</h3>
         <div style="background:var(--surface2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px">
           <div><strong>Matricula:</strong> ${c.mat||'\u2014'}</div>
-          <div><strong>Admissao:</strong> ${c.admissao||'\u2014'}</div>
           <div><strong>Vencimento atual:</strong> ${f.vencStr} (${f.label})</div>
         </div>
         <div class="fg">
+          <label>Data de admissao</label>
+          <input type="date" id="ferd-admissao" value="${c.admissao||''}"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
+          <p class="text-xs text-muted" style="margin-top:4px">Usada para calcular o ciclo aquisitivo (vencimento) automaticamente quando o campo abaixo estiver vazio.</p>
+        </div>
+        <div class="fg" style="margin-top:12px">
           <label>Saldo de dias acumulados</label>
           <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90"
             style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
@@ -3077,6 +2980,7 @@ function abrirDetalheFerias(id){
     </div>`;
 
   document.body.insertAdjacentHTML('beforeend', html);
+  document.getElementById('modal-ferias-detalhe')?.classList.add('open');
   verificarAlertasFerias(id);
 }
 
@@ -3115,16 +3019,19 @@ async function salvarDetalheFerias(id){
   const saldo=fnum(document.getElementById('ferd-saldo')?.value);
   const mes=document.getElementById('ferd-mes')?.value||'';
   const venc=document.getElementById('ferd-venc')?.value||'';
+  const admissao=document.getElementById('ferd-admissao')?.value||'';
 
   c.ferSaldo=saldo;
   c.ferMes=mes;
-  if(venc) c.ferVenc=venc;
+  c.ferVenc=venc||'';
+  c.admissao=admissao||c.admissao||'';
 
   try{
     await fsSet('colaboradores',id,c);
     toast('Ferias atualizadas!','success');
     closeModal('modal-ferias-detalhe');
     if(currentPage==='fer-radar') renderFerRadar();
+    if(currentPage==='fer-agendadas') renderFeriasAgendadas();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
@@ -3217,6 +3124,33 @@ async function carregarFolhaSalva(){
     folhaData=found.detalhes||[];
     folhaCompetencia=comp;
     toast('Folha '+comp+' carregada!','success');
+    showPage('folha-view');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// Salva a folha atualmente carregada em memoria como snapshot fechado
+async function fecharCompetenciaFolha(){
+  if(!folhaData||folhaData.length===0){ toast('Nenhuma folha carregada para fechar.','warning'); return; }
+  const comp=folhaCompetencia||getFolhaComp();
+  if(!confirm('Fechar a competencia '+comp+'? Isso salva um snapshot permanente da folha atual.')) return;
+  try{
+    await fsSet('historico','folha_'+comp.replace('/','_'),{
+      tipo:'folha',competencia:comp,fechadoEm:new Date().toISOString(),
+      totalColaboradores:folhaData.length,detalhes:folhaData
+    });
+    toast('\u2705 Folha '+comp+' fechada e salva!','success');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// Remove a folha da competencia atual (memoria + historico salvo, se houver)
+async function deletarFolhaCompetencia(){
+  const comp=folhaCompetencia||getFolhaComp();
+  if(!confirm('Deletar a folha da competencia '+comp+'? Esta acao remove os dados carregados e, se houver, o snapshot salvo no historico.')) return;
+  try{
+    await fsDel('historico','folha_'+comp.replace('/','_')).catch(()=>{});
+    folhaData=null;
+    folhaCompetencia='';
+    toast('\u2705 Folha '+comp+' removida.','success');
     showPage('folha-view');
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
@@ -4621,6 +4555,142 @@ function filtrarTabelaFerias(){
     const txt=row.textContent.toLowerCase();
     row.style.display = (!q||txt.includes(q)) ? '' : 'none';
   });
+}
+
+// ════════════════════════════════════════════════════════════════
+// FERIAS AGENDADAS — visao por mes
+// ════════════════════════════════════════════════════════════════
+function pgFeriasAgendadas(){
+  return `
+    <div class="page-header">
+      <h2>F\u00E9rias Agendadas</h2>
+      <p>Visualize quais colaboradores est\u00E3o com f\u00E9rias agendadas em cada m\u00EAs.</p>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
+        <input type="text" id="feragd-q" placeholder="Buscar por nome, matr\u00EDcula, departamento ou cargo..." oninput="renderFeriasAgendadas()"
+          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;flex:1;min-width:220px">
+        <select id="feragd-dep" onchange="renderFeriasAgendadas()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+          <option value="">Todos os deptos</option>
+          ${getDeptoList().map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="exportarFeriasAgendadasExcel()">Excel</button>
+    </div>
+    <div id="feragd-resumo" style="margin-bottom:14px"></div>
+    <div id="feragd-grid"></div>
+    <div id="feragd-sem" style="margin-top:20px"></div>`;
+}
+
+function renderFeriasAgendadas(){
+  const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const q=(document.getElementById('feragd-q')?.value||'').toLowerCase();
+  const depF=document.getElementById('feragd-dep')?.value||'';
+
+  let base=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
+  if(depF) base=base.filter(c=>(c.depto||'')===depF);
+  if(q) base=base.filter(c=>
+    c.nome.toLowerCase().includes(q) ||
+    (c.mat||'').toLowerCase().includes(q) ||
+    (c.depto||'').toLowerCase().includes(q) ||
+    (c.cargo||'').toLowerCase().includes(q)
+  );
+
+  const agendados=base.filter(c=>c.ferMes);
+  const semAgenda=base.filter(c=>!c.ferMes);
+
+  // Reordena os meses comecando pelo mes atual (visao "proximos meses primeiro")
+  const mesAtualIdx=new Date().getMonth();
+  const mesesOrdenados=[...meses.slice(mesAtualIdx),...meses.slice(0,mesAtualIdx)];
+
+  // Resumo
+  const resumoEl=document.getElementById('feragd-resumo');
+  if(resumoEl){
+    resumoEl.innerHTML=`<div class="alert alert-info">
+      <strong>${agendados.length}</strong> colaborador(es) com f\u00E9rias agendadas &middot;
+      <strong>${semAgenda.length}</strong> sem m\u00EAs definido (de ${base.length} no total)
+    </div>`;
+  }
+
+  // Grid por mes
+  const grid=document.getElementById('feragd-grid');
+  if(grid){
+    grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">'
+      +mesesOrdenados.map(mes=>{
+        const itens=agendados.filter(c=>c.ferMes===mes).sort((a,b)=>a.nome.localeCompare(b.nome));
+        const isAtual=meses[mesAtualIdx]===mes;
+        return '<div style="background:'+(isAtual?'var(--blue-light)':'var(--surface2)')+';border:1.5px solid '+(isAtual?'var(--blue)':'var(--border)')+';border-radius:var(--radius);padding:10px;min-height:90px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid '+(isAtual?'var(--blue)':'var(--border)')+'33">'
+          +'<span style="font-size:12px;font-weight:700;'+(isAtual?'color:var(--blue)':'')+'">'+mes+(isAtual?' (atual)':'')+'</span>'
+          +'<span style="background:'+(isAtual?'var(--blue)':'var(--text3)')+';color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 8px;min-width:22px;text-align:center">'+itens.length+'</span>'
+          +'</div>'
+          +(itens.length===0
+            ? '<div class="text-xs text-muted" style="padding:4px 2px">Nenhum colaborador agendado</div>'
+            : '<div style="display:flex;flex-direction:column;gap:6px">'
+              +itens.map(c=>{
+                const f=getFarol(c);
+                const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
+                return '<div style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:7px 9px;cursor:pointer" '
+                  +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para editar">'
+                  +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</div>'
+                  +'<div style="font-size:10px;color:var(--text2);margin-top:2px">'+(c.cargo||'\u2014')+' &middot; '+(c.depto||'\u2014')+'</div>'
+                  +'<div style="font-size:10px;margin-top:2px;color:'+corMap[f.cor]+'">Saldo: '+(c.ferSaldo!=null?c.ferSaldo:f.dias)+' dias &middot; Venc: '+f.vencStr+'</div>'
+                  +'</div>';
+              }).join('')
+              +'</div>');
+      }).join('')
+      +'</div>';
+  }
+
+  // Lista de colaboradores sem mes definido
+  const semEl=document.getElementById('feragd-sem');
+  if(semEl){
+    if(semAgenda.length===0){
+      semEl.innerHTML='';
+    } else {
+      semEl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Sem m\u00EAs de f\u00E9rias definido ('+semAgenda.length+')</div>'
+        +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
+        +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead><tr style="background:var(--blue-dark);color:#fff">'
+        +'<th style="padding:8px 10px;text-align:left">Matricula</th>'
+        +'<th style="padding:8px 10px;text-align:left">Nome</th>'
+        +'<th style="padding:8px 10px;text-align:left">Cargo</th>'
+        +'<th style="padding:8px 10px;text-align:left">Departamento</th>'
+        +'<th style="padding:8px 10px;text-align:center">A\u00E7\u00F5es</th>'
+        +'</tr></thead><tbody>'
+        +semAgenda.sort((a,b)=>a.nome.localeCompare(b.nome)).map((c,i)=>
+          '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
+          +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'\u2014')+'</code></td>'
+          +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
+          +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.cargo||'\u2014')+'</td>'
+          +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'\u2014')+'</td>'
+          +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Agendar</button></td>'
+          +'</tr>'
+        ).join('')+'</tbody></table></div>';
+    }
+  }
+}
+
+function exportarFeriasAgendadasExcel(){
+  const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const base=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
+  const rows=[['Mes Agendado','Matricula','Nome','CPF','Cargo','Departamento','Saldo (dias)','Vencimento']];
+  base.filter(c=>c.ferMes).sort((a,b)=>{
+    const ia=meses.indexOf(a.ferMes), ib=meses.indexOf(b.ferMes);
+    return ia!==ib ? ia-ib : a.nome.localeCompare(b.nome);
+  }).forEach(c=>{
+    const f=getFarol(c);
+    rows.push([c.ferMes,c.mat||'',c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.ferSaldo!=null?c.ferSaldo:f.dias,f.vencStr]);
+  });
+  base.filter(c=>!c.ferMes).sort((a,b)=>a.nome.localeCompare(b.nome)).forEach(c=>{
+    const f=getFarol(c);
+    rows.push(['Sem mes definido',c.mat||'',c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.ferSaldo!=null?c.ferSaldo:f.dias,f.vencStr]);
+  });
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb,ws,'Ferias Agendadas');
+  XLSX.writeFile(wb,'Ferias_Agendadas.xlsx');
+  toast('\u2705 Excel gerado!','success');
 }
 
 // ── Alertas mensais no topo do Radar de Ferias ───────────────────

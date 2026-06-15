@@ -7,7 +7,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, writeBatch }
+  import { getFirestore, collection, getDocs, getDoc, setDoc, deleteDoc, doc, writeBatch }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -24,7 +24,7 @@
   window._db=db; window._auth=auth;
   window._col=n=>collection(db,n);
   window._doc=(c,i)=>doc(db,c,i);
-  window._getDocs=getDocs; window._setDoc=setDoc;
+  window._getDocs=getDocs; window._getDoc=getDoc; window._setDoc=setDoc;
   window._deleteDoc=deleteDoc; window._writeBatch=writeBatch;
   window._signIn=(e,p)=>signInWithEmailAndPassword(auth,e,p);
   window._signOut=()=>signOut(auth);
