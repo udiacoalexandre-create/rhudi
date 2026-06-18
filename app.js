@@ -2940,39 +2940,33 @@ function abrirDetalheFerias(id){
 
   const html=`
     <div class="modal-overlay" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
-      <div class="modal-box" style="max-width:480px">
-        <h3 style="margin-bottom:14px">Ferias - ${c.nome}</h3>
-        <div style="background:var(--surface2);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-size:13px">
-          <div><strong>Matricula:</strong> ${c.mat||'\u2014'}</div>
-          <div><strong>Vencimento atual:</strong> ${f.vencStr} (${f.label})</div>
+      <div class="modal" style="max-width:520px">
+        <div class="modal-title">F\u00E9rias \u2014 ${c.nome}</div>
+        <div class="modal-sub">Matricula ${c.mat||'\u2014'} &middot; Vencimento atual: ${f.vencStr} (${f.label})</div>
+        <div class="form-grid cols2">
+          <div class="fg">
+            <label>Data de admissao</label>
+            <input type="date" id="ferd-admissao" value="${c.admissao||''}">
+          </div>
+          <div class="fg">
+            <label>Data de vencimento (proximo ciclo)</label>
+            <input type="date" id="ferd-venc" value="${c.ferVenc||''}">
+          </div>
+          <div class="fg">
+            <label>Saldo de dias acumulados</label>
+            <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90">
+          </div>
+          <div class="fg">
+            <label>Mes agendado para tirar ferias</label>
+            <select id="ferd-mes">
+              <option value="">-- Nao agendado --</option>
+              ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
+            </select>
+          </div>
         </div>
-        <div class="fg">
-          <label>Data de admissao</label>
-          <input type="date" id="ferd-admissao" value="${c.admissao||''}"
-            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
-          <p class="text-xs text-muted" style="margin-top:4px">Usada para calcular o ciclo aquisitivo (vencimento) automaticamente quando o campo abaixo estiver vazio.</p>
-        </div>
-        <div class="fg" style="margin-top:12px">
-          <label>Saldo de dias acumulados</label>
-          <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90"
-            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
-          <p class="text-xs text-muted" style="margin-top:4px">Dias de ferias vencidas acumuladas. Sera reduzido automaticamente quando o relatorio de ferias der baixa.</p>
-        </div>
-        <div class="fg" style="margin-top:12px">
-          <label>Mes agendado para tirar ferias</label>
-          <select id="ferd-mes" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
-            <option value="">-- Nao agendado --</option>
-            ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
-          </select>
-        </div>
-        <div class="fg" style="margin-top:12px">
-          <label>Data de vencimento (proximo ciclo)</label>
-          <input type="date" id="ferd-venc" value="${c.ferVenc||''}"
-            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:100%">
-          <p class="text-xs text-muted" style="margin-top:4px">Deixe vazio para calcular automaticamente pela admissao.</p>
-        </div>
+        <p class="text-xs text-muted" style="margin-top:10px">A data de vencimento, se deixada em branco, e calculada automaticamente a partir da admissao.</p>
         <div id="ferd-alertas" style="margin-top:10px"></div>
-        <div class="btn-row" style="margin-top:18px">
+        <div class="modal-footer">
           <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Cancelar</button>
           <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')">Salvar</button>
         </div>
@@ -4612,32 +4606,34 @@ function renderFeriasAgendadas(){
     </div>`;
   }
 
-  // Grid por mes
+  // Grid por mes — mesmo padrao visual do kanban de vencimento (renderFarois)
   const grid=document.getElementById('feragd-grid');
   if(grid){
-    grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">'
+    grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(12,minmax(150px,1fr));gap:10px;align-items:start;overflow-x:auto;padding-bottom:6px">'
       +mesesOrdenados.map(mes=>{
         const itens=agendados.filter(c=>c.ferMes===mes).sort((a,b)=>a.nome.localeCompare(b.nome));
         const isAtual=meses[mesAtualIdx]===mes;
-        return '<div style="background:'+(isAtual?'var(--blue-light)':'var(--surface2)')+';border:1.5px solid '+(isAtual?'var(--blue)':'var(--border)')+';border-radius:var(--radius);padding:10px;min-height:90px">'
-          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid '+(isAtual?'var(--blue)':'var(--border)')+'33">'
-          +'<span style="font-size:12px;font-weight:700;'+(isAtual?'color:var(--blue)':'')+'">'+mes+(isAtual?' (atual)':'')+'</span>'
-          +'<span style="background:'+(isAtual?'var(--blue)':'var(--text3)')+';color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 8px;min-width:22px;text-align:center">'+itens.length+'</span>'
+        const cor=isAtual?'var(--blue)':'var(--text3)';
+        const bg=isAtual?'var(--blue-light)':'var(--surface2)';
+        return '<div style="background:'+bg+';border:1.5px solid '+cor+'33;border-radius:var(--radius);padding:10px;min-height:120px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1.5px solid '+cor+'33">'
+          +'<span style="font-size:12px;font-weight:700;color:'+cor+'">'+mes.substring(0,3)+(isAtual?' \u2022':'')+'</span>'
+          +'<span style="background:'+cor+';color:#fff;font-size:12px;font-weight:700;border-radius:20px;padding:2px 9px;min-width:24px;text-align:center">'+itens.length+'</span>'
           +'</div>'
+          +'<div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">'
           +(itens.length===0
-            ? '<div class="text-xs text-muted" style="padding:4px 2px">Nenhum colaborador agendado</div>'
-            : '<div style="display:flex;flex-direction:column;gap:6px">'
-              +itens.map(c=>{
+            ? '<div class="text-xs text-muted" style="padding:4px 2px">\u2014</div>'
+            : itens.map(c=>{
                 const f=getFarol(c);
                 const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
-                return '<div style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:7px 9px;cursor:pointer" '
-                  +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para editar">'
+                return '<div style="background:#fff;border:1px solid '+cor+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
+                  +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="'+c.nome+' \u2014 '+(c.cargo||'\u2014')+' \u2014 '+(c.depto||'\u2014')+' \u2014 Venc: '+f.vencStr+' (clique para editar)">'
                   +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</div>'
-                  +'<div style="font-size:10px;color:var(--text2);margin-top:2px">'+(c.cargo||'\u2014')+' &middot; '+(c.depto||'\u2014')+'</div>'
-                  +'<div style="font-size:10px;margin-top:2px;color:'+corMap[f.cor]+'">Saldo: '+(c.ferSaldo!=null?c.ferSaldo:f.dias)+' dias &middot; Venc: '+f.vencStr+'</div>'
+                  +'<div style="font-size:10px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(c.depto||'\u2014')+'</div>'
+                  +'<div style="font-size:10px;margin-top:2px;color:'+corMap[f.cor]+';font-weight:600">Saldo: '+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'d</div>'
                   +'</div>';
-              }).join('')
-              +'</div>');
+              }).join(''))
+          +'</div></div>';
       }).join('')
       +'</div>';
   }
