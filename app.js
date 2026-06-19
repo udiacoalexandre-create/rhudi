@@ -942,9 +942,34 @@ function renderDeParaPreview(){
 
   html+=`<div class="btn-row" style="margin-top:8px">
     <button class="btn btn-primary" onclick="aplicarDePara()" ${atualizar.length?'':'disabled'}>Confirmar e gravar ${atualizar.length} atualização(ões)</button>
+    ${_btnExportPend()}
     <button class="btn btn-ghost" onclick="deParaPendente=null;document.getElementById('defpara-prev').innerHTML=''">Cancelar</button>
   </div>`;
   prev.innerHTML=html;
+}
+
+// Botao de exportar pendencias (nao encontrados / ambiguos / ferias nao reconhecida)
+function _btnExportPend(){
+  if(!deParaPendente) return '';
+  const n=(deParaPendente.naoEnc||[]).length+(deParaPendente.ambiguos||[]).length+(deParaPendente.feriasNaoRec||[]).length;
+  if(!n) return '';
+  return '<button class="btn btn-ghost" onclick="exportarDeParaPendentes()">Exportar pendências (Excel) — '+n+'</button>';
+}
+
+// Gera um Excel com as linhas que precisam de tratamento manual
+function exportarDeParaPendentes(){
+  if(!deParaPendente){ toast('Nada para exportar','error'); return; }
+  const {naoEnc=[],ambiguos=[],feriasNaoRec=[]}=deParaPendente;
+  const wb=XLSX.utils.book_new();
+  const add=(nome,header,rows)=>{
+    const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
+    XLSX.utils.book_append_sheet(wb,ws,nome);
+  };
+  add('Nao Encontrados',['Nome','Matricula'], naoEnc.map(x=>[x.nome,x.mat||'']));
+  add('Ambiguos',['Nome','Matricula','Motivo'], ambiguos.map(x=>[x.nome,x.mat||'',x.motivo||'']));
+  add('Ferias Nao Reconhecida',['Nome','Valor original'], feriasNaoRec.map(x=>[x.nome,x.valor||'']));
+  XLSX.writeFile(wb,'DePara_Pendencias.xlsx');
+  toast('✅ Excel de pendências gerado!','success');
 }
 
 async function aplicarDePara(){
@@ -967,8 +992,11 @@ async function aplicarDePara(){
       await b.commit();
     }
     toast('✅ '+ok+' colaboradores atualizados','success');
-    deParaPendente=null;
-    if(prev) prev.innerHTML='<div class="alert alert-success">✅ <strong>'+ok+' colaboradores</strong> atualizados (função, admissão e/ou mês de férias).</div>';
+    // Mantem as pendencias (nao encontrados/ambiguos) para exportacao manual
+    if(deParaPendente) deParaPendente.atualizar=[];
+    const btn=_btnExportPend();
+    if(prev) prev.innerHTML='<div class="alert alert-success">✅ <strong>'+ok+' colaboradores</strong> atualizados (função, admissão e/ou mês de férias).</div>'
+      +(btn?'<div style="margin-top:10px">Há linhas que precisam de tratamento manual:<div class="btn-row" style="margin-top:6px">'+btn+'</div></div>':'');
     if(currentPage==='base-lista') renderColabList();
   }catch(err){
     if(prev) prev.innerHTML='<div class="alert alert-error">Erro ao gravar: '+err.message+'</div>';
