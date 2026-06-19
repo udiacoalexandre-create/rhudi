@@ -208,6 +208,16 @@ function formColabHTML(prefix, c){
         ${elegCheckHTML(prefix,c)}
       </div>
     </div>
+    <div class="card" id="${prefix}-card-fer" style="display:none">
+      <div class="card-title">Controle de Férias</div>
+      <p class="text-sm text-muted" style="margin-bottom:10px">Dados compartilhados com o módulo de Controle de Férias — qualquer alteração aqui reflete lá e vice-versa.</p>
+      <div class="form-grid">
+        <div class="fg"><label>Data de vencimento das férias</label><input type="date" id="${prefix}-fer-venc" value="${c?.ferVenc||''}"></div>
+        <div class="fg"><label>Data de agendamento das férias</label><input type="date" id="${prefix}-fer-agend" value="${c?.ferAgend||''}" oninput="atualizarMesFerias('${prefix}')"></div>
+        <div class="fg"><label>Saldo de dias acumulados</label><input type="number" id="${prefix}-fer-saldo" min="0" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"></div>
+        <div class="fg"><label>Mês agendado</label><input type="text" id="${prefix}-fer-mes-label" value="${c?.ferMes||''}" readonly style="background:var(--surface2)"><span style="font-size:10px;color:var(--text3);margin-top:2px">Definido automaticamente pela data de agendamento.</span></div>
+      </div>
+    </div>
     <div class="card" id="${prefix}-card-vr" style="display:none">
       <div class="card-title">Vale Refei\u00E7\u00E3o</div>
       <div class="form-grid"><div class="fg"><label>Valor/dia (R$)</label><input type="number" id="${prefix}-vr" step="0.01" min="0" value="${fnum(c?.vr)||''}"></div></div>
@@ -281,6 +291,17 @@ function onElegChange(prefix, tipo, checked){
     document.getElementById(prefix+'-card-mob').style.display=checked?'block':'none';
     if(checked) toggleMob(prefix);
   }
+  if(tipo==='ferias'){
+    const el=document.getElementById(prefix+'-card-fer');
+    if(el) el.style.display=checked?'block':'none';
+  }
+}
+
+// Atualiza o rotulo "Mes agendado" a partir da data de agendamento (cadastro)
+function atualizarMesFerias(prefix){
+  const ag=document.getElementById(prefix+'-fer-agend')?.value||'';
+  const lbl=document.getElementById(prefix+'-fer-mes-label');
+  if(lbl) lbl.value=ag?mesNomeFerias(ag):'';
 }
 
 function toggleMob(prefix){
@@ -292,7 +313,7 @@ function toggleMob(prefix){
 }
 
 function initFormDisplay(prefix){
-  ['vr','cafe','mobilidade'].forEach(t=>onElegChange(prefix,t,document.getElementById(prefix+'-eleg-'+t)?.checked||false));
+  ['vr','cafe','mobilidade','ferias'].forEach(t=>onElegChange(prefix,t,document.getElementById(prefix+'-eleg-'+t)?.checked||false));
 }
 
 function getColabFromForm(prefix){
@@ -315,6 +336,9 @@ function getColabFromForm(prefix){
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
     diasFixos: fnum(document.getElementById(prefix+'-dias-fixos')?.value)||null,
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
+    ferVenc:  document.getElementById(prefix+'-fer-venc')?.value||'',
+    ferAgend: document.getElementById(prefix+'-fer-agend')?.value||'',
+    ferSaldo: (()=>{const v=document.getElementById(prefix+'-fer-saldo')?.value; return (v!==''&&v!=null&&v!==undefined)?fnum(v):null;})(),
     mobilidade:mob, elegibilidade:eleg,
     vr:   eleg.vr?fnum(document.getElementById(prefix+'-vr')?.value):0,
     cafe: eleg.cafe?fnum(document.getElementById(prefix+'-cafe')?.value):0,
@@ -361,6 +385,7 @@ async function salvarNovoColab(){
   if(c.mat&&colaboradores.some(x=>x.mat===c.mat)){if(!confirm('Matr\u00EDcula '+c.mat+' j\u00E1 existe. Continuar?'))return;}
   const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
   c._id=id; c.mobilidade=c.mobilidade||inferMob(c);
+  syncFeriasAgendamento(c); // deriva ferMes da data de agendamento, se informada
 
   // Sugerir mes de ferias (ponto 5): primeiro verifica vaga deixada
   // por demissao na mesma funcao/depto, senao usa o mes mais comum
@@ -378,13 +403,14 @@ async function salvarNovoColab(){
 }
 
 function limparFormColab(prefix){
-  ['mat','nome','cpf','cargo','depto','vr','cafe','comb','vt1','v1','vt2','v2','vt3','v3','vt4','v4'].forEach(f=>{
+  ['mat','nome','cpf','cargo','depto','vr','cafe','comb','vt1','v1','vt2','v2','vt3','v3','vt4','v4','fer-venc','fer-agend','fer-saldo','fer-mes-label'].forEach(f=>{
     const el=document.getElementById(prefix+'-'+f); if(el) el.value='';
   });
   const st=document.getElementById(prefix+'-status'); if(st) st.value='Ativo';
   const fi=document.getElementById(prefix+'-filtro'); if(fi) fi.value='OK';
   const mob=document.getElementById(prefix+'-mobilidade'); if(mob) mob.value='perto';
   ['vr','cafe','mobilidade'].forEach(t=>onElegChange(prefix,t,false));
+  onElegChange(prefix,'ferias',document.getElementById(prefix+'-eleg-ferias')?.checked||false);
   const folha=document.getElementById(prefix+'-eleg-folha');
   if(folha){folha.checked=true;toggleEleg(folha.closest('label'));}
   const dal=document.getElementById(prefix+'-duplic-alert'); if(dal) dal.innerHTML='';
@@ -417,6 +443,7 @@ async function salvarColabModal(){
   }
 
   Object.assign(colaboradores[idx],dados);
+  syncFeriasAgendamento(colaboradores[idx]); // mantem ferMes coerente com a data de agendamento
   try{
     await fsSet('colaboradores',editColabId,colaboradores[idx]);
     closeModal('modal-colab');editColabId=null;
@@ -592,7 +619,7 @@ function pgBaseLista(){
         <thead><tr>
           <th>Matr\u00EDcula</th><th>Nome</th><th>CPF</th><th>Admiss\u00E3o</th><th>Departamento</th>
           <th>Status</th><th>Tipo</th><th>Elegibilidade</th><th>VR/dia</th><th>Caf\u00E9/dia</th>
-          <th>Transporte</th><th>A\u00E7\u00F5es</th>
+          <th>Transporte</th><th>F\u00E9rias</th><th>A\u00E7\u00F5es</th>
         </tr></thead>
         <tbody id="bl-tbody"></tbody>
       </table>
@@ -632,13 +659,26 @@ function elegBadges(c){
   return tags.length?tags.join(' '):'<span class="badge badge-gray" style="font-size:10px">Nenhum</span>';
 }
 
+// Resumo de ferias na lista da base: vencimento + agendamento (mesmos dados do modulo de Ferias)
+function ferResumoCelula(c){
+  if(c.elegibilidade?.ferias===false) return '<span class="text-muted">N/A</span>';
+  const f=getFarol(c);
+  const venc=(f.vencStr&&f.vencStr!=='—')?f.vencStr:'—';
+  let agend='—';
+  if(c.ferAgend){
+    const d=new Date(c.ferAgend.length===10?c.ferAgend+'T00:00:00':c.ferAgend);
+    agend=isNaN(d.getTime())?(c.ferMes||'—'):d.toLocaleDateString('pt-BR');
+  } else if(c.ferMes){ agend=c.ferMes; }
+  return '<span class="text-muted">Venc:</span> '+venc+'<br><span class="text-muted">Agend:</span> '+agend;
+}
+
 function renderColabList(){
   const f=filtrarColabs();
   const cnt=document.getElementById('bl-count');
   if(cnt) cnt.textContent=f.length+' de '+colaboradores.length+' colaboradores';
   const tbody=document.getElementById('bl-tbody'); if(!tbody) return;
   if(f.length===0){
-    tbody.innerHTML='<tr><td colspan="10"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>';
     return;
   }
   tbody.innerHTML=f.map(c=>`<tr>
@@ -653,6 +693,7 @@ function renderColabList(){
     <td class="text-sm">${fnum(c.vr)>0?brl(c.vr):'\u2014'}</td>
     <td class="text-sm">${fnum(c.cafe)>0?brl(c.cafe):'\u2014'}</td>
     <td>${mobBadge(c)}</td>
+    <td class="text-xs">${ferResumoCelula(c)}</td>
     <td>
       <button class="btn btn-ghost btn-xs" onclick="abrirEditar('${c._id}')">\u270F\uFE0F</button>
       <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${c.nome.replace(/'/g,"\\'")}')"></button>
@@ -2781,6 +2822,28 @@ function pgFerRadar(){
     <div id="fer-tabela" style="margin-top:20px"></div>`;
 }
 
+// ── Férias: meses e sincronização agendamento <-> mês ────────────
+const MESES_FER=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+// Converte uma data (yyyy-mm-dd) no nome do mes usado nas telas de ferias.
+// Forca horario local (T00:00:00) para nao escorregar de mes em fusos negativos.
+function mesNomeFerias(dateStr){
+  if(!dateStr) return '';
+  const d=new Date(dateStr.length===10?dateStr+'T00:00:00':dateStr);
+  if(isNaN(d.getTime())) return '';
+  return MESES_FER[d.getMonth()]||'';
+}
+
+// Mantem ferMes coerente com ferAgend (a data de agendamento e a fonte da verdade).
+// Se houver data de agendamento, o mes e derivado dela; senao preserva o mes ja definido.
+function syncFeriasAgendamento(c){
+  if(c && c.ferAgend){
+    const m=mesNomeFerias(c.ferAgend);
+    if(m) c.ferMes=m;
+  }
+  return c;
+}
+
 function getFarol(c){
   // Nao se aplica - socios/consultores
   if(c.elegibilidade?.ferias===false){
@@ -2957,11 +3020,16 @@ function abrirDetalheFerias(id){
             <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90">
           </div>
           <div class="fg">
+            <label>Data de agendamento das ferias</label>
+            <input type="date" id="ferd-agend" value="${c.ferAgend||''}" oninput="onFerAgendDetalhe()">
+          </div>
+          <div class="fg">
             <label>Mes agendado para tirar ferias</label>
             <select id="ferd-mes">
               <option value="">-- Nao agendado --</option>
               ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
             </select>
+            <span class="text-xs text-muted" style="margin-top:2px">Se informar a data acima, o mes e definido por ela.</span>
           </div>
         </div>
         <p class="text-xs text-muted" style="margin-top:10px">A data de vencimento, se deixada em branco, e calculada automaticamente a partir da admissao.</p>
@@ -3008,16 +3076,26 @@ function verificarAlertasFerias(id){
   });
 }
 
+// No modal de ferias, ao informar a data de agendamento, sincroniza o select de mes
+function onFerAgendDetalhe(){
+  const ag=document.getElementById('ferd-agend')?.value||'';
+  const sel=document.getElementById('ferd-mes');
+  if(sel && ag){ const m=mesNomeFerias(ag); if(m) sel.value=m; }
+}
+
 async function salvarDetalheFerias(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const saldo=fnum(document.getElementById('ferd-saldo')?.value);
   const mes=document.getElementById('ferd-mes')?.value||'';
   const venc=document.getElementById('ferd-venc')?.value||'';
+  const agend=document.getElementById('ferd-agend')?.value||'';
   const admissao=document.getElementById('ferd-admissao')?.value||'';
 
   c.ferSaldo=saldo;
-  c.ferMes=mes;
   c.ferVenc=venc||'';
+  c.ferAgend=agend||'';
+  // Se houver data de agendamento, o mes deriva dela; senao usa o mes escolhido no select
+  c.ferMes=agend?(mesNomeFerias(agend)||mes):mes;
   c.admissao=admissao||c.admissao||'';
 
   try{
