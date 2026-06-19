@@ -1,0 +1,9 @@
+# Planilhas e exportações
+*.xlsx
+*.xls
+*.csv
+
+# Credenciais e segredos
+serviceAccount*.json
+*-key.json
+.env
