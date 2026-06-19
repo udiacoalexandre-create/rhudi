@@ -2227,24 +2227,40 @@ async function salvarConfig(){
 }
 
 function exportarBase(){
-  const rows=[['Matr\u00EDcula','Nome','CPF','Cargo','Departamento','Status','Mobilidade','VR/dia','Caf\u00E9/dia','Combust\u00EDvel',
-    'VT L1','Viag L1','Tipo L1','Cod L1','VT L2','Viag L2','Tipo L2','Cod L2',
-    'VT L3','Viag L3','Tipo L3','Cod L3','VT L4','Viag L4','Tipo L4','Cod L4',
-    'Admiss\u00E3o','Eleg.VR','Eleg.Caf\u00E9','Eleg.Mob','Eleg.Folha'],
-    ...colaboradores.map(c=>{
-      const e=c.elegibilidade||{};
-      return [c.mat,c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.status,c.mobilidade||'perto',
-        fnum(c.vr),fnum(c.cafe),fnum(c.comb),
-        fnum(c.vt1),fnum(c.v1),c.tp1||'',c.cod1||'',
-        fnum(c.vt2),fnum(c.v2),c.tp2||'',c.cod2||'',
-        fnum(c.vt3),fnum(c.v3),c.tp3||'',c.cod3||'',
-        fnum(c.vt4),fnum(c.v4),c.tp4||'',c.cod4||'',
-        c.admissao||'',e.vr?'SIM':'N\u00C3O',e.cafe?'SIM':'N\u00C3O',e.mobilidade?'SIM':'N\u00C3O',e.folha!==false?'SIM':'N\u00C3O'];
-    })];
+  const sim=b=>b?'SIM':'N\u00C3O';
+  const header=[
+    'Matr\u00EDcula','Nome','CPF','Cargo','Fun\u00E7\u00E3o','Departamento','Status','Tipo/Filtro','Admiss\u00E3o','Dias Fixos',
+    'Eleg. Folha','Eleg. Pr\u00EAmio Assiduidade','Eleg. F\u00E9rias',
+    'Eleg. Vale Refei\u00E7\u00E3o','Eleg. Caf\u00E9','Eleg. Mobilidade/Combust\u00EDvel','Eleg. Vale Transporte','Eleg. Cesta B\u00E1sica',
+    'VR/dia','Caf\u00E9/dia','Cesta/m\u00EAs','Tipo Mobilidade','Combust\u00EDvel/m\u00EAs',
+    'VT L1 Valor','VT L1 Viagens','VT L1 Tipo','VT L1 C\u00F3digo','VT L1 Linha',
+    'VT L2 Valor','VT L2 Viagens','VT L2 Tipo','VT L2 C\u00F3digo','VT L2 Linha',
+    'VT L3 Valor','VT L3 Viagens','VT L3 Tipo','VT L3 C\u00F3digo','VT L3 Linha',
+    'VT L4 Valor','VT L4 Viagens','VT L4 Tipo','VT L4 C\u00F3digo','VT L4 Linha',
+    'M\u00EAs Agendado F\u00E9rias','Ano Agendado (calc)','Vencimento F\u00E9rias','Saldo Dias F\u00E9rias'
+  ];
+  const rows=[header, ...colaboradores.map(c=>{
+    const e=c.elegibilidade||{};
+    const tr=elegTransporte(c);
+    const elegVR  = e.vr!==undefined?e.vr:fnum(c.vr)>0;
+    const elegCafe= e.cafe!==undefined?e.cafe:fnum(c.cafe)>0;
+    const cestaVal= (e.cesta!==false) ? (fnum(c.cesta)||185) : 0;
+    const vtCols=[1,2,3,4].reduce((a,n)=>a.concat([fnum(c['vt'+n]),fnum(c['v'+n]),c['tp'+n]||'',c['cod'+n]||'',c['ben'+n]||'']),[]);
+    return [
+      c.mat||'',c.nome||'',c.cpf||'',c.cargo||'',c.funcao||'',c.depto||'',c.status||'',c.filtro||'OK',c.admissao||'',c.diasFixos!=null?c.diasFixos:'',
+      sim(e.folha!==false),sim(e.premio!==false),sim(e.ferias!==false),
+      sim(elegVR),sim(elegCafe),sim(tr.mob),sim(tr.vt),sim(e.cesta!==false),
+      fnum(c.vr),fnum(c.cafe),cestaVal,c.mobilidade||'perto',fnum(c.comb),
+      ...vtCols,
+      c.ferMes||'', c.ferMes?anoAgendado(c.ferMes):'', c.ferVenc||'', c.ferSaldo!=null?c.ferSaldo:''
+    ];
+  })];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Colaboradores');
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=header.map((h,i)=>({wch: i===1?34 : (h.length<8?10:16)}));
+  XLSX.utils.book_append_sheet(wb,ws,'Colaboradores');
   XLSX.writeFile(wb,'Base_Completa_Udiaco.xlsx');
-  toast('\u2705 Base exportada!','success');
+  toast('\u2705 Base completa exportada ('+colaboradores.length+' colaboradores)!','success');
 }
 
 function exportarColabExcel(){
