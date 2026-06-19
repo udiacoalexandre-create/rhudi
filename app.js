@@ -628,58 +628,27 @@ function afterRender(id){
 function pgBaseLista(){
   const empresas=getEmpresaList();
   const deptos=getDeptoList();
+  const statusSet=[...new Set(colaboradores.map(c=>c.status||'').filter(Boolean))].sort();
+  const benOpts=[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'},{value:'cesta',label:'Cesta Básica'},{value:'sem',label:'Sem benefício'},{value:'comb_vt',label:'Comb+VT (erro?)'},{value:'sem_mob',label:'Sem mobilidade'}];
   return `
     <div class="page-header">
       <h2> Base de Colaboradores</h2>
       <p>Gerencie todos os colaboradores da empresa</p>
     </div>
-    <div class="filter-bar">
+    <div class="filter-bar" style="align-items:flex-end">
       <div class="filter-group" style="flex:1">
         <label> Buscar</label>
-        <input type="text" id="bl-q" placeholder="Nome, matr\u00EDcula ou CPF..." oninput="renderColabList()">
+        <input type="text" id="bl-q" placeholder="Nome, matrícula ou CPF..." oninput="renderColabList()">
       </div>
-      <div class="filter-group">
-        <label> Empresa</label>
-        <select id="bl-emp" onchange="renderColabList()">
-          <option value="">Todas</option>
-          ${empresas.map(e=>`<option value="${e.cod}">${e.cod} (${e.qtd})</option>`).join('')}
-        </select>
-      </div>
-      <div class="filter-group">
-        <label> Departamento</label>
-        <select id="bl-dep" onchange="renderColabList()">
-          <option value="">Todos</option>
-          ${deptos.map(d=>`<option value="${d}">${d}</option>`).join('')}
-        </select>
-      </div>
-      <div class="filter-group">
-        <label>Status</label>
-        <select id="bl-status" onchange="renderColabList()">
-          <option value="">Todos</option>
-          <option value="Ativo">Ativo</option>
-          <option value="Inativo">Inativo</option>
-          <option value="Férias">F\u00E9rias</option>
-        </select>
-      </div>
-      <div class="filter-group">
-        <label>Benef\u00EDcio</label>
-        <select id="bl-ben" onchange="renderColabList()">
-          <option value="">Todos</option>
-          <option value="vr">VR</option>
-          <option value="cafe">Caf\u00E9</option>
-          <option value="comb">Combust\u00EDvel</option>
-          <option value="vt">VT</option>
-          <option value="sem">Sem benef\u00EDcio</option>
-          <option disabled>\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500</option>
-          <option value="comb_vt">Comb+VT (erro?)</option>
-          <option value="sem_mob">Sem mobilidade</option>
-        </select>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()">\u2716</button>
+      <div class="filter-group"><label> Empresa</label>${msDropdown('emp','Empresa',empresas.map(e=>({value:e.cod,label:e.cod+' ('+e.qtd+')'})))}</div>
+      <div class="filter-group"><label> Departamento</label>${msDropdown('dep','Departamento',deptos.map(d=>({value:d,label:d})))}</div>
+      <div class="filter-group"><label>Status</label>${msDropdown('status','Status',statusSet.map(x=>({value:x,label:x})))}</div>
+      <div class="filter-group"><label>Benefício</label>${msDropdown('ben','Benefício',benOpts)}</div>
+      <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
       <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()"> Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="exportarBase()"> Base</button>
     </div>
-    <div id="bl-count" class="text-sm text-muted" style="margin-bottom:8px"></div>
+    <div id="bl-count" style="margin:10px 0 8px"></div>
     <div class="tbl-wrap">
       <table class="tbl">
         <thead><tr>
@@ -692,27 +661,81 @@ function pgBaseLista(){
     </div>`;
 }
 
+function benMatchColab(c,b){
+  switch(b){
+    case 'vr': return fnum(c.vr)>0;
+    case 'cafe': return fnum(c.cafe)>0;
+    case 'comb': return fnum(c.comb)>0;
+    case 'vt': return [1,2,3,4].some(n=>fnum(c['vt'+n])>0);
+    case 'cesta': return c.elegibilidade?.cesta!==false;
+    case 'sem': return fnum(c.vr)===0&&fnum(c.cafe)===0&&fnum(c.comb)===0&&[1,2,3,4].every(n=>fnum(c['vt'+n])===0);
+    case 'comb_vt': return fnum(c.comb)>0&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0);
+    case 'sem_mob': return ['perto','carro_empresa'].includes(c.mobilidade);
+    default: return true;
+  }
+}
+
 function filtrarColabs(){
   const q=(g('bl-q')||'').toLowerCase();
-  const empF=g('bl-emp'),depF=g('bl-dep'),stF=g('bl-status'),benF=g('bl-ben');
+  const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), ben=getMs('ben');
   let f=colaboradores.filter(c=>
     c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
-  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
-  if(depF) f=f.filter(c=>(c.depto||'')===depF);
-  if(stF) f=f.filter(c=>c.status===stF);
-  if(benF==='vr') f=f.filter(c=>fnum(c.vr)>0);
-  else if(benF==='cafe') f=f.filter(c=>fnum(c.cafe)>0);
-  else if(benF==='comb') f=f.filter(c=>fnum(c.comb)>0);
-  else if(benF==='vt') f=f.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
-  else if(benF==='sem') f=f.filter(c=>fnum(c.vr)===0&&fnum(c.cafe)===0&&fnum(c.comb)===0&&[1,2,3,4].every(n=>fnum(c['vt'+n])===0));
-  else if(benF==='comb_vt') f=f.filter(c=>fnum(c.comb)>0&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
-  else if(benF==='sem_mob') f=f.filter(c=>['perto','carro_empresa'].includes(c.mobilidade));
+  if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
+  if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
+  if(st.length)  f=f.filter(c=>st.includes(c.status));
+  if(ben.length) f=f.filter(c=>ben.some(b=>benMatchColab(c,b)));
   return f;
 }
 
 function limparFiltrosColab(){
-  ['bl-q','bl-emp','bl-dep','bl-status','bl-ben'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const q=document.getElementById('bl-q'); if(q) q.value='';
+  document.querySelectorAll('.ms-emp,.ms-dep,.ms-status,.ms-ben').forEach(cb=>cb.checked=false);
   renderColabList();
+}
+
+// ── Multi-select dropdown (checkboxes) para os filtros da base ───
+function msDropdown(key,titulo,options){
+  const items=options.map(o=>{
+    const v=String(o.value).replace(/"/g,'&quot;');
+    return '<label style="display:flex;gap:7px;align-items:center;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap;border-radius:4px">'
+      +'<input type="checkbox" class="ms-'+key+'" value="'+v+'" onchange="renderColabList()" style="accent-color:var(--blue);width:14px;height:14px"> '+o.label+'</label>';
+  }).join('');
+  return '<div style="position:relative">'
+    +'<button type="button" id="ms-btn-'+key+'" onclick="toggleMs(\''+key+'\')" '
+    +'style="min-width:150px;text-align:left;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:#fff;font-size:12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center">'
+    +'<span id="ms-lbl-'+key+'">'+titulo+'</span><span style="color:var(--text3)">&#9662;</span></button>'
+    +'<div id="ms-panel-'+key+'" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:30;background:#fff;border:1.5px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:280px;overflow:auto;min-width:200px;padding:4px">'
+    +(items||'<div class="text-xs text-muted" style="padding:8px">Sem opcoes</div>')+'</div></div>';
+}
+
+function toggleMs(key){
+  ['emp','dep','status','ben'].forEach(k=>{
+    const p=document.getElementById('ms-panel-'+k); if(!p) return;
+    p.style.display = (k===key && p.style.display==='none') ? 'block' : 'none';
+  });
+}
+
+function getMs(key){ return [...document.querySelectorAll('.ms-'+key+':checked')].map(c=>c.value); }
+
+// Fecha os paineis de filtro ao clicar fora (vinculado uma unica vez)
+function bindMsOutside(){
+  if(window._msOutsideBound) return;
+  window._msOutsideBound=true;
+  document.addEventListener('click',ev=>{
+    if(ev.target.closest('[id^="ms-btn-"]')||ev.target.closest('[id^="ms-panel-"]')) return;
+    ['emp','dep','status','ben'].forEach(k=>{const p=document.getElementById('ms-panel-'+k); if(p) p.style.display='none';});
+  });
+}
+
+function updateMsCounts(){
+  const map={emp:'Empresa',dep:'Departamento',status:'Status',ben:'Benefício'};
+  Object.keys(map).forEach(k=>{
+    const n=getMs(k).length;
+    const lbl=document.getElementById('ms-lbl-'+k);
+    if(lbl) lbl.textContent = n ? map[k]+' ('+n+')' : map[k];
+    const btn=document.getElementById('ms-btn-'+k);
+    if(btn) btn.style.borderColor = n ? 'var(--blue)' : 'var(--border)';
+  });
 }
 
 function elegBadges(c){
@@ -738,9 +761,16 @@ function ferResumoCelula(c){
 }
 
 function renderColabList(){
+  bindMsOutside();
+  updateMsCounts();
   const f=filtrarColabs();
   const cnt=document.getElementById('bl-count');
-  if(cnt) cnt.textContent=f.length+' de '+colaboradores.length+' colaboradores';
+  if(cnt){
+    const plural=f.length===1?'':'s';
+    cnt.innerHTML='<span style="display:inline-block;background:var(--blue-light);color:var(--blue-dark);font-weight:700;padding:5px 14px;border-radius:20px;font-size:13px">'
+      +f.length+' colaborador'+(f.length===1?'':'es')+' selecionado'+plural+'</span>'
+      +' <span class="text-xs text-muted">de '+colaboradores.length+' no total</span>';
+  }
   const tbody=document.getElementById('bl-tbody'); if(!tbody) return;
   if(f.length===0){
     tbody.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>';
