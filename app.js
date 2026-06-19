@@ -179,6 +179,7 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>CPF</label><input type="text" id="${prefix}-cpf" value="${c?.cpf||''}" oninput="verificarDuplic('${prefix}')"></div>
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
+        <div class="fg span2"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label><input type="text" id="${prefix}-funcao" value="${c?.funcao||''}" placeholder="Ex.: Operador de Empilhadeira"></div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
         <div class="fg"><label>Status</label>
           ${buildStatusSelect(prefix, c)}
@@ -213,9 +214,14 @@ function formColabHTML(prefix, c){
       <p class="text-sm text-muted" style="margin-bottom:10px">Dados compartilhados com o módulo de Controle de Férias — qualquer alteração aqui reflete lá e vice-versa.</p>
       <div class="form-grid">
         <div class="fg"><label>Data de vencimento das férias</label><input type="date" id="${prefix}-fer-venc" value="${c?.ferVenc||''}"></div>
-        <div class="fg"><label>Data de agendamento das férias</label><input type="date" id="${prefix}-fer-agend" value="${c?.ferAgend||''}" oninput="atualizarMesFerias('${prefix}')"></div>
+        <div class="fg"><label>Mês de agendamento das férias</label>
+          <select id="${prefix}-fer-mes" onchange="atualizarAnoFerias('${prefix}')">
+            <option value="">-- Não agendado --</option>
+            ${MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
+          </select>
+          <span style="font-size:10px;color:var(--text3);margin-top:2px">Ano calculado automaticamente: <strong id="${prefix}-fer-ano-label">${c?.ferMes?anoAgendado(c.ferMes):'—'}</strong> (atualiza conforme o mês passa)</span>
+        </div>
         <div class="fg"><label>Saldo de dias acumulados</label><input type="number" id="${prefix}-fer-saldo" min="0" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"></div>
-        <div class="fg"><label>Mês agendado</label><input type="text" id="${prefix}-fer-mes-label" value="${c?.ferMes||''}" readonly style="background:var(--surface2)"><span style="font-size:10px;color:var(--text3);margin-top:2px">Definido automaticamente pela data de agendamento.</span></div>
       </div>
     </div>
     <div class="card" id="${prefix}-card-vr" style="display:none">
@@ -226,12 +232,15 @@ function formColabHTML(prefix, c){
       <div class="card-title">Caf\u00E9 da Manh\u00E3</div>
       <div class="form-grid"><div class="fg"><label>Valor/dia (R$)</label><input type="number" id="${prefix}-cafe" step="0.01" min="0" value="${fnum(c?.cafe)||''}"></div></div>
     </div>
+    <div class="card" id="${prefix}-card-cesta" style="display:none">
+      <div class="card-title">Cesta B\u00E1sica</div>
+      <div class="form-grid"><div class="fg"><label>Valor/m\u00EAs (R$) \u2014 valor fixo, n\u00E3o depende dos dias trabalhados</label><input type="number" id="${prefix}-cesta" step="0.01" min="0" value="${fnum(c?.cesta)||''}" placeholder="185,00"></div></div>
+    </div>
     <div class="card" id="${prefix}-card-mob" style="display:none">
-      <div class="card-title">Tipo de Transporte</div>
+      <div class="card-title">Mobilidade / Combust\u00EDvel</div>
       <div class="form-grid" style="margin-bottom:12px">
         <div class="fg span2"><label>Tipo</label>
           <select id="${prefix}-mobilidade" onchange="toggleMob('${prefix}')">
-            <option value="vt" ${mob==='vt'?'selected':''}>Vale Transporte (VT)</option>
             <option value="combustivel" ${mob==='combustivel'?'selected':''}>Combust\u00EDvel</option>
             <option value="perto" ${mob==='perto'?'selected':''}>Mora perto</option>
             <option value="carro_empresa" ${mob==='carro_empresa'?'selected':''}>Carro da empresa</option>
@@ -241,40 +250,77 @@ function formColabHTML(prefix, c){
       <div id="${prefix}-bloco-comb" style="display:${mob==='combustivel'?'block':'none'}">
         <div class="form-grid"><div class="fg"><label>Combust\u00EDvel Mensal (R$)</label><input type="number" id="${prefix}-comb" step="0.01" min="0" value="${fnum(c?.comb)||''}"></div></div>
       </div>
-      <div id="${prefix}-bloco-vt" style="display:${mob==='vt'?'block':'none'}">
-        <table class="vt-tbl">
-          <thead><tr><th>Linha</th><th>Linha de Transporte</th><th>Valor (R$)</th><th>Viagens/dia</th></tr></thead>
-          <tbody>${[1,2,3,4].map(n=>`<tr>
-            <td style="font-weight:700;color:var(--blue)">L${n}</td>
-            <td><select id="${prefix}-vt-sel${n}" onchange="onVTSelect(${n},'${prefix}')" style="width:100%">${vtOptions(c?c['cod'+n]||'':'')}</select>
-              <input type="hidden" id="${prefix}-vt-tp${n}" value="${c?c['tp'+n]||'':''}">
-              <input type="hidden" id="${prefix}-vt-cod${n}" value="${c?c['cod'+n]||'':''}">
-              <input type="hidden" id="${prefix}-vt-ben${n}" value="${c?c['ben'+n]||'':''}">
-            </td>
-            <td><input type="number" id="${prefix}-vt${n}" step="0.01" min="0" value="${c?fnum(c['vt'+n])||'':''}" style="width:90px"></td>
-            <td><input type="number" id="${prefix}-v${n}" min="0" value="${c?fnum(c['v'+n])||'':''}" style="width:60px"></td>
-          </tr>`).join('')}</tbody>
-        </table>
-      </div>
+    </div>
+    <div class="card" id="${prefix}-card-vt" style="display:none">
+      <div class="card-title">Vale Transporte</div>
+      <table class="vt-tbl">
+        <thead><tr><th>Linha</th><th>Linha de Transporte</th><th>Valor (R$)</th><th>Viagens/dia</th></tr></thead>
+        <tbody>${[1,2,3,4].map(n=>`<tr>
+          <td style="font-weight:700;color:var(--blue)">L${n}</td>
+          <td><select id="${prefix}-vt-sel${n}" onchange="onVTSelect(${n},'${prefix}')" style="width:100%">${vtOptions(c?c['cod'+n]||'':'')}</select>
+            <input type="hidden" id="${prefix}-vt-tp${n}" value="${c?c['tp'+n]||'':''}">
+            <input type="hidden" id="${prefix}-vt-cod${n}" value="${c?c['cod'+n]||'':''}">
+            <input type="hidden" id="${prefix}-vt-ben${n}" value="${c?c['ben'+n]||'':''}">
+          </td>
+          <td><input type="number" id="${prefix}-vt${n}" step="0.01" min="0" value="${c?fnum(c['vt'+n])||'':''}" style="width:90px"></td>
+          <td><input type="number" id="${prefix}-v${n}" min="0" value="${c?fnum(c['v'+n])||'':''}" style="width:60px"></td>
+        </tr>`).join('')}</tbody>
+      </table>
     </div>`;
 }
 
-function elegCheckHTML(prefix, c){
+// Deriva o estado dos toggles de transporte (mutuamente exclusivos) a partir
+// do colaborador, com retrocompatibilidade para dados antigos (so eleg.mobilidade).
+function elegTransporte(c){
   const eleg=c?.elegibilidade||{};
-  const items=[
-    {id:'vr',    label:'Vale Refeicao',      checked:eleg.vr!==undefined?eleg.vr:fnum(c?.vr)>0},
-    {id:'cafe',  label:'Cafe da Manha',        checked:eleg.cafe!==undefined?eleg.cafe:fnum(c?.cafe)>0},
-    {id:'mobilidade',label:'Mobilidade',       checked:eleg.mobilidade!==undefined?eleg.mobilidade:(fnum(c?.comb)>0||[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0))},
-    {id:'folha', label:'Folha de Pagamento',   checked:eleg.folha!==undefined?eleg.folha:true},
-    {id:'premio', label:'Premio Assiduidade',  checked:eleg.premio!==undefined?eleg.premio:true},
-    {id:'ferias', label:'Controle de Ferias',  checked:eleg.ferias!==undefined?eleg.ferias:true},
-  ];
-  return items.map(item=>`
+  const tipo=c?inferMob(c):'perto';
+  if(eleg.vt!==undefined){ // dados novos: flags explicitas
+    let vt=!!eleg.vt, mob=(eleg.mobilidade===true);
+    if(vt) mob=false;
+    return {vt,mob};
+  }
+  // dados antigos / sem dados: infere pelo tipo e pelos valores
+  const temComb=fnum(c?.comb)>0;
+  const temVT=[1,2,3,4].some(n=>fnum(c?.['vt'+n])>0);
+  const temTransporte = (eleg.mobilidade!==undefined) ? (eleg.mobilidade===true) : (temComb||temVT);
+  let vt = temTransporte && tipo==='vt';
+  let mob = temTransporte && ['combustivel','perto','carro_empresa'].includes(tipo);
+  if(vt) mob=false; // VT e Mobilidade/Combustivel nao coexistem
+  return {vt,mob};
+}
+
+function elegItemHTML(prefix,item){
+  return `
     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid ${item.checked?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);cursor:pointer;background:${item.checked?'var(--blue-light)':'var(--surface2)'};transition:all .15s" onclick="toggleEleg(this)">
       <input type="checkbox" name="${prefix}-eleg-${item.id}" id="${prefix}-eleg-${item.id}" ${item.checked?'checked':''}
         onchange="onElegChange('${prefix}','${item.id}',this.checked)" style="accent-color:var(--blue);width:15px;height:15px">
       <span style="font-size:13px;font-weight:500">${item.label}</span>
-    </label>`).join('');
+    </label>`;
+}
+
+function elegGrupoHTML(prefix,titulo,items){
+  return `<div style="flex:1;min-width:190px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:8px;padding-bottom:4px;border-bottom:1.5px solid var(--border)">${titulo}</div>
+    <div style="display:flex;flex-direction:column;gap:8px">${items.map(i=>elegItemHTML(prefix,i)).join('')}</div>
+  </div>`;
+}
+
+function elegCheckHTML(prefix, c){
+  const eleg=c?.elegibilidade||{};
+  const tr=elegTransporte(c);
+  const folha = {id:'folha', label:'Folha de Pagamento',  checked:eleg.folha!==undefined?eleg.folha:true};
+  const ferias= {id:'ferias',label:'Férias',              checked:eleg.ferias!==undefined?eleg.ferias:true};
+  const premio= {id:'premio',label:'Prêmio Assiduidade',  checked:eleg.premio!==undefined?eleg.premio:true};
+  const vr    = {id:'vr',     label:'Vale Refeição',       checked:eleg.vr!==undefined?eleg.vr:fnum(c?.vr)>0};
+  const cafe  = {id:'cafe',   label:'Café da Manhã',       checked:eleg.cafe!==undefined?eleg.cafe:fnum(c?.cafe)>0};
+  const mob   = {id:'mobilidade',label:'Mobilidade / Combustível', checked:tr.mob};
+  const vt    = {id:'vt',     label:'Vale Transporte',     checked:tr.vt};
+  const cesta = {id:'cesta',  label:'Cesta Básica',        checked:eleg.cesta!==undefined?eleg.cesta:true};
+  return `<div style="display:flex;flex-wrap:wrap;gap:24px;width:100%">
+    ${elegGrupoHTML(prefix,'Folha',[folha,ferias])}
+    ${elegGrupoHTML(prefix,'Prêmio',[premio])}
+    ${elegGrupoHTML(prefix,'Benefícios',[vr,cafe,mob,vt,cesta])}
+  </div>`;
 }
 
 function toggleEleg(label){
@@ -284,73 +330,90 @@ function toggleEleg(label){
   label.style.background=cb.checked?'var(--blue-light)':'var(--surface2)';
 }
 
+// Marca/desmarca um checkbox de elegibilidade e atualiza o estilo do pill
+function setElegCheckbox(prefix,id,val){
+  const cb=document.getElementById(prefix+'-eleg-'+id);
+  if(!cb) return;
+  cb.checked=val;
+  const lbl=cb.closest('label'); if(lbl) toggleEleg(lbl);
+}
+
 function onElegChange(prefix, tipo, checked){
-  if(tipo==='vr') document.getElementById(prefix+'-card-vr').style.display=checked?'block':'none';
-  if(tipo==='cafe') document.getElementById(prefix+'-card-cafe').style.display=checked?'block':'none';
+  const show=(card,vis)=>{const el=document.getElementById(prefix+'-card-'+card); if(el) el.style.display=vis?'block':'none';};
+  if(tipo==='vr')    show('vr',checked);
+  if(tipo==='cafe')  show('cafe',checked);
+  if(tipo==='cesta') show('cesta',checked);
+  if(tipo==='ferias')show('fer',checked);
   if(tipo==='mobilidade'){
-    document.getElementById(prefix+'-card-mob').style.display=checked?'block':'none';
+    if(checked){ setElegCheckbox(prefix,'vt',false); show('vt',false); } // exclusivo com VT
+    show('mob',checked);
     if(checked) toggleMob(prefix);
   }
-  if(tipo==='ferias'){
-    const el=document.getElementById(prefix+'-card-fer');
-    if(el) el.style.display=checked?'block':'none';
+  if(tipo==='vt'){
+    if(checked){ setElegCheckbox(prefix,'mobilidade',false); show('mob',false); } // exclusivo com Mobilidade
+    show('vt',checked);
   }
 }
 
-// Atualiza o rotulo "Mes agendado" a partir da data de agendamento (cadastro)
-function atualizarMesFerias(prefix){
-  const ag=document.getElementById(prefix+'-fer-agend')?.value||'';
-  const lbl=document.getElementById(prefix+'-fer-mes-label');
-  if(lbl) lbl.value=ag?mesNomeFerias(ag):'';
+// Atualiza o ano calculado de agendamento conforme o mes escolhido
+function atualizarAnoFerias(prefix){
+  const mes=document.getElementById(prefix+'-fer-mes')?.value||'';
+  const lbl=document.getElementById(prefix+'-fer-ano-label');
+  if(lbl) lbl.textContent=mes?anoAgendado(mes):'—';
 }
 
 function toggleMob(prefix){
-  const v=document.getElementById(prefix+'-mobilidade')?.value||'perto';
+  const v=document.getElementById(prefix+'-mobilidade')?.value||'combustivel';
   const bc=document.getElementById(prefix+'-bloco-comb');
-  const bv=document.getElementById(prefix+'-bloco-vt');
   if(bc) bc.style.display=v==='combustivel'?'block':'none';
-  if(bv) bv.style.display=v==='vt'?'block':'none';
 }
 
 function initFormDisplay(prefix){
-  ['vr','cafe','mobilidade','ferias'].forEach(t=>onElegChange(prefix,t,document.getElementById(prefix+'-eleg-'+t)?.checked||false));
+  ['vr','cafe','cesta','mobilidade','vt','ferias'].forEach(t=>onElegChange(prefix,t,document.getElementById(prefix+'-eleg-'+t)?.checked||false));
 }
 
 function getColabFromForm(prefix){
-  const mob=document.getElementById(prefix+'-mobilidade')?.value||'perto';
+  const mobSel=document.getElementById(prefix+'-mobilidade')?.value||'combustivel';
   const eleg={
     vr:      document.getElementById(prefix+'-eleg-vr')?.checked||false,
     cafe:    document.getElementById(prefix+'-eleg-cafe')?.checked||false,
+    cesta:   document.getElementById(prefix+'-eleg-cesta')?.checked!==false,
     mobilidade: document.getElementById(prefix+'-eleg-mobilidade')?.checked||false,
+    vt:      document.getElementById(prefix+'-eleg-vt')?.checked||false,
     folha:   document.getElementById(prefix+'-eleg-folha')?.checked!==false,
     premio:  document.getElementById(prefix+'-eleg-premio')?.checked!==false,
     ferias:  document.getElementById(prefix+'-eleg-ferias')?.checked!==false,
   };
+  if(eleg.vt) eleg.mobilidade=false; // VT e Mobilidade/Combustivel sao exclusivos
+  // Tipo de transporte resultante (um unico por colaborador)
+  const mob = eleg.vt ? 'vt' : (eleg.mobilidade ? mobSel : 'perto');
   return {
     mat:    document.getElementById(prefix+'-mat')?.value.trim()||'',
     nome:   (document.getElementById(prefix+'-nome')?.value||'').trim().toUpperCase(),
     cpf:    document.getElementById(prefix+'-cpf')?.value.trim()||'',
     admissao: document.getElementById(prefix+'-admissao')?.value||'',
     cargo:  (document.getElementById(prefix+'-cargo')?.value||'').trim().toUpperCase(),
+    funcao: (document.getElementById(prefix+'-funcao')?.value||'').trim().toUpperCase(),
     depto:  document.getElementById(prefix+'-depto')?.value.trim()||'',
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
     diasFixos: fnum(document.getElementById(prefix+'-dias-fixos')?.value)||null,
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
     ferVenc:  document.getElementById(prefix+'-fer-venc')?.value||'',
-    ferAgend: document.getElementById(prefix+'-fer-agend')?.value||'',
+    ferMes:   document.getElementById(prefix+'-fer-mes')?.value||'',
     ferSaldo: (()=>{const v=document.getElementById(prefix+'-fer-saldo')?.value; return (v!==''&&v!=null&&v!==undefined)?fnum(v):null;})(),
     mobilidade:mob, elegibilidade:eleg,
     vr:   eleg.vr?fnum(document.getElementById(prefix+'-vr')?.value):0,
     cafe: eleg.cafe?fnum(document.getElementById(prefix+'-cafe')?.value):0,
+    cesta: eleg.cesta?fnum(document.getElementById(prefix+'-cesta')?.value):0,
     comb: (eleg.mobilidade&&mob==='combustivel')?fnum(document.getElementById(prefix+'-comb')?.value):0,
-    vt1:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt1')?.value):0,
-    v1: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v1')?.value):0,
-    vt2:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt2')?.value):0,
-    v2: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v2')?.value):0,
-    vt3:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt3')?.value):0,
-    v3: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v3')?.value):0,
-    vt4:(eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-vt4')?.value):0,
-    v4: (eleg.mobilidade&&mob==='vt')?fnum(document.getElementById(prefix+'-v4')?.value):0,
+    vt1:eleg.vt?fnum(document.getElementById(prefix+'-vt1')?.value):0,
+    v1: eleg.vt?fnum(document.getElementById(prefix+'-v1')?.value):0,
+    vt2:eleg.vt?fnum(document.getElementById(prefix+'-vt2')?.value):0,
+    v2: eleg.vt?fnum(document.getElementById(prefix+'-v2')?.value):0,
+    vt3:eleg.vt?fnum(document.getElementById(prefix+'-vt3')?.value):0,
+    v3: eleg.vt?fnum(document.getElementById(prefix+'-v3')?.value):0,
+    vt4:eleg.vt?fnum(document.getElementById(prefix+'-vt4')?.value):0,
+    v4: eleg.vt?fnum(document.getElementById(prefix+'-v4')?.value):0,
     tp1:document.getElementById(prefix+'-vt-tp1')?.value||'',
     cod1:document.getElementById(prefix+'-vt-cod1')?.value||'',
     ben1:document.getElementById(prefix+'-vt-ben1')?.value||'',
@@ -385,16 +448,16 @@ async function salvarNovoColab(){
   if(c.mat&&colaboradores.some(x=>x.mat===c.mat)){if(!confirm('Matr\u00EDcula '+c.mat+' j\u00E1 existe. Continuar?'))return;}
   const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
   c._id=id; c.mobilidade=c.mobilidade||inferMob(c);
-  syncFeriasAgendamento(c); // deriva ferMes da data de agendamento, se informada
 
-  // Sugerir mes de ferias (ponto 5): primeiro verifica vaga deixada
-  // por demissao na mesma funcao/depto, senao usa o mes mais comum
-  if(!c.ferMes && c.cargo){
-    let mesSugerido=await consultarVagaFerias(c.cargo, c.depto);
-    if(!mesSugerido) mesSugerido=sugerirMesFeriasNovo(c.cargo);
+  // Sugerir mes de ferias: primeiro verifica vaga deixada por demissao na
+  // mesma FUNCAO/depto (sucessao), senao usa o mes mais comum da funcao
+  const func=funcaoColab(c);
+  if(!c.ferMes && func){
+    let mesSugerido=await consultarVagaFerias(func, c.depto);
+    if(!mesSugerido) mesSugerido=sugerirMesFeriasNovo(func);
     if(mesSugerido){
       c.ferMes=mesSugerido;
-      toast('Mes de ferias sugerido automaticamente: '+mesSugerido,'success');
+      toast('Mes de ferias sugerido automaticamente (funcao coberta): '+mesSugerido,'success');
     }
   }
 
@@ -403,13 +466,15 @@ async function salvarNovoColab(){
 }
 
 function limparFormColab(prefix){
-  ['mat','nome','cpf','cargo','depto','vr','cafe','comb','vt1','v1','vt2','v2','vt3','v3','vt4','v4','fer-venc','fer-agend','fer-saldo','fer-mes-label'].forEach(f=>{
+  ['mat','nome','cpf','cargo','funcao','depto','vr','cafe','cesta','comb','vt1','v1','vt2','v2','vt3','v3','vt4','v4','fer-venc','fer-saldo'].forEach(f=>{
     const el=document.getElementById(prefix+'-'+f); if(el) el.value='';
   });
+  const fm=document.getElementById(prefix+'-fer-mes'); if(fm) fm.value='';
+  const fa=document.getElementById(prefix+'-fer-ano-label'); if(fa) fa.textContent='—';
   const st=document.getElementById(prefix+'-status'); if(st) st.value='Ativo';
   const fi=document.getElementById(prefix+'-filtro'); if(fi) fi.value='OK';
-  const mob=document.getElementById(prefix+'-mobilidade'); if(mob) mob.value='perto';
-  ['vr','cafe','mobilidade'].forEach(t=>onElegChange(prefix,t,false));
+  const mob=document.getElementById(prefix+'-mobilidade'); if(mob) mob.value='combustivel';
+  ['vr','cafe','cesta','mobilidade','vt'].forEach(t=>onElegChange(prefix,t,false));
   onElegChange(prefix,'ferias',document.getElementById(prefix+'-eleg-ferias')?.checked||false);
   const folha=document.getElementById(prefix+'-eleg-folha');
   if(folha){folha.checked=true;toggleEleg(folha.closest('label'));}
@@ -443,7 +508,6 @@ async function salvarColabModal(){
   }
 
   Object.assign(colaboradores[idx],dados);
-  syncFeriasAgendamento(colaboradores[idx]); // mantem ferMes coerente com a data de agendamento
   try{
     await fsSet('colaboradores',editColabId,colaboradores[idx]);
     closeModal('modal-colab');editColabId=null;
@@ -654,7 +718,10 @@ function elegBadges(c){
   const tags=[];
   if(eleg.vr!==false&&fnum(c.vr)>0) tags.push('<span class="badge badge-orange" style="font-size:10px">VR</span>');
   if(eleg.cafe!==false&&fnum(c.cafe)>0) tags.push('<span class="badge badge-yellow" style="font-size:10px">Caf\u00E9</span>');
-  if(eleg.mobilidade!==false&&(fnum(c.comb)>0||[1,2,3,4].some(n=>fnum(c['vt'+n])>0))) tags.push('<span class="badge badge-green" style="font-size:10px">Mob.</span>');
+  const tr=elegTransporte(c);
+  if(tr.mob&&fnum(c.comb)>0) tags.push('<span class="badge badge-green" style="font-size:10px">Mob.</span>');
+  if(tr.vt&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0)) tags.push('<span class="badge badge-blue" style="font-size:10px">VT</span>');
+  if(eleg.cesta!==false) tags.push('<span class="badge badge-green" style="font-size:10px">Cesta</span>');
   if(eleg.folha!==false) tags.push('<span class="badge badge-purple" style="font-size:10px">Folha</span>');
   return tags.length?tags.join(' '):'<span class="badge badge-gray" style="font-size:10px">Nenhum</span>';
 }
@@ -664,11 +731,7 @@ function ferResumoCelula(c){
   if(c.elegibilidade?.ferias===false) return '<span class="text-muted">N/A</span>';
   const f=getFarol(c);
   const venc=(f.vencStr&&f.vencStr!=='—')?f.vencStr:'—';
-  let agend='—';
-  if(c.ferAgend){
-    const d=new Date(c.ferAgend.length===10?c.ferAgend+'T00:00:00':c.ferAgend);
-    agend=isNaN(d.getTime())?(c.ferMes||'—'):d.toLocaleDateString('pt-BR');
-  } else if(c.ferMes){ agend=c.ferMes; }
+  const agend=c.ferMes?agendamentoLabel(c):'—';
   return '<span class="text-muted">Venc:</span> '+venc+'<br><span class="text-muted">Agend:</span> '+agend;
 }
 
@@ -683,7 +746,7 @@ function renderColabList(){
   }
   tbody.innerHTML=f.map(c=>`<tr>
     <td><code>${c.mat||'\u2014'}</code></td>
-    <td><strong style="font-size:13px">${c.nome}</strong>${c.cargo?'<br><span class="text-xs text-muted">'+c.cargo+'</span>':''}</td>
+    <td><strong style="font-size:13px">${c.nome}</strong>${c.cargo?'<br><span class="text-xs text-muted">'+c.cargo+'</span>':''}${c.funcao?'<br><span class="text-xs" style="color:var(--blue)">Função: '+c.funcao+'</span>':''}</td>
     <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
     <td class="text-xs text-muted">${c.admissao||'\u2014'}</td>
     <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
@@ -1150,16 +1213,20 @@ function getCfg(){
 function calcBen(c, dr, du){
   const st = c.status||'Trabalhando';
 
+  // Valor de cesta: fixo, configuravel por colaborador (padrao 185), gated por elegibilidade
+  const cestaVal = (c.elegibilidade?.cesta!==false) ? (fnum(c.cesta)||185) : 0;
+
   // N/A e Demitido: nada
   if(STATUS_NAO_RECEBE.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
 
   // Afastados: só cesta
-  if(STATUS_SO_CESTA.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:185};
+  if(STATUS_SO_CESTA.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:cestaVal};
 
   // Trabalhando, Ferias, Ferias Coletiva: cálculo normal
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
+  const elegVT = (eleg.vt!==undefined) ? eleg.vt : (eleg.mobilidade!==false); // retrocompat
   const vr   = (eleg.vr!==false&&fnum(c.vr)>0)   ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))   : 0;
   const cafe  = (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
   let comb=0;
@@ -1167,9 +1234,9 @@ function calcBen(c, dr, du){
     if(cfg.comb==='fixo') comb=fnum(c.comb);
     else comb=calcMob(fnum(c.comb),dr,du);
   }
-  const vt=(eleg.mobilidade!==false&&mob==='vt')
+  const vt=(elegVT&&mob==='vt')
     ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
-  return {vr,cafe,comb,vt,cesta:185};
+  return {vr,cafe,comb,vt,cesta:cestaVal};
 }
 
 function calcMob(val,dr,du){
@@ -2822,26 +2889,30 @@ function pgFerRadar(){
     <div id="fer-tabela" style="margin-top:20px"></div>`;
 }
 
-// ── Férias: meses e sincronização agendamento <-> mês ────────────
+// ── Férias: meses, ano calculado e função ────────────────────────
 const MESES_FER=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-// Converte uma data (yyyy-mm-dd) no nome do mes usado nas telas de ferias.
-// Forca horario local (T00:00:00) para nao escorregar de mes em fusos negativos.
-function mesNomeFerias(dateStr){
-  if(!dateStr) return '';
-  const d=new Date(dateStr.length===10?dateStr+'T00:00:00':dateStr);
-  if(isNaN(d.getTime())) return '';
-  return MESES_FER[d.getMonth()]||'';
+// Funcao que controla as ferias (cai para o cargo quando ainda nao preenchida).
+function funcaoColab(c){
+  return ((c&&(c.funcao||c.cargo))||'').trim().toUpperCase();
 }
 
-// Mantem ferMes coerente com ferAgend (a data de agendamento e a fonte da verdade).
-// Se houver data de agendamento, o mes e derivado dela; senao preserva o mes ja definido.
-function syncFeriasAgendamento(c){
-  if(c && c.ferAgend){
-    const m=mesNomeFerias(c.ferAgend);
-    if(m) c.ferMes=m;
-  }
-  return c;
+// Ano de agendamento CALCULADO: proxima ocorrencia do mes a partir de uma
+// data de referencia (hoje, por padrao). Se o mes ja passou neste ano, vai
+// para o ano seguinte — assim o ano "se atualiza" conforme o tempo passa.
+function anoAgendado(ferMesNome, ref){
+  if(!ferMesNome) return '—';
+  const idx=MESES_FER.indexOf(ferMesNome);
+  if(idx<0) return '—';
+  const base=ref||new Date();
+  const ano=base.getFullYear();
+  return idx>=base.getMonth() ? ano : ano+1;
+}
+
+// Rotulo "Mes/Ano" para exibicao do agendamento
+function agendamentoLabel(c){
+  if(!c||!c.ferMes) return '—';
+  return c.ferMes+'/'+anoAgendado(c.ferMes);
 }
 
 function getFarol(c){
@@ -3005,7 +3076,7 @@ function abrirDetalheFerias(id){
     <div class="modal-overlay" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
       <div class="modal" style="max-width:520px">
         <div class="modal-title">F\u00E9rias \u2014 ${c.nome}</div>
-        <div class="modal-sub">Matricula ${c.mat||'\u2014'} &middot; Vencimento atual: ${f.vencStr} (${f.label})</div>
+        <div class="modal-sub">Matricula ${c.mat||'\u2014'} &middot; Funcao: <strong>${funcaoColab(c)||'\u2014'}</strong> &middot; Vencimento atual: ${f.vencStr} (${f.label})</div>
         <div class="form-grid cols2">
           <div class="fg">
             <label>Data de admissao</label>
@@ -3020,16 +3091,12 @@ function abrirDetalheFerias(id){
             <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90">
           </div>
           <div class="fg">
-            <label>Data de agendamento das ferias</label>
-            <input type="date" id="ferd-agend" value="${c.ferAgend||''}" oninput="onFerAgendDetalhe()">
-          </div>
-          <div class="fg">
             <label>Mes agendado para tirar ferias</label>
-            <select id="ferd-mes">
+            <select id="ferd-mes" onchange="atualizarAnoFerd()">
               <option value="">-- Nao agendado --</option>
               ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
             </select>
-            <span class="text-xs text-muted" style="margin-top:2px">Se informar a data acima, o mes e definido por ela.</span>
+            <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendado(c.ferMes):'\u2014'}</strong></span>
           </div>
         </div>
         <p class="text-xs text-muted" style="margin-top:10px">A data de vencimento, se deixada em branco, e calculada automaticamente a partir da admissao.</p>
@@ -3046,41 +3113,54 @@ function abrirDetalheFerias(id){
   verificarAlertasFerias(id);
 }
 
-// Verifica se ha conflito de funcao no mesmo mes ao mudar o agendamento
+// Avisa sobre cobertura da FUNCAO ao agendar/trocar ferias e mostra a
+// distribuicao dos agendamentos da funcao por mes (nao bloqueia).
 function verificarAlertasFerias(id){
   const sel=document.getElementById('ferd-mes');
   if(!sel) return;
-  sel.addEventListener('change', ()=>{
+  const render=()=>{
     const c=colaboradores.find(x=>x._id===id);
-    const novoMes=sel.value;
     const alertasEl=document.getElementById('ferd-alertas');
-    if(!novoMes||!c){ alertasEl.innerHTML=''; return; }
+    if(!c||!alertasEl) return;
+    const func=funcaoColab(c);
+    const novoMes=sel.value;
+    if(!func){ alertasEl.innerHTML=''; return; }
 
-    // Verificar outros colaboradores da mesma funcao/cargo no mesmo mes
-    const mesmoCargo=colaboradores.filter(x=>
-      x._id!==id &&
-      x.cargo && c.cargo &&
-      x.cargo.toUpperCase()===c.cargo.toUpperCase() &&
-      x.ferMes===novoMes &&
-      !STATUS_NAO_RECEBE.includes(x.status)
+    // Colegas da mesma funcao (exclui este e quem nao recebe ferias)
+    const colegas=colaboradores.filter(x=>
+      x._id!==id && funcaoColab(x)===func && !STATUS_NAO_RECEBE.includes(x.status)
     );
 
-    if(mesmoCargo.length>0){
-      alertasEl.innerHTML='<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;font-size:12px;color:#92400E">'
-        +'<strong>Atencao:</strong> '+mesmoCargo.length+' colaborador(es) com a mesma funcao ja estao agendados para '+novoMes+': '
-        +mesmoCargo.map(x=>x.nome).join(', ')
-        +'</div>';
-    } else {
-      alertasEl.innerHTML='';
+    let html='';
+    if(novoMes){
+      const mesmoMes=colegas.filter(x=>x.ferMes===novoMes);
+      if(mesmoMes.length>0){
+        html+='<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;font-size:12px;color:#92400E">'
+          +'<strong>Atencao a cobertura:</strong> '+mesmoMes.length+' colaborador(es) da funcao "'+func+'" ja estao em '+novoMes+': '
+          +mesmoMes.map(x=>x.nome).join(', ')+'. Verifique se a funcao seguira coberta.'
+          +'</div>';
+      }
     }
-  });
+    // Painel de cobertura da funcao por mes
+    if(colegas.length>0){
+      const dist={};
+      colegas.forEach(x=>{ if(x.ferMes) dist[x.ferMes]=(dist[x.ferMes]||0)+1; });
+      const linhas=MESES_FER.filter(m=>dist[m]).map(m=>m.substring(0,3)+': '+dist[m]).join(' · ');
+      html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--text2);margin-top:6px">'
+        +'<strong>Funcao "'+func+'"</strong> — '+(colegas.length+1)+' pessoa(s) no total. Agendamentos: '+(linhas||'nenhum')
+        +'</div>';
+    }
+    alertasEl.innerHTML=html;
+  };
+  sel.addEventListener('change', render);
+  render(); // estado inicial ao abrir o modal
 }
 
-// No modal de ferias, ao informar a data de agendamento, sincroniza o select de mes
-function onFerAgendDetalhe(){
-  const ag=document.getElementById('ferd-agend')?.value||'';
+// Atualiza o ano calculado exibido no modal de ferias
+function atualizarAnoFerd(){
   const sel=document.getElementById('ferd-mes');
-  if(sel && ag){ const m=mesNomeFerias(ag); if(m) sel.value=m; }
+  const ano=document.getElementById('ferd-ano');
+  if(ano&&sel) ano.textContent=sel.value?anoAgendado(sel.value):'—';
 }
 
 async function salvarDetalheFerias(id){
@@ -3088,14 +3168,11 @@ async function salvarDetalheFerias(id){
   const saldo=fnum(document.getElementById('ferd-saldo')?.value);
   const mes=document.getElementById('ferd-mes')?.value||'';
   const venc=document.getElementById('ferd-venc')?.value||'';
-  const agend=document.getElementById('ferd-agend')?.value||'';
   const admissao=document.getElementById('ferd-admissao')?.value||'';
 
   c.ferSaldo=saldo;
   c.ferVenc=venc||'';
-  c.ferAgend=agend||'';
-  // Se houver data de agendamento, o mes deriva dela; senao usa o mes escolhido no select
-  c.ferMes=agend?(mesNomeFerias(agend)||mes):mes;
+  c.ferMes=mes;
   c.admissao=admissao||c.admissao||'';
 
   try{
@@ -4815,13 +4892,14 @@ function renderAlertasFeriasMes(dados){
   el.innerHTML=html;
 }
 
-// ── Sugestao de mes para novo colaborador (ponto 5) ───────────────
-// Chamada ao salvar um NOVO colaborador (cadastro)
-function sugerirMesFeriasNovo(cargo){
-  if(!cargo) return null;
+// ── Sugestao de mes para novo colaborador ─────────────────────────
+// Chamada ao salvar um NOVO colaborador (cadastro). Baseada na FUNCAO.
+function sugerirMesFeriasNovo(funcao){
+  const fn=(funcao||'').trim().toUpperCase();
+  if(!fn) return null;
   // Buscar colaboradores da mesma funcao que tem mes agendado
   const mesmosCargo=colaboradores.filter(c=>
-    c.cargo && c.cargo.toUpperCase()===cargo.toUpperCase() &&
+    funcaoColab(c)===fn &&
     c.ferMes &&
     !STATUS_NAO_RECEBE.includes(c.status)
   );
@@ -4838,9 +4916,10 @@ function sugerirMesFeriasNovo(cargo){
 // vago para sugerir ao substituto da mesma funcao. Salvo no Firebase
 // na colecao 'config', doc 'feriasVagas'.
 async function registrarVagaFerias(colab){
-  if(!colab.ferMes || !colab.cargo) return;
+  const func=funcaoColab(colab);
+  if(!colab.ferMes || !func) return;
   try{
-    const key=colab.cargo.toUpperCase()+'|'+(colab.depto||'');
+    const key=func+'|'+(colab.depto||'');
     const snap=await window._getDoc(window._doc('config','feriasVagas'));
     const vagas=snap.exists()?(snap.data().vagas||{}):{};
     vagas[key]=colab.ferMes;
@@ -4848,9 +4927,9 @@ async function registrarVagaFerias(colab){
   }catch(e){ console.error('Erro ao registrar vaga:', e); }
 }
 
-async function consultarVagaFerias(cargo, depto){
+async function consultarVagaFerias(funcao, depto){
   try{
-    const key=(cargo||'').toUpperCase()+'|'+(depto||'');
+    const key=(funcao||'').trim().toUpperCase()+'|'+(depto||'');
     const snap=await window._getDoc(window._doc('config','feriasVagas'));
     if(!snap.exists()) return null;
     const vagas=snap.data().vagas||{};
