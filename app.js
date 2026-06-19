@@ -59,6 +59,7 @@ let premioData = null;
 let folhaCompetencia = '';
 let premioCompetencia = '';
 let eventosCustom = {};
+let deParaPendente = null;
 
 
 
@@ -533,6 +534,7 @@ const MODULES = {
     {id:'base-lista',icon:'',label:'Colaboradores'},
     {id:'base-atualizacao',icon:'',label:'Atualizacao Mensal'},
     {id:'base-import',icon:'',label:'Importar / Sync'},
+    {id:'base-defpara',icon:'',label:'Importar Funcao/Ferias'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
   beneficios:{pages:[
@@ -594,7 +596,7 @@ function showPage(id){
 
 function renderPage(id){
   const pages={
-    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'premio-main':pgPremioAssiduidade,
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
@@ -762,6 +764,215 @@ function renderColabList(){
       <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${c.nome.replace(/'/g,"\\'")}')"></button>
     </td>
   </tr>`).join('');
+}
+
+// ============================================================
+// BASE: DE/PARA — Importar Funcao, Admissao e Agendamento de Ferias
+// Casa cada linha da planilha por NOME + MATRICULA contra a base
+// e preenche funcao, admissao e mes de agendamento (ferMes).
+// Nada e gravado antes do preview ser confirmado.
+// ============================================================
+function pgBaseDePara(){
+  return `
+    <div class="page-header"><h2>Importar Função / Admissão / Férias</h2>
+      <p>De/para por <strong>nome</strong> e <strong>matrícula</strong>. Preenche Função, Data de Admissão e o Mês de agendamento de férias.</p></div>
+    <div class="card">
+      <div class="alert alert-info" style="margin-bottom:14px">
+        Colunas reconhecidas em qualquer aba: <strong>NOME</strong>, <strong>MATRICULA</strong>, <strong>FUNÇÃO</strong>, <strong>ADMISSÃO</strong> e a coluna de mês de férias (ex.: "DATA PARA TIRAR FÉRIAS").<br>
+        Nada é gravado antes de você revisar o preview e clicar em confirmar.
+      </div>
+      <div class="upload-zone" onclick="document.getElementById('defpara-file').click()">
+        <input type="file" id="defpara-file" accept=".xlsx,.xls" onchange="importarDePara(event)">
+        <div class="upload-icon"></div>
+        <div class="upload-text">Clique para selecionar a planilha</div>
+        <div class="upload-sub">.xlsx ou .xls</div>
+      </div>
+      <div id="defpara-prev" style="margin-top:14px"></div>
+    </div>`;
+}
+
+// ── normalizacoes e parsers ──────────────────────────────────────
+function _normNome(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
+function _normMatDigits(s){
+  let t=String(s==null?'':s).trim();
+  if(/^\d+\.0+$/.test(t)) t=t.split('.')[0]; // artefato de numero "10010173.0"
+  return t.replace(/\D/g,'');
+}
+const _MESES_NORM={JANEIRO:'Janeiro',FEVEREIRO:'Fevereiro',MARCO:'Marco',ABRIL:'Abril',MAIO:'Maio',JUNHO:'Junho',JULHO:'Julho',AGOSTO:'Agosto',SETEMBRO:'Setembro',OUTUBRO:'Outubro',NOVEMBRO:'Novembro',DEZEMBRO:'Dezembro'};
+function _fmtDataIso(d){
+  if(!(d instanceof Date)||isNaN(d.getTime())) return '';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _parseDataCelula(v){
+  if(v==null||v==='') return '';
+  if(v instanceof Date) return _fmtDataIso(v);
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(m){ const yy=m[3].length===2?'20'+m[3]:m[3]; return yy+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); }
+  return '';
+}
+// Retorna {mes, raw}: mes = nome do mes (MESES_FER) ou '' se nao reconhecido
+function _parseMesFerias(v){
+  if(v==null||v==='') return {mes:'',raw:''};
+  if(v instanceof Date) return {mes:MESES_FER[v.getMonth()]||'', raw:_fmtDataIso(v)};
+  const raw=String(v).trim();
+  const norm=raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+  for(const k in _MESES_NORM){ if(norm.includes(k)) return {mes:_MESES_NORM[k], raw}; }
+  const iso=_parseDataCelula(raw);
+  if(iso){ const d=new Date(iso+'T00:00:00'); if(!isNaN(d.getTime())) return {mes:MESES_FER[d.getMonth()]||'', raw}; }
+  return {mes:'', raw};
+}
+
+async function importarDePara(event){
+  const file=event.target.files[0]; if(!file) return;
+  const prev=document.getElementById('defpara-prev');
+  if(prev) prev.innerHTML='<div class="alert alert-info">Processando planilha...</div>';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});
+      const porNome={}, porMat={};
+      colaboradores.forEach(c=>{
+        const n=_normNome(c.nome); if(n){(porNome[n]=porNome[n]||[]).push(c);}
+        const md=_normMatDigits(c.mat); if(md){(porMat[md]=porMat[md]||[]).push(c);}
+      });
+      const atualizar=[], jaOk=[], naoEnc=[], ambiguos=[], feriasNaoRec=[];
+      const vistos=new Set();
+      wb.SheetNames.forEach(sn=>{
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1});
+        let hi=-1;
+        for(let i=0;i<Math.min(8,rows.length);i++){
+          const low=(rows[i]||[]).map(x=>String(x||'').toLowerCase());
+          if(low.some(h=>h.includes('nome'))&&low.some(h=>h.includes('matr'))){ hi=i; break; }
+        }
+        if(hi<0) return; // aba sem estrutura reconhecida
+        const hs=rows[hi].map(h=>String(h||'').toLowerCase().trim());
+        const iNome=hs.findIndex(h=>h.includes('nome'));
+        const iMat=hs.findIndex(h=>h.includes('matr'));
+        const iFunc=hs.findIndex(h=>h.includes('fun'));
+        const iAdm=hs.findIndex(h=>h.includes('admiss'));
+        const iFer=hs.findIndex(h=>h.includes('tirar')||h.includes('ferias')||h.includes('férias'));
+        for(let i=hi+1;i<rows.length;i++){
+          const r=rows[i]; if(!r) continue;
+          const nomeCel=iNome>=0?r[iNome]:''; if(!nomeCel||!String(nomeCel).trim()) continue;
+          const nome=String(nomeCel).trim();
+          const rNomeN=_normNome(nome);
+          const rMatRaw=iMat>=0?r[iMat]:'';
+          const rMatD=_normMatDigits(rMatRaw);
+          const func=iFunc>=0?String(r[iFunc]||'').trim().toUpperCase():'';
+          const admIso=iAdm>=0?_parseDataCelula(r[iAdm]):'';
+          const fer=iFer>=0?_parseMesFerias(r[iFer]):{mes:'',raw:''};
+
+          // de/para: matricula tem prioridade; depois nome; desambigua com o outro
+          let alvo=null, via='';
+          const byMat=rMatD?(porMat[rMatD]||[]):[];
+          const byNome=porNome[rNomeN]||[];
+          if(byMat.length===1){ alvo=byMat[0]; via='matrícula'; }
+          else if(byNome.length===1){ alvo=byNome[0]; via='nome'; }
+          else if(byNome.length>1){
+            const inter=byNome.filter(c=>rMatD&&_normMatDigits(c.mat)===rMatD);
+            if(inter.length===1){ alvo=inter[0]; via='nome+matrícula'; }
+            else { ambiguos.push({nome,mat:String(rMatRaw||''),motivo:byNome.length+' homônimos na base'}); continue; }
+          }
+          else if(byMat.length>1){
+            const inter=byMat.filter(c=>_normNome(c.nome)===rNomeN);
+            if(inter.length===1){ alvo=inter[0]; via='matrícula+nome'; }
+            else { ambiguos.push({nome,mat:String(rMatRaw||''),motivo:byMat.length+' matrículas iguais'}); continue; }
+          }
+          else { naoEnc.push({nome,mat:String(rMatRaw||'')}); continue; }
+
+          if(vistos.has(alvo._id)) continue; // ja tratado em aba anterior
+          vistos.add(alvo._id);
+
+          if(iFer>=0 && fer.raw && !fer.mes) feriasNaoRec.push({nome,valor:fer.raw});
+
+          const ch=[];
+          if(func && _normNome(func)!==_normNome(alvo.funcao||'')) ch.push({campo:'Função',de:alvo.funcao||'—',para:func});
+          if(admIso && admIso!==(alvo.admissao||'')) ch.push({campo:'Admissão',de:alvo.admissao||'—',para:admIso});
+          if(fer.mes && fer.mes!==(alvo.ferMes||'')) ch.push({campo:'Mês férias',de:alvo.ferMes||'—',para:fer.mes});
+
+          const reg={id:alvo._id,nome:alvo.nome,via,func,admIso,mes:fer.mes,ch};
+          if(ch.length) atualizar.push(reg); else jaOk.push(reg);
+        }
+      });
+      deParaPendente={atualizar,jaOk,naoEnc,ambiguos,feriasNaoRec};
+      renderDeParaPreview();
+    }catch(err){
+      if(prev) prev.innerHTML='<div class="alert alert-error">Erro ao ler a planilha: '+err.message+'</div>';
+    }
+  };
+  reader.readAsBinaryString(file);
+  event.target.value='';
+}
+
+function renderDeParaPreview(){
+  const prev=document.getElementById('defpara-prev'); if(!prev||!deParaPendente) return;
+  const {atualizar,jaOk,naoEnc,ambiguos,feriasNaoRec}=deParaPendente;
+  const card=(cor,n,lbl)=>`<div class="stat-card ${cor}" style="padding:10px 12px"><div class="stat-val" style="font-size:20px">${n}</div><div class="stat-label" style="font-size:11px">${lbl}</div></div>`;
+  let html=`<div class="stats-grid" style="margin-bottom:14px">
+    ${card('green',atualizar.length,'A atualizar')}
+    ${card('blue',jaOk.length,'Já corretos')}
+    ${card('red',naoEnc.length,'Não encontrados')}
+    ${card('yellow',ambiguos.length,'Ambíguos')}
+    ${card('orange',feriasNaoRec.length,'Férias não reconhecida')}
+  </div>`;
+
+  if(atualizar.length){
+    const linhas=atualizar.slice(0,150).map(r=>`<tr>
+      <td style="font-weight:500">${r.nome}</td>
+      <td class="text-xs text-muted">${r.via}</td>
+      <td class="text-xs">${r.ch.map(c=>c.campo+': <strong>'+c.de+'</strong> → <strong style="color:var(--green)">'+c.para+'</strong>').join('<br>')}</td>
+    </tr>`).join('');
+    html+=`<div style="font-weight:700;font-size:12px;margin:6px 0">A atualizar (${atualizar.length}${atualizar.length>150?' — mostrando 150':''})</div>
+      <div class="tbl-wrap" style="max-height:340px;overflow:auto;margin-bottom:12px"><table class="tbl"><thead><tr><th>Nome</th><th>Match</th><th>Mudanças</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+  }
+  if(naoEnc.length){
+    html+=`<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--red)">Não encontrados na base (${naoEnc.length}) — planilha tem, base não</summary>
+      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${naoEnc.map(x=>x.nome+(x.mat?' ('+x.mat+')':'')).join('<br>')}</div></details>`;
+  }
+  if(ambiguos.length){
+    html+=`<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--yellow)">Ambíguos — revisar manualmente (${ambiguos.length})</summary>
+      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${ambiguos.map(x=>x.nome+(x.mat?' ('+x.mat+')':'')+' — '+x.motivo).join('<br>')}</div></details>`;
+  }
+  if(feriasNaoRec.length){
+    html+=`<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--orange)">Mês de férias não reconhecido (${feriasNaoRec.length}) — função/admissão são aplicadas, mês fica em branco</summary>
+      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${feriasNaoRec.map(x=>x.nome+': "'+x.valor+'"').join('<br>')}</div></details>`;
+  }
+
+  html+=`<div class="btn-row" style="margin-top:8px">
+    <button class="btn btn-primary" onclick="aplicarDePara()" ${atualizar.length?'':'disabled'}>Confirmar e gravar ${atualizar.length} atualização(ões)</button>
+    <button class="btn btn-ghost" onclick="deParaPendente=null;document.getElementById('defpara-prev').innerHTML=''">Cancelar</button>
+  </div>`;
+  prev.innerHTML=html;
+}
+
+async function aplicarDePara(){
+  if(!deParaPendente||!deParaPendente.atualizar.length) return;
+  const lista=deParaPendente.atualizar.slice();
+  const prev=document.getElementById('defpara-prev');
+  if(prev) prev.innerHTML='<div class="alert alert-info">Gravando '+lista.length+' atualização(ões)...</div>';
+  let ok=0;
+  try{
+    for(let i=0;i<lista.length;i+=400){
+      const fatia=lista.slice(i,i+400);
+      const b=window._writeBatch(window._db);
+      fatia.forEach(r=>{
+        const c=colaboradores.find(x=>x._id===r.id); if(!c) return;
+        if(r.func) c.funcao=r.func;
+        if(r.admIso) c.admissao=r.admIso;
+        if(r.mes) c.ferMes=r.mes;
+        b.set(window._doc('colaboradores',c._id),c); ok++;
+      });
+      await b.commit();
+    }
+    toast('✅ '+ok+' colaboradores atualizados','success');
+    deParaPendente=null;
+    if(prev) prev.innerHTML='<div class="alert alert-success">✅ <strong>'+ok+' colaboradores</strong> atualizados (função, admissão e/ou mês de férias).</div>';
+    if(currentPage==='base-lista') renderColabList();
+  }catch(err){
+    if(prev) prev.innerHTML='<div class="alert alert-error">Erro ao gravar: '+err.message+'</div>';
+  }
 }
 
 // ============================================================
