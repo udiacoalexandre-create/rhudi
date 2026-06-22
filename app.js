@@ -311,7 +311,8 @@ function elegGrupoHTML(prefix,titulo,items){
 function elegCheckHTML(prefix, c){
   const eleg=c?.elegibilidade||{};
   const tr=elegTransporte(c);
-  const folha = {id:'folha', label:'Folha de Pagamento',  checked:eleg.folha!==undefined?eleg.folha:true};
+  const folhaCLT= {id:'folhaCLT', label:'Folha CLT (Senior)',        checked:eleg.folhaCLT!==undefined?eleg.folhaCLT:(eleg.folha!==false)};
+  const folhaMEI= {id:'folhaMEI', label:'Folha MEI (extra-sistema)', checked:eleg.folhaMEI!==undefined?eleg.folhaMEI:false};
   const ferias= {id:'ferias',label:'Férias',              checked:eleg.ferias!==undefined?eleg.ferias:true};
   const premio= {id:'premio',label:'Prêmio Assiduidade',  checked:eleg.premio!==undefined?eleg.premio:true};
   const vr    = {id:'vr',     label:'Vale Refeição',       checked:eleg.vr!==undefined?eleg.vr:fnum(c?.vr)>0};
@@ -320,7 +321,7 @@ function elegCheckHTML(prefix, c){
   const vt    = {id:'vt',     label:'Vale Transporte',     checked:tr.vt};
   const cesta = {id:'cesta',  label:'Cesta Básica',        checked:eleg.cesta!==undefined?eleg.cesta:true};
   return `<div style="display:flex;flex-wrap:wrap;gap:24px;width:100%">
-    ${elegGrupoHTML(prefix,'Folha',[folha,ferias])}
+    ${elegGrupoHTML(prefix,'Folha',[folhaCLT,folhaMEI,ferias])}
     ${elegGrupoHTML(prefix,'Prêmio',[premio])}
     ${elegGrupoHTML(prefix,'Benefícios',[vr,cafe,mob,vt,cesta])}
   </div>`;
@@ -383,10 +384,12 @@ function getColabFromForm(prefix){
     cesta:   document.getElementById(prefix+'-eleg-cesta')?.checked!==false,
     mobilidade: document.getElementById(prefix+'-eleg-mobilidade')?.checked||false,
     vt:      document.getElementById(prefix+'-eleg-vt')?.checked||false,
-    folha:   document.getElementById(prefix+'-eleg-folha')?.checked!==false,
+    folhaCLT: document.getElementById(prefix+'-eleg-folhaCLT')?.checked!==false,
+    folhaMEI: document.getElementById(prefix+'-eleg-folhaMEI')?.checked||false,
     premio:  document.getElementById(prefix+'-eleg-premio')?.checked!==false,
     ferias:  document.getElementById(prefix+'-eleg-ferias')?.checked!==false,
   };
+  eleg.folha = eleg.folhaCLT||eleg.folhaMEI; // compat: "esta na folha" = CLT ou MEI
   if(eleg.vt) eleg.mobilidade=false; // VT e Mobilidade/Combustivel sao exclusivos
   // Tipo de transporte resultante (um unico por colaborador)
   const mob = eleg.vt ? 'vt' : (eleg.mobilidade ? mobSel : 'perto');
@@ -479,8 +482,10 @@ function limparFormColab(prefix){
   const mob=document.getElementById(prefix+'-mobilidade'); if(mob) mob.value='combustivel';
   ['vr','cafe','cesta','mobilidade','vt'].forEach(t=>onElegChange(prefix,t,false));
   onElegChange(prefix,'ferias',document.getElementById(prefix+'-eleg-ferias')?.checked||false);
-  const folha=document.getElementById(prefix+'-eleg-folha');
-  if(folha){folha.checked=true;toggleEleg(folha.closest('label'));}
+  const fclt=document.getElementById(prefix+'-eleg-folhaCLT');
+  if(fclt){fclt.checked=true;toggleEleg(fclt.closest('label'));}
+  const fmei=document.getElementById(prefix+'-eleg-folhaMEI');
+  if(fmei){fmei.checked=false;toggleEleg(fmei.closest('label'));}
   const dal=document.getElementById(prefix+'-duplic-alert'); if(dal) dal.innerHTML='';
 }
 
@@ -751,7 +756,10 @@ function elegBadges(c){
   if(tr.mob&&fnum(c.comb)>0) tags.push('<span class="badge badge-green" style="font-size:10px">Mob.</span>');
   if(tr.vt&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0)) tags.push('<span class="badge badge-blue" style="font-size:10px">VT</span>');
   if(eleg.cesta!==false) tags.push('<span class="badge badge-green" style="font-size:10px">Cesta</span>');
-  if(eleg.folha!==false) tags.push('<span class="badge badge-purple" style="font-size:10px">Folha</span>');
+  const fclt=eleg.folhaCLT!==undefined?eleg.folhaCLT:(eleg.folha!==false);
+  const fmei=eleg.folhaMEI===true;
+  if(fclt) tags.push('<span class="badge badge-purple" style="font-size:10px">Folha CLT</span>');
+  if(fmei) tags.push('<span class="badge badge-purple" style="font-size:10px">Folha MEI</span>');
   return tags.length?tags.join(' '):'<span class="badge badge-gray" style="font-size:10px">Nenhum</span>';
 }
 
@@ -1130,7 +1138,7 @@ async function syncAcao(tipo, idx){
     const d=item.dados;
     const id=d.mat||(d.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
     const c={_id:id,mat:d.mat,nome:d.nome,cpf:d.cpf||'',status:'Ativo',mobilidade:'perto',
-      elegibilidade:{vr:false,cafe:false,mobilidade:false,folha:true},
+      elegibilidade:{vr:false,cafe:false,mobilidade:false,folha:true,folhaCLT:true,folhaMEI:false},
       vr:0,cafe:0,comb:0,vt1:0,v1:0,vt2:0,v2:0,vt3:0,v3:0,vt4:0,v4:0,cargo:'',depto:''};
     await fsSet('colaboradores',id,c);
     colaboradores.push(c);
@@ -1236,7 +1244,7 @@ function processarCarga(event){
         admissao:r[iAdm]?new Date(r[iAdm]).toISOString().split('T')[0]:'',
         mobilidade:String(r[iMob]||'perto').trim().toLowerCase(),
         vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
-        elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true}
+        elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true,folhaCLT:true,folhaMEI:false}
       });
     }
 
@@ -2264,7 +2272,7 @@ function exportarBase(){
   const sim=b=>b?'SIM':'N\u00C3O';
   const header=[
     'Matr\u00EDcula','Nome','CPF','Cargo','Fun\u00E7\u00E3o','Departamento','Status','Tipo/Filtro','Admiss\u00E3o','Dias Fixos',
-    'Eleg. Folha','Eleg. Pr\u00EAmio Assiduidade','Eleg. F\u00E9rias',
+    'Eleg. Folha CLT','Eleg. Folha MEI','Eleg. Pr\u00EAmio Assiduidade','Eleg. F\u00E9rias',
     'Eleg. Vale Refei\u00E7\u00E3o','Eleg. Caf\u00E9','Eleg. Mobilidade/Combust\u00EDvel','Eleg. Vale Transporte','Eleg. Cesta B\u00E1sica',
     'VR/dia','Caf\u00E9/dia','Cesta/m\u00EAs','Tipo Mobilidade','Combust\u00EDvel/m\u00EAs',
     'VT L1 Valor','VT L1 Viagens','VT L1 Tipo','VT L1 C\u00F3digo','VT L1 Linha',
@@ -2278,11 +2286,13 @@ function exportarBase(){
     const tr=elegTransporte(c);
     const elegVR  = e.vr!==undefined?e.vr:fnum(c.vr)>0;
     const elegCafe= e.cafe!==undefined?e.cafe:fnum(c.cafe)>0;
+    const elegFCLT= e.folhaCLT!==undefined?e.folhaCLT:(e.folha!==false);
+    const elegFMEI= e.folhaMEI===true;
     const cestaVal= (e.cesta!==false) ? (fnum(c.cesta)||185) : 0;
     const vtCols=[1,2,3,4].reduce((a,n)=>a.concat([fnum(c['vt'+n]),fnum(c['v'+n]),c['tp'+n]||'',c['cod'+n]||'',c['ben'+n]||'']),[]);
     return [
       c.mat||'',c.nome||'',c.cpf||'',c.cargo||'',c.funcao||'',c.depto||'',c.status||'',c.filtro||'OK',c.admissao||'',c.diasFixos!=null?c.diasFixos:'',
-      sim(e.folha!==false),sim(e.premio!==false),sim(e.ferias!==false),
+      sim(elegFCLT),sim(elegFMEI),sim(e.premio!==false),sim(e.ferias!==false),
       sim(elegVR),sim(elegCafe),sim(tr.mob),sim(tr.vt),sim(e.cesta!==false),
       fnum(c.vr),fnum(c.cafe),cestaVal,(!tr.vt&&!tr.mob)?'N/A':(c.mobilidade||'perto'),fnum(c.comb),
       ...vtCols,
@@ -2349,7 +2359,7 @@ async function importarBase(event){
         cargo:String(r[iCargo]||'').trim().toUpperCase(),depto:String(r[iDepto]||'').trim(),
         status:String(r[iStat]||'Ativo').trim(),mobilidade:String(r[iMob]||'perto').trim().toLowerCase(),
         vr:fnum(r[iVR]),cafe:fnum(r[iCafe]),comb:fnum(r[iComb]),
-        elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true}};
+        elegibilidade:{vr:fnum(r[iVR])>0,cafe:fnum(r[iCafe])>0,mobilidade:fnum(r[iComb])>0,folha:true,folhaCLT:true,folhaMEI:false}};
       const id=mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now()+novos);
       c._id=id; b.set(window._doc('colaboradores',id),c); colaboradores.push(c); novos++;
     }
@@ -4783,7 +4793,7 @@ async function aplicarAtualizacao(){
     const id=n.mat.replace('.','_')+'_'+Date.now()+'_'+i;
     const c={_id:id,mat:n.mat,nome:n.nome,status:n.status,admissao:n.admissao||'',
       filtro:'OK',cargo:'',depto:'',cpf:'',vr:0,cafe:0,comb:0,
-      mobilidade:'perto',elegibilidade:{vr:false,cafe:false,mobilidade:false,folha:true}};
+      mobilidade:'perto',elegibilidade:{vr:false,cafe:false,mobilidade:false,folha:true,folhaCLT:true,folhaMEI:false}};
     b.set(window._doc('colaboradores',id),c);
     colaboradores.push(c);
     nNov++;
