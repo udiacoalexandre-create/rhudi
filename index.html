@@ -224,6 +224,12 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .tbl tbody tr:hover { background: var(--blue-light); }
 .tbl tbody td { padding: 9px 12px; }
 
+/* Base de colaboradores: filtro + cabecalho azul travados ao rolar */
+.bl-page { display: flex; flex-direction: column; height: calc(100vh - 152px); min-height: 360px; }
+.bl-page .page-header, .bl-page .filter-bar, .bl-page #bl-count { flex: 0 0 auto; }
+.bl-page .bl-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.bl-page .bl-scroll thead th { position: sticky; top: 0; z-index: 6; }
+
 /* BADGES */
 .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .badge-green { background: var(--green-light); color: var(--green); }

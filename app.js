@@ -633,6 +633,7 @@ function pgBaseLista(){
   const statusSet=[...new Set(colaboradores.map(c=>c.status||'').filter(Boolean))].sort();
   const benOpts=[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'},{value:'cesta',label:'Cesta Básica'},{value:'sem',label:'Sem benefício'},{value:'comb_vt',label:'Comb+VT (erro?)'},{value:'sem_mob',label:'Sem mobilidade'}];
   return `
+   <div class="bl-page">
     <div class="page-header">
       <h2> Base de Colaboradores</h2>
       <p>Gerencie todos os colaboradores da empresa</p>
@@ -651,7 +652,7 @@ function pgBaseLista(){
       <button class="btn btn-ghost btn-sm" onclick="exportarBase()"> Base</button>
     </div>
     <div id="bl-count" style="margin:10px 0 8px"></div>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap bl-scroll">
       <table class="tbl">
         <thead><tr>
           <th>Matr\u00EDcula</th><th>Nome</th><th>CPF</th><th>Admiss\u00E3o</th><th>Departamento</th>
@@ -660,7 +661,8 @@ function pgBaseLista(){
         </tr></thead>
         <tbody id="bl-tbody"></tbody>
       </table>
-    </div>`;
+    </div>
+   </div>`;
 }
 
 function benMatchColab(c,b){
