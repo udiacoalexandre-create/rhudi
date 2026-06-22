@@ -247,6 +247,23 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .filter-group input, .filter-group select { padding: 7px 10px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-family: 'Inter', sans-serif; font-size: 12px; background: var(--surface2); color: var(--text); }
 .filter-group input { min-width: 200px; }
 .filter-group input:focus, .filter-group select:focus { outline: none; border-color: var(--blue); }
+
+/* Filtros multi-seleção (dropdown de checkboxes) */
+.ms-wrap { position: relative; }
+.ms-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 128px; max-width: 220px; padding: 7px 10px; font-size: 12px; color: var(--text); background: var(--surface2); border: 1.5px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.ms-btn:hover { border-color: var(--text3); }
+.ms-btn.active { border-color: var(--blue); background: var(--blue-light); color: var(--blue-dark); font-weight: 600; }
+.ms-caret { color: var(--text3); font-size: 10px; }
+.ms-panel { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 100%; width: max-content; max-width: 260px; max-height: 300px; overflow-y: auto; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 4px; }
+.ms-panel.open { display: block; }
+.ms-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px 6px; margin-bottom: 2px; border-bottom: 1px solid var(--border); }
+.ms-head > span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text3); }
+.ms-clear { background: none; border: none; color: var(--blue); font-size: 11px; cursor: pointer; padding: 0; }
+.ms-clear:hover { text-decoration: underline; }
+.ms-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 12px; line-height: 1.25; border-radius: 5px; cursor: pointer; }
+.ms-opt:hover { background: var(--surface2); }
+.ms-opt input { accent-color: var(--blue); width: 14px; height: 14px; flex: 0 0 auto; }
+.ms-empty { padding: 8px; font-size: 11px; color: var(--text3); }
 .filter-count { font-size: 12px; color: var(--text2); align-self: center; white-space: nowrap; }
 
 /* UPLOAD ZONE */

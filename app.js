@@ -706,33 +706,39 @@ function limparFiltrosColab(){
 function msDropdown(key,titulo,options){
   const items=options.map(o=>{
     const v=String(o.value).replace(/"/g,'&quot;');
-    return '<label style="display:flex;gap:7px;align-items:center;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap;border-radius:4px">'
-      +'<input type="checkbox" class="ms-'+key+'" value="'+v+'" onchange="renderColabList()" style="accent-color:var(--blue);width:14px;height:14px"> '+o.label+'</label>';
+    return '<label class="ms-opt"><input type="checkbox" class="ms-'+key+'" value="'+v+'" onchange="renderColabList()">'+o.label+'</label>';
   }).join('');
-  return '<div style="position:relative">'
-    +'<button type="button" id="ms-btn-'+key+'" onclick="toggleMs(\''+key+'\')" '
-    +'style="min-width:150px;text-align:left;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:#fff;font-size:12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center">'
-    +'<span id="ms-lbl-'+key+'">'+titulo+'</span><span style="color:var(--text3)">&#9662;</span></button>'
-    +'<div id="ms-panel-'+key+'" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:30;background:#fff;border:1.5px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 6px 20px rgba(0,0,0,.12);max-height:280px;overflow:auto;min-width:200px;padding:4px">'
-    +(items||'<div class="text-xs text-muted" style="padding:8px">Sem opcoes</div>')+'</div></div>';
+  return '<div class="ms-wrap">'
+    +'<button type="button" id="ms-btn-'+key+'" class="ms-btn" onclick="toggleMs(\''+key+'\')">'
+      +'<span id="ms-lbl-'+key+'">'+titulo+'</span><span class="ms-caret">&#9662;</span></button>'
+    +'<div id="ms-panel-'+key+'" class="ms-panel">'
+      +'<div class="ms-head"><span id="ms-hd-'+key+'">'+titulo+'</span>'
+        +'<button type="button" class="ms-clear" onclick="clearMs(\''+key+'\')">Limpar</button></div>'
+      +(items||'<div class="ms-empty">Sem opções</div>')
+    +'</div></div>';
 }
 
 function toggleMs(key){
-  ['emp','dep','status','ben'].forEach(k=>{
-    const p=document.getElementById('ms-panel-'+k); if(!p) return;
-    p.style.display = (k===key && p.style.display==='none') ? 'block' : 'none';
-  });
+  const alvo=document.getElementById('ms-panel-'+key);
+  const abrir=alvo && !alvo.classList.contains('open');
+  document.querySelectorAll('.ms-panel.open').forEach(p=>p.classList.remove('open'));
+  if(abrir) alvo.classList.add('open');
 }
 
 function getMs(key){ return [...document.querySelectorAll('.ms-'+key+':checked')].map(c=>c.value); }
+
+function clearMs(key){
+  document.querySelectorAll('.ms-'+key).forEach(cb=>cb.checked=false);
+  renderColabList();
+}
 
 // Fecha os paineis de filtro ao clicar fora (vinculado uma unica vez)
 function bindMsOutside(){
   if(window._msOutsideBound) return;
   window._msOutsideBound=true;
   document.addEventListener('click',ev=>{
-    if(ev.target.closest('[id^="ms-btn-"]')||ev.target.closest('[id^="ms-panel-"]')) return;
-    ['emp','dep','status','ben'].forEach(k=>{const p=document.getElementById('ms-panel-'+k); if(p) p.style.display='none';});
+    if(ev.target.closest('.ms-wrap')) return;
+    document.querySelectorAll('.ms-panel.open').forEach(p=>p.classList.remove('open'));
   });
 }
 
@@ -743,7 +749,9 @@ function updateMsCounts(){
     const lbl=document.getElementById('ms-lbl-'+k);
     if(lbl) lbl.textContent = n ? map[k]+' ('+n+')' : map[k];
     const btn=document.getElementById('ms-btn-'+k);
-    if(btn) btn.style.borderColor = n ? 'var(--blue)' : 'var(--border)';
+    if(btn) btn.classList.toggle('active', n>0);
+    const hd=document.getElementById('ms-hd-'+k);
+    if(hd) hd.textContent = n ? n+' selecionado'+(n>1?'s':'') : map[k];
   });
 }
 
