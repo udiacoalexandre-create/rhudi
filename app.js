@@ -115,6 +115,8 @@ function inferMob(c){
 }
 
 function mobBadge(c){
+  const tr=elegTransporte(c);
+  if(!tr.vt && !tr.mob) return '<span class="mob-tag" style="background:var(--surface2);color:var(--text3)">N/A</span>';
   const m=inferMob(c);
   if(m==='perto') return '<span class="mob-tag mob-perto">🏠 Mora perto</span>';
   if(m==='carro_empresa') return '<span class="mob-tag mob-carro">🚘 Carro empresa</span>';
@@ -2280,7 +2282,7 @@ function exportarBase(){
       c.mat||'',c.nome||'',c.cpf||'',c.cargo||'',c.funcao||'',c.depto||'',c.status||'',c.filtro||'OK',c.admissao||'',c.diasFixos!=null?c.diasFixos:'',
       sim(e.folha!==false),sim(e.premio!==false),sim(e.ferias!==false),
       sim(elegVR),sim(elegCafe),sim(tr.mob),sim(tr.vt),sim(e.cesta!==false),
-      fnum(c.vr),fnum(c.cafe),cestaVal,c.mobilidade||'perto',fnum(c.comb),
+      fnum(c.vr),fnum(c.cafe),cestaVal,(!tr.vt&&!tr.mob)?'N/A':(c.mobilidade||'perto'),fnum(c.comb),
       ...vtCols,
       c.ferMes||'', c.ferMes?anoAgendado(c.ferMes):'', c.ferVenc||'', c.ferSaldo!=null?c.ferSaldo:''
     ];
