@@ -1909,11 +1909,21 @@ function limparFiltrosLan(){
   renderLancamento();
 }
 
+// Elegível a algum benefício (VR, Café, Cesta, Mobilidade/Comb. ou VT)
+function elegivelBeneficios(c){
+  const e=c.elegibilidade||{};
+  const tr=elegTransporte(c);
+  const vr   = e.vr!==undefined?e.vr:fnum(c.vr)>0;
+  const cafe = e.cafe!==undefined?e.cafe:fnum(c.cafe)>0;
+  const cesta= e.cesta!==false;
+  return !!(vr||cafe||cesta||tr.mob||tr.vt);
+}
+
 function getLanAtivos(){
   const du=fnum(g('lan-du'))||22;
   const q=(g('lan-q')||'').toLowerCase();
   const empF=g('lan-emp'),depF=g('lan-dep'),benF=g('lan-ben');
-  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
+  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
   if(depF) f=f.filter(c=>(c.depto||'')===depF);
