@@ -703,13 +703,14 @@ function limparFiltrosColab(){
 }
 
 // ── Multi-select dropdown (checkboxes) para os filtros da base ───
-function msDropdown(key,titulo,options){
+function msDropdown(key,titulo,options,onChangeFn){
+  const cb=onChangeFn||'renderColabList';
   const items=options.map(o=>{
     const v=String(o.value).replace(/"/g,'&quot;');
-    return '<label class="ms-opt"><input type="checkbox" class="ms-'+key+'" value="'+v+'" onchange="renderColabList()">'+o.label+'</label>';
+    return '<label class="ms-opt"><input type="checkbox" class="ms-'+key+'" value="'+v+'" onchange="'+cb+'()">'+o.label+'</label>';
   }).join('');
   return '<div class="ms-wrap">'
-    +'<button type="button" id="ms-btn-'+key+'" class="ms-btn" onclick="toggleMs(\''+key+'\')">'
+    +'<button type="button" id="ms-btn-'+key+'" class="ms-btn" data-titulo="'+titulo+'" data-cb="'+cb+'" onclick="toggleMs(\''+key+'\')">'
       +'<span id="ms-lbl-'+key+'">'+titulo+'</span><span class="ms-caret">&#9662;</span></button>'
     +'<div id="ms-panel-'+key+'" class="ms-panel">'
       +'<div class="ms-head"><span id="ms-hd-'+key+'">'+titulo+'</span>'
@@ -729,7 +730,9 @@ function getMs(key){ return [...document.querySelectorAll('.ms-'+key+':checked')
 
 function clearMs(key){
   document.querySelectorAll('.ms-'+key).forEach(cb=>cb.checked=false);
-  renderColabList();
+  const btn=document.getElementById('ms-btn-'+key);
+  const fn=btn?.dataset.cb||'renderColabList';
+  if(typeof window[fn]==='function') window[fn]();
 }
 
 // Fecha os paineis de filtro ao clicar fora (vinculado uma unica vez)
@@ -743,15 +746,15 @@ function bindMsOutside(){
 }
 
 function updateMsCounts(){
-  const map={emp:'Empresa',dep:'Departamento',status:'Status',ben:'Benefício'};
-  Object.keys(map).forEach(k=>{
-    const n=getMs(k).length;
-    const lbl=document.getElementById('ms-lbl-'+k);
-    if(lbl) lbl.textContent = n ? map[k]+' ('+n+')' : map[k];
-    const btn=document.getElementById('ms-btn-'+k);
-    if(btn) btn.classList.toggle('active', n>0);
-    const hd=document.getElementById('ms-hd-'+k);
-    if(hd) hd.textContent = n ? n+' selecionado'+(n>1?'s':'') : map[k];
+  document.querySelectorAll('[id^="ms-btn-"]').forEach(btn=>{
+    const key=btn.id.slice('ms-btn-'.length);
+    const base=btn.dataset.titulo||'';
+    const n=getMs(key).length;
+    const lbl=document.getElementById('ms-lbl-'+key);
+    if(lbl) lbl.textContent = n ? base+' ('+n+')' : base;
+    btn.classList.toggle('active', n>0);
+    const hd=document.getElementById('ms-hd-'+key);
+    if(hd) hd.textContent = n ? n+' selecionado'+(n>1?'s':'') : base;
   });
 }
 
@@ -1749,65 +1752,51 @@ function pgBenLancamento(){
   const empresas=getEmpresaList();
   const deptos=getDeptoList();
   return `
-    <div class="page-header">
-      <h2> Lan\u00E7amento Mensal</h2>
-      <p>Informe faltas, f\u00E9rias e dias extras para calcular os benef\u00EDcios.</p>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
-      <div class="card" style="margin-bottom:0">
-        <div class="card-title"> Compet\u00EAncia & Dias</div>
-        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-          <div class="fg"><label>M\u00EAs/Ano</label>
-            <input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:120px" oninput="renderLancamento()">
+   <div class="bl-page">
+    <div style="flex:0 0 auto">
+      <div class="page-header" style="margin-bottom:10px">
+        <h2>Lançamento Mensal</h2>
+        <p>Informe faltas, férias e dias extras para calcular os benefícios.</p>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="card" style="margin-bottom:0;flex:1;min-width:300px">
+          <div class="card-title">Competência & Dias</div>
+          <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+            <div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:110px" oninput="renderLancamento()"></div>
+            <div class="fg"><label>Dias úteis do mês</label><input type="number" id="lan-du" value="22" min="1" max="31" style="width:90px" onchange="renderLancamento()"></div>
+            <button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>
           </div>
-          <div class="fg"><label>Dias \u00DAteis</label>
-            <input type="number" id="lan-du" value="22" min="1" max="31" style="width:70px" onchange="renderLancamento()">
+          <div class="text-xs text-muted" style="margin-top:8px">Preenche os dias úteis para todos — exceto quem tem jornada especial travada no cadastro.</div>
+        </div>
+        <div class="card" style="margin-bottom:0;min-width:280px">
+          <div class="card-title">Fechar Competência</div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+            <div class="fg"><label>Benefício</label>
+              <select id="lan-fechar-ben" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+                <option value="todos">Todos os benefícios</option>
+                <option value="vr">Vale Refeição</option>
+                <option value="cafe">Café da Manhã</option>
+                <option value="cesta">Cesta Básica</option>
+                <option value="comb">Combustível</option>
+                <option value="vt">Vale Transporte</option>
+              </select>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="fecharCompetencia()">&#128274; Fechar</button>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">\u2705 Aplicar a todos</button>
-          <button class="btn btn-success btn-sm" onclick="fecharCompetencia()">[lock] Fechar Compet\u00EAncia</button>
+          <div class="text-xs text-muted" style="margin-top:8px">Feche um benefício por vez (calculados em dias diferentes). Vai para o Histórico.</div>
         </div>
       </div>
-      <div class="card" style="margin-bottom:0" id="lan-resumo-card">
-        <div class="card-title">$ Totais da Sele\u00E7\u00E3o</div>
-        <div id="lan-resumo-vals" style="font-size:12px;color:var(--text2)">Carregando...</div>
+      <div id="lan-resumo" style="margin-bottom:12px"></div>
+      <div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">
+        <div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="lan-q" placeholder="Nome ou matrícula..." oninput="renderLancamento()"></div>
+        <div class="filter-group"><label>Empresa</label>${msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:e.cod+' ('+e.qtd+')'})),'renderLancamento')}</div>
+        <div class="filter-group"><label>Departamento</label>${msDropdown('ldep','Departamento',deptos.map(d=>({value:d,label:d})),'renderLancamento')}</div>
+        <div class="filter-group"><label>Benefício</label>${msDropdown('lben','Benefício',[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'cesta',label:'Cesta'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'}],'renderLancamento')}</div>
+        <button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()" title="Limpar filtros">Limpar</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()">Excel</button>
       </div>
     </div>
-
-    <div class="filter-bar">
-      <div class="filter-group">
-        <label> Empresa</label>
-        <select id="lan-emp" onchange="renderLancamento()">
-          <option value="">Todas</option>
-          ${empresas.map(e=>`<option value="${e.cod}">${e.cod} (${e.qtd})</option>`).join('')}
-        </select>
-      </div>
-      <div class="filter-group" style="flex:1">
-        <label> Buscar</label>
-        <input type="text" id="lan-q" placeholder="Nome ou matr\u00EDcula..." oninput="renderLancamento()">
-      </div>
-      <div class="filter-group">
-        <label> Departamento</label>
-        <select id="lan-dep" onchange="renderLancamento()">
-          <option value="">Todos</option>
-          ${deptos.map(d=>`<option value="${d}">${d}</option>`).join('')}
-        </select>
-      </div>
-      <div class="filter-group">
-        <label>$ Benef\u00EDcio</label>
-        <select id="lan-ben" onchange="renderLancamento()">
-          <option value="">Todos</option>
-          <option value="vr">VR\uFE0F VR</option>
-          <option value="cafe">\u2615 Caf\u00E9</option>
-          <option value="comb">\u26FD Combust\u00EDvel</option>
-          <option value="vt">VT</option>
-        </select>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()">\u2716</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()"> Excel</button>
-    </div>
-
-    <div class="tbl-wrap">
+    <div class="tbl-wrap bl-scroll">
       <table class="tbl launch-tbl">
         <thead><tr>
           <th>Mat.</th><th>Nome</th>
@@ -1826,7 +1815,8 @@ function pgBenLancamento(){
           </tr>
         </tfoot>
       </table>
-    </div>`;
+    </div>
+   </div>`;
 }
 
 function popularLanFiltros(){
@@ -1905,7 +1895,8 @@ async function retornarColabsFerias(){
 }
 
 function limparFiltrosLan(){
-  ['lan-q','lan-emp','lan-dep','lan-ben'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const q=document.getElementById('lan-q'); if(q) q.value='';
+  document.querySelectorAll('.ms-lemp,.ms-ldep,.ms-lben').forEach(cb=>cb.checked=false);
   renderLancamento();
 }
 
@@ -1919,61 +1910,68 @@ function elegivelBeneficios(c){
   return !!(vr||cafe||cesta||tr.mob||tr.vt);
 }
 
+function lanBenMatch(c,b){
+  if(b==='vr') return fnum(c.vr)>0&&c.elegibilidade?.vr!==false;
+  if(b==='cafe') return fnum(c.cafe)>0&&c.elegibilidade?.cafe!==false;
+  if(b==='cesta') return c.elegibilidade?.cesta!==false;
+  if(b==='comb') return fnum(c.comb)>0&&inferMob(c)==='combustivel';
+  if(b==='vt') return inferMob(c)==='vt'&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0);
+  return true;
+}
+
 function getLanAtivos(){
-  const du=fnum(g('lan-du'))||22;
   const q=(g('lan-q')||'').toLowerCase();
-  const empF=g('lan-emp'),depF=g('lan-dep'),benF=g('lan-ben');
+  const emp=getMs('lemp'), dep=getMs('ldep'), ben=getMs('lben');
   let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
-  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
+  if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
-  if(depF) f=f.filter(c=>(c.depto||'')===depF);
-  if(benF==='vr') f=f.filter(c=>fnum(c.vr)>0&&c.elegibilidade?.vr!==false);
-  if(benF==='cafe') f=f.filter(c=>fnum(c.cafe)>0&&c.elegibilidade?.cafe!==false);
-  if(benF==='comb') f=f.filter(c=>fnum(c.comb)>0&&inferMob(c)==='combustivel');
-  if(benF==='vt') f=f.filter(c=>inferMob(c)==='vt'&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0));
+  if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
+  if(ben.length) f=f.filter(c=>ben.some(b=>lanBenMatch(c,b)));
   return f;
 }
 
 function renderLancamento(){
+  bindMsOutside();
+  updateMsCounts();
   const du=fnum(g('lan-du'))||22;
   const ativos=getLanAtivos();
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
+  let nVR=0,nCafe=0,nCesta=0,nComb=0,nVT=0;
   ativos.forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
-    tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
+    tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
+    if(vr>0)nVR++; if(cafe>0)nCafe++; if(cesta>0)nCesta++; if(comb>0)nComb++; if(vt>0)nVT++;
   });
-  // Atualizar rodap\u00E9
   const tfoot=document.getElementById('lan-tfoot');
   if(tfoot){
     tfoot.style.display=ativos.length>0?'table-footer-group':'none';
-    const empF=g('lan-emp');
-    const totalAtivos=colaboradores.filter(c=>c.status!=='Inativo').length;
-    document.getElementById('lan-tot-label').textContent=
-      empF?`Empresa ${empF} \u2014 ${ativos.length} colaboradores`
-      :ativos.length===totalAtivos?'Totais do m\u00EAs':`Sele\u00E7\u00E3o (${ativos.length})`;
+    const totalAtivos=colaboradores.filter(c=>c.status!=='Inativo'&&elegivelBeneficios(c)).length;
+    document.getElementById('lan-tot-label').textContent=ativos.length===totalAtivos?'Totais do mês':`Seleção (${ativos.length})`;
     document.getElementById('lan-tot-colab').textContent=`${ativos.length} colaborador${ativos.length!==1?'es':''}`;
-    document.getElementById('lan-tot-vr').textContent=tVR>0?brl(tVR):'\u2014';
-    document.getElementById('lan-tot-cafe').textContent=tCafe>0?brl(tCafe):'\u2014';
-    document.getElementById('lan-tot-cesta').textContent=tCesta>0?brl(tCesta):'\u2014';
-    document.getElementById('lan-tot-comb').textContent=tComb>0?brl(tComb):'\u2014';
-    document.getElementById('lan-tot-vt').textContent=tVT>0?brl(tVT):'\u2014';
+    document.getElementById('lan-tot-vr').textContent=tVR>0?brl(tVR):'—';
+    document.getElementById('lan-tot-cafe').textContent=tCafe>0?brl(tCafe):'—';
+    document.getElementById('lan-tot-cesta').textContent=tCesta>0?brl(tCesta):'—';
+    document.getElementById('lan-tot-comb').textContent=tComb>0?brl(tComb):'—';
+    document.getElementById('lan-tot-vt').textContent=tVT>0?brl(tVT):'—';
     document.getElementById('lan-tot-geral').textContent=brl(tVR+tCafe+tCesta+tComb+tVT);
   }
-  // Atualizar resumo card
-  const resumo=document.getElementById('lan-resumo-vals');
-  if(resumo) resumo.innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
-      <div>VR\uFE0F VR: <strong>${brl(tVR)}</strong></div>
-      <div>\u2615 Caf\u00E9: <strong>${brl(tCafe)}</strong></div>
-      <div>\u26FD Comb.: <strong>${brl(tComb)}</strong></div>
-      <div>VT: <strong>${brl(tVT)}</strong></div>
-      <div>Cesta: <strong>${brl(tCesta)}</strong></div>
-      <div style="grid-column:1/-1;padding-top:4px;border-top:1px solid var(--border)">
-        $ Total: <strong style="color:var(--green);font-size:14px">${brl(tVR+tCafe+tCesta+tComb+tVT)}</strong>
-      </div>
+  const resumo=document.getElementById('lan-resumo');
+  if(resumo){
+    const item=(label,n,tot,cor)=>`<div style="flex:1;min-width:135px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:var(--radius);padding:9px 12px">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;font-weight:700;letter-spacing:.3px">${label}</div>
+      <div style="font-size:15px;font-weight:700;color:${cor}">${brl(tot)}</div>
+      <div style="font-size:11px;color:var(--text3)">${n} colaborador${n!==1?'es':''}</div>
     </div>`;
-
+    resumo.innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      +item('Vale Refeição',nVR,tVR,'var(--orange)')
+      +item('Café da Manhã',nCafe,tCafe,'var(--yellow)')
+      +item('Cesta Básica',nCesta,tCesta,'var(--green)')
+      +item('Combustível',nComb,tComb,'var(--orange)')
+      +item('Vale Transporte',nVT,tVT,'var(--blue)')
+      +item('Total Geral',ativos.length,tVR+tCafe+tCesta+tComb+tVT,'var(--green)')
+      +'</div>';
+  }
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
   if(ativos.length===0){
     tbody.innerHTML=`<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>`;
@@ -2034,26 +2032,33 @@ async function aplicarDiasUteis(){
 
 async function fecharCompetencia(){
   const comp=g('lan-comp');
-  if(!comp){toast('Informe a compet\u00EAncia (MM/AAAA)','error');return;}
-  if(!confirm(`Fechar compet\u00EAncia ${comp}? Isso salva um snapshot dos dados atuais.`)) return;
+  if(!comp){toast('Informe a competência (MM/AAAA)','error');return;}
+  const benef=document.getElementById('lan-fechar-ben')?.value||'todos';
+  const labels={todos:'Todos os benefícios',vr:'Vale Refeição',cafe:'Café da Manhã',cesta:'Cesta Básica',comb:'Combustível',vt:'Vale Transporte'};
+  if(!confirm(`Fechar competência ${comp} — ${labels[benef]}? Salva um snapshot no Histórico.`)) return;
   const du=fnum(g('lan-du'))||22;
-  const ativos=colaboradores.filter(c=>c.status!=='Inativo');
-  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
-  const detalhes=ativos.map(c=>{
-    const du2=getLanDU(c.mat,du);
-    const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
-    tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
-    return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',
-      du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),
-      extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
-  });
+  const ativos=colaboradores.filter(c=>c.status!=='Inativo' && elegivelBeneficios(c));
   try{
-    await fsSet('historico',comp.replace('/','_'),{
-      competencia:comp,fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,
-      totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:tVR+tCafe+tCesta+tComb+tVT},detalhes
-    });
-    toast(`\u2705 Compet\u00EAncia ${comp} fechada!`,'success');
+    if(benef==='todos'){
+      let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
+      const detalhes=ativos.map(c=>{
+        const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
+        const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
+        tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
+        return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
+      });
+      await fsSet('historico',comp.replace('/','_'),{competencia:comp,beneficio:'todos',fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:tVR+tCafe+tCesta+tComb+tVT},detalhes});
+    } else {
+      let tot=0; const detalhes=[];
+      ativos.forEach(c=>{
+        const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
+        const v=calcBen(c,dr,du2)[benef]||0;
+        if(v>0){ tot+=v; detalhes.push({mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',valor:v}); }
+      });
+      await fsSet('historico',comp.replace('/','_')+'_'+benef,{competencia:comp,beneficio:benef,beneficioLabel:labels[benef],fechadoEm:new Date().toISOString(),totalColaboradores:detalhes.length,total:tot,detalhes});
+    }
+    toast(`Competência ${comp} — ${labels[benef]} fechada!`,'success');
+    if(currentPage==='ben-historico') renderHistorico();
   }catch(e){toast('Erro: '+e.message,'error');}
 }
 
@@ -2369,56 +2374,70 @@ function pgBenHistorico(){
 
 async function renderHistorico(){
   const snap=await window._getDocs(window._col('historico'));
-  const items=[]; snap.forEach(d=>items.push(d.data()));
-  items.sort((a,b)=>b.fechadoEm.localeCompare(a.fechadoEm));
+  const items=[]; snap.forEach(d=>items.push(Object.assign({_id:d.id},d.data())));
+  items.sort((a,b)=>String(b.fechadoEm||'').localeCompare(String(a.fechadoEm||'')));
   const el=document.getElementById('hist-lista'); if(!el) return;
   if(items.length===0){
-    el.innerHTML='<div class="empty-state"><div class="empty-icon">\uFE0F</div><p>Nenhuma compet\u00EAncia fechada ainda.</p></div>';
+    el.innerHTML='<div class="empty-state"><div class="empty-icon"></div><p>Nenhuma competência fechada ainda.</p></div>';
     return;
   }
-  el.innerHTML=items.map(h=>`
-    <div class="card" style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
-        <div>
-          <div style="font-weight:700;font-size:16px;color:var(--blue)"> ${h.competencia}</div>
-          <div class="text-sm text-muted" style="margin-top:2px">${h.totalColaboradores} colaboradores \u00B7 ${new Date(h.fechadoEm).toLocaleDateString('pt-BR')}</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-            <span class="badge badge-orange">VR\uFE0F ${brl(h.totais.vr)}</span>
-            <span class="badge badge-yellow">\u2615 ${brl(h.totais.cafe)}</span>
-            <span class="badge badge-green">\u26FD ${brl(h.totais.comb)}</span>
-            <span class="badge badge-blue">VT ${brl(h.totais.vt)}</span>
-          </div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-weight:700;font-size:18px;color:var(--green)">${brl(h.totais.geral)}</div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="btn btn-ghost btn-sm" onclick="exportarHistExcel('${h.competencia}')"> Excel</button>
-            <button class="btn btn-danger btn-sm" onclick="excluirHist('${h.competencia}')"></button>
-          </div>
-        </div>
-      </div>
-    </div>`).join('');
+  el.innerHTML=items.map(h=>{
+    const data=h.fechadoEm?new Date(h.fechadoEm).toLocaleDateString('pt-BR'):'';
+    const acoes='<div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">'
+      +'<button class="btn btn-ghost btn-sm" onclick="exportarHistExcel(\''+h._id+'\')">Excel</button>'
+      +'<button class="btn btn-danger btn-sm" onclick="excluirHist(\''+h._id+'\')">Excluir</button></div>';
+    if(h.beneficio && h.beneficio!=='todos'){
+      return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div><div style="font-weight:700;font-size:16px;color:var(--blue)">${h.competencia} — ${h.beneficioLabel||h.beneficio}</div>
+        <div class="text-sm text-muted" style="margin-top:2px">${h.totalColaboradores||0} colaboradores · ${data}</div></div>
+        <div style="text-align:right"><div style="font-weight:700;font-size:18px;color:var(--green)">${brl(h.total||0)}</div>${acoes}</div>
+      </div></div>`;
+    }
+    if(h.totais){
+      return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div><div style="font-weight:700;font-size:16px;color:var(--blue)">${h.competencia} — Todos</div>
+        <div class="text-sm text-muted" style="margin-top:2px">${h.totalColaboradores||0} colaboradores · ${data}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <span class="badge badge-orange">VR ${brl(h.totais.vr)}</span>
+          <span class="badge badge-yellow">Café ${brl(h.totais.cafe)}</span>
+          <span class="badge badge-green">Cesta ${brl(h.totais.cesta||0)}</span>
+          <span class="badge badge-green">Comb ${brl(h.totais.comb)}</span>
+          <span class="badge badge-blue">VT ${brl(h.totais.vt)}</span>
+        </div></div>
+        <div style="text-align:right"><div style="font-weight:700;font-size:18px;color:var(--green)">${brl(h.totais.geral)}</div>${acoes}</div>
+      </div></div>`;
+    }
+    return '';
+  }).join('');
 }
 
-async function excluirHist(comp){
-  if(!confirm(`Excluir hist\u00F3rico de ${comp}?`)) return;
-  await fsDel('historico',comp.replace('/','_'));
+async function excluirHist(id){
+  if(!confirm('Excluir este histórico?')) return;
+  await fsDel('historico',id);
   toast('Removido.','error');
   renderHistorico();
 }
 
-async function exportarHistExcel(comp){
+async function exportarHistExcel(id){
   const snap=await window._getDocs(window._col('historico'));
-  let h=null; snap.forEach(d=>{if(d.id===comp.replace('/','_'))h=d.data();});
-  if(!h){toast('N\u00E3o encontrado','error');return;}
-  const rows=[['Compet\u00EAncia: '+h.competencia,'Fechado: '+new Date(h.fechadoEm).toLocaleDateString('pt-BR')],
-    ['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
-    ...h.detalhes.map(r=>[r.mat,r.nome,r.cpf,r.depto,r.du,r.faltas,r.ferias,r.extras,r.dr,r.vr,r.cafe,r.cesta||0,r.comb,r.vt,r.total]),
-    [],['','','','','','','','','Total',h.totais.vr,h.totais.cafe,h.totais.cesta||0,h.totais.comb,h.totais.vt,h.totais.geral]];
+  let h=null; snap.forEach(d=>{if(d.id===id)h=Object.assign({_id:d.id},d.data());});
+  if(!h){toast('Não encontrado','error');return;}
+  let rows;
+  if(h.beneficio && h.beneficio!=='todos'){
+    rows=[['Competência: '+h.competencia,'Benefício: '+(h.beneficioLabel||h.beneficio),'Fechado: '+new Date(h.fechadoEm).toLocaleDateString('pt-BR')],
+      ['Matrícula','Nome','CPF','Departamento','Valor'],
+      ...(h.detalhes||[]).map(r=>[r.mat,r.nome,r.cpf||'',r.depto||'',r.valor]),
+      [],['','','','Total',h.total||0]];
+  } else {
+    rows=[['Competência: '+h.competencia,'Fechado: '+new Date(h.fechadoEm).toLocaleDateString('pt-BR')],
+      ['Matrícula','Nome','CPF','Departamento','Dias Úteis','Faltas','Ferias','Extras','Dias Reais','VR','Café','Cesta','Combustível','VT','Total'],
+      ...(h.detalhes||[]).map(r=>[r.mat,r.nome,r.cpf,r.depto,r.du,r.faltas,r.ferias,r.extras,r.dr,r.vr,r.cafe,r.cesta||0,r.comb,r.vt,r.total]),
+      [],['','','','','','','','','Total',h.totais.vr,h.totais.cafe,h.totais.cesta||0,h.totais.comb,h.totais.vt,h.totais.geral]];
+  }
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Hist\u00F3rico '+comp);
-  XLSX.writeFile(wb,'Historico_'+comp.replace('/','_')+'.xlsx');
-  toast('\u2705 Excel baixado!','success');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Historico');
+  XLSX.writeFile(wb,'Historico_'+String(h.competencia||'').replace('/','_')+(h.beneficio&&h.beneficio!=='todos'?'_'+h.beneficio:'')+'.xlsx');
+  toast('Excel baixado!','success');
 }
 
 // ============================================================
@@ -2516,7 +2535,7 @@ function exportarColabExcel(){
 function exportarLancamentoExcel(){
   const du=fnum(g('lan-du'))||22;
   const comp=g('lan-comp')||'MES';
-  const empF=g('lan-emp');
+  const empF=getMs('lemp').join('-');
   const ativos=getLanAtivos();
   const rows=[['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
     ...ativos.map(c=>{
