@@ -1811,7 +1811,7 @@ function pgBenLancamento(){
       <table class="tbl launch-tbl">
         <thead><tr>
           <th>Mat.</th><th>Nome</th>
-          <th>Dias Úteis</th><th>Faltas</th><th>Férias</th><th>Extras</th><th>Dias Reais</th>
+          <th title="Jornada: especial travada no cadastro, ou dias úteis do mês">Dias da Jornada</th><th title="Faltas do mês anterior (−)">Faltas</th><th title="Férias/abono comprados (−)">Férias</th><th title="Dias extras (+)">Extras</th><th title="Jornada + extras − faltas − férias = base do cálculo">Dias Úteis Líquidos</th>
           <th>VR</th><th>Café</th><th>Cesta</th><th>Comb.</th><th>VT</th><th>Total</th>
         </tr></thead>
         <tbody id="lan-tbody"></tbody>
