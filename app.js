@@ -2028,13 +2028,16 @@ function renderLancamento(){
   const du=fnum(g('lan-du'))||22;
   const ativos=getLanAtivos();
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
-  let nVR=0,nCafe=0,nCesta=0,nComb=0,nVT=0;
+  const _pk=c=>(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome));
+  const sVR=new Set(),sCafe=new Set(),sCesta=new Set(),sComb=new Set(),sVT=new Set(),sTot=new Set();
   ativos.forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
     tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
-    if(vr>0)nVR++; if(cafe>0)nCafe++; if(cesta>0)nCesta++; if(comb>0)nComb++; if(vt>0)nVT++;
+    const k=_pk(c); sTot.add(k);
+    if(vr>0)sVR.add(k); if(cafe>0)sCafe.add(k); if(cesta>0)sCesta.add(k); if(comb>0)sComb.add(k); if(vt>0)sVT.add(k);
   });
+  const nVR=sVR.size,nCafe=sCafe.size,nCesta=sCesta.size,nComb=sComb.size,nVT=sVT.size;
   const tfoot=document.getElementById('lan-tfoot');
   if(tfoot){
     tfoot.style.display=ativos.length>0?'table-footer-group':'none';
@@ -2061,7 +2064,7 @@ function renderLancamento(){
       +item('Cesta Básica',nCesta,tCesta,'var(--green)')
       +item('Combustível',nComb,tComb,'var(--orange)')
       +item('Vale Transporte',nVT,tVT,'var(--blue)')
-      +item('Total Geral',ativos.length,tVR+tCafe+tCesta+tComb+tVT,'var(--green)')
+      +item('Total Geral',sTot.size,tVR+tCafe+tCesta+tComb+tVT,'var(--green)')
       +'</div>';
   }
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
@@ -2764,16 +2767,22 @@ function renderDashMain(){
   const du=fnum(g('lan-du'))||22;
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const em30=new Date(hoje); em30.setDate(em30.getDate()+30);
-  const ativos=colaboradores.filter(c=>c.status==='Ativo');
-  const emFerias=colaboradores.filter(c=>c.status==='Férias'||c.status==='Férias');
-  const inativos=colaboradores.filter(c=>c.status==='Inativo');
+  const unicos=colaboradoresUnicos(); // dedup por pessoa (MEI/Sócio 1x)
+  const ehFerias=s=>s==='Ferias'||s==='Ferias Coletiva';
+  const trabalhando=unicos.filter(c=>c.status==='Trabalhando');
+  const emFerias=unicos.filter(c=>ehFerias(c.status));
+  const afastados=unicos.filter(c=>STATUS_SO_CESTA.includes(c.status));
 
-  // Totais benef\u00EDcios
+  // Somas em R$ sobre os registros que recebem; contagem por pessoa única
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
-  colaboradores.filter(c=>c.status!=='Inativo').forEach(c=>{
+  const pk=c=>(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome));
+  const setVR=new Set(),setCafe=new Set(),setComb=new Set(),setVT=new Set();
+  colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status)).forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
     tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
+    const k=pk(c);
+    if(vr>0)setVR.add(k); if(cafe>0)setCafe.add(k); if(comb>0)setComb.add(k); if([1,2,3,4].some(n=>fnum(c['vt'+n])>0))setVT.add(k);
   });
 
   // F\u00E9rias stats
@@ -2795,20 +2804,20 @@ function renderDashMain(){
     <div class="dash-section">
       <div class="dash-section-title"> Colaboradores</div>
       <div class="stats-grid">
-        <div class="stat-card blue"><div class="stat-val">${colaboradores.length}</div><div class="stat-label">Total na Base</div></div>
-        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ativos.length}</div><div class="stat-label">Ativos</div></div>
+        <div class="stat-card blue"><div class="stat-val">${unicos.length}</div><div class="stat-label">Total na Base</div></div>
+        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${trabalhando.length}</div><div class="stat-label">Trabalhando</div></div>
         <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${emFerias.length}</div><div class="stat-label">Em F\u00E9rias</div></div>
-        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${inativos.length}</div><div class="stat-label">Inativos</div></div>
+        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${afastados.length}</div><div class="stat-label">Afastados</div></div>
       </div>
     </div>
 
     <div class="dash-section">
       <div class="dash-section-title"> Benef\u00EDcios \u2014 Compet\u00EAncia ${comp}</div>
       <div class="stats-grid">
-        <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tVR)}</div><div class="stat-label">VR\uFE0F Vale Refei\u00E7\u00E3o</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.vr)>0).length} colaboradores</div></div>
-        <div class="stat-card yellow"><div class="stat-val" style="font-size:18px;color:var(--yellow)">${brl(tCafe)}</div><div class="stat-label">\u2615 Caf\u00E9 da Manh\u00E3</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.cafe)>0).length} colaboradores</div></div>
-        <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tComb)}</div><div class="stat-label">\u26FD Combust\u00EDvel</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.comb)>0).length} colaboradores</div></div>
-        <div class="stat-card blue"><div class="stat-val" style="font-size:18px;color:var(--blue)">${brl(tVT)}</div><div class="stat-label">VT Vale Transporte</div><div class="stat-sub">${colaboradores.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0)).length} colaboradores</div></div>
+        <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tVR)}</div><div class="stat-label">VR\uFE0F Vale Refei\u00E7\u00E3o</div><div class="stat-sub">${setVR.size} colaboradores</div></div>
+        <div class="stat-card yellow"><div class="stat-val" style="font-size:18px;color:var(--yellow)">${brl(tCafe)}</div><div class="stat-label">\u2615 Caf\u00E9 da Manh\u00E3</div><div class="stat-sub">${setCafe.size} colaboradores</div></div>
+        <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tComb)}</div><div class="stat-label">\u26FD Combust\u00EDvel</div><div class="stat-sub">${setComb.size} colaboradores</div></div>
+        <div class="stat-card blue"><div class="stat-val" style="font-size:18px;color:var(--blue)">${brl(tVT)}</div><div class="stat-label">VT Vale Transporte</div><div class="stat-sub">${setVT.size} colaboradores</div></div>
         <div class="stat-card green" style="grid-column:1/-1"><div class="stat-val" style="font-size:24px;color:var(--green)">${brl(tVR+tCafe+tCesta+tComb+tVT)}</div><div class="stat-label">$ Total Geral de Benef\u00EDcios</div></div>
       </div>
     </div>
@@ -2827,22 +2836,23 @@ function renderDashMain(){
       <div class="dash-section-title"> Por Empresa</div>
       <div class="tbl-wrap">
         <table class="tbl">
-          <thead><tr><th>Empresa</th><th>Total</th><th>Ativos</th><th>Inativos</th><th>Em F\u00E9rias</th><th>Total Benef\u00EDcios</th></tr></thead>
+          <thead><tr><th>Empresa</th><th>Total</th><th>Trabalhando</th><th>Afastados</th><th>Em F\u00E9rias</th><th>Total Benef\u00EDcios</th></tr></thead>
           <tbody>
             ${getEmpresaList().map(emp=>{
-              const fc=colaboradores.filter(c=>String(c.mat||'').startsWith(emp.cod));
-              const fa=fc.filter(c=>c.status==='Ativo').length;
-              const fi=fc.filter(c=>c.status==='Inativo').length;
-              const ff=fc.filter(c=>c.status==='Férias'||c.status==='Férias').length;
+              const fcAll=colaboradores.filter(c=>String(c.mat||'').startsWith(emp.cod));
+              const fc=unicos.filter(c=>String(c.mat||'').startsWith(emp.cod));
+              const fa=fc.filter(c=>c.status==='Trabalhando').length;
+              const fi=fc.filter(c=>STATUS_SO_CESTA.includes(c.status)).length;
+              const ff=fc.filter(c=>ehFerias(c.status)).length;
               let tot=0;
-              fc.filter(c=>c.status!=='Inativo').forEach(c=>{
+              fcAll.filter(c=>!STATUS_NAO_RECEBE.includes(c.status)).forEach(c=>{
                 const dr=getLanDR(c.mat,du);
                 const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
                 tot+=vr+cafe+comb+vt+cesta;
               });
               return `<tr>
                 <td><strong>${emp.cod}</strong></td>
-                <td>${emp.qtd}</td>
+                <td>${fc.length}</td>
                 <td>${fa}</td>
                 <td>${fi}</td>
                 <td>${ff}</td>
