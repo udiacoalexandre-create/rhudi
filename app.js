@@ -1971,15 +1971,19 @@ function renderLancamento(){
   }
   tbody.innerHTML=ativos.map((c,i)=>{
     const l=lancamento[c.mat]||{};
-    const du2=l.duteis!==undefined?fnum(l.duteis):du;
+    const locked=!!c.diasFixos;
+    const du2=getLanDU(c.mat,du);
     const fat=fnum(l.faltas),fev=fnum(l.ferias),ext=fnum(l.extras);
-    const dr=Math.max(0,du2-fat-fev+ext);
+    const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
     const total=vr+cafe+comb+vt+cesta;
-    return `<tr>
+    const duCell = locked
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--blue)" title="Jornada travada no cadastro - nao afetada pelo Aplicar a todos">&#128274; ${du2}</span>`
+      : `<input type="number" value="${du2}" min="0" max="31" class="input-du" onchange="setLan('${c.mat}','duteis',this.value)">`;
+    return `<tr${locked?' style="background:var(--blue-light)"':''}>
       <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${c.nome}">${c.nome}</td>
-      <td><input type="number" value="${du2}" min="0" max="31" class="input-du" onchange="setLan('${c.mat}','duteis',this.value)"></td>
+      <td>${duCell}</td>
       <td><input type="number" value="${fat}" min="0" max="31" class="input-falta" onchange="setLan('${c.mat}','faltas',this.value)"></td>
       <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)"></td>
       <td><input type="number" value="${ext}" min="0" max="31" class="input-extras" onchange="setLan('${c.mat}','extras',this.value)" title="Dias extras"></td>
