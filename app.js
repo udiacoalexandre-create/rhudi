@@ -1810,29 +1810,19 @@ function pgBenLancamento(){
     <div class="tbl-wrap">
       <table class="tbl launch-tbl">
         <thead><tr>
-          <th>Mat.</th><th>Nome</th><th title="Travar dias">[lock]</th>
-          <th>Dias \u00DAteis</th><th>Faltas</th><th>F\u00E9rias</th><th>Extras</th><th>Dias Reais</th>
-          <th>VR</th><th>Caf\u00E9</th><th>Comb.</th><th>VT</th><th>Total</th>
+          <th>Mat.</th><th>Nome</th>
+          <th>Dias Úteis</th><th>Faltas</th><th>Férias</th><th>Extras</th><th>Dias Reais</th>
+          <th>VR</th><th>Café</th><th>Cesta</th><th>Comb.</th><th>VT</th><th>Total</th>
         </tr></thead>
         <tbody id="lan-tbody"></tbody>
         <tfoot id="lan-tfoot" style="display:none">
           <tr class="total-row-label">
-            <td colspan="3"> <span id="lan-tot-label"></span></td>
-            <td colspan="5" style="text-align:center">\u2014</td>
-            <td style="text-align:center">VR</td>
-            <td style="text-align:center">Caf\u00E9</td>
-            <td style="text-align:center">Comb.</td>
-            <td style="text-align:center">VT</td>
-            <td style="text-align:center">Total</td>
+            <td colspan="7"> <span id="lan-tot-label"></span></td>
+            <td style="text-align:center">VR</td><td style="text-align:center">Café</td><td style="text-align:center">Cesta</td><td style="text-align:center">Comb.</td><td style="text-align:center">VT</td><td style="text-align:center">Total</td>
           </tr>
           <tr class="total-row">
-            <td colspan="3"><span id="lan-tot-colab" style="font-size:11px;opacity:.8"></span></td>
-            <td colspan="5" style="opacity:.4;text-align:center">\u2014</td>
-            <td id="lan-tot-vr" style="text-align:right"></td>
-            <td id="lan-tot-cafe" style="text-align:right"></td>
-            <td id="lan-tot-comb" style="text-align:right"></td>
-            <td id="lan-tot-vt" style="text-align:right"></td>
-            <td id="lan-tot-geral" style="text-align:right;font-size:13px;color:#86EFAC"></td>
+            <td colspan="7"><span id="lan-tot-colab" style="font-size:11px;opacity:.8"></span></td>
+            <td id="lan-tot-vr" style="text-align:right"></td><td id="lan-tot-cafe" style="text-align:right"></td><td id="lan-tot-cesta" style="text-align:right"></td><td id="lan-tot-comb" style="text-align:right"></td><td id="lan-tot-vt" style="text-align:right"></td><td id="lan-tot-geral" style="text-align:right;font-size:13px;color:#86EFAC"></td>
           </tr>
         </tfoot>
       </table>
@@ -1955,9 +1945,10 @@ function renderLancamento(){
     document.getElementById('lan-tot-colab').textContent=`${ativos.length} colaborador${ativos.length!==1?'es':''}`;
     document.getElementById('lan-tot-vr').textContent=tVR>0?brl(tVR):'\u2014';
     document.getElementById('lan-tot-cafe').textContent=tCafe>0?brl(tCafe):'\u2014';
+    document.getElementById('lan-tot-cesta').textContent=tCesta>0?brl(tCesta):'\u2014';
     document.getElementById('lan-tot-comb').textContent=tComb>0?brl(tComb):'\u2014';
     document.getElementById('lan-tot-vt').textContent=tVT>0?brl(tVT):'\u2014';
-    document.getElementById('lan-tot-geral').textContent=brl(tVR+tCafe+tComb+tVT);
+    document.getElementById('lan-tot-geral').textContent=brl(tVR+tCafe+tCesta+tComb+tVT);
   }
   // Atualizar resumo card
   const resumo=document.getElementById('lan-resumo-vals');
@@ -1967,8 +1958,9 @@ function renderLancamento(){
       <div>\u2615 Caf\u00E9: <strong>${brl(tCafe)}</strong></div>
       <div>\u26FD Comb.: <strong>${brl(tComb)}</strong></div>
       <div>VT: <strong>${brl(tVT)}</strong></div>
+      <div>Cesta: <strong>${brl(tCesta)}</strong></div>
       <div style="grid-column:1/-1;padding-top:4px;border-top:1px solid var(--border)">
-        $ Total: <strong style="color:var(--green);font-size:14px">${brl(tVR+tCafe+tComb+tVT)}</strong>
+        $ Total: <strong style="color:var(--green);font-size:14px">${brl(tVR+tCafe+tCesta+tComb+tVT)}</strong>
       </div>
     </div>`;
 
@@ -2040,12 +2032,12 @@ async function fecharCompetencia(){
     tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
     return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',
       du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),
-      extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,comb,vt,total:vr+cafe+comb+vt};
+      extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
   });
   try{
     await fsSet('historico',comp.replace('/','_'),{
       competencia:comp,fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,
-      totais:{vr:tVR,cafe:tCafe,comb:tComb,vt:tVT,geral:tVR+tCafe+tComb+tVT},detalhes
+      totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:tVR+tCafe+tCesta+tComb+tVT},detalhes
     });
     toast(`\u2705 Compet\u00EAncia ${comp} fechada!`,'success');
   }catch(e){toast('Erro: '+e.message,'error');}
@@ -2279,7 +2271,7 @@ function exportarPorEmpresaCaju(){
       colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp.cod)).forEach(c=>{
         const dr=getLanDR(c.mat,du);
         const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
-        const alim=vr+cafe,mob=comb+vt;
+        const alim=vr+cafe+cesta,mob=comb+vt;
         if(alim===0&&mob===0) return;
         const cpf=(c.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
         linhas.push([cpf,c.mat||'',fmtValCaju(alim),'0',fmtValCaju(mob),'0','0','0','0','0','0','0','0'].join(SEP));
@@ -2406,9 +2398,9 @@ async function exportarHistExcel(comp){
   let h=null; snap.forEach(d=>{if(d.id===comp.replace('/','_'))h=d.data();});
   if(!h){toast('N\u00E3o encontrado','error');return;}
   const rows=[['Compet\u00EAncia: '+h.competencia,'Fechado: '+new Date(h.fechadoEm).toLocaleDateString('pt-BR')],
-    ['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Combust\u00EDvel','VT','Total'],
-    ...h.detalhes.map(r=>[r.mat,r.nome,r.cpf,r.depto,r.du,r.faltas,r.ferias,r.extras,r.dr,r.vr,r.cafe,r.comb,r.vt,r.total]),
-    [],['','','','','','','','','Total',h.totais.vr,h.totais.cafe,h.totais.comb,h.totais.vt,h.totais.geral]];
+    ['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
+    ...h.detalhes.map(r=>[r.mat,r.nome,r.cpf,r.depto,r.du,r.faltas,r.ferias,r.extras,r.dr,r.vr,r.cafe,r.cesta||0,r.comb,r.vt,r.total]),
+    [],['','','','','','','','','Total',h.totais.vr,h.totais.cafe,h.totais.cesta||0,h.totais.comb,h.totais.vt,h.totais.geral]];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Hist\u00F3rico '+comp);
   XLSX.writeFile(wb,'Historico_'+comp.replace('/','_')+'.xlsx');
@@ -2429,8 +2421,9 @@ function pgBenConfig(){
           {name:'cfg-cafe',label:'Cafe da Manha',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
           {name:'cfg-comb',label:'\u26FD Combust\u00EDvel',sub:'L\u00F3gica proporcional /30 com arredondamento especial',opts:[{v:'prop',l:'Proporcional \u00F730 (recomendado)'},{v:'fixo',l:'Sempre fixo'}],def:'prop'},
           {name:'cfg-vt',label:'VT Vale Transporte',sub:'(Val linha \u00D7 viagens) \u00D7 dias',opts:[{v:'mult',l:'Valor \u00D7 dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
+          {name:'cfg-cesta',label:'Cesta B\u00E1sica',sub:'Valor fixo mensal (definido no cadastro)',opts:[{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
         ].map((r,i)=>`
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;${i<3?'border-bottom:1px solid var(--border)':''};${i%2===1?'background:var(--surface2)':''}">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;${i<4?'border-bottom:1px solid var(--border)':''};${i%2===1?'background:var(--surface2)':''}">
             <div>
               <div style="font-weight:600;font-size:14px">${r.label}</div>
               <div class="text-xs text-muted">${r.sub}</div>
@@ -2443,16 +2436,6 @@ function pgBenConfig(){
           </div>`).join('')}
       </div>
       <div class="alert alert-success" style="margin-top:14px;margin-bottom:0"> Configura\u00E7\u00F5es salvas automaticamente no Firebase.</div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">\uFE0F Base de Dados</div>
-      <p class="text-sm text-muted" style="margin-bottom:14px">Exporte a base completa para backup ou migra\u00E7\u00E3o.</p>
-      <div class="btn-row" style="margin-top:0">
-        <button class="btn btn-ghost" onclick="exportarBase()"> Exportar base completa (.xlsx)</button>
-        <button class="btn btn-ghost" onclick="document.getElementById('import-base-file').click()"> Importar base</button>
-        <input type="file" id="import-base-file" accept=".xlsx,.xls" style="display:none" onchange="importarBase(event)">
-      </div>
     </div>`;
 }
 
@@ -2521,12 +2504,12 @@ function exportarLancamentoExcel(){
   const comp=g('lan-comp')||'MES';
   const empF=g('lan-emp');
   const ativos=getLanAtivos();
-  const rows=[['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Combust\u00EDvel','VT','Total'],
+  const rows=[['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
     ...ativos.map(c=>{
       const du2=getLanDU(c.mat,du);
       const dr=getLanDR(c.mat,du);
       const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
-      return [c.mat,c.nome,c.cpf||'',c.depto||'',du2,fnum(lancamento[c.mat]?.faltas),fnum(lancamento[c.mat]?.ferias),fnum(lancamento[c.mat]?.extras),dr,vr,cafe,comb,vt,vr+cafe+comb+vt];
+      return [c.mat,c.nome,c.cpf||'',c.depto||'',du2,fnum(lancamento[c.mat]?.faltas),fnum(lancamento[c.mat]?.ferias),fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,vr+cafe+comb+vt+cesta];
     })];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Lancamento');
@@ -2698,7 +2681,7 @@ function renderDashMain(){
         <div class="stat-card yellow"><div class="stat-val" style="font-size:18px;color:var(--yellow)">${brl(tCafe)}</div><div class="stat-label">\u2615 Caf\u00E9 da Manh\u00E3</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.cafe)>0).length} colaboradores</div></div>
         <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tComb)}</div><div class="stat-label">\u26FD Combust\u00EDvel</div><div class="stat-sub">${colaboradores.filter(c=>fnum(c.comb)>0).length} colaboradores</div></div>
         <div class="stat-card blue"><div class="stat-val" style="font-size:18px;color:var(--blue)">${brl(tVT)}</div><div class="stat-label">VT Vale Transporte</div><div class="stat-sub">${colaboradores.filter(c=>[1,2,3,4].some(n=>fnum(c['vt'+n])>0)).length} colaboradores</div></div>
-        <div class="stat-card green" style="grid-column:1/-1"><div class="stat-val" style="font-size:24px;color:var(--green)">${brl(tVR+tCafe+tComb+tVT)}</div><div class="stat-label">$ Total Geral de Benef\u00EDcios</div></div>
+        <div class="stat-card green" style="grid-column:1/-1"><div class="stat-val" style="font-size:24px;color:var(--green)">${brl(tVR+tCafe+tCesta+tComb+tVT)}</div><div class="stat-label">$ Total Geral de Benef\u00EDcios</div></div>
       </div>
     </div>
 
@@ -2727,7 +2710,7 @@ function renderDashMain(){
               fc.filter(c=>c.status!=='Inativo').forEach(c=>{
                 const dr=getLanDR(c.mat,du);
                 const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
-                tot+=vr+cafe+comb+vt;
+                tot+=vr+cafe+comb+vt+cesta;
               });
               return `<tr>
                 <td><strong>${emp.cod}</strong></td>
