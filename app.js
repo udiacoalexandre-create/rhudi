@@ -702,7 +702,8 @@ function pgBaseLista(){
       <h2> Base de Colaboradores</h2>
       <p>Gerencie todos os colaboradores da empresa</p>
     </div>
-    <div id="bl-status-resumo" style="margin-bottom:12px"></div>
+    <div id="bl-status-resumo" style="margin-bottom:8px"></div>
+    <div id="bl-tipo-resumo" style="margin-bottom:12px"></div>
     <div class="filter-bar" style="align-items:flex-end">
       <div class="filter-group" style="flex:1">
         <label> Buscar</label>
@@ -880,10 +881,32 @@ function renderStatusResumo(){
     +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+unicos.length+'</span> Total</div></div>';
 }
 
+// Painel por tipo de contrato (cruza com status; pessoas únicas).
+// Diretoria (DIR) e Terceiros (TER) não têm duplicata MEI/Sócio, então
+// a contagem sobre colaboradoresUnicos() é exata.
+function renderTipoResumo(){
+  const el=document.getElementById('bl-tipo-resumo'); if(!el) return;
+  const unicos=colaboradoresUnicos();
+  const cont={};
+  unicos.forEach(c=>{ const t=(c.filtro||'OK').toUpperCase(); cont[t]=(cont[t]||0)+1; });
+  const tipos=[
+    {cod:'DIR', label:'👑 Diretoria', bg:'#FEE2E2', cor:'#991B1B'},
+    {cod:'TER', label:'🟠 Terceiros', bg:'#FFEDD5', cor:'#9A3412'},
+  ];
+  const chips=tipos.map(t=>
+    '<div style="display:inline-flex;align-items:center;gap:6px;background:'+t.bg+';color:'+t.cor+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600">'
+    +'<span style="font-size:15px;font-weight:800">'+(cont[t.cod]||0)+'</span> '+t.label+'</div>'
+  ).join('');
+  el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Por tipo de contrato:</span>'
+    +chips+'</div>';
+}
+
 function renderColabList(){
   bindMsOutside();
   updateMsCounts();
   renderStatusResumo();
+  renderTipoResumo();
   const f=filtrarColabs();
   const cnt=document.getElementById('bl-count');
   if(cnt){
