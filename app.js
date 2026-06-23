@@ -490,6 +490,7 @@ function limparFormColab(prefix){
 }
 
 function abrirEditar(id){
+  admissaoSync=null; // garante que nao confunde com admissao da sincronizacao
   editColabId=id;
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const body=document.getElementById('modal-colab-body');
@@ -502,6 +503,7 @@ function abrirEditar(id){
 }
 
 async function salvarColabModal(){
+  if(admissaoSync) return salvarAdmissaoSync(); // modal aberto para admissao da sincronizacao
   if(!editColabId) return;
   const idx=colaboradores.findIndex(x=>x._id===editColabId); if(idx<0) return;
   const dados=getColabFromForm('e');
@@ -539,9 +541,7 @@ async function excluirColab(id,nome){
 const MODULES = {
   base:{pages:[
     {id:'base-lista',icon:'',label:'Colaboradores'},
-    {id:'base-atualizacao',icon:'',label:'Atualizacao Mensal'},
-    {id:'base-import',icon:'',label:'Importar / Sync'},
-    {id:'base-defpara',icon:'',label:'Importar Funcao/Ferias'},
+    {id:'base-import',icon:'',label:'Importar'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
   ]},
   beneficios:{pages:[
@@ -837,7 +837,7 @@ function pgBaseDePara(){
         <div class="upload-text">Clique para selecionar a planilha</div>
         <div class="upload-sub">.xlsx ou .xls</div>
       </div>
-      <div id="defpara-prev" style="margin-top:14px"></div>
+      <div id="import-preview" style="margin-top:14px"></div>
     </div>`;
 }
 
@@ -876,7 +876,7 @@ function _parseMesFerias(v){
 
 async function importarDePara(event){
   const file=event.target.files[0]; if(!file) return;
-  const prev=document.getElementById('defpara-prev');
+  const prev=document.getElementById('import-preview');
   if(prev) prev.innerHTML='<div class="alert alert-info">Processando planilha...</div>';
   const reader=new FileReader();
   reader.onload=e=>{
@@ -957,7 +957,7 @@ async function importarDePara(event){
 }
 
 function renderDeParaPreview(){
-  const prev=document.getElementById('defpara-prev'); if(!prev||!deParaPendente) return;
+  const prev=document.getElementById('import-preview'); if(!prev||!deParaPendente) return;
   const {atualizar,jaOk,naoEnc,ambiguos,feriasNaoRec}=deParaPendente;
   const card=(cor,n,lbl)=>`<div class="stat-card ${cor}" style="padding:10px 12px"><div class="stat-val" style="font-size:20px">${n}</div><div class="stat-label" style="font-size:11px">${lbl}</div></div>`;
   let html=`<div class="stats-grid" style="margin-bottom:14px">
@@ -993,7 +993,7 @@ function renderDeParaPreview(){
   html+=`<div class="btn-row" style="margin-top:8px">
     <button class="btn btn-primary" onclick="aplicarDePara()" ${atualizar.length?'':'disabled'}>Confirmar e gravar ${atualizar.length} atualização(ões)</button>
     ${_btnExportPend()}
-    <button class="btn btn-ghost" onclick="deParaPendente=null;document.getElementById('defpara-prev').innerHTML=''">Cancelar</button>
+    <button class="btn btn-ghost" onclick="deParaPendente=null;document.getElementById('import-preview').innerHTML=''">Cancelar</button>
   </div>`;
   prev.innerHTML=html;
 }
@@ -1025,7 +1025,7 @@ function exportarDeParaPendentes(){
 async function aplicarDePara(){
   if(!deParaPendente||!deParaPendente.atualizar.length) return;
   const lista=deParaPendente.atualizar.slice();
-  const prev=document.getElementById('defpara-prev');
+  const prev=document.getElementById('import-preview');
   if(prev) prev.innerHTML='<div class="alert alert-info">Gravando '+lista.length+' atualização(ões)...</div>';
   let ok=0;
   try{
@@ -1053,8 +1053,171 @@ async function aplicarDePara(){
   }
 }
 
+// ════════════════════════════════════════════════════════════════
+// BASE: SINCRONIZAR COM SENIOR (por status, confirmacao item a item)
+// ════════════════════════════════════════════════════════════════
+let syncStatusPendente=null;
+let admissaoSync=null; // admissao em edicao no modal de colaborador
+
+// Classifica o status escrito da planilha em categoria + status canonico do sistema
+function classificarStatusSenior(raw){
+  const s=_normNome(raw); // maiusculas, sem acento
+  if(!s) return null;
+  if(s.includes('DEMIT')||s.includes('RESCIS')||s.includes('DESLIG')) return {cat:'demitido', status:'Demitido'};
+  if(s.includes('FERIAS')) return {cat:'ferias', status:s.includes('COLETIV')?'Ferias Coletiva':'Ferias'};
+  if(s.includes('MATERN')) return {cat:'afastado', status:'Lic. Maternidade'};
+  if(s.includes('PATERN')) return {cat:'afastado', status:'Lic. Paternidade'};
+  if(s.includes('ACIDENT')) return {cat:'afastado', status:'Acidente Trabalho'};
+  if(s.includes('DOENC')) return {cat:'afastado', status:'Auxilio Doenca'};
+  if(s.includes('RECLUS')) return {cat:'afastado', status:'Auxilio Reclusao'};
+  if(s.includes('AFAST')||s.includes('INSS')||s.includes('LICENC')) return {cat:'afastado', status:'Afastado'};
+  if(s.includes('TRABALH')||s.includes('ATIVO')||s.includes('NORMAL')) return {cat:'trabalhando', status:'Trabalhando'};
+  return {cat:'outro', status:raw};
+}
+function categoriaStatusBase(c){
+  const st=c.status||'';
+  if(st==='Demitido') return 'demitido';
+  if(st==='Ferias'||st==='Ferias Coletiva') return 'ferias';
+  if(STATUS_SO_CESTA.includes(st)) return 'afastado';
+  if(st==='Trabalhando'||st==='Ativo') return 'trabalhando';
+  return 'outro';
+}
+
+function processarSyncStatus(event){
+  const file=event.target.files[0]; if(!file) return;
+  const prev=document.getElementById('import-preview');
+  if(prev) prev.innerHTML='<div class="alert alert-info">Processando...</div>';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+      let hi=-1;
+      for(let i=0;i<Math.min(8,rows.length);i++){
+        const low=(rows[i]||[]).map(x=>String(x||'').toLowerCase());
+        if(low.some(h=>h.includes('nome'))&&low.some(h=>h.includes('status')||h.includes('situac'))){hi=i;break;}
+      }
+      if(hi<0){ if(prev) prev.innerHTML='<div class="alert alert-error">Não encontrei o cabeçalho com colunas <strong>Nome</strong> e <strong>Status</strong>.</div>'; return; }
+      const hs=rows[hi].map(h=>String(h||'').toLowerCase().trim());
+      const iMat=hs.findIndex(h=>h.includes('matr')||h.includes('cadastro'));
+      const iNome=hs.findIndex(h=>h.includes('nome'));
+      const iStat=hs.findIndex(h=>h.includes('status')||h.includes('situac'));
+
+      const porMat={}, porNome={};
+      colaboradores.forEach(c=>{ const m=_normMatDigits(c.mat); if(m)(porMat[m]=porMat[m]||[]).push(c); const n=_normNome(c.nome); if(n)(porNome[n]=porNome[n]||[]).push(c); });
+
+      const admissoes=[], demissoes=[], ferias=[], afastamentos=[], retornos=[], naoRec=[];
+      for(let i=hi+1;i<rows.length;i++){
+        const r=rows[i]; if(!r) continue;
+        const nome=iNome>=0?String(r[iNome]||'').trim():''; if(!nome) continue;
+        const matD=iMat>=0?_normMatDigits(r[iMat]):'';
+        const cls=classificarStatusSenior(r[iStat]);
+        if(!cls) continue;
+        let c=null;
+        if(matD&&porMat[matD]&&porMat[matD].length===1) c=porMat[matD][0];
+        else { const bn=porNome[_normNome(nome)]||[]; if(bn.length===1) c=bn[0]; else if(bn.length>1&&matD){ const f=bn.filter(x=>_normMatDigits(x.mat)===matD); if(f.length===1)c=f[0]; } }
+        const reg={mat:String(r[iMat]||'').trim(), nome, statusRaw:String(r[iStat]||'').trim(), cls, colab:c||null};
+        if(cls.cat==='outro'){ naoRec.push(reg); continue; }
+        if(!c){ if(cls.cat==='trabalhando') admissoes.push(reg); continue; }
+        if(categoriaStatusBase(c)===cls.cat) continue; // sem mudanca
+        if(cls.cat==='demitido') demissoes.push(reg);
+        else if(cls.cat==='ferias') ferias.push(reg);
+        else if(cls.cat==='afastado') afastamentos.push(reg);
+        else if(cls.cat==='trabalhando') retornos.push(reg);
+      }
+      syncStatusPendente={admissoes,demissoes,ferias,afastamentos,retornos,naoRec};
+      renderSyncStatusPreview();
+    }catch(err){ if(prev) prev.innerHTML='<div class="alert alert-error">Erro: '+err.message+'</div>'; }
+  };
+  reader.readAsBinaryString(file);
+  event.target.value='';
+}
+
+function renderSyncStatusPreview(){
+  const prev=document.getElementById('import-preview'); if(!prev||!syncStatusPendente) return;
+  const S=syncStatusPendente;
+  const card=(cor,n,lbl)=>'<div class="stat-card '+cor+'" style="padding:10px 12px"><div class="stat-val" style="font-size:20px">'+n+'</div><div class="stat-label" style="font-size:11px">'+lbl+'</div></div>';
+  const total=S.admissoes.length+S.demissoes.length+S.ferias.length+S.afastamentos.length+S.retornos.length;
+  let html='<div class="stats-grid" style="margin-bottom:14px">'
+    +card('green',S.admissoes.length,'Admissões')+card('red',S.demissoes.length,'Demissões')
+    +card('blue',S.ferias.length,'Férias')+card('yellow',S.afastamentos.length,'Afastamentos')
+    +card('green',S.retornos.length,'Retornos')+'</div>';
+  if(total===0) html+='<div class="alert alert-success">Nenhuma mudança de status detectada — base já sincronizada.</div>';
+  if(S.demissoes.length) html+='<div class="alert alert-warning" style="margin-bottom:10px">⚠️ As demissões <strong>removem</strong> o colaborador da base. Garanta que a competência do mês anterior já foi fechada (o snapshot fica no Histórico).</div>';
+  const sec=(titulo,cor,arr,tipo,acao)=>{
+    if(!arr.length) return '';
+    const linhas=arr.map((r,idx)=>'<tr><td style="font-weight:500">'+r.nome+'</td><td class="text-xs text-muted">'+(r.mat||'—')+'</td>'
+      +'<td class="text-xs">'+(r.colab?'era '+(r.colab.status||'—')+' → ':'')+'<strong>'+r.statusRaw+'</strong></td>'
+      +'<td style="text-align:right;white-space:nowrap"><button class="btn btn-primary btn-xs" onclick="syncConfirmar(\''+tipo+'\','+idx+')">'+acao+'</button> '
+      +'<button class="btn btn-ghost btn-xs" onclick="syncIgnorar(\''+tipo+'\','+idx+')">Ignorar</button></td></tr>').join('');
+    return '<div style="margin:6px 0;font-weight:700;font-size:12px;color:'+cor+'">'+titulo+' ('+arr.length+')</div>'
+      +'<div class="tbl-wrap" style="margin-bottom:14px"><table class="tbl"><tbody>'+linhas+'</tbody></table></div>';
+  };
+  html+=sec('Admissões — confirmar e cadastrar','var(--green)',S.admissoes,'adm','Admitir...');
+  html+=sec('Demissões — remover da base','var(--red)',S.demissoes,'dem','Confirmar e remover');
+  html+=sec('Entraram de férias','var(--blue)',S.ferias,'fer','Confirmar férias');
+  html+=sec('Afastamentos','var(--yellow)',S.afastamentos,'afa','Confirmar afastamento');
+  html+=sec('Retornos ao trabalho','var(--green)',S.retornos,'ret','Confirmar retorno');
+  if(S.naoRec&&S.naoRec.length){
+    html+='<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--text2)">Status não reconhecido ('+S.naoRec.length+')</summary>'
+      +'<div class="text-xs text-muted" style="margin-top:6px">'+S.naoRec.map(r=>r.nome+': "'+r.statusRaw+'"').join('<br>')+'</div></details>';
+  }
+  prev.innerHTML=html;
+}
+
+function _syncArr(tipo){ const m={adm:'admissoes',dem:'demissoes',fer:'ferias',afa:'afastamentos',ret:'retornos'}; return syncStatusPendente?syncStatusPendente[m[tipo]]:null; }
+
+function syncIgnorar(tipo,idx){ const arr=_syncArr(tipo); if(arr){ arr.splice(idx,1); renderSyncStatusPreview(); } }
+
+async function syncConfirmar(tipo,idx){
+  const arr=_syncArr(tipo); if(!arr) return;
+  const item=arr[idx]; if(!item) return;
+  if(tipo==='adm'){ abrirAdmissaoSync(item); return; } // remove ao salvar
+  const c=item.colab;
+  if(tipo==='dem'){
+    if(!c){ arr.splice(idx,1); renderSyncStatusPreview(); return; }
+    if(!confirm('Remover '+c.nome+' da base? Os dados ficam no histórico da competência fechada.')) return;
+    try{ await fsDel('colaboradores',c._id); colaboradores=colaboradores.filter(x=>x._id!==c._id); arr.splice(idx,1); toast('Removido: '+c.nome,'success'); renderSyncStatusPreview(); if(currentPage==='base-lista')renderColabList(); }
+    catch(e){ toast('Erro: '+e.message,'error'); }
+    return;
+  }
+  if(!c){ arr.splice(idx,1); renderSyncStatusPreview(); return; }
+  c.status=item.cls.status;
+  try{ await fsSet('colaboradores',c._id,c); arr.splice(idx,1); toast(c.nome+': '+c.status,'success'); renderSyncStatusPreview(); if(currentPage==='base-lista')renderColabList(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// Admissao: abre o cadastro pre-preenchido; salvar cria o colaborador
+function abrirAdmissaoSync(item){
+  admissaoSync=item; editColabId=null;
+  const body=document.getElementById('modal-colab-body');
+  const title=document.getElementById('modal-colab-title');
+  if(!body||!title) return;
+  title.textContent='Admitir: '+item.nome;
+  body.innerHTML=formColabHTML('e',{mat:item.mat,nome:item.nome,status:'Trabalhando',filtro:'OK'});
+  setTimeout(()=>initFormDisplay('e'),50);
+  openModal('modal-colab');
+}
+
+async function salvarAdmissaoSync(){
+  const c=getColabFromForm('e');
+  if(!c.nome){toast('Nome é obrigatório','error');return;}
+  const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
+  if(colaboradores.some(x=>x._id===id)){toast('Já existe colaborador com esta matrícula','error');return;}
+  c._id=id; c.mobilidade=c.mobilidade||inferMob(c);
+  try{
+    await fsSet('colaboradores',id,c); colaboradores.push(c);
+    if(syncStatusPendente&&admissaoSync){ const a=syncStatusPendente.admissoes, ix=a.indexOf(admissaoSync); if(ix>=0)a.splice(ix,1); }
+    admissaoSync=null;
+    closeModal('modal-colab');
+    toast('Admitido: '+c.nome,'success');
+    renderSyncStatusPreview();
+    if(currentPage==='base-lista')renderColabList();
+  }catch(e){toast('Erro: '+e.message,'error');}
+}
+
 // ============================================================
-// BASE: SYNC SENIOR
+// BASE: SYNC SENIOR (legado)
 // ============================================================
 function pgBaseSync(){
   return `
@@ -1207,7 +1370,7 @@ function pgBaseCarga(){
         <div class="upload-text">Clique para selecionar a planilha de colaboradores</div>
         <div class="upload-sub">Colunas: Matr\u00EDcula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC), VR/dia, Caf\u00E9/dia, Combust\u00EDvel, Mobilidade</div>
       </div>
-      <div id="carga-preview" style="margin-top:14px"></div>
+      <div id="import-preview" style="margin-top:14px"></div>
     </div>
     <div class="card">
       <div class="card-title">Modelo de planilha</div>
@@ -1301,7 +1464,7 @@ function processarCarga(event){
 
 function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
   const chave=(mat,cpf)=>(mat||'')+'|'+(cpf||'').replace(/[^0-9]/g,'');
-  const prev=document.getElementById('carga-preview'); if(!prev) return;
+  const prev=document.getElementById('import-preview'); if(!prev) return;
 
   let html=`
     <div class="stats-grid" style="margin-bottom:16px">
@@ -1389,7 +1552,7 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
 
   // BOT\u00C3O APLICAR
   html+=`<div class="btn-row">
-    <button class="btn btn-ghost" onclick="document.getElementById('carga-preview').innerHTML=''">Cancelar</button>
+    <button class="btn btn-ghost" onclick="document.getElementById('import-preview').innerHTML=''">Cancelar</button>
     <button class="btn btn-primary" onclick="aplicarReconciliacao()">
       Aplicar alteracoes selecionadas
     </button>
@@ -1410,7 +1573,7 @@ function selecionarTodosExcluir(sel){
 }
 
 async function aplicarReconciliacao(){
-  const prev=document.getElementById('carga-preview');
+  const prev=document.getElementById('import-preview');
   const paraIncluir=window._reconcIncluir||[];
   const paraExcluir=window._reconcExcluir||[];
   const duplicatas=window._reconcDuplic||[];
@@ -1471,7 +1634,7 @@ async function importarSemDuplic(){
     c._id=id; b.set(window._doc('colaboradores',id),c); colaboradores.push(c); n++;
   });
   await b.commit(); cargaPendente=[];
-  document.getElementById('carga-preview').innerHTML=`<div class="alert alert-success">\u2705 <strong>${n} colaboradores importados!</strong></div>`;
+  document.getElementById('import-preview').innerHTML=`<div class="alert alert-success">\u2705 <strong>${n} colaboradores importados!</strong></div>`;
   toast('\u2705 '+n+' importados!','success');
 }
 
@@ -2663,31 +2826,26 @@ waitFirebase(()=>{
 function pgBaseImport(){
   return `
     <div class="page-header">
-      <h2> Importar / Sincronizar Base</h2>
-      <p>Dois modos: Sync Senior (status/demissoes/ferias) ou Carga Completa (reconciliacao total).</p>
+      <h2> Importar</h2>
+      <p>Três modos de importação a partir de planilhas (.xlsx).</p>
     </div>
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Modo de importacao</div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:8px;padding:12px 18px;border:2px solid var(--blue);border-radius:var(--radius);cursor:pointer;background:var(--blue-light);flex:1;min-width:220px">
-          <input type="radio" name="import-modo" value="sync" checked style="accent-color:var(--blue)">
-          <div>
-            <div style="font-weight:600;font-size:14px">Sync Senior</div>
-            <div class="text-xs text-muted">Apenas Matricula + Nome + CPF. Detecta novos, demissoes e ferias.</div>
-          </div>
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;padding:12px 18px;border:1.5px solid var(--border);border-radius:var(--radius);cursor:pointer;background:var(--surface2);flex:1;min-width:220px">
-          <input type="radio" name="import-modo" value="carga" style="accent-color:var(--blue)">
-          <div>
-            <div style="font-weight:600;font-size:14px">Carga Completa</div>
-            <div class="text-xs text-muted">Todos os campos. Reconciliacao completa: novos, excluir, duplicatas CLT+MEI.</div>
-          </div>
-        </label>
+      <div class="card-title">Modo de importação</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <label class="imp-modo" style="flex:1;min-width:220px"><input type="radio" name="import-modo" value="sync" checked style="accent-color:var(--blue)">
+          <div><div style="font-weight:600;font-size:14px">Sincronizar com Senior</div>
+            <div class="text-xs text-muted">Por status: detecta admissões, demissões, férias e afastamentos — confirma item a item.</div></div></label>
+        <label class="imp-modo" style="flex:1;min-width:220px"><input type="radio" name="import-modo" value="carga" style="accent-color:var(--blue)">
+          <div><div style="font-weight:600;font-size:14px">Carga Completa</div>
+            <div class="text-xs text-muted">Todos os campos. Reconciliação total: novos, excluir, duplicatas CLT+MEI.</div></div></label>
+        <label class="imp-modo" style="flex:1;min-width:220px"><input type="radio" name="import-modo" value="defpara" style="accent-color:var(--blue)">
+          <div><div style="font-weight:600;font-size:14px">Função / Admissão / Férias</div>
+            <div class="text-xs text-muted">De/para por nome+matrícula: preenche função, admissão e mês de férias.</div></div></label>
       </div>
     </div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px" id="import-hint">
-        <strong>Sync Senior:</strong> Colunas esperadas: Matricula (ou Cadastro), Nome, CPF.
+        <strong>Sincronizar com Senior:</strong> Colunas esperadas: Matrícula (ou Cadastro), Nome, Status. O status define a ação (Trabalhando = admissão, Demitido = remoção, Férias, Afastado...).
       </div>
       <div class="upload-zone" onclick="document.getElementById('import-file').click()">
         <input type="file" id="import-file" accept=".xlsx,.xls" onchange="processarImport(event)">
@@ -2706,7 +2864,8 @@ function pgBaseImport(){
 function processarImport(event){
   const file=event.target.files[0]; if(!file) return;
   const modo=document.querySelector('input[name="import-modo"]:checked')?.value||'sync';
-  if(modo==='sync') processarSync(event);
+  if(modo==='sync') processarSyncStatus(event);
+  else if(modo==='defpara') importarDePara(event);
   else processarCarga(event);
 }
 
@@ -2716,10 +2875,13 @@ document.addEventListener('change', function(e){
     const hint=document.getElementById('import-hint');
     if(!hint) return;
     if(e.target.value==='sync'){
-      hint.innerHTML='<strong>Sync Senior:</strong> Colunas: Matricula (ou Cadastro), Nome, CPF.';
+      hint.innerHTML='<strong>Sincronizar com Senior:</strong> Colunas: Matrícula (ou Cadastro), Nome, Status. O status define a ação (Trabalhando = admissão, Demitido = remoção, Férias, Afastado...).';
+    } else if(e.target.value==='defpara'){
+      hint.innerHTML='<strong>Função / Admissão / Férias:</strong> Colunas: Nome, Matrícula, Função, Admissão e a coluna de mês de férias. Casa por nome+matrícula e preenche esses campos.';
     } else {
-      hint.innerHTML='<strong>Carga Completa:</strong> Colunas: Matricula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC/PART), VR/dia, Cafe/dia, Combustivel, Mobilidade.';
+      hint.innerHTML='<strong>Carga Completa:</strong> Colunas: Matrícula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC), VR/dia, Café/dia, Combustível, Mobilidade.';
     }
+    const pv=document.getElementById('import-preview'); if(pv) pv.innerHTML='';
   }
 });
 

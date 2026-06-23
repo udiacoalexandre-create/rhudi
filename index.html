@@ -264,6 +264,11 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .ms-opt:hover { background: var(--surface2); }
 .ms-opt input { accent-color: var(--blue); width: 14px; height: 14px; min-width: 0; padding: 0; margin: 0; flex: 0 0 auto; }
 .ms-empty { padding: 8px; font-size: 11px; color: var(--text3); }
+
+/* Seletor de modo de importação */
+.imp-modo { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border: 1.5px solid var(--border); border-radius: var(--radius); cursor: pointer; background: var(--surface2); }
+.imp-modo:hover { border-color: var(--text3); }
+.imp-modo:has(input:checked) { border-color: var(--blue); background: var(--blue-light); }
 .filter-count { font-size: 12px; color: var(--text2); align-self: center; white-space: nowrap; }
 
 /* UPLOAD ZONE */
