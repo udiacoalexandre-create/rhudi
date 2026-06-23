@@ -343,6 +343,11 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .total-cell { font-weight: 600; color: var(--blue); font-family: 'JetBrains Mono', monospace; font-size: 11px; text-align: right; }
 .total-row td { background: var(--blue-dark) !important; color: #fff; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 8px 6px; }
 .total-row-label td { background: #1E3A8A !important; color: rgba(255,255,255,.6); font-size: 10px; padding: 5px 6px; text-align: center; }
+/* Listras de coluna na tabela de Benefícios (facilita identificar as colunas) */
+.launch-tbl tbody td:nth-child(odd) { background: #f4f5f7; }
+.launch-tbl tbody td:nth-child(even) { background: #e6e9ee; }
+.launch-tbl tbody tr:hover td { background: var(--blue-light); }
+.launch-tbl tbody tr.linha-travada td { background: #dbeafe; }
 
 /* FÉRIAS RADAR */
 .radar-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }

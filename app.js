@@ -2035,7 +2035,7 @@ function renderLancamento(){
     const duCell = locked
       ? `<span style="display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--blue)" title="Jornada travada no cadastro - nao afetada pelo Aplicar a todos">&#128274; ${du2}</span>`
       : `<input type="number" value="${du2}" min="0" max="31" class="input-du" onchange="setLan('${c.mat}','duteis',this.value)">`;
-    return `<tr${locked?' style="background:var(--blue-light)"':''}>
+    return `<tr${locked?' class="linha-travada"':''}>
       <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${c.nome}">${c.nome}</td>
       <td>${duCell}</td>
