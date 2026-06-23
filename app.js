@@ -159,6 +159,11 @@ function getDeptoList(){
   return [...new Set(colaboradores.map(c=>c.depto||'').filter(d=>d))].sort();
 }
 
+// Funcoes distintas (usa funcao, cai para cargo) — para o filtro do Radar de Ferias
+function getFuncaoList(){
+  return [...new Set(colaboradores.map(c=>funcaoColab(c)).filter(f=>f))].sort();
+}
+
 function inferMob(c){
   if(['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade)) return c.mobilidade;
   if([1,2,3,4].some(n=>fnum(c['vt'+n])>0)) return 'vt';
@@ -3518,7 +3523,7 @@ function exportarFolhaExcel(){
 function pgFerRadar(){
   return `
     <div class="page-header"><h2>Radar de Ferias</h2><p>Farol de vencimento por colaborador.</p></div>
-    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--green)"></div>Nao vencida</div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--yellow)"></div>Vencida 1-9 meses</div>
@@ -3526,25 +3531,19 @@ function pgFerRadar(){
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencida +12 meses</div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--border)"></div>Sem dados</div>
       </div>
-      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
-        <select id="fer-emp" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todas as empresas</option>
-          ${getEmpresaList().map(e=>'<option value="'+e.cod+'">'+e.cod+'</option>').join('')}
-        </select>
-        <select id="fer-dep" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todos os deptos</option>
-          ${getDeptoList().map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
-        </select>
-        <select id="fer-status-filter" onchange="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todos</option>
-          <option value="verde">Verde - OK</option>
-          <option value="amarelo">Amarelo 1-9m</option>
-          <option value="laranja">Laranja 10-12m</option>
-          <option value="vermelho">Vermelho +12m</option>
-          <option value="sem">Sem dados</option>
-        </select>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        ${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFerRadar')}
+        ${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}
+        ${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}
+        ${msDropdown('rcor','Situação',[{value:'verde',label:'Verde — não vencida'},{value:'amarelo',label:'Amarelo — 1-9m'},{value:'laranja',label:'Laranja — 10-12m'},{value:'vermelho',label:'Vermelho — +12m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}
         <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">Excel</button>
       </div>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:16px;font-size:11px;color:var(--text2)">
+      <span style="font-weight:700;text-transform:uppercase;letter-spacing:.5px">Agendamento:</span>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--green)"></div>Dentro do vencimento</div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--red)"></div>Após o vencimento</div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:#111827"></div>Sem agendamento</div>
     </div>
     <div id="fer-stats" style="margin-bottom:16px"></div>
     <div id="fer-radar-grid"></div>
@@ -3577,58 +3576,88 @@ function agendamentoLabel(c){
   return c.ferMes+'/'+anoAgendado(c.ferMes);
 }
 
+// Parser local de datas ISO (YYYY-MM-DD) em horario local, evitando o
+// deslocamento de fuso do new Date('YYYY-MM-DD') (que assume UTC).
+function _dataLocal(s){
+  if(!s) return null;
+  const m=String(s).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  const d=new Date(s);
+  return isNaN(d.getTime())?null:d;
+}
+// Diferenca em meses (assinada) entre duas datas: de -> ate.
+function _mesesEntre(de, ate){
+  let m=(ate.getFullYear()-de.getFullYear())*12 + (ate.getMonth()-de.getMonth());
+  if(ate.getDate() < de.getDate()) m-=1;
+  return m;
+}
+// Data do agendamento de ferias: 1o dia do mes agendado, no ano calculado.
+function agendamentoDate(c){
+  if(!c||!c.ferMes) return null;
+  const idx=MESES_FER.indexOf(c.ferMes);
+  if(idx<0) return null;
+  const ano=anoAgendado(c.ferMes);
+  if(typeof ano!=='number') return null;
+  return new Date(ano, idx, 1);
+}
+// Bolinha do card: verde = agendado dentro do vencimento; vermelha = agendado
+// apos o vencimento; preta = sem agendamento; cinza = sem vencimento p/ comparar.
+function agendamentoStatus(c, vencDate){
+  if(!c||!c.ferMes) return {cor:'preta', tip:'Sem agendamento'};
+  const ag=agendamentoDate(c);
+  if(!ag||!vencDate) return {cor:'cinza', tip:'Agendado '+c.ferMes+' (sem vencimento p/ comparar)'};
+  return ag<=vencDate
+    ? {cor:'verde', tip:'Agendado dentro do vencimento ('+agendamentoLabel(c)+')'}
+    : {cor:'vermelha', tip:'Agendado APOS o vencimento ('+agendamentoLabel(c)+')'};
+}
+
 function getFarol(c){
   // Nao se aplica - socios/consultores
   if(c.elegibilidade?.ferias===false){
-    return {cor:'na',cls:'dot-na',meses:0,label:'N/A',vencStr:'\u2014',dias:0};
+    return {cor:'na',cls:'dot-na',meses:0,label:'N/A',vencStr:'\u2014',vencDate:null,dias:0};
   }
-  // Prioridade: dados de ferVenc (importados) ou calcular por admissao
   const hoje=new Date(); hoje.setHours(0,0,0,0);
 
+  // Vencimento ancorado no dia/mes de entrada: admissao + 1 ano = 1o
+  // vencimento. Os meses vencidos ACUMULAM desde esse 1o ciclo (sem reiniciar).
+  // ferVenc (override manual/importado) tem prioridade quando preenchido.
   let vencDate=null;
   if(c.ferVenc){
-    try{ vencDate=new Date(c.ferVenc); }catch(e){}
+    vencDate=_dataLocal(c.ferVenc);
   } else if(c.admissao){
-    // Calcular: admissao + 1 ano = primeiro vencimento
-    try{
-      const adm=new Date(c.admissao);
-      // Vencimento = aniversario de admissao + 12 meses aquisitivos
-      vencDate=new Date(adm);
-      vencDate.setFullYear(vencDate.getFullYear()+1);
-      // Se ja passou, calcular proximo ciclo
-      while(vencDate < hoje){
-        vencDate.setFullYear(vencDate.getFullYear()+1);
-      }
-      // O vencimento "real" e o anterior (que venceu)
-      const prevVenc=new Date(vencDate);
-      prevVenc.setFullYear(prevVenc.getFullYear()-1);
-      vencDate=prevVenc < hoje ? prevVenc : vencDate;
-    }catch(e){}
+    const adm=_dataLocal(c.admissao);
+    if(adm){ vencDate=new Date(adm); vencDate.setFullYear(vencDate.getFullYear()+1); }
   }
 
-  if(!vencDate) return {cor:'sem',cls:'dot-sem',meses:0,label:'Sem dados',vencStr:'—',dias:0};
+  if(!vencDate) return {cor:'sem',cls:'dot-sem',meses:0,label:'Sem dados',vencStr:'—',vencDate:null,dias:0};
 
-  const diffMs=hoje-vencDate;
-  const meses=Math.round(diffMs/(1000*60*60*24*30));
-  const vencStr=vencDate.toLocaleDateString('pt-BR');
-  const diasDisp=c.ferDias||30;
+  const meses=_mesesEntre(vencDate,hoje);
+  // dia/mes do vencimento (sem ano, para nao confundir)
+  const vencStr=String(vencDate.getDate()).padStart(2,'0')+'/'+String(vencDate.getMonth()+1).padStart(2,'0');
+  const diasDisp=c.ferSaldo!=null?c.ferSaldo:(c.ferDias||30);
 
-  if(meses<0) return {cor:'verde',cls:'dot-verde',meses:Math.abs(meses),label:'OK',vencStr,dias:diasDisp};
-  if(meses<=9) return {cor:'amarelo',cls:'dot-amarelo',meses,label:meses+'m',vencStr,dias:diasDisp};
-  if(meses<=12) return {cor:'laranja',cls:'dot-laranja',meses,label:meses+'m',vencStr,dias:diasDisp};
-  return {cor:'vermelho',cls:'dot-vermelho',meses,label:meses+'m',vencStr,dias:diasDisp};
+  if(meses<0)  return {cor:'verde',  cls:'dot-verde',  meses:Math.abs(meses),label:'Vence em '+Math.abs(meses)+'m',vencStr,vencDate,dias:diasDisp};
+  if(meses<=9) return {cor:'amarelo',cls:'dot-amarelo',meses,label:'Há '+meses+'m',vencStr,vencDate,dias:diasDisp};
+  if(meses<=12)return {cor:'laranja',cls:'dot-laranja',meses,label:'Há '+meses+'m',vencStr,vencDate,dias:diasDisp};
+  return {cor:'vermelho',cls:'dot-vermelho',meses,label:'Há '+meses+'m',vencStr,vencDate,dias:diasDisp};
 }
 
 function renderFerRadar(){
-  const empF=document.getElementById('fer-emp')?.value||'';
-  const depF=document.getElementById('fer-dep')?.value||'';
+  bindMsOutside();
+  updateMsCounts();
+  const empF=getMs('remp');   // empresa (prefixo da matricula)
+  const depF=getMs('rdep');   // departamento
+  const funcF=getMs('rfunc'); // funcao
+  const corF=getMs('rcor');   // situacao do farol (cor)
 
   // Sempre busca da base de colaboradores (Firebase) atualizada em memoria
   let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
-  if(empF) f=f.filter(c=>String(c.mat||'').startsWith(empF));
-  if(depF) f=f.filter(c=>(c.depto||'')===depF);
+  if(empF.length) f=f.filter(c=>empF.some(e=>String(c.mat||'').startsWith(e)));
+  if(depF.length) f=f.filter(c=>depF.includes(c.depto||''));
+  if(funcF.length) f=f.filter(c=>funcF.includes(funcaoColab(c)));
 
-  const comFarol=f.map(c=>({...c,farol:getFarol(c)}));
+  let comFarol=f.map(c=>({...c,farol:getFarol(c)}));
+  if(corF.length) comFarol=comFarol.filter(c=>corF.includes(c.farol.cor));
 
   renderFarois(comFarol);
   renderAlertasFeriasMes(comFarol);
@@ -3674,14 +3703,20 @@ function renderFarois(dados){
           +'<div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">'
           +itens.map(c=>{
             const f=c.farol;
+            const dotCor={verde:'var(--green)',vermelha:'var(--red)',preta:'#111827',cinza:'var(--text3)'};
+            const ag=agendamentoStatus(c,f.vencDate);
+            const saldo=(f.dias!=null?f.dias:30);
             return '<div style="background:#fff;border:1px solid '+corMap[col.cor]+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
               +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
-              +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</div>'
-              +'<div style="font-size:10px;color:var(--text2);margin-top:2px">'
-              +(f.cor!=='sem'?'Venc: '+f.vencStr:'Sem admissao/venc.')
-              +(c.ferMes?' &middot; Agendado: '+c.ferMes:'')
+              +'<div style="display:flex;align-items:center;gap:6px">'
+                +'<span title="'+ag.tip+'" style="flex:0 0 auto;width:10px;height:10px;border-radius:50%;background:'+dotCor[ag.cor]+'"></span>'
+                +'<span style="flex:1;min-width:0;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</span>'
+                +'<span title="Saldo de dias a tirar" style="flex:0 0 auto;background:var(--blue-light);color:var(--blue-dark);font-size:10px;font-weight:800;border-radius:10px;padding:1px 7px">'+saldo+' d</span>'
               +'</div>'
-              +(c.ferSaldo?'<div style="font-size:10px;color:'+corMap[col.cor]+';font-weight:700;margin-top:2px">Saldo: '+c.ferSaldo+' dias</div>':'')
+              +'<div style="font-size:10px;color:var(--text2);margin-top:3px">'
+              +(f.cor!=='sem'?'Venc: '+f.vencStr+' &middot; '+f.label:'Sem admissao/venc.')
+              +(c.ferMes?'<br>Agend: '+agendamentoLabel(c):'<br>Sem agendamento')
+              +'</div>'
               +'</div>';
           }).join('')
           +'</div></div>';
