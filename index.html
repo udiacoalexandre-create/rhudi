@@ -6,20 +6,21 @@
 <title>Udiaço — Sistema de RH v2.1</title>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, getDocs, getDoc, setDoc, deleteDoc, doc, writeBatch }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-  const app = initializeApp({
+  const firebaseConfig = {
     apiKey:"AIzaSyDUD4CDg3zaZh9dM4_RXuxRmY9bV0YZAok",
     authDomain:"udiaco-beneficios.firebaseapp.com",
     projectId:"udiaco-beneficios",
     storageBucket:"udiaco-beneficios.firebasestorage.app",
     messagingSenderId:"27505050059",
     appId:"1:27505050059:web:1aa59e7b14bdc7b796364e"
-  });
+  };
+  const app = initializeApp(firebaseConfig);
   const db=getFirestore(app), auth=getAuth(app);
   window._db=db; window._auth=auth;
   window._col=n=>collection(db,n);
@@ -29,6 +30,16 @@
   window._signIn=(e,p)=>signInWithEmailAndPassword(auth,e,p);
   window._signOut=()=>signOut(auth);
   window._onAuthStateChanged=onAuthStateChanged;
+  // Cria a conta de login de outro usuario sem deslogar o atual (app secundario)
+  window._criarUsuarioAuth=async (email,senha)=>{
+    let sec;
+    try{
+      sec=initializeApp(firebaseConfig,'sec-'+Date.now());
+      const cred=await createUserWithEmailAndPassword(getAuth(sec),email,senha);
+      await signOut(getAuth(sec));
+      return cred.user.uid;
+    } finally { if(sec) await deleteApp(sec); }
+  };
   window._firebaseReady=true;
   window.dispatchEvent(new Event('firebaseReady'));
 </script>

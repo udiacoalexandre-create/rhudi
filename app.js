@@ -61,6 +61,50 @@ let premioCompetencia = '';
 let eventosCustom = {};
 let deParaPendente = null;
 
+// ============================================================
+// CONTROLE DE ACESSO (papéis por empresa)
+// ============================================================
+const PAPEIS = {
+  master:      {label:'Master',      escopo:'all', gerencia:true},
+  corporativo: {label:'Corporativo', escopo:'all'},
+  carapicuiba: {label:'Carapicuíba', empresas:['1000','1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012']},
+  guaruja:     {label:'Guarujá',     empresas:['2001','2002','2004','2005']},
+  saocarlos:   {label:'São Carlos',  empresas:['3000','3001','3002','3003']},
+  resende:     {label:'Resende',     empresas:['4000']},
+};
+// E-mail(s) que são sempre Master (bootstrap inicial do sistema)
+const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
+let usuarioAtual = null; // {email, nome, papel}
+
+function escopoUsuario(){
+  const pi = usuarioAtual && PAPEIS[usuarioAtual.papel];
+  if(!pi) return [];
+  return pi.escopo==='all' ? 'all' : (pi.empresas||[]);
+}
+function empresaPermitida(mat){
+  const e=escopoUsuario();
+  return e==='all' ? true : e.includes(String(mat||'').substring(0,4));
+}
+function podeGerenciarUsuarios(){ return !!(usuarioAtual && PAPEIS[usuarioAtual.papel]?.gerencia); }
+function aplicarEscopoColaboradores(){
+  if(escopoUsuario()==='all') return;
+  colaboradores = colaboradores.filter(c=>empresaPermitida(c.mat));
+}
+
+// Carrega o papel do usuário logado (Firestore 'usuarios', doc = e-mail)
+async function carregarUsuarioAtual(email){
+  const mail=(email||'').toLowerCase().trim();
+  let d=null;
+  try{ const snap=await window._getDoc(window._doc('usuarios',mail)); if(snap.exists()) d=snap.data(); }catch(e){}
+  if(!d && MASTER_BOOTSTRAP.includes(mail)){
+    d={email:mail,nome:mail,papel:'master',ativo:true};
+    try{ await window._setDoc(window._doc('usuarios',mail),d); }catch(e){}
+  }
+  if(!d || d.ativo===false || !PAPEIS[d.papel]){ usuarioAtual=null; return false; }
+  usuarioAtual={email:mail,nome:d.nome||mail,papel:d.papel};
+  return true;
+}
+
 
 
 // ============================================================
@@ -566,6 +610,7 @@ const MODULES = {
   ]},
   dashboard:{pages:[
     {id:'dash-main',icon:'',label:'Dashboard Geral'},
+    {id:'usuarios',icon:'',label:'Usuários',master:true},
     {id:'teste-senior',icon:'',label:'Teste Senior API'},
   ]}
 };
@@ -582,7 +627,7 @@ function switchModule(mod){
 function buildSidebar(mod){
   const nav=document.getElementById('sidebar-nav');
   if(!nav) return;
-  const pages=MODULES[mod]?.pages||[];
+  const pages=(MODULES[mod]?.pages||[]).filter(p=>!p.master||podeGerenciarUsuarios());
   nav.innerHTML=pages.map(p=>{
     const onclick='showPage(\''+p.id+'\')';
     const icon=p.icon?'<span class="s-icon">'+p.icon+'</span> ':'';
@@ -609,8 +654,9 @@ function renderPage(id){
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-import':pgFerImport,
-    'dash-main':pgDashMain,'teste-senior':pgTesteSenior,
+    'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
   };
+  if(id==='usuarios' && !podeGerenciarUsuarios()) return '<div class="empty-state"><div class="empty-icon"></div><p>Acesso restrito.</p></div>';
   const fn=pages[id];
   if(fn) return fn();
   return '<div class="empty-state"><div class="empty-icon"></div><p>P\u00E1gina em constru\u00E7\u00E3o</p></div>';
@@ -626,6 +672,7 @@ function afterRender(id){
   if(id==='fer-agendadas') renderFeriasAgendadas();
   if(id==='dash-main') renderDashMain();
   if(id==='premio-main') afterRenderPremio();
+  if(id==='usuarios') renderUsuarios();
   if(id==='teste-senior') {} // sem afterRender especifico
 }
 
@@ -2780,15 +2827,17 @@ async function loadColaboradores(){
       }
       colaboradores.push(c);
     });
+    aplicarEscopoColaboradores(); // restringe \u00e0s empresas do papel do usu\u00e1rio
     if(colaboradores.length===0){
       setSS('\u2705 0 colaboradores','ok');
     } else {
       setSS('\u2705 '+colaboradores.length+' colaboradores','ok');
-      // Salvar mobilidade inferida no Firebase
-      if(semMob.length>0){
-        for(let i=0;i<semMob.length;i+=400){
+      // Salvar mobilidade inferida no Firebase (apenas dentro do escopo)
+      const semMobScoped=semMob.filter(c=>colaboradores.includes(c));
+      if(semMobScoped.length>0){
+        for(let i=0;i<semMobScoped.length;i+=400){
           const b=window._writeBatch(window._db);
-          semMob.slice(i,i+400).forEach(c=>b.set(window._doc('colaboradores',c._id),c));
+          semMobScoped.slice(i,i+400).forEach(c=>b.set(window._doc('colaboradores',c._id),c));
           await b.commit();
         }
       }
@@ -2835,10 +2884,21 @@ async function fsSetLan(mat,data){
   await fsSet('lancamento',mat,data);
 }
 
-function initApp(user){
+async function initApp(user){
   document.getElementById('login-screen').style.display='none';
+  const ok=await carregarUsuarioAtual(user.email);
+  if(!ok){
+    // usuário sem acesso liberado
+    window._signOut();
+    document.getElementById('app-screen').style.display='none';
+    document.getElementById('login-screen').style.display='flex';
+    const errEl=document.getElementById('login-error');
+    if(errEl){ errEl.textContent='Usuário sem acesso liberado. Procure o administrador (Master).'; errEl.style.display='block'; }
+    return;
+  }
   document.getElementById('app-screen').style.display='flex';
-  document.getElementById('user-name').textContent=user.email;
+  const pi=PAPEIS[usuarioAtual.papel];
+  document.getElementById('user-name').textContent=usuarioAtual.nome+' · '+pi.label;
   Promise.all([loadColaboradores(),loadLancamento(),loadConfig()]).then(()=>{
     switchModule('base');
     setTimeout(()=>{
@@ -5184,6 +5244,101 @@ async function testarConexaoSenior(){
       +'<strong>Erro de conexao:</strong> '+msg+dica
       +'</div>';
   }
+}
+
+// ============================================================
+// GESTÃO DE USUÁRIOS (somente Master)
+// ============================================================
+function pgUsuarios(){
+  const opts=Object.keys(PAPEIS).map(k=>'<option value="'+k+'">'+PAPEIS[k].label+'</option>').join('');
+  return `
+    <div class="page-header"><h2>Usuários</h2><p>Crie e gerencie os acessos por papel/empresa. Apenas o Master vê esta página.</p></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Novo usuário</div>
+      <div class="form-grid">
+        <div class="fg"><label>Nome</label><input type="text" id="usr-nome"></div>
+        <div class="fg"><label>E-mail (login)</label><input type="email" id="usr-email" placeholder="nome@udiaco.com.br"></div>
+        <div class="fg"><label>Senha inicial</label><input type="text" id="usr-senha" placeholder="mínimo 6 caracteres"></div>
+        <div class="fg"><label>Papel</label><select id="usr-papel">${opts}</select></div>
+      </div>
+      <div class="btn-row"><button class="btn btn-primary" onclick="criarUsuario()">Criar usuário</button></div>
+      <div id="usr-msg" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Usuários com acesso</div>
+      <div id="usr-lista">Carregando...</div>
+    </div>`;
+}
+
+async function renderUsuarios(){
+  const el=document.getElementById('usr-lista'); if(!el) return;
+  el.innerHTML='Carregando...';
+  let docs=[];
+  try{ const snap=await window._getDocs(window._col('usuarios')); snap.forEach(d=>docs.push(Object.assign({_id:d.id},d.data()))); }
+  catch(e){ el.innerHTML='<div class="alert alert-error">Erro: '+e.message+'</div>'; return; }
+  docs.sort((a,b)=>String(a.nome||a._id).localeCompare(String(b.nome||b._id)));
+  if(!docs.length){ el.innerHTML='<div class="text-sm text-muted">Nenhum usuário cadastrado ainda.</div>'; return; }
+  const opts=p=>Object.keys(PAPEIS).map(k=>'<option value="'+k+'" '+(p===k?'selected':'')+'>'+PAPEIS[k].label+'</option>').join('');
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Empresas</th><th>Status</th><th>Ações</th></tr></thead><tbody>'
+    +docs.map(u=>{
+      const pi=PAPEIS[u.papel]; const esc=pi?(pi.escopo==='all'?'Todas':(pi.empresas||[]).join(', ')):'—';
+      const ativo=u.ativo!==false;
+      return '<tr><td>'+(u.nome||'—')+'</td><td class="text-xs">'+u._id+'</td>'
+        +'<td><select onchange="alterarPapelUsuario(\''+u._id+'\',this.value)" style="font-size:12px;padding:4px 6px;border:1.5px solid var(--border);border-radius:var(--radius-sm)">'+opts(u.papel)+'</select></td>'
+        +'<td class="text-xs text-muted" style="max-width:220px">'+esc+'</td>'
+        +'<td>'+(ativo?'<span class="badge badge-green">Ativo</span>':'<span class="badge badge-gray">Inativo</span>')+'</td>'
+        +'<td style="white-space:nowrap">'
+          +'<button class="btn btn-ghost btn-xs" onclick="toggleAtivoUsuario(\''+u._id+'\','+(!ativo)+')">'+(ativo?'Desativar':'Ativar')+'</button> '
+          +'<button class="btn btn-danger btn-xs" onclick="excluirUsuario(\''+u._id+'\')">Excluir</button>'
+        +'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+}
+
+async function criarUsuario(){
+  if(!podeGerenciarUsuarios()){ toast('Sem permissão','error'); return; }
+  const nome=document.getElementById('usr-nome')?.value.trim()||'';
+  const email=(document.getElementById('usr-email')?.value||'').toLowerCase().trim();
+  const senha=document.getElementById('usr-senha')?.value||'';
+  const papel=document.getElementById('usr-papel')?.value||'';
+  const msg=document.getElementById('usr-msg');
+  const showErr=t=>{ if(msg) msg.innerHTML='<div class="alert alert-error">'+t+'</div>'; };
+  if(!email||!email.includes('@')){ showErr('E-mail inválido.'); return; }
+  if(senha.length<6){ showErr('A senha deve ter ao menos 6 caracteres.'); return; }
+  if(!PAPEIS[papel]){ showErr('Selecione um papel.'); return; }
+  if(msg) msg.innerHTML='<div class="alert alert-info">Criando usuário...</div>';
+  try{
+    await window._criarUsuarioAuth(email,senha); // cria login sem deslogar o Master
+  }catch(e){
+    if(!String(e.message||e).includes('email-already-in-use')){ showErr('Erro ao criar login: '+e.message); return; }
+  }
+  try{
+    await window._setDoc(window._doc('usuarios',email),{email,nome:nome||email,papel,ativo:true});
+    if(msg) msg.innerHTML='<div class="alert alert-success">Usuário liberado: '+email+'</div>';
+    ['usr-nome','usr-email','usr-senha'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+    renderUsuarios();
+  }catch(e){ showErr('Erro ao salvar papel: '+e.message); }
+}
+
+async function alterarPapelUsuario(email,papel){
+  if(!podeGerenciarUsuarios()||!PAPEIS[papel]) return;
+  try{ await window._setDoc(window._doc('usuarios',email),{papel},{merge:true}); toast('Papel atualizado','success'); renderUsuarios(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+async function toggleAtivoUsuario(email,ativo){
+  if(!podeGerenciarUsuarios()) return;
+  if(!ativo && (email===usuarioAtual?.email||MASTER_BOOTSTRAP.includes(email))){ toast('Não é possível desativar este usuário.','error'); return; }
+  try{ await window._setDoc(window._doc('usuarios',email),{ativo},{merge:true}); toast(ativo?'Ativado':'Desativado','success'); renderUsuarios(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+async function excluirUsuario(email){
+  if(!podeGerenciarUsuarios()) return;
+  if(email===usuarioAtual?.email){ toast('Você não pode excluir o próprio acesso.','error'); return; }
+  if(MASTER_BOOTSTRAP.includes(email)){ toast('Este Master não pode ser removido.','error'); return; }
+  if(!confirm('Excluir o acesso de '+email+'?\n(A conta de login continua existindo, mas sem acesso ao sistema.)')) return;
+  try{ await window._deleteDoc(window._doc('usuarios',email)); toast('Acesso removido.','success'); renderUsuarios(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 function pgTesteSenior(){
