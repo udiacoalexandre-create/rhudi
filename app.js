@@ -3541,8 +3541,8 @@ function pgFerRadar(){
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:16px;font-size:11px;color:var(--text2)">
       <span style="font-weight:700;text-transform:uppercase;letter-spacing:.5px">Agendamento:</span>
-      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--green)"></div>Dentro do vencimento</div>
-      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--red)"></div>Após o vencimento</div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--green)"></div>No prazo (até a dobra)</div>
+      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--red)"></div>Após o limite (dobra)</div>
       <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:#111827"></div>Sem agendamento</div>
     </div>
     <div id="fer-stats" style="margin-bottom:16px"></div>
@@ -3600,15 +3600,18 @@ function agendamentoDate(c){
   if(typeof ano!=='number') return null;
   return new Date(ano, idx, 1);
 }
-// Bolinha do card: verde = agendado dentro do vencimento; vermelha = agendado
-// apos o vencimento; preta = sem agendamento; cinza = sem vencimento p/ comparar.
+// Bolinha do card: a referencia e o LIMITE de uso = vencimento + 12 meses
+// (data em que as ferias dobrariam). Verde = agendado ate esse limite (no
+// prazo); vermelha = agendado apos o limite (dobra); preta = sem agendamento;
+// cinza = sem vencimento p/ comparar.
 function agendamentoStatus(c, vencDate){
   if(!c||!c.ferMes) return {cor:'preta', tip:'Sem agendamento'};
   const ag=agendamentoDate(c);
   if(!ag||!vencDate) return {cor:'cinza', tip:'Agendado '+c.ferMes+' (sem vencimento p/ comparar)'};
-  return ag<=vencDate
-    ? {cor:'verde', tip:'Agendado dentro do vencimento ('+agendamentoLabel(c)+')'}
-    : {cor:'vermelha', tip:'Agendado APOS o vencimento ('+agendamentoLabel(c)+')'};
+  const limite=new Date(vencDate); limite.setFullYear(limite.getFullYear()+1);
+  return ag<=limite
+    ? {cor:'verde', tip:'Agendado no prazo, antes da dobra ('+agendamentoLabel(c)+')'}
+    : {cor:'vermelha', tip:'Agendado APOS o limite (dobra) ('+agendamentoLabel(c)+')'};
 }
 
 function getFarol(c){
