@@ -237,7 +237,7 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 
 /* Base de colaboradores: filtro + cabecalho azul travados ao rolar */
 .bl-page { display: flex; flex-direction: column; height: calc(100vh - 152px); min-height: 360px; }
-.bl-page .page-header, .bl-page .filter-bar, .bl-page #bl-count { flex: 0 0 auto; }
+.bl-page .page-header, .bl-page .filter-bar, .bl-page #bl-count, .bl-page #bl-status-resumo, .bl-page #lan-resumo { flex: 0 0 auto; }
 .bl-page .bl-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .bl-page .bl-scroll thead th { position: sticky; top: 0; z-index: 6; }
 
@@ -348,6 +348,10 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .launch-tbl tbody td:nth-child(even) { background: #e6e9ee; }
 .launch-tbl tbody tr:hover td { background: var(--blue-light); }
 .launch-tbl tbody tr.linha-travada td { background: #dbeafe; }
+/* Listras de coluna na Base de Colaboradores */
+.colab-tbl tbody td:nth-child(odd) { background: #f4f5f7; }
+.colab-tbl tbody td:nth-child(even) { background: #e6e9ee; }
+.colab-tbl tbody tr:hover td { background: var(--blue-light); }
 
 /* FÉRIAS RADAR */
 .radar-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }

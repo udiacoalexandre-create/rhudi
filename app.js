@@ -4,14 +4,14 @@
 // ============================================================
 const STATUS_LIST = [
   {v:'Trabalhando',    label:'Trabalhando',        cor:'#065F46', bg:'#D1FAE5'},
-  {v:'Ferias',        label:'Ferias',              cor:'#1D4ED8', bg:'#DBEAFE'},
-  {v:'Ferias Coletiva',label:'Ferias Coletiva',    cor:'#1D4ED8', bg:'#DBEAFE'},
+  {v:'Ferias',        label:'Férias',              cor:'#1D4ED8', bg:'#DBEAFE'},
+  {v:'Ferias Coletiva',label:'Férias Coletiva',    cor:'#1D4ED8', bg:'#DBEAFE'},
   {v:'Afastado',      label:'Afastado',            cor:'#92400E', bg:'#FEF3C7'},
-  {v:'Auxilio Doenca',label:'Auxilio Doenca',      cor:'#92400E', bg:'#FEF3C7'},
+  {v:'Auxilio Doenca',label:'Auxílio Doença',      cor:'#92400E', bg:'#FEF3C7'},
   {v:'Acidente Trabalho',label:'Acidente Trabalho',cor:'#92400E', bg:'#FEF3C7'},
   {v:'Lic. Maternidade',label:'Lic. Maternidade',  cor:'#6D28D9', bg:'#EDE9FE'},
   {v:'Lic. Paternidade',label:'Lic. Paternidade',  cor:'#6D28D9', bg:'#EDE9FE'},
-  {v:'Auxilio Reclusao',label:'Auxilio Reclusao',  cor:'#7F1D1D', bg:'#FEE2E2'},
+  {v:'Auxilio Reclusao',label:'Auxílio Reclusão',  cor:'#7F1D1D', bg:'#FEE2E2'},
   {v:'Demitido',      label:'Demitido',            cor:'#374151', bg:'#F3F4F6'},
   {v:'N/A',           label:'N/A',                 cor:'#6B7280', bg:'#F9FAFB'},
 ];
@@ -24,6 +24,14 @@ const STATUS_NAO_RECEBE     = ['Demitido','N/A'];
 
 function getStatusInfo(v){
   return STATUS_LIST.find(s=>s.v===v) || {v,label:v,cor:'#6B7280',bg:'#F9FAFB'};
+}
+
+// Normaliza status legados para os valores canônicos
+function normalizarStatus(s){
+  const low=(s||'').trim().toLowerCase();
+  if(low==='ativo') return 'Trabalhando';
+  if(low==='inativo') return 'Afastado';
+  return (s||'').trim();
 }
 
 
@@ -690,6 +698,7 @@ function pgBaseLista(){
       <h2> Base de Colaboradores</h2>
       <p>Gerencie todos os colaboradores da empresa</p>
     </div>
+    <div id="bl-status-resumo" style="margin-bottom:12px"></div>
     <div class="filter-bar" style="align-items:flex-end">
       <div class="filter-group" style="flex:1">
         <label> Buscar</label>
@@ -705,7 +714,7 @@ function pgBaseLista(){
     </div>
     <div id="bl-count" style="margin:10px 0 8px"></div>
     <div class="tbl-wrap bl-scroll">
-      <table class="tbl">
+      <table class="tbl colab-tbl">
         <thead><tr>
           <th>Matr\u00EDcula</th><th>Nome</th><th>CPF</th><th>Admiss\u00E3o</th><th>Departamento</th>
           <th>Status</th><th>Tipo</th><th>Elegibilidade</th><th>VR/dia</th><th>Caf\u00E9/dia</th>
@@ -830,9 +839,30 @@ function ferResumoCelula(c){
   return '<span class="text-muted">Venc:</span> '+venc+'<br><span class="text-muted">Agend:</span> '+agend;
 }
 
+// Painel de contagem por situação (todos os colaboradores do escopo)
+function renderStatusResumo(){
+  const el=document.getElementById('bl-status-resumo'); if(!el) return;
+  const cont={};
+  colaboradores.forEach(c=>{ const s=(c.status||'—'); cont[s]=(cont[s]||0)+1; });
+  const ordem=STATUS_LIST.map(x=>x.v);
+  const chaves=Object.keys(cont).sort((a,b)=>{
+    const ia=ordem.indexOf(a),ib=ordem.indexOf(b);
+    return (ia<0?99:ia)-(ib<0?99:ib);
+  });
+  const chips=chaves.map(s=>{
+    const info=getStatusInfo(s);
+    return '<div style="display:inline-flex;align-items:center;gap:6px;background:'+info.bg+';color:'+info.cor+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600">'
+      +'<span style="font-size:15px;font-weight:800">'+cont[s]+'</span> '+info.label+'</div>';
+  }).join('');
+  el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Situação:</span>'
+    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+colaboradores.length+'</span> Total</div></div>';
+}
+
 function renderColabList(){
   bindMsOutside();
   updateMsCounts();
+  renderStatusResumo();
   const f=filtrarColabs();
   const cnt=document.getElementById('bl-count');
   if(cnt){
@@ -2822,12 +2852,14 @@ async function loadColaboradores(){
   try{
     const snap=await window._getDocs(window._col('colaboradores'));
     colaboradores=[];
-    const semMob=[];
+    const corrigidos=new Set();
     snap.forEach(d=>{
       const c={...d.data(),_id:d.id};
       if(!['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade)){
-        c.mobilidade=inferMob(c); semMob.push(c);
+        c.mobilidade=inferMob(c); corrigidos.add(c);
       }
+      const stNorm=normalizarStatus(c.status); // Ativo->Trabalhando, Inativo->Afastado
+      if(stNorm!==c.status){ c.status=stNorm; corrigidos.add(c); }
       colaboradores.push(c);
     });
     aplicarEscopoColaboradores(); // restringe \u00e0s empresas do papel do usu\u00e1rio
@@ -2835,12 +2867,12 @@ async function loadColaboradores(){
       setSS('\u2705 0 colaboradores','ok');
     } else {
       setSS('\u2705 '+colaboradores.length+' colaboradores','ok');
-      // Salvar mobilidade inferida no Firebase (apenas dentro do escopo)
-      const semMobScoped=semMob.filter(c=>colaboradores.includes(c));
-      if(semMobScoped.length>0){
-        for(let i=0;i<semMobScoped.length;i+=400){
+      // Persistir corre\u00e7\u00f5es (mobilidade/status) no Firebase, dentro do escopo
+      const aSalvar=[...corrigidos].filter(c=>colaboradores.includes(c));
+      if(aSalvar.length>0){
+        for(let i=0;i<aSalvar.length;i+=400){
           const b=window._writeBatch(window._db);
-          semMobScoped.slice(i,i+400).forEach(c=>b.set(window._doc('colaboradores',c._id),c));
+          aSalvar.slice(i,i+400).forEach(c=>b.set(window._doc('colaboradores',c._id),c));
           await b.commit();
         }
       }
