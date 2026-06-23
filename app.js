@@ -191,6 +191,7 @@ function filtroBadge(f){
     'DUP':'<span class="badge badge-purple">🔀 DUP</span>',
     'MEI':'<span class="badge badge-yellow">🟡 MEI</span>',
     'SOC':'<span class="badge badge-blue">🔵 SOC</span>',
+    'TER':'<span class="badge badge-orange">🟠 Terceiros</span>',
   };
   return map[f]||'<span class="badge badge-gray">'+(f||'OK')+'</span>';
 }
@@ -245,6 +246,7 @@ function formColabHTML(prefix, c){
             <option value="DUP" ${fil==='DUP'?'selected':''}>DUP \u2014 CLT com MEI/S\u00F3cio</option>
             <option value="MEI" ${fil==='MEI'?'selected':''}>MEI \u2014 Contrato MEI</option>
             <option value="SOC" ${fil==='SOC'?'selected':''}>SOC \u2014 S\u00F3cio</option>
+            <option value="TER" ${fil==='TER'?'selected':''}>TER \u2014 Terceiros</option>
           </select>
         </div>
         <div class="fg">
@@ -707,6 +709,7 @@ function pgBaseLista(){
       <div class="filter-group"><label> Empresa</label>${msDropdown('emp','Empresa',empresas.map(e=>({value:e.cod,label:e.cod+' ('+e.qtd+')'})))}</div>
       <div class="filter-group"><label> Departamento</label>${msDropdown('dep','Departamento',deptos.map(d=>({value:d,label:d})))}</div>
       <div class="filter-group"><label>Status</label>${msDropdown('status','Status',statusSet.map(x=>({value:x,label:x})))}</div>
+      <div class="filter-group"><label>Tipo</label>${msDropdown('tipo','Tipo',[{value:'OK',label:'OK — CLT normal'},{value:'DUP',label:'DUP — CLT com MEI/Sócio'},{value:'MEI',label:'MEI — Contrato MEI'},{value:'SOC',label:'SOC — Sócio'},{value:'TER',label:'TER — Terceiros'}])}</div>
       <div class="filter-group"><label>Benefício</label>${msDropdown('ben','Benefício',benOpts)}</div>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
       <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()"> Excel</button>
@@ -742,19 +745,20 @@ function benMatchColab(c,b){
 
 function filtrarColabs(){
   const q=(g('bl-q')||'').toLowerCase();
-  const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), ben=getMs('ben');
+  const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), tipo=getMs('tipo'), ben=getMs('ben');
   let f=colaboradores.filter(c=>
     c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
   if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
   if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
   if(st.length)  f=f.filter(c=>st.includes(c.status));
+  if(tipo.length) f=f.filter(c=>tipo.includes((c.filtro||'OK').toUpperCase()));
   if(ben.length) f=f.filter(c=>ben.some(b=>benMatchColab(c,b)));
   return f;
 }
 
 function limparFiltrosColab(){
   const q=document.getElementById('bl-q'); if(q) q.value='';
-  document.querySelectorAll('.ms-emp,.ms-dep,.ms-status,.ms-ben').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('.ms-emp,.ms-dep,.ms-status,.ms-tipo,.ms-ben').forEach(cb=>cb.checked=false);
   renderColabList();
 }
 
