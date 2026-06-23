@@ -1150,8 +1150,12 @@ function renderSyncStatusPreview(){
       +'<td class="text-xs">'+(r.colab?'era '+(r.colab.status||'—')+' → ':'')+'<strong>'+r.statusRaw+'</strong></td>'
       +'<td style="text-align:right;white-space:nowrap"><button class="btn btn-primary btn-xs" onclick="syncConfirmar(\''+tipo+'\','+idx+')">'+acao+'</button> '
       +'<button class="btn btn-ghost btn-xs" onclick="syncIgnorar(\''+tipo+'\','+idx+')">Ignorar</button></td></tr>').join('');
-    return '<div style="margin:6px 0;font-weight:700;font-size:12px;color:'+cor+'">'+titulo+' ('+arr.length+')</div>'
-      +'<div class="tbl-wrap" style="margin-bottom:14px"><table class="tbl"><tbody>'+linhas+'</tbody></table></div>';
+    const acaoTodos=tipo==='adm'
+      ? '<span class="text-xs text-muted">cadastre um a um</span>'
+      : '<button class="btn btn-ghost btn-xs" onclick="syncConfirmarTodos(\''+tipo+'\')">Confirmar todos ('+arr.length+')</button>';
+    const head='<div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0">'
+      +'<span style="font-weight:700;font-size:12px;color:'+cor+'">'+titulo+' ('+arr.length+')</span>'+acaoTodos+'</div>';
+    return head+'<div class="tbl-wrap" style="margin-bottom:14px"><table class="tbl"><tbody>'+linhas+'</tbody></table></div>';
   };
   html+=sec('Admissões — confirmar e cadastrar','var(--green)',S.admissoes,'adm','Admitir...');
   html+=sec('Demissões — remover da base','var(--red)',S.demissoes,'dem','Confirmar e remover');
@@ -1185,6 +1189,30 @@ async function syncConfirmar(tipo,idx){
   c.status=item.cls.status;
   try{ await fsSet('colaboradores',c._id,c); arr.splice(idx,1); toast(c.nome+': '+c.status,'success'); renderSyncStatusPreview(); if(currentPage==='base-lista')renderColabList(); }
   catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// Aplica todos os itens de uma categoria de uma vez (exceto admissoes, que sao individuais)
+async function syncConfirmarTodos(tipo){
+  const arr=_syncArr(tipo); if(!arr||!arr.length||tipo==='adm') return;
+  if(tipo==='dem' && !confirm('Remover '+arr.length+' colaborador(es) da base? Os dados ficam no histórico da competência fechada.')) return;
+  const itens=arr.filter(i=>i.colab);
+  try{
+    for(let i=0;i<itens.length;i+=400){
+      const fatia=itens.slice(i,i+400);
+      const b=window._writeBatch(window._db);
+      fatia.forEach(item=>{
+        const c=item.colab;
+        if(tipo==='dem') b.delete(window._doc('colaboradores',c._id));
+        else { c.status=item.cls.status; b.set(window._doc('colaboradores',c._id),c); }
+      });
+      await b.commit();
+    }
+    if(tipo==='dem'){ const ids=new Set(itens.map(i=>i.colab._id)); colaboradores=colaboradores.filter(x=>!ids.has(x._id)); }
+    arr.length=0;
+    toast(itens.length+' colaborador(es) atualizado(s)','success');
+    renderSyncStatusPreview();
+    if(currentPage==='base-lista') renderColabList();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 // Admissao: abre o cadastro pre-preenchido; salvar cria o colaborador
