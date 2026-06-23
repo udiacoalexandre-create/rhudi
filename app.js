@@ -839,11 +839,26 @@ function ferResumoCelula(c){
   return '<span class="text-muted">Venc:</span> '+venc+'<br><span class="text-muted">Agend:</span> '+agend;
 }
 
-// Painel de contagem por situação (todos os colaboradores do escopo)
+// Colaboradores únicos: dedup por CPF (fallback nome), preferindo o registro
+// principal (CLT: OK/DUP) sobre os duplicados MEI/Sócio.
+function colaboradoresUnicos(){
+  const byKey={};
+  const ehDup=x=>['MEI','SOC'].includes((x.filtro||'').toUpperCase())?1:0;
+  colaboradores.forEach(c=>{
+    const cpf=(c.cpf||'').replace(/[^0-9]/g,'');
+    const key=cpf||('nome:'+_normNome(c.nome));
+    const ex=byKey[key];
+    if(!ex || ehDup(c)<ehDup(ex)) byKey[key]=c;
+  });
+  return Object.values(byKey);
+}
+
+// Painel de contagem por situação (pessoas únicas do escopo; duplicados MEI/Sócio contam 1x)
 function renderStatusResumo(){
   const el=document.getElementById('bl-status-resumo'); if(!el) return;
+  const unicos=colaboradoresUnicos();
   const cont={};
-  colaboradores.forEach(c=>{ const s=(c.status||'—'); cont[s]=(cont[s]||0)+1; });
+  unicos.forEach(c=>{ const s=(c.status||'—'); cont[s]=(cont[s]||0)+1; });
   const ordem=STATUS_LIST.map(x=>x.v);
   const chaves=Object.keys(cont).sort((a,b)=>{
     const ia=ordem.indexOf(a),ib=ordem.indexOf(b);
@@ -855,8 +870,8 @@ function renderStatusResumo(){
       +'<span style="font-size:15px;font-weight:800">'+cont[s]+'</span> '+info.label+'</div>';
   }).join('');
   el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-    +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Situação:</span>'
-    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+colaboradores.length+'</span> Total</div></div>';
+    +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Situação <span style="text-transform:none;font-weight:400">(pessoas únicas — duplicados MEI/Sócio contam 1×)</span>:</span>'
+    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+unicos.length+'</span> Total</div></div>';
 }
 
 function renderColabList(){
