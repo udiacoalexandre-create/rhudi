@@ -2210,6 +2210,7 @@ function pgBenExportarCaju(){
       <div class="export-card"><div class="ex-icon">VR\uFE0F</div><h3>Vale Refei\u00E7\u00E3o</h3><p>Confer\u00EAncia individual</p><button class="btn btn-ghost btn-sm" onclick="exportarCajuTipo('vr')">\u2B07 VR</button></div>
       <div class="export-card"><div class="ex-icon">\u2615</div><h3>Caf\u00E9 da Manh\u00E3</h3><p>Confer\u00EAncia individual</p><button class="btn btn-ghost btn-sm" onclick="exportarCajuTipo('cafe')">\u2B07 Caf\u00E9</button></div>
       <div class="export-card"><div class="ex-icon">\u26FD</div><h3>Combust\u00EDvel</h3><p>Confer\u00EAncia individual</p><button class="btn btn-ghost btn-sm" onclick="exportarCajuTipo('comb')">\u2B07 Comb.</button></div>
+      <div class="export-card"><div class="ex-icon">\uD83E\uDDFA</div><h3>Cesta B\u00E1sica</h3><p>Confer\u00EAncia individual</p><button class="btn btn-ghost btn-sm" onclick="exportarCajuTipo('cesta')">\u2B07 Cesta</button></div>
       <div class="export-card"><div class="ex-icon">VT</div><h3>Vale Transporte</h3><p>Com PEC/TOP e c\u00F3digos</p><button class="btn btn-accent btn-sm" onclick="exportarVT()">\u2B07 Exportar VT</button></div>
       <div class="export-card"><div class="ex-icon"></div><h3>Tudo de uma vez</h3><p>Todos separados</p><button class="btn btn-primary btn-sm" onclick="exportarTudo()">\u2B07 Todos</button></div>
       <div class="export-card"><div class="ex-icon"></div><h3>Por Empresa</h3><p>Um arquivo por empresa</p><button class="btn btn-warning btn-sm" onclick="exportarPorEmpresa()">\u2B07 Por Empresa</button></div>
@@ -2250,12 +2251,12 @@ function exportarCajuTipo(tipo){
   const comp=g('lan-comp')||'MES';
   const empSel=g('exp-emp');
   const du=fnum(g('lan-du'))||22;
-  const nomes={vr:'VR',cafe:'Cafe',comb:'Mobilidade'};
+  const nomes={vr:'VR',cafe:'Cafe',comb:'Mobilidade',cesta:'Cesta_Basica'};
   const rows=[['CPF','Matr\u00EDcula','Valor']];
   getCajuAtivos(empSel).forEach(c=>{
     const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb}=calcBen(c,dr,getLanDU(c.mat,du));
-    const val=tipo==='vr'?vr:tipo==='cafe'?cafe:comb;
+    const {vr,cafe,comb,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
+    const val=tipo==='vr'?vr:tipo==='cafe'?cafe:tipo==='cesta'?cesta:comb;
     if(val>0) rows.push([c.cpf||'',c.mat||'',val]);
   });
   const wb=XLSX.utils.book_new();
@@ -2288,8 +2289,9 @@ function exportarTudo(){
   exportarCajuTipo('vr');
   setTimeout(()=>exportarCajuTipo('cafe'),400);
   setTimeout(()=>exportarCajuTipo('comb'),800);
-  setTimeout(()=>exportarVT(),1200);
-  setTimeout(()=>toast('\u2705 Todos exportados!','success'),1600);
+  setTimeout(()=>exportarCajuTipo('cesta'),1200);
+  setTimeout(()=>exportarVT(),1600);
+  setTimeout(()=>toast('\u2705 Todos exportados!','success'),2000);
 }
 
 function exportarPorEmpresa(){
@@ -2374,8 +2376,9 @@ function pgBenExportarSenior(){
       <div class="export-card"><div class="ex-icon">VR\uFE0F</div><h3>VR \u2014 Senior</h3><p>CSV</p><button class="btn btn-primary btn-sm" onclick="exportarSenior('vr')">\u2B07 VR_Senior.csv</button></div>
       <div class="export-card"><div class="ex-icon">\u2615</div><h3>Caf\u00E9 \u2014 Senior</h3><p>CSV</p><button class="btn btn-primary btn-sm" onclick="exportarSenior('cafe')">\u2B07 Cafe_Senior.csv</button></div>
       <div class="export-card"><div class="ex-icon">\u26FD</div><h3>Mobilidade \u2014 Senior</h3><p>CSV</p><button class="btn btn-primary btn-sm" onclick="exportarSenior('comb')">\u2B07 Mob_Senior.csv</button></div>
+      <div class="export-card"><div class="ex-icon">\uD83E\uDDFA</div><h3>Cesta B\u00E1sica \u2014 Senior</h3><p>CSV</p><button class="btn btn-primary btn-sm" onclick="exportarSenior('cesta')">\u2B07 Cesta_Basica_Senior.csv</button></div>
       <div class="export-card"><div class="ex-icon">VT</div><h3>VT \u2014 Senior</h3><p>CSV</p><button class="btn btn-warning btn-sm" onclick="exportarSenior('vt')">\u2B07 VT_Senior.csv</button></div>
-      <div class="export-card"><div class="ex-icon"></div><h3>Tudo Senior</h3><p>4 CSVs de uma vez</p><button class="btn btn-success btn-sm" onclick="exportarTodosSenior()">\u2B07 Todos</button></div>
+      <div class="export-card"><div class="ex-icon"></div><h3>Tudo Senior</h3><p>5 CSVs de uma vez</p><button class="btn btn-success btn-sm" onclick="exportarTodosSenior()">\u2B07 Todos</button></div>
     </div>`;
 }
 
