@@ -3997,8 +3997,10 @@ function getFarol(c){
   return {cor:'verde',meses,label:'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
 }
 
-// Fecha um ciclo: +30 dias ao saldo, pergunta faltas a descontar, e rola o
-// proximo vencimento +1 ano. Saldo pode ficar negativo (antecipacao).
+// Fecha um ciclo: +30 dias ao saldo (uma vez), pergunta faltas a descontar, e
+// joga o proximo vencimento para a PROXIMA ocorrencia futura do dia/mes — assim
+// um clique tira o colaborador de "vencido" mesmo se estava atrasado +1 ano.
+// Saldo pode ficar negativo (antecipacao).
 async function fecharCicloFerias(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const f=getFarol(c);
@@ -4007,7 +4009,8 @@ async function fecharCicloFerias(id){
   if(r===null) return;
   const faltas=Math.max(0,fnum(r));
   const novoSaldo=(c.ferSaldo!=null?c.ferSaldo:0)+30-faltas;
-  const nv=new Date(f.vencDate); nv.setFullYear(nv.getFullYear()+1);
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const nv=_proxVenc(f.vencDate.getDate(), f.vencDate.getMonth()+1, hoje);
   c.ferSaldo=novoSaldo; c.ferVenc=_isoLocal(nv);
   try{
     await fsSet('colaboradores',id,c);
