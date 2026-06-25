@@ -1942,7 +1942,7 @@ function pgBenLancamento(){
         <div class="card" style="margin-bottom:0;flex:1;min-width:300px">
           <div class="card-title">Competência & Dias</div>
           <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-            <div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:110px" value="${lanComp}" oninput="setLanComp(this.value);renderLancamento()"></div>
+            <div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:110px" value="${lanComp}" onchange="onLanCompChange(this.value)"></div>
             <div class="fg"><label>Dias úteis do mês</label><input type="number" id="lan-du" value="${lanDU}" min="1" max="31" style="width:90px" onchange="setLanDU(this.value);renderLancamento()"></div>
             <button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>
           </div>
@@ -2140,7 +2140,8 @@ function importarBaseApuracao(id){
   setLanComp(b.competencia);
   document.getElementById('modal-importar-base')?.remove();
   toast('Base importada: '+b.competencia+' ('+(b.totalColaboradores||(b.colaboradores||[]).length)+' colaboradores).','success');
-  if(currentPage==='ben-lancamento') showPage('ben-lancamento');
+  // Carrega o lancamento DESSA competencia (começa limpo se for nova) e re-renderiza.
+  loadLancamento().then(()=>{ if(currentPage==='ben-lancamento') showPage('ben-lancamento'); });
 }
 
 function verificarColabsEmFerias(){
@@ -2351,7 +2352,7 @@ async function aplicarDiasUteis(){
     if(c.diasFixos){travados++;return;} // pula colaboradores com dias fixos no cadastro
     if(!lancamento[c.mat]) lancamento[c.mat]={};
     lancamento[c.mat].duteis=du;
-    b.set(window._doc('lancamento',c.mat),lancamento[c.mat]);
+    b.set(window._doc('lancamento',_lanKey(lanComp,c.mat)),lancamento[c.mat]);
   });
   await b.commit();
   renderLancamento();
@@ -2601,7 +2602,7 @@ async function importarFaltas(event){
       if(colaboradores.find(c=>c.mat===mat)){
         if(!lancamento[mat]) lancamento[mat]={};
         lancamento[mat].faltas=fnum(row[iFal]);
-        b.set(window._doc('lancamento',mat),lancamento[mat]); ok++;
+        b.set(window._doc('lancamento',_lanKey(lanComp,mat)),lancamento[mat]); ok++;
       }
     }
     await b.commit();
@@ -3313,13 +3314,20 @@ async function loadColaboradores(){
   }
 }
 
+// Lancamento agora e POR COMPETENCIA: docs no Firestore com id `MM_AAAA__mat`.
+// Em memoria, `lancamento` guarda so a competencia atual (lanComp), keyed por mat.
+function _lanKey(comp,mat){ return String(comp||'').replace('/','_')+'__'+mat; }
 async function loadLancamento(){
+  lancamento={};
+  const pref=String(lanComp||'').replace('/','_')+'__';
+  if(!lanComp) return;
   try{
     const snap=await window._getDocs(window._col('lancamento'));
-    lancamento={};
-    snap.forEach(d=>lancamento[d.id]=d.data());
+    snap.forEach(d=>{ if(d.id.indexOf(pref)===0) lancamento[d.id.slice(pref.length)]=d.data(); });
   }catch(e){ console.error('Erro lancamento:',e); }
 }
+// Recarrega o lancamento ao trocar a competencia no campo do Lancamento.
+async function onLanCompChange(v){ setLanComp(v); await loadLancamento(); renderLancamento(); }
 
 async function loadConfig(){
   try{
@@ -3346,7 +3354,7 @@ async function fsDel(col,id){
 }
 
 async function fsSetLan(mat,data){
-  await fsSet('lancamento',mat,data);
+  await fsSet('lancamento',_lanKey(lanComp,mat),data);
 }
 
 async function initApp(user){
