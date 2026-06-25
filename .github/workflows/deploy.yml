@@ -1,0 +1,19 @@
+name: Deploy Firebase Hosting
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:   # permite rodar manualmente pelo botão "Run workflow"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Deploy para o Firebase Hosting
+        run: npx -y firebase-tools deploy --only hosting --project udiaco-beneficios --non-interactive
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
