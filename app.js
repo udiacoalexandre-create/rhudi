@@ -602,6 +602,19 @@ async function salvarColabModal(){
     registrarVagaFerias(colaboradores[idx]);
   }
 
+  // Ao ENTRAR em Ferias: pergunta dias comprados (abono). Esses dias entram no
+  // calculo da mobilidade e sao abatidos do saldo de ferias.
+  const ehFer=s=>s==='Ferias'||s==='Férias';
+  if(ehFer(dados.status) && !ehFer(statusAnterior)){
+    const r=prompt('Férias de '+(dados.nome||'')+': quantos dias foram COMPRADOS (abono)?\n\nEsses dias entram no cálculo da mobilidade e são abatidos do saldo de férias. (0 se nenhum)','0');
+    if(r!==null){
+      const comp=Math.max(0,fnum(r));
+      dados.ferDiasComprados=comp;
+      const saldoAtual=(dados.ferSaldo!=null?dados.ferSaldo:(colaboradores[idx].ferSaldo!=null?colaboradores[idx].ferSaldo:0));
+      dados.ferSaldo=saldoAtual-comp;
+    }
+  }
+
   Object.assign(colaboradores[idx],dados);
   try{
     await fsSet('colaboradores',editColabId,colaboradores[idx]);
@@ -1854,11 +1867,24 @@ function calcBen(c, dr, du){
   // Afastados: só cesta
   if(STATUS_SO_CESTA.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:cestaVal};
 
-  // Trabalhando, Ferias, Ferias Coletiva: cálculo normal
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
   const elegVT = (eleg.vt!==undefined) ? eleg.vt : (eleg.mobilidade!==false); // retrocompat
+
+  // Ferias / Ferias Coletiva: nao recebe VR/Cafe/Cesta (nao trabalhou). So
+  // recebe MOBILIDADE referente aos dias COMPRADOS (abono). 0 comprados -> 0.
+  if(st==='Ferias' || st==='Férias' || st==='Ferias Coletiva'){
+    const comprados=Math.max(0,fnum(c.ferDiasComprados));
+    let comb=0, vt=0;
+    if(comprados>0){
+      if(eleg.mobilidade!==false && mob==='combustivel' && fnum(c.comb)>0) comb=calcMob(fnum(c.comb),comprados,du);
+      if(elegVT && mob==='vt') vt=calcVT(c,comprados);
+    }
+    return {vr:0,cafe:0,comb,vt,cesta:0};
+  }
+
+  // Trabalhando: cálculo normal
   const vr   = (eleg.vr!==false&&fnum(c.vr)>0)   ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))   : 0;
   const cafe  = (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
   let comb=0;
