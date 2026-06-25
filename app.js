@@ -57,6 +57,22 @@ const EVENTOS_MAP = {"1":"Salario Normal","1600":"Pro-Labore","1952":"Periculosi
 
 let colaboradores = [];
 let lancamento = {};
+
+// Estado persistente do lancamento mensal: competencia e dias uteis padrao.
+// Antes era lido do campo de tela (id=lan-du/lan-comp), que so existe na tela
+// de Lancamento — na Exportacao caia no default 22 e os valores divergiam.
+// Agora vive em estado + localStorage, compartilhado por todas as telas.
+let lanComp = '';
+let lanDU = 22;
+function loadLanCtx(){
+  try{
+    lanComp = localStorage.getItem('rhudi_lanComp') || '';
+    const d = parseInt(localStorage.getItem('rhudi_lanDU'), 10);
+    if(Number.isFinite(d) && d>0) lanDU = d;
+  }catch(e){}
+}
+function setLanComp(v){ lanComp=String(v==null?'':v).trim(); try{localStorage.setItem('rhudi_lanComp',lanComp);}catch(e){} }
+function setLanDU(v){ const n=fnum(v); lanDU = n>0?n:22; try{localStorage.setItem('rhudi_lanDU',String(lanDU));}catch(e){} }
 let currentModule = 'base';
 let currentPage = '';
 let editColabId = null;
@@ -1888,8 +1904,8 @@ function pgBenLancamento(){
         <div class="card" style="margin-bottom:0;flex:1;min-width:300px">
           <div class="card-title">Competência & Dias</div>
           <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-            <div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:110px" oninput="renderLancamento()"></div>
-            <div class="fg"><label>Dias úteis do mês</label><input type="number" id="lan-du" value="22" min="1" max="31" style="width:90px" onchange="renderLancamento()"></div>
+            <div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:110px" value="${lanComp}" oninput="setLanComp(this.value);renderLancamento()"></div>
+            <div class="fg"><label>Dias úteis do mês</label><input type="number" id="lan-du" value="${lanDU}" min="1" max="31" style="width:90px" onchange="setLanDU(this.value);renderLancamento()"></div>
             <button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>
           </div>
           <div class="text-xs text-muted" style="margin-top:8px">Preenche os dias úteis para todos — exceto quem tem jornada especial travada no cadastro.</div>
@@ -2059,7 +2075,7 @@ function getLanAtivos(){
 function renderLancamento(){
   bindMsOutside();
   updateMsCounts();
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const ativos=getLanAtivos();
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
   const _pk=c=>(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome));
@@ -2145,7 +2161,7 @@ async function setLan(mat,campo,val){
 }
 
 async function aplicarDiasUteis(){
-  const du=fnum(g('lan-du'));
+  const du=lanDU;
   const b=window._writeBatch(window._db);
   let travados=0;
   colaboradores.forEach(c=>{
@@ -2160,12 +2176,12 @@ async function aplicarDiasUteis(){
 }
 
 async function fecharCompetencia(){
-  const comp=g('lan-comp');
+  const comp=lanComp;
   if(!comp){toast('Informe a competência (MM/AAAA)','error');return;}
   const benef=document.getElementById('lan-fechar-ben')?.value||'todos';
   const labels={todos:'Todos os benefícios',vr:'Vale Refeição',cafe:'Café da Manhã',cesta:'Cesta Básica',comb:'Combustível',vt:'Vale Transporte'};
   if(!confirm(`Fechar competência ${comp} — ${labels[benef]}? Salva um snapshot no Histórico.`)) return;
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const ativos=colaboradores.filter(c=>c.status!=='Inativo' && elegivelBeneficios(c));
   try{
     if(benef==='todos'){
@@ -2308,9 +2324,9 @@ function getCajuAtivos(empSel){
 }
 
 function exportarCajuCompleto(){
-  const comp=g('lan-comp')||'MES';
+  const comp=lanComp||'MES';
   const empSel=g('exp-emp');
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const header=['CPF','Matricula (opcional)','Valor Fixo em Auxilio Alimentacao','Mobilidade','Valor Fixo em Mobilidade','Cultura','Valor Fixo em Cultura','Saude','Valor Fixo em Saude','Educacao','Valor Fixo em Educacao','Home Office','Valor Fixo em Home Office'].join(SEP);
   const linhas=[header];
   getCajuAtivos(empSel).forEach(c=>{
@@ -2330,9 +2346,9 @@ function exportarCajuCompleto(){
 }
 
 function exportarCajuTipo(tipo){
-  const comp=g('lan-comp')||'MES';
+  const comp=lanComp||'MES';
   const empSel=g('exp-emp');
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const nomes={vr:'VR',cafe:'Cafe',comb:'Mobilidade',cesta:'Cesta_Basica'};
   const rows=[['CPF','Matr\u00EDcula','Valor']];
   getCajuAtivos(empSel).forEach(c=>{
@@ -2348,9 +2364,9 @@ function exportarCajuTipo(tipo){
 }
 
 function exportarVT(){
-  const comp=g('lan-comp')||'MES';
+  const comp=lanComp||'MES';
   const empSel=g('exp-emp');
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const cfg=getCfg();
   const rows=[['CPF','NOME','C\u00D3DIGO BENEF\u00CDCIO','BENEF\u00CDCIO','TIPO','VALOR UNIT\u00C1RIO','QUANTIDADE POR DIA','DIAS TRABALHADOS']];
   getCajuAtivos(empSel).filter(c=>inferMob(c)==='vt').forEach(c=>{
@@ -2377,8 +2393,8 @@ function exportarTudo(){
 }
 
 function exportarPorEmpresa(){
-  const comp=g('lan-comp')||'MES';
-  const du=fnum(g('lan-du'))||22;
+  const comp=lanComp||'MES';
+  const du=lanDU;
   const cfg=getCfg();
   const empresas=getEmpresaList();
   empresas.forEach((emp,i)=>{
@@ -2411,8 +2427,8 @@ function exportarPorEmpresa(){
 }
 
 function exportarPorEmpresaCaju(){
-  const comp=g('lan-comp')||'MES';
-  const du=fnum(g('lan-du'))||22;
+  const comp=lanComp||'MES';
+  const du=lanDU;
   const header=['CPF','Matricula (opcional)','Valor Fixo em Auxilio Alimentacao','Mobilidade','Valor Fixo em Mobilidade','Cultura','Valor Fixo em Cultura','Saude','Valor Fixo em Saude','Educacao','Valor Fixo em Educacao','Home Office','Valor Fixo em Home Office'].join(SEP);
   const empresas=getEmpresaList();
   empresas.forEach((emp,i)=>{
@@ -2465,9 +2481,9 @@ function pgBenExportarSenior(){
 }
 
 function exportarSenior(tipo){
-  const comp=g('lan-comp')||'MES';
+  const comp=lanComp||'MES';
   const empSel=document.getElementById('exp-senior-emp')?.value||'';
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const nomes={vr:'VR',cafe:'Cafe_Manha',comb:'Mobilidade',vt:'VT',cesta:'Cesta_Basica'};
   const linhas=['CPF,Empresa,Valor'];
   let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
@@ -2665,8 +2681,8 @@ function exportarColabExcel(){
 }
 
 function exportarLancamentoExcel(){
-  const du=fnum(g('lan-du'))||22;
-  const comp=g('lan-comp')||'MES';
+  const du=lanDU;
+  const comp=lanComp||'MES';
   const empF=getMs('lemp').join('-');
   const ativos=getLanAtivos();
   const rows=[['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
@@ -2798,7 +2814,7 @@ function pgDashMain(){
 }
 
 function renderDashMain(){
-  const du=fnum(g('lan-du'))||22;
+  const du=lanDU;
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const em30=new Date(hoje); em30.setDate(em30.getDate()+30);
   const unicos=colaboradoresUnicos(); // dedup por pessoa (MEI/Sócio 1x)
@@ -2831,7 +2847,7 @@ function renderDashMain(){
     else ferVerm++;
   });
 
-  const comp=g('lan-comp')||'\u2014';
+  const comp=lanComp||'\u2014';
   const el=document.getElementById('dash-content');
   if(!el) return;
   el.innerHTML=`
@@ -2993,15 +3009,13 @@ async function initApp(user){
   document.getElementById('app-screen').style.display='flex';
   const pi=PAPEIS[usuarioAtual.papel];
   document.getElementById('user-name').textContent=usuarioAtual.nome+' · '+pi.label;
+  loadLanCtx();
+  if(!lanComp){
+    const hoje=new Date();
+    setLanComp(String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear());
+  }
   Promise.all([loadColaboradores(),loadLancamento(),loadConfig()]).then(()=>{
     switchModule('base');
-    setTimeout(()=>{
-      const el=document.getElementById('lan-comp');
-      if(el&&!el.value){
-        const hoje=new Date();
-        el.value=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
-      }
-    },500);
   });
 }
 
@@ -3204,7 +3218,7 @@ function processarFolha(event){
     }
 
     // Enriquecer com dados da base
-    const du=fnum(document.getElementById('lan-du')?.value)||22;
+    const du=lanDU;
     Object.keys(porColab).forEach(mat=>{
       const c=colaboradores.find(x=>x.mat===mat);
       if(c){
