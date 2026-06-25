@@ -301,7 +301,7 @@ function formColabHTML(prefix, c){
       <div class="card-title">Controle de Férias</div>
       <p class="text-sm text-muted" style="margin-bottom:10px">Dados compartilhados com o módulo de Controle de Férias — qualquer alteração aqui reflete lá e vice-versa.</p>
       <div class="form-grid">
-        <div class="fg"><label>Data de vencimento das férias</label><input type="date" id="${prefix}-fer-venc" value="${c?.ferVenc||''}"></div>
+        <div class="fg"><label>Vencimento (próximo ciclo) — dia/mês</label><input type="text" id="${prefix}-fer-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}"><span style="font-size:10px;color:var(--text3);margin-top:2px">Em branco: calculado da admissão (véspera do aniversário). O ano do próximo vencimento é gerido pelo sistema.</span></div>
         <div class="fg"><label>Mês de agendamento das férias</label>
           <select id="${prefix}-fer-mes" onchange="atualizarAnoFerias('${prefix}')">
             <option value="">-- Não agendado --</option>
@@ -309,7 +309,7 @@ function formColabHTML(prefix, c){
           </select>
           <span style="font-size:10px;color:var(--text3);margin-top:2px">Ano calculado automaticamente: <strong id="${prefix}-fer-ano-label">${c?.ferMes?anoAgendado(c.ferMes):'—'}</strong> (atualiza conforme o mês passa)</span>
         </div>
-        <div class="fg"><label>Saldo de dias acumulados</label><input type="number" id="${prefix}-fer-saldo" min="0" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"></div>
+        <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="${prefix}-fer-saldo" min="-90" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"><span style="font-size:10px;color:var(--text3);margin-top:2px">Pode ser negativo (férias antecipadas).</span></div>
       </div>
     </div>
     <div class="card" id="${prefix}-card-vr" style="display:none">
@@ -489,7 +489,7 @@ function getColabFromForm(prefix){
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
     diasFixos: fnum(document.getElementById(prefix+'-dias-fixos')?.value)||null,
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
-    ferVenc:  document.getElementById(prefix+'-fer-venc')?.value||'',
+    ferVenc:  _resolveVencInput(document.getElementById(prefix+'-fer-venc')?.value||'', (prefix==='e'&&editColabId)?(colaboradores.find(x=>x._id===editColabId)?.ferVenc||''):''),
     ferMes:   document.getElementById(prefix+'-fer-mes')?.value||'',
     ferSaldo: (()=>{const v=document.getElementById(prefix+'-fer-saldo')?.value; return (v!==''&&v!=null&&v!==undefined)?fnum(v):null;})(),
     mobilidade:mob, elegibilidade:eleg,
@@ -3858,17 +3858,17 @@ function pgFerRadar(){
     <div class="page-header"><h2>Radar de Ferias</h2><p>Farol de vencimento por colaborador.</p></div>
     <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--green)"></div>Nao vencida</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--yellow)"></div>Vencida 1-9 meses</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--orange)"></div>Vencida 10-12 meses</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencida +12 meses</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencido (fechar ciclo)</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--orange)"></div>Vence em ≤3 meses</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--yellow)"></div>Vence em 4-6 meses</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--green)"></div>Vence em +6 meses</div>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--border)"></div>Sem dados</div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         ${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFerRadar')}
         ${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}
         ${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}
-        ${msDropdown('rcor','Situação',[{value:'verde',label:'Verde — não vencida'},{value:'amarelo',label:'Amarelo — 1-9m'},{value:'laranja',label:'Laranja — 10-12m'},{value:'vermelho',label:'Vermelho — +12m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}
+        ${msDropdown('rcor','Situação',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}
         <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">Excel</button>
       </div>
     </div>
@@ -3947,35 +3947,74 @@ function agendamentoStatus(c, vencDate){
     : {cor:'vermelha', tip:'Agendado APOS o limite (dobra) ('+agendamentoLabel(c)+')'};
 }
 
+// \u2500\u2500 Helpers de vencimento por ciclo (dia/mes) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+function _ddmm(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); }
+function _isoLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Proxima ocorrencia de dia/mes >= ref (hoje).
+function _proxVenc(dia,mes,ref){ let d=new Date(ref.getFullYear(),mes-1,dia); if(d<ref) d=new Date(ref.getFullYear()+1,mes-1,dia); return d; }
+// Resolve o que gravar em ferVenc a partir do input dd/mm. Se o dd/mm nao mudou
+// em relacao ao atual, mantem a data atual (preserva ano e estado "vencido");
+// se mudou, projeta para a proxima ocorrencia >= hoje.
+function _resolveVencInput(novoStr, atualIso){
+  const m=String(novoStr||'').trim().match(/^(\d{1,2})\/(\d{1,2})$/);
+  if(!m) return '';
+  const atual=_dataLocal(atualIso);
+  if(atual && atual.getDate()===+m[1] && (atual.getMonth()+1)===+m[2]) return atualIso;
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  return _isoLocal(_proxVenc(+m[1],+m[2],hoje));
+}
+function _vencCampoDDMM(c){ const d=c&&c.ferVenc?_dataLocal(c.ferVenc):null; return d?_ddmm(d):''; }
+
 function getFarol(c){
   // Nao se aplica - socios/consultores
   if(c.elegibilidade?.ferias===false){
-    return {cor:'na',cls:'dot-na',meses:0,label:'N/A',vencStr:'\u2014',vencDate:null,dias:0};
+    return {cor:'na',meses:0,label:'N/A',vencStr:'\u2014',vencDate:null,dias:0};
   }
   const hoje=new Date(); hoje.setHours(0,0,0,0);
 
-  // Vencimento ancorado no dia/mes de entrada: admissao + 1 ano = 1o
-  // vencimento. Os meses vencidos ACUMULAM desde esse 1o ciclo (sem reiniciar).
-  // ferVenc (override manual/importado) tem prioridade quando preenchido.
+  // Proximo vencimento (data completa). ferVenc (dd/mm -> data) tem prioridade;
+  // em branco, deriva da admissao: vencimento = vespera do aniversario
+  // (admissao - 1 dia), projetado para a proxima ocorrencia.
   let vencDate=null;
   if(c.ferVenc){
     vencDate=_dataLocal(c.ferVenc);
   } else if(c.admissao){
     const adm=_dataLocal(c.admissao);
-    if(adm){ vencDate=new Date(adm); vencDate.setFullYear(vencDate.getFullYear()+1); }
+    if(adm){ const v=new Date(adm); v.setDate(v.getDate()-1); vencDate=_proxVenc(v.getDate(),v.getMonth()+1,hoje); }
   }
 
-  if(!vencDate) return {cor:'sem',cls:'dot-sem',meses:0,label:'Sem dados',vencStr:'—',vencDate:null,dias:0};
+  if(!vencDate) return {cor:'sem',meses:0,label:'Sem dados',vencStr:'—',vencDate:null,dias:0};
 
-  const meses=_mesesEntre(vencDate,hoje);
-  // dia/mes do vencimento (sem ano, para nao confundir)
-  const vencStr=String(vencDate.getDate()).padStart(2,'0')+'/'+String(vencDate.getMonth()+1).padStart(2,'0');
-  const diasDisp=c.ferSaldo!=null?c.ferSaldo:(c.ferDias||30);
+  // meses ate o vencimento: positivo = falta esse tanto; negativo = ja venceu.
+  const meses=_mesesEntre(hoje,vencDate);
+  const vencStr=_ddmm(vencDate);
+  const saldo=(c.ferSaldo!=null?c.ferSaldo:30);
 
-  if(meses<0)  return {cor:'verde',  cls:'dot-verde',  meses:Math.abs(meses),label:'Vence em '+Math.abs(meses)+'m',vencStr,vencDate,dias:diasDisp};
-  if(meses<=9) return {cor:'amarelo',cls:'dot-amarelo',meses,label:'Há '+meses+'m',vencStr,vencDate,dias:diasDisp};
-  if(meses<=12)return {cor:'laranja',cls:'dot-laranja',meses,label:'Há '+meses+'m',vencStr,vencDate,dias:diasDisp};
-  return {cor:'vermelho',cls:'dot-vermelho',meses,label:'Há '+meses+'m',vencStr,vencDate,dias:diasDisp};
+  // Coluna/cor por PROXIMIDADE do proximo vencimento.
+  if(meses<0)  return {cor:'vermelho',meses,label:'Vencido — fechar ciclo',vencStr,vencDate,dias:saldo};
+  if(meses<=3) return {cor:'laranja', meses,label:meses<=0?'Vence este mês':'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
+  if(meses<=6) return {cor:'amarelo', meses,label:'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
+  return {cor:'verde',meses,label:'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
+}
+
+// Fecha um ciclo: +30 dias ao saldo, pergunta faltas a descontar, e rola o
+// proximo vencimento +1 ano. Saldo pode ficar negativo (antecipacao).
+async function fecharCicloFerias(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const f=getFarol(c);
+  if(!f.vencDate){ toast('Sem data de vencimento para fechar ciclo.','error'); return; }
+  const r=prompt('Fechar ciclo de '+c.nome+' (venceu em '+f.vencStr+').\n\n+30 dias serão somados ao saldo.\nQuantos dias de FALTA descontar neste ciclo? (0 se nenhuma)','0');
+  if(r===null) return;
+  const faltas=Math.max(0,fnum(r));
+  const novoSaldo=(c.ferSaldo!=null?c.ferSaldo:0)+30-faltas;
+  const nv=new Date(f.vencDate); nv.setFullYear(nv.getFullYear()+1);
+  c.ferSaldo=novoSaldo; c.ferVenc=_isoLocal(nv);
+  try{
+    await fsSet('colaboradores',id,c);
+    toast('Ciclo fechado: +30'+(faltas?(' −'+faltas+' falta(s)'):'')+'. Saldo: '+novoSaldo+' dias. Próx. venc.: '+_ddmm(nv),'success');
+    if(currentPage==='fer-radar') renderFerRadar();
+    if(currentPage==='fer-agendadas') renderFeriasAgendadas();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 function renderFerRadar(){
@@ -4004,10 +4043,10 @@ function renderFerRadar(){
   const statsEl=document.getElementById('fer-stats');
   if(statsEl) statsEl.innerHTML=`
     <div class="stats-grid" style="margin-bottom:0">
-      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Ferias OK</div></div>
-      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Vencida 1-9m</div></div>
-      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Vencida 10-12m</div></div>
-      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vencida +12m</div></div>
+      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vencido</div></div>
+      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Vence ≤3m</div></div>
+      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Vence 4-6m</div></div>
+      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Vence +6m</div></div>
       <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${stats.sem}</div><div class="stat-label">Sem dados</div></div>
       <div class="stat-card"><div class="stat-val" style="color:#9CA3AF">${stats.na}</div><div class="stat-label">N/A</div></div>
     </div>`;
@@ -4018,10 +4057,10 @@ function renderFarois(dados){
   const bgMap={verde:'#ECFDF5',amarelo:'#FEFCE8',laranja:'#FFF7ED',vermelho:'#FEF2F2',sem:'#F9FAFB',na:'#F3F4F6'};
 
   const colunas=[
-    {cor:'verde',titulo:'Ferias OK',icone:''},
-    {cor:'amarelo',titulo:'Vencida 1-9m',icone:''},
-    {cor:'laranja',titulo:'Vencida 10-12m',icone:''},
-    {cor:'vermelho',titulo:'Vencida +12m',icone:''},
+    {cor:'vermelho',titulo:'Vencido (fechar ciclo)',icone:''},
+    {cor:'laranja',titulo:'Vence em ≤3m',icone:''},
+    {cor:'amarelo',titulo:'Vence em 4-6m',icone:''},
+    {cor:'verde',titulo:'Vence em +6m',icone:''},
     {cor:'sem',titulo:'Sem dados',icone:''},
     {cor:'na',titulo:'N/A',icone:''},
   ];
@@ -4042,17 +4081,22 @@ function renderFarois(dados){
             const dotCor={verde:'var(--green)',vermelha:'var(--red)',preta:'#111827',cinza:'var(--text3)'};
             const ag=agendamentoStatus(c,f.vencDate);
             const saldo=(f.dias!=null?f.dias:30);
+            const saldoBg=saldo<0?'#FEE2E2':'var(--blue-light)', saldoCor=saldo<0?'#991B1B':'var(--blue-dark)';
+            const btnCiclo = f.cor==='vermelho'
+              ? '<button class="btn btn-danger btn-xs" style="margin-top:6px;width:100%" onclick="event.stopPropagation();fecharCicloFerias(\''+c._id+'\')" title="Soma +30 dias, pergunta faltas e rola o vencimento">Fechar ciclo (+30)</button>'
+              : '';
             return '<div style="background:#fff;border:1px solid '+corMap[col.cor]+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
               +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
               +'<div style="display:flex;align-items:center;gap:6px">'
                 +'<span title="'+ag.tip+'" style="flex:0 0 auto;width:10px;height:10px;border-radius:50%;background:'+dotCor[ag.cor]+'"></span>'
                 +'<span style="flex:1;min-width:0;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</span>'
-                +'<span title="Saldo de dias a tirar" style="flex:0 0 auto;background:var(--blue-light);color:var(--blue-dark);font-size:10px;font-weight:800;border-radius:10px;padding:1px 7px">'+saldo+' d</span>'
+                +'<span title="Saldo de dias a tirar" style="flex:0 0 auto;background:'+saldoBg+';color:'+saldoCor+';font-size:10px;font-weight:800;border-radius:10px;padding:1px 7px">'+saldo+' d</span>'
               +'</div>'
               +'<div style="font-size:10px;color:var(--text2);margin-top:3px">'
-              +(f.cor!=='sem'?'Venc: '+f.vencStr+' &middot; '+f.label:'Sem admissao/venc.')
+              +(f.cor!=='sem'?'Próx. venc: '+f.vencStr+' &middot; '+f.label:'Sem admissão/venc.')
               +(c.ferMes?'<br>Agend: '+agendamentoLabel(c):'<br>Sem agendamento')
               +'</div>'
+              +btnCiclo
               +'</div>';
           }).join('')
           +'</div></div>';
@@ -4091,7 +4135,9 @@ function renderFarois(dados){
         +'<td style="padding:8px 10px;font-size:11px;font-weight:600;color:'+cor+'">'+f.vencStr+'</td>'
         +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'</td>'
         +'<td style="padding:8px 10px;font-size:11px">'+(c.ferMes||'\u2014')+'</td>'
-        +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Editar</button></td>'
+        +'<td style="padding:8px 10px;text-align:center;white-space:nowrap">'
+          +(f.cor==='vermelho'?'<button class="btn btn-danger btn-xs" onclick="fecharCicloFerias(\''+c._id+'\')" title="+30, pergunta faltas, rola vencimento">Fechar ciclo</button> ':'')
+          +'<button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Editar</button></td>'
         +'</tr>';
     }).join('')+'</tbody></table></div>';
 }
@@ -4116,12 +4162,12 @@ function abrirDetalheFerias(id){
             <input type="date" id="ferd-admissao" value="${c.admissao||''}">
           </div>
           <div class="fg">
-            <label>Data de vencimento (proximo ciclo)</label>
-            <input type="date" id="ferd-venc" value="${c.ferVenc||''}">
+            <label>Vencimento (próximo ciclo) — dia/mês</label>
+            <input type="text" id="ferd-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}">
           </div>
           <div class="fg">
-            <label>Saldo de dias acumulados</label>
-            <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="0" max="90">
+            <label>Saldo de dias a tirar</label>
+            <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="-90" max="90">
           </div>
           <div class="fg">
             <label>Mes agendado para tirar ferias</label>
@@ -4132,9 +4178,10 @@ function abrirDetalheFerias(id){
             <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendado(c.ferMes):'\u2014'}</strong></span>
           </div>
         </div>
-        <p class="text-xs text-muted" style="margin-top:10px">A data de vencimento, se deixada em branco, e calculada automaticamente a partir da admissao.</p>
+        <p class="text-xs text-muted" style="margin-top:10px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
         <div id="ferd-alertas" style="margin-top:10px"></div>
         <div class="modal-footer">
+          ${f.cor==='vermelho'?`<button class="btn btn-danger" style="margin-right:auto" onclick="fecharCicloFerias('${id}')" title="+30, pergunta faltas, rola o vencimento">Fechar ciclo (+30)</button>`:''}
           <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Cancelar</button>
           <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')">Salvar</button>
         </div>
@@ -4204,7 +4251,7 @@ async function salvarDetalheFerias(id){
   const admissao=document.getElementById('ferd-admissao')?.value||'';
 
   c.ferSaldo=saldo;
-  c.ferVenc=venc||'';
+  c.ferVenc=_resolveVencInput(venc, c.ferVenc);
   c.ferMes=mes;
   c.admissao=admissao||c.admissao||'';
 
