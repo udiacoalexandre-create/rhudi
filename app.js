@@ -613,6 +613,9 @@ async function salvarColabModal(){
       const saldoAtual=(dados.ferSaldo!=null?dados.ferSaldo:(colaboradores[idx].ferSaldo!=null?colaboradores[idx].ferSaldo:0));
       dados.ferSaldo=saldoAtual-comp;
     }
+  } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
+    // Saiu de férias: zera os dias comprados para não vazar na mobilidade.
+    dados.ferDiasComprados=0;
   }
 
   Object.assign(colaboradores[idx],dados);
@@ -2085,10 +2088,17 @@ function renderBaseApuracaoInfo(){
   if(baseApuracao){
     const dt=baseApuracao.salvoEm?new Date(baseApuracao.salvoEm).toLocaleString('pt-BR'):'';
     const n=baseApuracao.totalColaboradores||(baseApuracao.colaboradores||[]).length;
+    // Existe versao salva mais recente que a importada? (avisa p/ reimportar)
+    const latest=basesSalvasList[0];
+    const desatualizada = latest && latest._id!==baseApuracao._id && String(latest.salvoEm||'')>String(baseApuracao.salvoEm||'');
     el.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--green-light);border:1px solid var(--green);border-radius:var(--radius);padding:8px 12px;font-size:13px">'
       +'<span style="font-weight:700;color:var(--green)">📥 Base importada:</span>'
       +'<span>'+baseApuracao.competencia+' · '+n+' colaboradores · '+dt+'</span>'
-      +'<button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="abrirImportarBase()">Trocar base</button></div>';
+      +'<button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="abrirImportarBase()">Trocar base</button></div>'
+      +(desatualizada?'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--radius);padding:8px 12px;font-size:13px;margin-top:6px">'
+        +'<span style="font-weight:700;color:#92400E">⚠️ Existe uma versão mais recente da base ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+').</span>'
+        +'<span class="text-muted">Os ajustes que você salvou depois não estão nesta apuração.</span>'
+        +'<button class="btn btn-warning btn-xs" style="margin-left:auto" onclick="importarBaseApuracao(\''+latest._id+'\')">Atualizar para a mais recente</button></div>':'');
   } else {
     el.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--radius);padding:8px 12px;font-size:13px">'
       +'<span style="font-weight:700;color:#92400E">⚠️ Nenhuma base importada.</span>'
