@@ -2499,6 +2499,14 @@ function _baixarXlsx(rows, sheetName, fileName){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),sheetName);
   XLSX.writeFile(wb,fileName);
 }
+// CSV com BOM (UTF-8) e separador ; — formato de importacao do Caju.
+function _baixarCsvBom(text, fileName){
+  const blob=new Blob(['﻿'+text],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=fileName; a.click(); URL.revokeObjectURL(url);
+}
+// Cabecalho do CSV de importacao do Caju (13 colunas)
+const CAJU_CSV_HEADER='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
 function _empDe(mat){ return String(mat||'').substring(0,4)||'0000'; }
 
 // O botao 3 muda de rotulo conforme o beneficio: VT -> Via Nova, demais -> Caju.
@@ -2538,15 +2546,20 @@ async function exportarPedidoBenef(){
     return;
   }
   if(benef==='comb'){
-    // Mobilidade: 1 planilha por empresa
+    // Mobilidade: CSV de importação do Caju (modelo), 1 arquivo por empresa.
+    // Valor (inteiro) vai na coluna "Mobilidade"; CPF com 11 dígitos.
     const emps=[...new Set(det.map(d=>_empDe(d.mat)))].sort();
     let n=0;
     emps.forEach((emp,i)=>{
-      const rows=[['CPF','Matrícula','Valor']];
-      det.filter(d=>_empDe(d.mat)===emp).forEach(d=>rows.push([d.cpf||'',d.mat||'',d.valor]));
-      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'Mobilidade','Caju_Mobilidade_'+emp+'_'+tag+'.xlsx'), i*350); }
+      const linhas=[CAJU_CSV_HEADER];
+      det.filter(d=>_empDe(d.mat)===emp).forEach(d=>{
+        const cpf=(d.cpf||'').replace(/\D/g,'').padStart(11,'0');
+        const val=Math.round(fnum(d.valor));
+        if(val>0) linhas.push(cpf+';;;'+val+';;;;;;;;;');
+      });
+      if(linhas.length>1){ n++; setTimeout(()=>_baixarCsvBom(linhas.join(NL),'caju_import_mobilidade_'+tag+'_'+emp+'.csv'), i*350); }
     });
-    toast('Mobilidade: '+n+' planilha(s) — uma por empresa.','success');
+    toast('Mobilidade (Caju): '+n+' arquivo(s) CSV — um por empresa.','success');
     return;
   }
   // VR, Café, Cesta: planilha unica (todas as empresas)
