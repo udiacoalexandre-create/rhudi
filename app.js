@@ -1911,7 +1911,7 @@ function pgBenLancamento(){
           <div class="card-title">Fechar &amp; Exportar Competência</div>
           <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
             <div class="fg"><label>1 · Benefício</label>
-              <select id="lan-fechar-ben" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+              <select id="lan-fechar-ben" onchange="atualizarBotoesExport()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
                 <option value="vt">Vale Transporte</option>
                 <option value="comb">Combustível (Mobilidade)</option>
                 <option value="cesta">Cesta Básica</option>
@@ -1921,10 +1921,10 @@ function pgBenLancamento(){
               </select>
             </div>
             <button class="btn btn-success btn-sm" onclick="fecharCompetencia()" title="Grava o snapshot no Histórico">&#128274; 2 · Fechar</button>
-            <button class="btn btn-primary btn-sm" onclick="exportarCajuBenef()" title="Exporta do fechamento">&#11015; 3 · Caju</button>
+            <button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()" title="Exporta do fechamento">&#11015; 3 · Via Nova</button>
             <button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()" title="Exporta do fechamento">&#11015; 4 · Senior</button>
           </div>
-          <div class="text-xs text-muted" style="margin-top:8px">Os arquivos saem do <strong>fechamento</strong> (não recalculam). Caju: VT e Mobilidade = 1 planilha por empresa; Cesta, VR e Café = planilha única. Senior: 1 arquivo único por benefício.</div>
+          <div class="text-xs text-muted" style="margin-top:8px">Os arquivos saem do <strong>fechamento</strong> (não recalculam). <strong>VT → Via Nova</strong> (1 planilha por empresa). <strong>Caju</strong>: Mobilidade = 1 por empresa; Cesta, VR e Café = planilha única. Senior: 1 arquivo único por benefício.</div>
         </div>
       </div>
       <div id="lan-resumo" style="margin-bottom:12px"></div>
@@ -2074,6 +2074,7 @@ function getLanAtivos(){
 function renderLancamento(){
   bindMsOutside();
   updateMsCounts();
+  atualizarBotoesExport();
   const du=lanDU;
   const ativos=getLanAtivos();
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
@@ -2299,29 +2300,40 @@ function _baixarXlsx(rows, sheetName, fileName){
 }
 function _empDe(mat){ return String(mat||'').substring(0,4)||'0000'; }
 
-async function exportarCajuBenef(){
+// O botao 3 muda de rotulo conforme o beneficio: VT -> Via Nova, demais -> Caju.
+function atualizarBotoesExport(){
+  const benef=document.getElementById('lan-fechar-ben')?.value||'';
+  const b=document.getElementById('lan-btn-export3');
+  if(b) b.innerHTML = (benef==='vt') ? '&#11015; 3 · Via Nova' : '&#11015; 3 · Caju';
+}
+
+// Exporta o pedido do beneficio selecionado: VT vai para o Via Nova
+// (planilha PEDIDO, 1 por empresa); os demais vao para o Caju.
+async function exportarPedidoBenef(){
   const benef=document.getElementById('lan-fechar-ben')?.value||'';
   if(!benef||benef==='todos'){ toast('Selecione um benefício específico (VR, Café, Cesta, Combustível ou VT).','error'); return; }
   const comp=lanComp;
+  const destino=benef==='vt'?'Via Nova':'Caju';
   const snap=await _snapshotBenef(comp,benef);
-  if(!snap){ toast('Feche a competência de '+BENEF_LABELS[benef]+' antes de exportar o Caju.','error'); return; }
+  if(!snap){ toast('Feche a competência de '+BENEF_LABELS[benef]+' antes de exportar para o '+destino+'.','error'); return; }
   const det=snap.detalhes||[];
   if(!det.length){ toast('Sem ocorrências de '+BENEF_LABELS[benef]+' nessa competência.','info'); return; }
   const tag=comp.replace('/','_');
 
   if(benef==='vt'){
-    // 1 planilha por empresa com ocorrencia (formato detalhado com codigos)
-    const header=['CPF','NOME','CÓDIGO BENEFÍCIO','BENEFÍCIO','TIPO','VALOR UNITÁRIO','QUANTIDADE POR DIA','DIAS TRABALHADOS'];
+    // VIA NOVA — planilha PEDIDO, 1 por empresa com ocorrencia.
+    // Cabecalho com quebra de linha conforme o modelo (sem coluna TIPO).
+    const header=['CPF','NOME','CÓDIGO\nBENEFÍCIO','BENEFÍCIO','VALOR\nUNITÁRIO','QUANTIDADE\nPOR DIA','DIAS\nTRABALHADOS'];
     const emps=[...new Set(det.map(d=>_empDe(d.mat)))].sort();
     let n=0;
     emps.forEach((emp,i)=>{
       const rows=[header];
       det.filter(d=>_empDe(d.mat)===emp).forEach(d=>{
-        (d.linhas||[]).forEach(l=>rows.push([d.cpf||'',d.nome||'',l.cod||'',l.ben||'',l.tp||'',l.val,l.viag,d.dias!=null?d.dias:'']));
+        (d.linhas||[]).forEach(l=>rows.push([d.cpf||'',d.nome||'',l.cod||'',l.ben||'',l.val,l.viag,d.dias!=null?d.dias:'']));
       });
-      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'PEDIDO','Caju_VT_'+emp+'_'+tag+'.xlsx'), i*350); }
+      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'PEDIDO','ViaNova_PEDIDO_'+emp+'_'+tag+'.xlsx'), i*350); }
     });
-    toast('VT: '+n+' planilha(s) — uma por empresa.','success');
+    toast('Via Nova (VT): '+n+' planilha(s) — uma por empresa.','success');
     return;
   }
   if(benef==='comb'){
