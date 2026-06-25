@@ -510,6 +510,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 </div>
 
 <div id="toast"></div>
-<script src="app.js"></script>
+<!-- Cache-busting: carrega sempre a versao mais recente do app.js (evita cache antigo) -->
+<script>document.write('<scr'+'ipt src="app.js?v='+Date.now()+'"></scr'+'ipt>');</script>
 </body>
 </html>
