@@ -34,6 +34,21 @@ function normalizarStatus(s){
   return (s||'').trim();
 }
 
+// Status sem acento/caixa, para comparacoes tolerantes a variacoes de escrita.
+function _statusKey(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim(); }
+// Classifica o status em um grupo de regra de beneficio, tolerante a variantes
+// (ex.: "Acidente de Trabalho" vs "Acidente Trabalho", com/sem acento).
+function statusGrupo(s){
+  const k=_statusKey(s);
+  if(!k) return 'trabalhando';
+  if(k.includes('DEMIT') || k==='N/A' || k==='NA') return 'nao_recebe';
+  if(k.includes('FERIAS')) return 'ferias';
+  if(k.includes('AFAST')||k.includes('DOENC')||k.includes('ACIDENT')||k.includes('MATERN')
+     ||k.includes('PATERN')||k.includes('RECLUS')||k.includes('LICEN')||k.includes('INSS')||k.includes('SUSPEN'))
+    return 'so_cesta';
+  return 'trabalhando';
+}
+
 
 // ============================================================
 // DADOS & ESTADO GLOBAL
@@ -1860,15 +1875,16 @@ function getCfg(){
 
 function calcBen(c, dr, du){
   const st = c.status||'Trabalhando';
+  const grp = statusGrupo(st); // tolerante a variantes/acentos
 
   // Valor de cesta: fixo, configuravel por colaborador (padrao 185), gated por elegibilidade
   const cestaVal = (c.elegibilidade?.cesta!==false) ? (fnum(c.cesta)||185) : 0;
 
   // N/A e Demitido: nada
-  if(STATUS_NAO_RECEBE.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
+  if(grp==='nao_recebe') return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
 
-  // Afastados: só cesta
-  if(STATUS_SO_CESTA.includes(st)) return {vr:0,cafe:0,comb:0,vt:0,cesta:cestaVal};
+  // Afastados (auxílio doença, acidente de trabalho, licenças, etc.): só cesta
+  if(grp==='so_cesta') return {vr:0,cafe:0,comb:0,vt:0,cesta:cestaVal};
 
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
@@ -1877,7 +1893,7 @@ function calcBen(c, dr, du){
 
   // Ferias / Ferias Coletiva: nao recebe VR/Cafe/Cesta (nao trabalhou). So
   // recebe MOBILIDADE referente aos dias COMPRADOS (abono). 0 comprados -> 0.
-  if(st==='Ferias' || st==='Férias' || st==='Ferias Coletiva'){
+  if(grp==='ferias'){
     const comprados=Math.max(0,fnum(c.ferDiasComprados));
     let comb=0, vt=0;
     if(comprados>0){
