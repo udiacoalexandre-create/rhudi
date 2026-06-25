@@ -624,8 +624,6 @@ const MODULES = {
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'',label:'Lan\u00E7amento Mensal'},
     {id:'ben-importar',icon:'',label:'Importar Faltas'},
-    {id:'ben-exportar-caju',icon:'',label:'Exportar Caju & VT'},
-    {id:'ben-exportar-senior',icon:'',label:'Exportar Senior'},
     {id:'ben-historico',icon:'',label:'Hist\u00F3rico'},
     {id:'ben-config',icon:'',label:'Configura\u00E7\u00F5es'},
   ]},
@@ -683,7 +681,6 @@ function renderPage(id){
   const pages={
     'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
-    'ben-exportar-caju':pgBenExportarCaju,'ben-exportar-senior':pgBenExportarSenior,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-import':pgFerImport,
@@ -1910,22 +1907,24 @@ function pgBenLancamento(){
           </div>
           <div class="text-xs text-muted" style="margin-top:8px">Preenche os dias úteis para todos — exceto quem tem jornada especial travada no cadastro.</div>
         </div>
-        <div class="card" style="margin-bottom:0;min-width:280px">
-          <div class="card-title">Fechar Competência</div>
+        <div class="card" style="margin-bottom:0;min-width:340px;flex:1">
+          <div class="card-title">Fechar &amp; Exportar Competência</div>
           <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-            <div class="fg"><label>Benefício</label>
+            <div class="fg"><label>1 · Benefício</label>
               <select id="lan-fechar-ben" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-                <option value="todos">Todos os benefícios</option>
+                <option value="vt">Vale Transporte</option>
+                <option value="comb">Combustível (Mobilidade)</option>
+                <option value="cesta">Cesta Básica</option>
                 <option value="vr">Vale Refeição</option>
                 <option value="cafe">Café da Manhã</option>
-                <option value="cesta">Cesta Básica</option>
-                <option value="comb">Combustível</option>
-                <option value="vt">Vale Transporte</option>
+                <option value="todos">Todos (só Histórico)</option>
               </select>
             </div>
-            <button class="btn btn-success btn-sm" onclick="fecharCompetencia()">&#128274; Fechar</button>
+            <button class="btn btn-success btn-sm" onclick="fecharCompetencia()" title="Grava o snapshot no Histórico">&#128274; 2 · Fechar</button>
+            <button class="btn btn-primary btn-sm" onclick="exportarCajuBenef()" title="Exporta do fechamento">&#11015; 3 · Caju</button>
+            <button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()" title="Exporta do fechamento">&#11015; 4 · Senior</button>
           </div>
-          <div class="text-xs text-muted" style="margin-top:8px">Feche um benefício por vez (calculados em dias diferentes). Vai para o Histórico.</div>
+          <div class="text-xs text-muted" style="margin-top:8px">Os arquivos saem do <strong>fechamento</strong> (não recalculam). Caju: VT e Mobilidade = 1 planilha por empresa; Cesta, VR e Café = planilha única. Senior: 1 arquivo único por benefício.</div>
         </div>
       </div>
       <div id="lan-resumo" style="margin-bottom:12px"></div>
@@ -2175,36 +2174,196 @@ async function aplicarDiasUteis(){
   toast(`\u2705 Dias (${du}) aplicados.`+(travados?` ${travados} travados mantidos.`:''),'success');
 }
 
+const BENEF_LABELS={todos:'Todos os benefícios',vr:'Vale Refeição',cafe:'Café da Manhã',cesta:'Cesta Básica',comb:'Combustível',vt:'Vale Transporte'};
+
+// Proxima competencia (MM/AAAA -> MM/AAAA do mes seguinte)
+function _proxComp(comp){
+  const m=String(comp).match(/^(\d{1,2})\/(\d{4})$/); if(!m) return comp;
+  let mm=+m[1]+1, yy=+m[2]; if(mm>12){mm=1;yy++;}
+  return String(mm).padStart(2,'0')+'/'+yy;
+}
+
+// Modal de escolha quando a competencia/beneficio ja foi fechada com valores
+// diferentes: substituir o fechamento, jogar p/ competencia futura, ou cancelar.
+function escolhaFechamento(comp, benefLabel, oldTotal, novoTotal){
+  return new Promise(resolve=>{
+    document.getElementById('modal-fechamento-dup')?.remove();
+    const prox=_proxComp(comp);
+    const html=`<div class="modal-overlay open" id="modal-fechamento-dup" data-dynamic="1">
+      <div class="modal" style="max-width:500px">
+        <div class="modal-title">Competência já fechada</div>
+        <div class="modal-sub">${comp} — ${benefLabel} já tem um fechamento, e os valores atuais estão diferentes.</div>
+        <div class="text-sm" style="margin:10px 0;display:flex;gap:18px">
+          <div>Fechado: <strong>${brl(oldTotal)}</strong></div>
+          <div>Atual: <strong style="color:var(--blue)">${brl(novoTotal)}</strong></div>
+        </div>
+        <p class="text-sm" style="margin:10px 0 12px">O que deseja fazer com a alteração?</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-warning" id="fdup-sub">Substituir o fechamento de ${comp} (re-fechar com os valores atuais)</button>
+          <button class="btn btn-primary" id="fdup-fut">Manter ${comp} e considerar para a próxima competência (${prox})</button>
+          <button class="btn btn-ghost" id="fdup-cancel">Cancelar</button>
+        </div>
+      </div></div>`;
+    document.body.insertAdjacentHTML('beforeend',html);
+    const close=v=>{document.getElementById('modal-fechamento-dup')?.remove();resolve(v);};
+    document.getElementById('fdup-sub').onclick=()=>close('substituir');
+    document.getElementById('fdup-fut').onclick=()=>close('futura');
+    document.getElementById('fdup-cancel').onclick=()=>close('cancelar');
+  });
+}
+
 async function fecharCompetencia(){
   const comp=lanComp;
   if(!comp){toast('Informe a competência (MM/AAAA)','error');return;}
   const benef=document.getElementById('lan-fechar-ben')?.value||'todos';
-  const labels={todos:'Todos os benefícios',vr:'Vale Refeição',cafe:'Café da Manhã',cesta:'Cesta Básica',comb:'Combustível',vt:'Vale Transporte'};
-  if(!confirm(`Fechar competência ${comp} — ${labels[benef]}? Salva um snapshot no Histórico.`)) return;
+  const labels=BENEF_LABELS;
   const du=lanDU;
+  const cfg=getCfg();
   const ativos=colaboradores.filter(c=>c.status!=='Inativo' && elegivelBeneficios(c));
-  try{
-    if(benef==='todos'){
-      let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
-      const detalhes=ativos.map(c=>{
-        const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
-        const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
-        tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
-        return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
-      });
-      await fsSet('historico',comp.replace('/','_'),{competencia:comp,beneficio:'todos',fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:tVR+tCafe+tCesta+tComb+tVT},detalhes});
-    } else {
-      let tot=0; const detalhes=[];
-      ativos.forEach(c=>{
-        const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
-        const v=calcBen(c,dr,du2)[benef]||0;
-        if(v>0){ tot+=v; detalhes.push({mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',valor:v}); }
-      });
-      await fsSet('historico',comp.replace('/','_')+'_'+benef,{competencia:comp,beneficio:benef,beneficioLabel:labels[benef],fechadoEm:new Date().toISOString(),totalColaboradores:detalhes.length,total:tot,detalhes});
+
+  // Monta o snapshot (VT guarda dr/linhas para a planilha por empresa sair igual)
+  const docId = benef==='todos' ? comp.replace('/','_') : comp.replace('/','_')+'_'+benef;
+  let payload, novoTotal, novoCount;
+  if(benef==='todos'){
+    let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
+    const detalhes=ativos.map(c=>{
+      const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
+      const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
+      tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
+      return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
+    });
+    novoTotal=tVR+tCafe+tCesta+tComb+tVT; novoCount=ativos.length;
+    payload={competencia:comp,beneficio:'todos',fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:novoTotal},detalhes};
+  } else {
+    let tot=0; const detalhes=[];
+    ativos.forEach(c=>{
+      const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
+      const v=calcBen(c,dr,du2)[benef]||0;
+      if(v>0){
+        tot+=v;
+        const reg={mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',valor:v};
+        if(benef==='vt'){
+          reg.dias = cfg.vt==='mult'?dr:1;
+          reg.linhas=[1,2,3,4]
+            .map(n=>({cod:c['cod'+n]||'',ben:c['ben'+n]||'',tp:c['tp'+n]||'',val:fnum(c['vt'+n]),viag:fnum(c['v'+n])}))
+            .filter(l=>l.val>0&&l.viag>0);
+        }
+        detalhes.push(reg);
+      }
+    });
+    novoTotal=tot; novoCount=detalhes.length;
+    payload={competencia:comp,beneficio:benef,beneficioLabel:labels[benef],fechadoEm:new Date().toISOString(),totalColaboradores:detalhes.length,total:tot,detalhes};
+  }
+
+  // Ja existe fechamento dessa competencia/beneficio?
+  let existing=null;
+  try{ const s=await window._getDoc(window._doc('historico',docId)); if(s.exists()) existing=s.data(); }catch(e){}
+  if(existing){
+    const oldTotal = benef==='todos' ? (existing.totais?.geral||0) : (existing.total||0);
+    const oldCount = existing.totalColaboradores||0;
+    const diverge = Math.abs(oldTotal-novoTotal)>0.005 || oldCount!==novoCount;
+    if(diverge){
+      const escolha = await escolhaFechamento(comp, labels[benef], oldTotal, novoTotal);
+      if(escolha==='cancelar') return;
+      if(escolha==='futura'){
+        const prox=_proxComp(comp);
+        setLanComp(prox);
+        renderLancamento();
+        toast('Fechamento de '+comp+' mantido. Competência avançada para '+prox+'.','success');
+        return;
+      }
+      // 'substituir' segue e regrava o snapshot
+    } else if(!confirm(`Competência ${comp} — ${labels[benef]} já fechada com os mesmos valores. Re-fechar mesmo assim?`)){
+      return;
     }
+  } else if(!confirm(`Fechar competência ${comp} — ${labels[benef]}? Salva um snapshot no Histórico.`)){
+    return;
+  }
+
+  try{
+    await fsSet('historico',docId,payload);
     toast(`Competência ${comp} — ${labels[benef]} fechada!`,'success');
     if(currentPage==='ben-historico') renderHistorico();
   }catch(e){toast('Erro: '+e.message,'error');}
+}
+
+// ── Exportacao a partir do SNAPSHOT fechado (fonte unica de verdade) ──────
+async function _snapshotBenef(comp,benef){
+  const id=comp.replace('/','_')+'_'+benef;
+  try{ const s=await window._getDoc(window._doc('historico',id)); return s.exists()?s.data():null; }catch(e){ return null; }
+}
+function _baixarXlsx(rows, sheetName, fileName){
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),sheetName);
+  XLSX.writeFile(wb,fileName);
+}
+function _empDe(mat){ return String(mat||'').substring(0,4)||'0000'; }
+
+async function exportarCajuBenef(){
+  const benef=document.getElementById('lan-fechar-ben')?.value||'';
+  if(!benef||benef==='todos'){ toast('Selecione um benefício específico (VR, Café, Cesta, Combustível ou VT).','error'); return; }
+  const comp=lanComp;
+  const snap=await _snapshotBenef(comp,benef);
+  if(!snap){ toast('Feche a competência de '+BENEF_LABELS[benef]+' antes de exportar o Caju.','error'); return; }
+  const det=snap.detalhes||[];
+  if(!det.length){ toast('Sem ocorrências de '+BENEF_LABELS[benef]+' nessa competência.','info'); return; }
+  const tag=comp.replace('/','_');
+
+  if(benef==='vt'){
+    // 1 planilha por empresa com ocorrencia (formato detalhado com codigos)
+    const header=['CPF','NOME','CÓDIGO BENEFÍCIO','BENEFÍCIO','TIPO','VALOR UNITÁRIO','QUANTIDADE POR DIA','DIAS TRABALHADOS'];
+    const emps=[...new Set(det.map(d=>_empDe(d.mat)))].sort();
+    let n=0;
+    emps.forEach((emp,i)=>{
+      const rows=[header];
+      det.filter(d=>_empDe(d.mat)===emp).forEach(d=>{
+        (d.linhas||[]).forEach(l=>rows.push([d.cpf||'',d.nome||'',l.cod||'',l.ben||'',l.tp||'',l.val,l.viag,d.dias!=null?d.dias:'']));
+      });
+      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'PEDIDO','Caju_VT_'+emp+'_'+tag+'.xlsx'), i*350); }
+    });
+    toast('VT: '+n+' planilha(s) — uma por empresa.','success');
+    return;
+  }
+  if(benef==='comb'){
+    // Mobilidade: 1 planilha por empresa
+    const emps=[...new Set(det.map(d=>_empDe(d.mat)))].sort();
+    let n=0;
+    emps.forEach((emp,i)=>{
+      const rows=[['CPF','Matrícula','Valor']];
+      det.filter(d=>_empDe(d.mat)===emp).forEach(d=>rows.push([d.cpf||'',d.mat||'',d.valor]));
+      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'Mobilidade','Caju_Mobilidade_'+emp+'_'+tag+'.xlsx'), i*350); }
+    });
+    toast('Mobilidade: '+n+' planilha(s) — uma por empresa.','success');
+    return;
+  }
+  // VR, Café, Cesta: planilha unica (todas as empresas)
+  const nomes={vr:'VR',cafe:'Cafe',cesta:'Cesta_Basica'};
+  const rows=[['CPF','Matrícula','Valor']];
+  det.forEach(d=>rows.push([d.cpf||'',d.mat||'',d.valor]));
+  _baixarXlsx(rows,nomes[benef],'Caju_'+nomes[benef]+'_'+tag+'.xlsx');
+  toast(BENEF_LABELS[benef]+': planilha única exportada.','success');
+}
+
+async function exportarSeniorBenef(){
+  const benef=document.getElementById('lan-fechar-ben')?.value||'';
+  if(!benef||benef==='todos'){ toast('Selecione um benefício específico para exportar o Senior.','error'); return; }
+  const comp=lanComp;
+  const snap=await _snapshotBenef(comp,benef);
+  if(!snap){ toast('Feche a competência de '+BENEF_LABELS[benef]+' antes de exportar o Senior.','error'); return; }
+  const det=snap.detalhes||[];
+  if(!det.length){ toast('Sem ocorrências de '+BENEF_LABELS[benef]+' nessa competência.','info'); return; }
+  const nomes={vr:'VR',cafe:'Cafe_Manha',cesta:'Cesta_Basica',comb:'Mobilidade',vt:'VT'};
+  const linhas=['CPF,Empresa,Valor'];
+  det.forEach(d=>{
+    const cpf=(d.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
+    linhas.push(cpf+','+_empDe(d.mat)+','+fnum(d.valor).toFixed(2).replace('.',','));
+  });
+  const blob=new Blob([linhas.join(NL)],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=nomes[benef]+'_Senior_'+comp.replace('/','_')+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast(BENEF_LABELS[benef]+' Senior exportado (arquivo único).','success');
 }
 
 // ============================================================
