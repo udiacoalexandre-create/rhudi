@@ -73,6 +73,14 @@ function loadLanCtx(){
 }
 function setLanComp(v){ lanComp=String(v==null?'':v).trim(); try{localStorage.setItem('rhudi_lanComp',lanComp);}catch(e){} }
 function setLanDU(v){ const n=fnum(v); lanDU = n>0?n:22; try{localStorage.setItem('rhudi_lanDU',String(lanDU));}catch(e){} }
+
+// Bases de colaboradores salvas por competencia (log versionado) e a base
+// atualmente IMPORTADA para a apuracao (congelada). A apuracao de beneficios
+// trabalha sobre baseApuracao, nao sobre a base ao vivo (colaboradores).
+let basesSalvasList = [];   // [{_id, competencia, salvoEm, salvoPor, totalColaboradores, colaboradores:[]}]
+let baseApuracao = null;    // base importada para a apuracao
+// Fonte da apuracao: a base importada quando houver, senao a base ao vivo.
+function colsApuracao(){ return baseApuracao && Array.isArray(baseApuracao.colaboradores) ? baseApuracao.colaboradores : colaboradores; }
 let currentModule = 'base';
 let currentPage = '';
 let editColabId = null;
@@ -620,6 +628,7 @@ const MODULES = {
     {id:'base-lista',icon:'',label:'Colaboradores'},
     {id:'base-import',icon:'',label:'Importar'},
     {id:'base-novo',icon:'',label:'Novo Colaborador'},
+    {id:'base-versoes',icon:'',label:'Bases Salvas'},
   ]},
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'',label:'Lan\u00E7amento Mensal'},
@@ -679,7 +688,7 @@ function showPage(id){
 
 function renderPage(id){
   const pages={
-    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'premio-main':pgPremioAssiduidade,
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'base-versoes':pgBaseVersoes,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
@@ -696,6 +705,7 @@ function afterRender(id){
   if(id==='base-lista') renderColabList();
   if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
   if(id==='ben-lancamento'){ popularLanFiltros(); renderLancamento(); }
+  if(id==='base-versoes') loadBasesSalvas().then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
@@ -1872,7 +1882,7 @@ function calcVT(c,dr){ return [1,2,3,4].reduce((s,n)=>s+fnum(c['vt'+n])*fnum(c['
 
 function getLanDU(mat, defaultDU){
   // 1. Se tem diasFixos no cadastro, usa sempre esse valor
-  const colab=colaboradores.find(c=>c.mat===mat);
+  const colab=colsApuracao().find(c=>c.mat===mat);
   if(colab?.diasFixos) return fnum(colab.diasFixos);
   // 2. Se foi definido manualmente no lancamento, usa esse
   const l=lancamento[mat]||{};
@@ -1888,8 +1898,9 @@ function getLanDR(mat, defaultDU){
 // BENEF\u00CDCIOS: LAN\u00C7AMENTO MENSAL
 // ============================================================
 function pgBenLancamento(){
-  const empresas=getEmpresaList();
-  const deptos=getDeptoList();
+  const _base=colsApuracao();
+  const empresas=(()=>{const gg={};_base.forEach(c=>{const p=String(c.mat||'').substring(0,4);if(p.length===4)gg[p]=(gg[p]||0)+1;});return Object.keys(gg).sort().map(p=>({cod:p,qtd:gg[p]}));})();
+  const deptos=[...new Set(_base.map(c=>c.depto||'').filter(Boolean))].sort();
   return `
    <div class="bl-page">
     <div style="flex:0 0 auto">
@@ -1897,6 +1908,7 @@ function pgBenLancamento(){
         <h2>Lançamento Mensal</h2>
         <p>Informe faltas, férias e dias extras para calcular os benefícios.</p>
       </div>
+      <div id="lan-base-info" style="margin-bottom:12px"></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
         <div class="card" style="margin-bottom:0;flex:1;min-width:300px">
           <div class="card-title">Competência & Dias</div>
@@ -1969,8 +1981,134 @@ function popularLanFiltros(){
   setTimeout(()=>verificarColabsEmFerias(), 300);
 }
 
+// ============================================================
+// BASES SALVAS POR COMPETENCIA (log versionado) + IMPORT p/ apuracao
+// ============================================================
+async function loadBasesSalvas(){
+  try{
+    const snap=await window._getDocs(window._col('basesSalvas'));
+    basesSalvasList=[]; snap.forEach(d=>basesSalvasList.push(Object.assign({_id:d.id},d.data())));
+    basesSalvasList.sort((a,b)=>String(b.salvoEm||'').localeCompare(String(a.salvoEm||'')));
+  }catch(e){ console.error('Erro basesSalvas:',e); }
+  return basesSalvasList;
+}
+
+async function salvarBaseCompetencia(){
+  const comp=(document.getElementById('bsv-comp')?.value||'').trim();
+  if(!/^\d{2}\/\d{4}$/.test(comp)){ toast('Informe a competência no formato MM/AAAA.','error'); return; }
+  if(!colaboradores.length){ toast('Base vazia — nada para salvar.','error'); return; }
+  if(!confirm('Salvar uma nova versão da base ('+colaboradores.length+' colaboradores) para '+comp+'?')) return;
+  const id=comp.replace('/','_')+'__'+Date.now();
+  const payload={
+    competencia:comp,
+    salvoEm:new Date().toISOString(),
+    salvoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'',
+    totalColaboradores:colaboradores.length,
+    colaboradores:colaboradores.map(c=>Object.assign({},c))
+  };
+  try{
+    await fsSet('basesSalvas',id,payload);
+    toast('Base de '+comp+' salva ('+colaboradores.length+' colaboradores).','success');
+    await loadBasesSalvas();
+    if(currentPage==='base-versoes') renderBasesSalvas();
+  }catch(e){ toast('Erro ao salvar base: '+e.message,'error'); }
+}
+
+async function excluirBaseSalva(id){
+  if(!confirm('Excluir esta versão salva da base?')) return;
+  try{ await fsDel('basesSalvas',id); await loadBasesSalvas(); renderBasesSalvas(); toast('Versão removida.','success'); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+function pgBaseVersoes(){
+  const hoje=new Date();
+  const compHoje=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+  return `
+    <div class="page-header"><h2>Bases Salvas por Competência</h2>
+      <p>Salve uma versão congelada da base para a competência. A apuração de benefícios parte de uma dessas versões.</p></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Salvar versão da base</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="fg"><label>Competência (MM/AAAA)</label><input type="text" id="bsv-comp" value="${compHoje}" placeholder="MM/AAAA" style="width:120px"></div>
+        <button class="btn btn-success btn-sm" onclick="salvarBaseCompetencia()">&#128190; Salvar base atual</button>
+      </div>
+      <div class="text-xs text-muted" style="margin-top:8px">Grava um snapshot de toda a base de colaboradores atual, com data/hora. Cada salvamento gera uma nova versão (o log mantém o histórico).</div>
+    </div>
+    <div id="bsv-lista"></div>`;
+}
+
+function renderBasesSalvas(){
+  const el=document.getElementById('bsv-lista'); if(!el) return;
+  if(!basesSalvasList.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">🗂️</div><p>Nenhuma base salva ainda.</p></div>'; return; }
+  const latestId=basesSalvasList[0]?._id;
+  el.innerHTML='<div style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Log de versões</div>'
+    +basesSalvasList.map(b=>{
+      const dt=b.salvoEm?new Date(b.salvoEm).toLocaleString('pt-BR'):'';
+      const atual=b._id===latestId?' <span class="badge badge-green" style="font-size:10px">mais recente</span>':'';
+      return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'
+        +'<div><div style="font-weight:700;color:var(--blue)">'+b.competencia+atual+'</div>'
+        +'<div class="text-xs text-muted">'+dt+' · '+(b.totalColaboradores||0)+' colaboradores'+(b.salvoPor?' · '+b.salvoPor:'')+'</div></div>'
+        +'<button class="btn btn-danger btn-xs" onclick="excluirBaseSalva(\''+b._id+'\')">Excluir</button>'
+        +'</div></div>';
+    }).join('');
+}
+
+// ── Import da base para a apuracao (no Lancamento Mensal) ─────────
+function renderBaseApuracaoInfo(){
+  const el=document.getElementById('lan-base-info'); if(!el) return;
+  if(baseApuracao){
+    const dt=baseApuracao.salvoEm?new Date(baseApuracao.salvoEm).toLocaleString('pt-BR'):'';
+    const n=baseApuracao.totalColaboradores||(baseApuracao.colaboradores||[]).length;
+    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--green-light);border:1px solid var(--green);border-radius:var(--radius);padding:8px 12px;font-size:13px">'
+      +'<span style="font-weight:700;color:var(--green)">📥 Base importada:</span>'
+      +'<span>'+baseApuracao.competencia+' · '+n+' colaboradores · '+dt+'</span>'
+      +'<button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="abrirImportarBase()">Trocar base</button></div>';
+  } else {
+    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--radius);padding:8px 12px;font-size:13px">'
+      +'<span style="font-weight:700;color:#92400E">⚠️ Nenhuma base importada.</span>'
+      +'<span class="text-muted">A apuração precisa de uma base salva.</span>'
+      +'<button class="btn btn-primary btn-xs" style="margin-left:auto" onclick="abrirImportarBase()">Importar base</button></div>';
+  }
+}
+
+async function abrirImportarBase(){
+  await loadBasesSalvas();
+  document.getElementById('modal-importar-base')?.remove();
+  const latestId=basesSalvasList[0]?._id;
+  const linhas = basesSalvasList.length
+    ? basesSalvasList.map(b=>{
+        const dt=b.salvoEm?new Date(b.salvoEm).toLocaleString('pt-BR'):'';
+        const tag=b._id===latestId?' <span class="badge badge-green" style="font-size:10px">mais recente</span>':'';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">'
+          +'<div><div style="font-weight:700">'+b.competencia+tag+'</div><div class="text-xs text-muted">'+dt+' · '+(b.totalColaboradores||0)+' colaboradores</div></div>'
+          +'<button class="btn btn-primary btn-sm" onclick="importarBaseApuracao(\''+b._id+'\')">Importar</button></div>';
+      }).join('')
+    : '<div class="empty-state"><p>Nenhuma base salva. Salve uma versão em <strong>Base → Bases Salvas</strong>.</p></div>';
+  const html='<div class="modal-overlay open" id="modal-importar-base" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:560px"><div class="modal-title">Importar base de colaboradores</div>'
+    +'<div class="modal-sub">Escolha a versão salva que servirá de base para a apuração.</div>'
+    +'<div style="max-height:50vh;overflow:auto;margin-top:10px">'+linhas+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-importar-base\').remove()">Fechar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+function importarBaseApuracao(id){
+  const b=basesSalvasList.find(x=>x._id===id); if(!b){ toast('Versão não encontrada.','error'); return; }
+  const latestId=basesSalvasList[0]?._id;
+  if(id!==latestId){
+    const dt=b.salvoEm?new Date(b.salvoEm).toLocaleString('pt-BR'):'';
+    if(!confirm('Esta NÃO é a versão mais recente salva.\n\nSeguir mesmo assim com a base de '+b.competencia+' ('+dt+')?')) return;
+  }
+  baseApuracao=b;
+  setLanComp(b.competencia);
+  document.getElementById('modal-importar-base')?.remove();
+  toast('Base importada: '+b.competencia+' ('+(b.totalColaboradores||(b.colaboradores||[]).length)+' colaboradores).','success');
+  if(currentPage==='ben-lancamento') showPage('ben-lancamento');
+}
+
 function verificarColabsEmFerias(){
-  const emFerias=colaboradores.filter(c=>c.status==='Ferias'||c.status==='F\u00E9rias');
+  const emFerias=colsApuracao().filter(c=>c.status==='Ferias'||c.status==='F\u00E9rias');
   if(emFerias.length===0) return;
 
   // Mostrar banner de alerta no topo do lancamento
@@ -2063,7 +2201,7 @@ function lanBenMatch(c,b){
 function getLanAtivos(){
   const q=(g('lan-q')||'').toLowerCase();
   const emp=getMs('lemp'), dep=getMs('ldep'), ben=getMs('lben');
-  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
+  let f=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
   if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
@@ -2075,6 +2213,15 @@ function renderLancamento(){
   bindMsOutside();
   updateMsCounts();
   atualizarBotoesExport();
+  renderBaseApuracaoInfo();
+  // Apuracao exige uma base importada (congelada) antes de comecar.
+  if(!baseApuracao){
+    const tb=document.getElementById('lan-tbody');
+    if(tb) tb.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">📥</div><p>Importe uma base salva para iniciar a apuração.<br><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="abrirImportarBase()">Importar base de colaboradores</button></p></div></td></tr>';
+    const tf=document.getElementById('lan-tfoot'); if(tf) tf.style.display='none';
+    const rs=document.getElementById('lan-resumo'); if(rs) rs.innerHTML='';
+    return;
+  }
   const du=lanDU;
   const ativos=getLanAtivos();
   let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
@@ -2091,7 +2238,7 @@ function renderLancamento(){
   const tfoot=document.getElementById('lan-tfoot');
   if(tfoot){
     tfoot.style.display=ativos.length>0?'table-footer-group':'none';
-    const totalAtivos=colaboradores.filter(c=>c.status!=='Inativo'&&elegivelBeneficios(c)).length;
+    const totalAtivos=colsApuracao().filter(c=>c.status!=='Inativo'&&elegivelBeneficios(c)).length;
     document.getElementById('lan-tot-label').textContent=ativos.length===totalAtivos?'Totais do mês':`Seleção (${ativos.length})`;
     document.getElementById('lan-tot-colab').textContent=`${ativos.length} colaborador${ativos.length!==1?'es':''}`;
     document.getElementById('lan-tot-vr').textContent=tVR>0?brl(tVR):'—';
@@ -2164,7 +2311,7 @@ async function aplicarDiasUteis(){
   const du=lanDU;
   const b=window._writeBatch(window._db);
   let travados=0;
-  colaboradores.forEach(c=>{
+  colsApuracao().forEach(c=>{
     if(c.diasFixos){travados++;return;} // pula colaboradores com dias fixos no cadastro
     if(!lancamento[c.mat]) lancamento[c.mat]={};
     lancamento[c.mat].duteis=du;
@@ -2220,7 +2367,8 @@ async function fecharCompetencia(){
   const labels=BENEF_LABELS;
   const du=lanDU;
   const cfg=getCfg();
-  const ativos=colaboradores.filter(c=>c.status!=='Inativo' && elegivelBeneficios(c));
+  if(!baseApuracao){ toast('Importe uma base de colaboradores antes de fechar a competência.','error'); return; }
+  const ativos=colsApuracao().filter(c=>c.status!=='Inativo' && elegivelBeneficios(c));
 
   // Monta o snapshot (VT guarda dr/linhas para a planilha por empresa sair igual)
   const docId = benef==='todos' ? comp.replace('/','_') : comp.replace('/','_')+'_'+benef;
@@ -3185,7 +3333,7 @@ async function initApp(user){
     const hoje=new Date();
     setLanComp(String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear());
   }
-  Promise.all([loadColaboradores(),loadLancamento(),loadConfig()]).then(()=>{
+  Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadBasesSalvas()]).then(()=>{
     switchModule('base');
   });
 }
