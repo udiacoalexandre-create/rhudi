@@ -10,9 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+      - uses: actions/setup-node@v4
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          channelId: live
-          projectId: udiaco-beneficios
+          node-version: 20
+      - name: Deploy para o Firebase Hosting
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          set +e
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          out=$(npx -y firebase-tools@latest deploy --only hosting --project udiaco-beneficios 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -eq 0 ]; then exit 0; fi
+          # "is the current active version" = conteúdo idêntico ao que já está no ar (benigno)
+          if echo "$out" | grep -q "is the current active version"; then
+            echo "::notice::Nada novo para publicar — o site já está com esta versão."
+            exit 0
+          fi
+          exit $code
