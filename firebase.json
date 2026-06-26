@@ -3,10 +3,12 @@
     "public": ".",
     "ignore": [
       "firebase.json",
+      ".git/**",
+      ".github/**",
+      ".claude/**",
       "**/.*",
       "**/node_modules/**",
-      "README.md",
-      "ONBOARDING.md"
+      "*.md"
     ]
   }
 }
