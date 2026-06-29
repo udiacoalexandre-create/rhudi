@@ -602,6 +602,36 @@ function abrirEditar(id){
   openModal('modal-colab');
 }
 
+// Tela ao entrar em afastamento: marca quais benefícios o colaborador continua
+// recebendo enquanto afastado. Retorna array de chaves (['cesta',...]) ou null
+// se cancelar. Pré-marca conforme a regra atual (só cesta) ou o afastBen atual.
+function abrirAfastExcecaoModal(c){
+  return new Promise(resolve=>{
+    document.getElementById('modal-afast-exc')?.remove();
+    const e=c.elegibilidade||{};
+    const itens=[
+      {k:'cesta',l:'Cesta Básica',     ok:e.cesta!==false},
+      {k:'vr',   l:'Vale Refeição',    ok:e.vr!==false},
+      {k:'cafe', l:'Café da Manhã',    ok:e.cafe!==false},
+      {k:'comb', l:'Combustível (Mobilidade)', ok:e.mobilidade!==false},
+    ].filter(x=>x.ok);
+    const atual=Array.isArray(c.afastBen)?c.afastBen:['cesta'];
+    const checks=itens.length
+      ? itens.map(x=>'<label class="ms-opt" style="display:flex;align-items:center;gap:8px;padding:7px 2px;font-size:13px"><input type="checkbox" id="afx-'+x.k+'" '+(atual.includes(x.k)?'checked':'')+'> '+x.l+'</label>').join('')
+      : '<span class="text-muted">Sem benefícios elegíveis.</span>';
+    const html='<div class="modal-overlay open" id="modal-afast-exc" data-dynamic="1">'
+      +'<div class="modal" style="max-width:460px"><div class="modal-title">Benefícios durante o afastamento</div>'
+      +'<div class="modal-sub">'+(c.nome||'')+' — marque o que ele <strong>continua recebendo</strong> enquanto afastado. Ao voltar para Trabalhando, isto é desfeito automaticamente.</div>'
+      +'<div style="margin:12px 0">'+checks+'</div>'
+      +'<div class="modal-footer"><button class="btn btn-ghost" id="afx-cancel">Cancelar</button><button class="btn btn-primary" id="afx-ok">Confirmar</button></div>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend',html);
+    const close=v=>{document.getElementById('modal-afast-exc')?.remove();resolve(v);};
+    document.getElementById('afx-cancel').onclick=()=>close(null);
+    document.getElementById('afx-ok').onclick=()=>close(itens.filter(x=>document.getElementById('afx-'+x.k)?.checked).map(x=>x.k));
+  });
+}
+
 async function salvarColabModal(){
   if(admissaoSync) return salvarAdmissaoSync(); // modal aberto para admissao da sincronizacao
   if(!editColabId) return;
@@ -631,6 +661,17 @@ async function salvarColabModal(){
   } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
     // Saiu de férias: zera os dias comprados para não vazar na mobilidade.
     dados.ferDiasComprados=0;
+  }
+
+  // Ao ENTRAR em afastamento: abre tela para marcar quais benefícios ele
+  // continua recebendo enquanto afastado. Ao SAIR, zera (volta ao normal).
+  const ehAfast=s=>statusGrupo(s)==='so_cesta';
+  if(ehAfast(dados.status) && !ehAfast(statusAnterior)){
+    const sel=await abrirAfastExcecaoModal(dados);
+    if(sel===null) return; // cancelou: não salva
+    dados.afastBen=sel;
+  } else if(!ehAfast(dados.status) && ehAfast(statusAnterior)){
+    dados.afastBen=[];
   }
 
   Object.assign(colaboradores[idx],dados);
@@ -1883,8 +1924,20 @@ function calcBen(c, dr, du){
   // N/A e Demitido: nada
   if(grp==='nao_recebe') return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
 
-  // Afastados (auxílio doença, acidente de trabalho, licenças, etc.): só cesta
-  if(grp==='so_cesta') return {vr:0,cafe:0,comb:0,vt:0,cesta:cestaVal};
+  // Afastados (auxílio doença, acidente de trabalho, licenças, etc.):
+  // recebe só os benefícios marcados em afastBen (definidos na tela ao entrar
+  // em afastamento). Sem afastBen (dados legados) = só cesta, regra antiga.
+  if(grp==='so_cesta'){
+    const e=c.elegibilidade||{};
+    const ab=Array.isArray(c.afastBen)?c.afastBen:['cesta'];
+    return {
+      vr:   (ab.includes('vr')   && e.vr!==false)        ? fnum(c.vr)   : 0,
+      cafe: (ab.includes('cafe') && e.cafe!==false)      ? fnum(c.cafe) : 0,
+      comb: (ab.includes('comb') && e.mobilidade!==false)? fnum(c.comb) : 0,
+      vt: 0,
+      cesta:(ab.includes('cesta')) ? cestaVal : 0
+    };
+  }
 
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
