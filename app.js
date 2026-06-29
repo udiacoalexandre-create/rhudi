@@ -2507,6 +2507,10 @@ function _baixarCsvBom(text, fileName){
 }
 // Cabecalho do CSV de importacao do Caju (13 colunas)
 const CAJU_CSV_HEADER='CPF;Matricula (opcional);Valor Fixo em Auxilio Alimentacao;Mobilidade;Valor Fixo em Mobilidade;Cultura;Valor Fixo em Cultura;Saude;Valor Fixo em Saude;Educacao;Valor Fixo em Educacao;Home Office;Valor Fixo em Home Office';
+// Códigos do benefício no Senior (preencher quando o usuário enviar).
+const SENIOR_BENEF_COD={vt:'',comb:'',vr:'',cafe:'',cesta:''};
+// Valor no formato pt-BR "0.000,00" (ponto de milhar, vírgula decimal, 2 casas).
+function _valSenior(v){ return fnum(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function _empDe(mat){ return String(mat||'').substring(0,4)||'0000'; }
 
 // O botao 3 muda de rotulo conforme o beneficio: VT -> Via Nova, demais -> Caju.
@@ -2579,17 +2583,23 @@ async function exportarSeniorBenef(){
   const det=snap.detalhes||[];
   if(!det.length){ toast('Sem ocorrências de '+BENEF_LABELS[benef]+' nessa competência.','info'); return; }
   const nomes={vr:'VR',cafe:'Cafe_Manha',cesta:'Cesta_Basica',comb:'Mobilidade',vt:'VT'};
-  const linhas=['CPF,Empresa,Valor'];
+  // Senior: 1 arquivo por benefício (todas as empresas). Colunas: CPF (11
+  // dígitos), código do benefício, valor "0.000,00". CSV separado por vírgula;
+  // o valor vai entre aspas porque contém a vírgula decimal.
+  const cod=SENIOR_BENEF_COD[benef]||'';
+  const linhas=[];
   det.forEach(d=>{
+    if(fnum(d.valor)<=0) return;
     const cpf=(d.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
-    linhas.push(cpf+','+_empDe(d.mat)+','+fnum(d.valor).toFixed(2).replace('.',','));
+    linhas.push(cpf+','+cod+',"'+_valSenior(d.valor)+'"');
   });
+  if(!linhas.length){ toast('Sem valores para exportar.','info'); return; }
   const blob=new Blob([linhas.join(NL)],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url; a.download=nomes[benef]+'_Senior_'+comp.replace('/','_')+'.csv';
+  a.href=url; a.download='Senior_'+nomes[benef]+'_'+comp.replace('/','_')+'.csv';
   a.click(); URL.revokeObjectURL(url);
-  toast(BENEF_LABELS[benef]+' Senior exportado (arquivo único).','success');
+  toast('Senior — '+BENEF_LABELS[benef]+' exportado'+(cod?'':' (código em branco até você enviar)')+'.','success');
 }
 
 // ============================================================
