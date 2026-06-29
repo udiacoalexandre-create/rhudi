@@ -609,11 +609,15 @@ function abrirAfastExcecaoModal(c){
   return new Promise(resolve=>{
     document.getElementById('modal-afast-exc')?.remove();
     const e=c.elegibilidade||{};
+    const mob=inferMob(c);
+    const elegVT=(e.vt!==undefined)?e.vt:(e.mobilidade!==false);
     const itens=[
-      {k:'cesta',l:'Cesta Básica',     ok:e.cesta!==false},
-      {k:'vr',   l:'Vale Refeição',    ok:e.vr!==false},
-      {k:'cafe', l:'Café da Manhã',    ok:e.cafe!==false},
-      {k:'comb', l:'Combustível (Mobilidade)', ok:e.mobilidade!==false},
+      {k:'cesta', l:'Cesta Básica',             ok:e.cesta!==false},
+      {k:'vr',    l:'Vale Refeição',            ok:e.vr!==false && fnum(c.vr)>0},
+      {k:'cafe',  l:'Café da Manhã',            ok:e.cafe!==false && fnum(c.cafe)>0},
+      {k:'comb',  l:'Combustível (Mobilidade)', ok:e.mobilidade!==false && mob==='combustivel'},
+      {k:'vt',    l:'Vale Transporte',          ok:elegVT && mob==='vt'},
+      {k:'premio',l:'Prêmio Assiduidade',       ok:e.premio!==false},
     ].filter(x=>x.ok);
     const atual=Array.isArray(c.afastBen)?c.afastBen:['cesta'];
     const checks=itens.length
@@ -1924,25 +1928,29 @@ function calcBen(c, dr, du){
   // N/A e Demitido: nada
   if(grp==='nao_recebe') return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
 
-  // Afastados (auxílio doença, acidente de trabalho, licenças, etc.):
-  // recebe só os benefícios marcados em afastBen (definidos na tela ao entrar
-  // em afastamento). Sem afastBen (dados legados) = só cesta, regra antiga.
-  if(grp==='so_cesta'){
-    const e=c.elegibilidade||{};
-    const ab=Array.isArray(c.afastBen)?c.afastBen:['cesta'];
-    return {
-      vr:   (ab.includes('vr')   && e.vr!==false)        ? fnum(c.vr)   : 0,
-      cafe: (ab.includes('cafe') && e.cafe!==false)      ? fnum(c.cafe) : 0,
-      comb: (ab.includes('comb') && e.mobilidade!==false)? fnum(c.comb) : 0,
-      vt: 0,
-      cesta:(ab.includes('cesta')) ? cestaVal : 0
-    };
-  }
-
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
   const elegVT = (eleg.vt!==undefined) ? eleg.vt : (eleg.mobilidade!==false); // retrocompat
+
+  // Valores "cheios" de cada benefício (como se trabalhasse o período dr)
+  const vVR  = (eleg.vr!==false&&fnum(c.vr)>0)    ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))     : 0;
+  const vCafe= (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
+  const vComb= (eleg.mobilidade!==false&&mob==='combustivel'&&fnum(c.comb)>0) ? (cfg.comb==='fixo'?fnum(c.comb):calcMob(fnum(c.comb),dr,du)) : 0;
+  const vVT  = (elegVT&&mob==='vt') ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
+
+  // Afastados: recebe só os benefícios marcados em afastBen (tela ao entrar em
+  // afastamento). Sem afastBen (dados legados) = só cesta, regra antiga.
+  if(grp==='so_cesta'){
+    const ab=Array.isArray(c.afastBen)?c.afastBen:['cesta'];
+    return {
+      vr:   ab.includes('vr')?vVR:0,
+      cafe: ab.includes('cafe')?vCafe:0,
+      comb: ab.includes('comb')?vComb:0,
+      vt:   ab.includes('vt')?vVT:0,
+      cesta:ab.includes('cesta')?cestaVal:0
+    };
+  }
 
   // Ferias / Ferias Coletiva: nao recebe VR/Cafe/Cesta (nao trabalhou). So
   // recebe MOBILIDADE referente aos dias COMPRADOS (abono). 0 comprados -> 0.
@@ -1957,16 +1965,7 @@ function calcBen(c, dr, du){
   }
 
   // Trabalhando: cálculo normal
-  const vr   = (eleg.vr!==false&&fnum(c.vr)>0)   ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))   : 0;
-  const cafe  = (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
-  let comb=0;
-  if(eleg.mobilidade!==false&&mob==='combustivel'&&fnum(c.comb)>0){
-    if(cfg.comb==='fixo') comb=fnum(c.comb);
-    else comb=calcMob(fnum(c.comb),dr,du);
-  }
-  const vt=(elegVT&&mob==='vt')
-    ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
-  return {vr,cafe,comb,vt,cesta:cestaVal};
+  return {vr:vVR,cafe:vCafe,comb:vComb,vt:vVT,cesta:cestaVal};
 }
 
 function calcMob(val,dr,du){
@@ -5168,6 +5167,8 @@ function montarTabelaPremio(){
       situacao,
       statusBase: statusNorm||'',
       filtro: c.filtro||'OK',
+      // afastado que mantém o prêmio nesta competência (marcado na tela de afastamento)
+      afastComPremio: Array.isArray(c.afastBen) && c.afastBen.includes('premio'),
       recebe: '',  // será preenchido ao aplicar regras
       atestado: apont?.atestado||0,
       faltas: apont?.faltas||0,
@@ -5350,8 +5351,9 @@ function aplicarRegrasPremio(){
     // NAO: N/A, afastados de qualquer tipo, ou status base que indica afastamento
     const statusBaseNAO = STATUS_NAO_RECEBE.includes(r.statusBase)||r.statusBase==='Inativo';
     const statusBaseCesta = STATUS_SO_CESTA.includes(r.statusBase);
-    if(r.situacao==='N/A'||statusBaseNAO||statusBaseCesta||
-       STATUS_SO_CESTA.some(s=>r.situacao===s)||r.situacao==='Demitido'){
+    // Afastado mantém o prêmio se foi marcado na tela de afastamento
+    const ehAfastSit = statusBaseCesta || STATUS_SO_CESTA.some(s=>r.situacao===s);
+    if(r.situacao==='N/A'||statusBaseNAO||r.situacao==='Demitido'||(ehAfastSit && !r.afastComPremio)){
       recebe='NAO'; motivo='Situacao: '+r.situacao;
     } else if(r.atestado>0){
       recebe='NAO'; motivo='Atestado';
