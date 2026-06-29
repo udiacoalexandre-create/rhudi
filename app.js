@@ -188,6 +188,7 @@ function closeModal(id){
 function getEmpresaList(){
   const g2={};
   colaboradores.forEach(c=>{
+    if(c.filtro==='PART') return; // particulares não pertencem a empresa
     const p=String(c.mat||'').substring(0,4);
     if(p.length===4) g2[p]=(g2[p]||0)+1;
   });
@@ -237,6 +238,7 @@ function filtroBadge(f){
     'SOC':'<span class="badge badge-blue">🔵 SOC</span>',
     'TER':'<span class="badge badge-orange">🟠 Terceiros</span>',
     'DIR':'<span class="badge badge-red">👑 Diretoria</span>',
+    'PART':'<span class="badge" style="background:#CCFBF1;color:#0F766E">👤 Particular</span>',
   };
   return map[f]||'<span class="badge badge-gray">'+(f||'OK')+'</span>';
 }
@@ -293,6 +295,7 @@ function formColabHTML(prefix, c){
             <option value="SOC" ${fil==='SOC'?'selected':''}>SOC \u2014 S\u00F3cio</option>
             <option value="TER" ${fil==='TER'?'selected':''}>TER \u2014 Terceiros</option>
             <option value="DIR" ${fil==='DIR'?'selected':''}>DIR \u2014 Diretoria</option>
+            <option value="PART" ${fil==='PART'?'selected':''}>PART \u2014 Particular (s\u00f3cio)</option>
           </select>
         </div>
         <div class="fg">
@@ -551,6 +554,12 @@ function verificarDuplic(prefix){
 async function salvarNovoColab(){
   const c=getColabFromForm('f');
   if(!c.nome){toast('Nome \u00E9 obrigat\u00F3rio','error');return;}
+  // Particular sem matr\u00EDcula: usa o CPF como identificador (mat).
+  if(c.filtro==='PART' && !c.mat){
+    const d=(c.cpf||'').replace(/\D/g,'');
+    if(!d){toast('Particular precisa de CPF (usado como identificador).','error');return;}
+    c.mat=d;
+  }
   if(c.mat&&colaboradores.some(x=>x.mat===c.mat)){if(!confirm('Matr\u00EDcula '+c.mat+' j\u00E1 existe. Continuar?'))return;}
   const id=c.mat||(c.nome.replace(/[^A-Za-z0-9]/g,'_').substr(0,20)+'_'+Date.now());
   c._id=id; c.mobilidade=c.mobilidade||inferMob(c);
@@ -643,6 +652,8 @@ async function salvarColabModal(){
   const dados=getColabFromForm('e');
   dados._id=editColabId;
   dados.mobilidade=dados.mobilidade||inferMob(dados);
+  // Particular sem matrícula: usa o CPF como identificador (mat).
+  if(dados.filtro==='PART' && !dados.mat){ dados.mat=(dados.cpf||'').replace(/\D/g,''); }
 
   // Se o colaborador esta sendo marcado como Demitido e tinha mes de ferias agendado,
   // registrar a vaga para sugerir ao substituto da mesma funcao (ponto 4.3)
@@ -816,7 +827,7 @@ function pgBaseLista(){
       <div class="filter-group"><label> Empresa</label>${msDropdown('emp','Empresa',empresas.map(e=>({value:e.cod,label:e.cod+' ('+e.qtd+')'})))}</div>
       <div class="filter-group"><label> Departamento</label>${msDropdown('dep','Departamento',deptos.map(d=>({value:d,label:d})))}</div>
       <div class="filter-group"><label>Status</label>${msDropdown('status','Status',statusSet.map(x=>({value:x,label:x})))}</div>
-      <div class="filter-group"><label>Tipo</label>${msDropdown('tipo','Tipo',[{value:'OK',label:'OK — CLT normal'},{value:'DUP',label:'DUP — CLT com MEI/Sócio'},{value:'MEI',label:'MEI — Contrato MEI'},{value:'SOC',label:'SOC — Sócio'},{value:'TER',label:'TER — Terceiros'},{value:'DIR',label:'DIR — Diretoria'}])}</div>
+      <div class="filter-group"><label>Tipo</label>${msDropdown('tipo','Tipo',[{value:'OK',label:'OK — CLT normal'},{value:'DUP',label:'DUP — CLT com MEI/Sócio'},{value:'MEI',label:'MEI — Contrato MEI'},{value:'SOC',label:'SOC — Sócio'},{value:'TER',label:'TER — Terceiros'},{value:'DIR',label:'DIR — Diretoria'},{value:'PART',label:'PART — Particular'}])}</div>
       <div class="filter-group"><label>Benefício</label>${msDropdown('ben','Benefício',benOpts)}</div>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
       <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()"> Excel</button>
@@ -967,7 +978,9 @@ function colaboradoresUnicos(){
 // Painel de contagem por situação (pessoas únicas do escopo; duplicados MEI/Sócio contam 1x)
 function renderStatusResumo(){
   const el=document.getElementById('bl-status-resumo'); if(!el) return;
-  const unicos=colaboradoresUnicos();
+  const todos=colaboradoresUnicos();
+  const unicos=todos.filter(c=>(c.filtro||'')!=='PART');       // funcionários
+  const particulares=todos.filter(c=>(c.filtro||'')==='PART'); // à parte
   const cont={};
   unicos.forEach(c=>{ const s=(c.status||'—'); cont[s]=(cont[s]||0)+1; });
   const ordem=STATUS_LIST.map(x=>x.v);
@@ -980,9 +993,13 @@ function renderStatusResumo(){
     return '<div style="display:inline-flex;align-items:center;gap:6px;background:'+info.bg+';color:'+info.cor+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600">'
       +'<span style="font-size:15px;font-weight:800">'+cont[s]+'</span> '+info.label+'</div>';
   }).join('');
+  const chipPart = particulares.length
+    ? '<div style="display:inline-flex;align-items:center;gap:6px;background:#CCFBF1;color:#0F766E;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+particulares.length+'</span> Particulares</div>'
+    : '';
   el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Situação <span style="text-transform:none;font-weight:400">(pessoas únicas — duplicados MEI/Sócio contam 1×)</span>:</span>'
-    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+unicos.length+'</span> Total</div></div>';
+    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+unicos.length+'</span> Total</div>'
+    +chipPart+'</div>';
 }
 
 // Painel por tipo de contrato (cruza com status; pessoas únicas).
@@ -996,6 +1013,7 @@ function renderTipoResumo(){
   const tipos=[
     {cod:'DIR', label:'👑 Diretoria', bg:'#FEE2E2', cor:'#991B1B'},
     {cod:'TER', label:'🟠 Terceiros', bg:'#FFEDD5', cor:'#9A3412'},
+    {cod:'PART',label:'👤 Particulares', bg:'#CCFBF1', cor:'#0F766E'},
   ];
   const chips=tipos.map(t=>
     '<div style="display:inline-flex;align-items:center;gap:6px;background:'+t.bg+';color:'+t.cor+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600">'
@@ -2495,7 +2513,7 @@ async function fecharCompetencia(){
       const v=calcBen(c,dr,du2)[benef]||0;
       if(v>0){
         tot+=v;
-        const reg={mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',valor:v};
+        const reg={mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',filtro:c.filtro||'OK',valor:v};
         if(benef==='vt'){
           reg.dias = cfg.vt==='mult'?dr:1;
           reg.linhas=[1,2,3,4]
@@ -2564,6 +2582,8 @@ const SENIOR_BENEF_COD={vt:'',comb:'',vr:'',cafe:'',cesta:''};
 // Valor no formato pt-BR "0.000,00" (ponto de milhar, vírgula decimal, 2 casas).
 function _valSenior(v){ return fnum(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function _empDe(mat){ return String(mat||'').substring(0,4)||'0000'; }
+// Grupo do arquivo por empresa: particulares (PART) vão num grupo próprio.
+function _grupoExport(d){ return d.filtro==='PART' ? 'PART' : _empDe(d.mat); }
 
 // O botao 3 muda de rotulo conforme o beneficio: VT -> Via Nova, demais -> Caju.
 function atualizarBotoesExport(){
@@ -2589,33 +2609,34 @@ async function exportarPedidoBenef(){
     // VIA NOVA — planilha PEDIDO, 1 por empresa com ocorrencia.
     // Cabecalho com quebra de linha conforme o modelo (sem coluna TIPO).
     const header=['CPF','NOME','CÓDIGO\nBENEFÍCIO','BENEFÍCIO','VALOR\nUNITÁRIO','QUANTIDADE\nPOR DIA','DIAS\nTRABALHADOS'];
-    const emps=[...new Set(det.map(d=>_empDe(d.mat)))].sort();
+    const grupos=[...new Set(det.map(_grupoExport))].sort();
     let n=0;
-    emps.forEach((emp,i)=>{
+    grupos.forEach((g,i)=>{
       const rows=[header];
-      det.filter(d=>_empDe(d.mat)===emp).forEach(d=>{
+      det.filter(d=>_grupoExport(d)===g).forEach(d=>{
         (d.linhas||[]).forEach(l=>rows.push([d.cpf||'',d.nome||'',l.cod||'',l.ben||'',l.val,l.viag,d.dias!=null?d.dias:'']));
       });
-      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'PEDIDO','ViaNova_PEDIDO_'+emp+'_'+tag+'.xlsx'), i*350); }
+      if(rows.length>1){ n++; setTimeout(()=>_baixarXlsx(rows,'PEDIDO','ViaNova_PEDIDO_'+g+'_'+tag+'.xlsx'), i*350); }
     });
-    toast('Via Nova (VT): '+n+' planilha(s) — uma por empresa.','success');
+    toast('Via Nova (VT): '+n+' planilha(s) — uma por empresa/grupo.','success');
     return;
   }
   if(benef==='comb'){
     // Mobilidade: CSV de importação do Caju (modelo), 1 arquivo por empresa.
-    // Valor (inteiro) vai na coluna "Mobilidade"; CPF com 11 dígitos.
-    const emps=[...new Set(det.map(d=>_empDe(d.mat)))].sort();
+    // Particulares saem num arquivo próprio (grupo PART). Valor inteiro na
+    // coluna "Mobilidade"; CPF com 11 dígitos.
+    const grupos=[...new Set(det.map(_grupoExport))].sort();
     let n=0;
-    emps.forEach((emp,i)=>{
+    grupos.forEach((g,i)=>{
       const linhas=[CAJU_CSV_HEADER];
-      det.filter(d=>_empDe(d.mat)===emp).forEach(d=>{
+      det.filter(d=>_grupoExport(d)===g).forEach(d=>{
         const cpf=(d.cpf||'').replace(/\D/g,'').padStart(11,'0');
         const val=Math.round(fnum(d.valor));
         if(val>0) linhas.push(cpf+';;;'+val+';;;;;;;;;');
       });
-      if(linhas.length>1){ n++; setTimeout(()=>_baixarCsvBom(linhas.join(NL),'caju_import_mobilidade_'+tag+'_'+emp+'.csv'), i*350); }
+      if(linhas.length>1){ n++; setTimeout(()=>_baixarCsvBom(linhas.join(NL),'caju_import_mobilidade_'+tag+'_'+g+'.csv'), i*350); }
     });
-    toast('Mobilidade (Caju): '+n+' arquivo(s) CSV — um por empresa.','success');
+    toast('Mobilidade (Caju): '+n+' arquivo(s) CSV — um por empresa/grupo.','success');
     return;
   }
   // VR, Café, Cesta: planilha unica (todas as empresas)
