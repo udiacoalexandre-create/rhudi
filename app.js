@@ -1970,8 +1970,8 @@ function calcBen(c, dr, du){
     };
   }
 
-  // Ferias / Ferias Coletiva: nao recebe VR/Cafe/Cesta (nao trabalhou). So
-  // recebe MOBILIDADE referente aos dias COMPRADOS (abono). 0 comprados -> 0.
+  // Ferias / Ferias Coletiva: recebe a CESTA (valor fixo mensal) normalmente.
+  // VR/Café = 0 (não trabalhou). Mobilidade só dos dias COMPRADOS (abono).
   if(grp==='ferias'){
     const comprados=Math.max(0,fnum(c.ferDiasComprados));
     let comb=0, vt=0;
@@ -1979,7 +1979,7 @@ function calcBen(c, dr, du){
       if(eleg.mobilidade!==false && mob==='combustivel' && fnum(c.comb)>0) comb=calcMob(fnum(c.comb),comprados,du);
       if(elegVT && mob==='vt') vt=calcVT(c,comprados);
     }
-    return {vr:0,cafe:0,comb,vt,cesta:0};
+    return {vr:0,cafe:0,comb,vt,cesta:cestaVal};
   }
 
   // Trabalhando: cálculo normal
