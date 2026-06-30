@@ -8,7 +8,11 @@
       ".claude/**",
       "**/.*",
       "**/node_modules/**",
-      "*.md"
+      "*.md",
+      "firestore.rules"
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }

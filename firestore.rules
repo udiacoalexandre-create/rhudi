@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ───────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+    function email() {
+      return request.auth.token.email.lower();
+    }
+    // Master inicial (bootstrap) — sempre Master, mesmo sem doc em usuarios.
+    function isBootstrapMaster() {
+      return isSignedIn() && email() == 'alexandre.magalhaes@udiaco.com.br';
+    }
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/usuarios/$(email()));
+    }
+    function userData() {
+      return get(/databases/$(database)/documents/usuarios/$(email())).data;
+    }
+    // Autorizado = master bootstrap OU tem doc em usuarios com ativo != false.
+    function isAuthorized() {
+      return isSignedIn() && (
+        isBootstrapMaster() ||
+        (hasUserDoc() && userData().ativo != false)
+      );
+    }
+    // Master = bootstrap OU papel == 'master' (e ativo).
+    function isMaster() {
+      return isSignedIn() && (
+        isBootstrapMaster() ||
+        (hasUserDoc() && userData().ativo != false && userData().papel == 'master')
+      );
+    }
+
+    // ── Controle de acesso (usuarios) ─────────────────────────
+    // Qualquer autenticado lê (o app precisa ler o próprio papel);
+    // só o Master escreve. Exceção: o master-bootstrap cria o próprio doc.
+    match /usuarios/{id} {
+      allow read:  if isSignedIn();
+      allow write: if isMaster() || (isBootstrapMaster() && id == email());
+    }
+
+    // ── Dados do sistema ──────────────────────────────────────
+    // Somente usuários autorizados leem e escrevem.
+    match /colaboradores/{id} { allow read, write: if isAuthorized(); }
+    match /lancamento/{id}    { allow read, write: if isAuthorized(); }
+    match /historico/{id}     { allow read, write: if isAuthorized(); }
+    match /basesSalvas/{id}   { allow read, write: if isAuthorized(); }
+    match /config/{id}        { allow read, write: if isAuthorized(); }
+
+    // ── Qualquer outra coleção: negado ────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
