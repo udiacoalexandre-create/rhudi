@@ -739,6 +739,7 @@ async function salvarColabModal(){
     const r=await abrirDemissaoBeneficiosModal(dados);
     if(r===null) return; // cancelou: não salva
     dados.demBen=r.benef; dados.demMeses=r.meses; dados.demCompBase=r.comp;
+    dados.demitidoEm=r.comp; // log do mês de demissão
   } else if(!ehDem(dados.status) && ehDem(statusAnterior)){
     dados.demBen=[]; dados.demMeses=0; dados.demCompBase='';
   }
@@ -1035,6 +1036,8 @@ function renderStatusResumo(){
   const todos=colaboradoresUnicos();
   const unicos=todos.filter(c=>(c.filtro||'')!=='PART');       // funcionários
   const particulares=todos.filter(c=>(c.filtro||'')==='PART'); // à parte
+  // Total = funcionários ATIVOS (demitido fica no histórico, fora do total)
+  const ativos=unicos.filter(c=>!_statusKey(c.status).includes('DEMIT'));
   const cont={};
   unicos.forEach(c=>{ const s=(c.status||'—'); cont[s]=(cont[s]||0)+1; });
   const ordem=STATUS_LIST.map(x=>x.v);
@@ -1052,7 +1055,7 @@ function renderStatusResumo(){
     : '';
   el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Situação <span style="text-transform:none;font-weight:400">(pessoas únicas — duplicados MEI/Sócio contam 1×)</span>:</span>'
-    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+unicos.length+'</span> Total</div>'
+    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+ativos.length+'</span> Total ativos</div>'
     +chipPart+'</div>';
 }
 
@@ -1102,7 +1105,7 @@ function renderColabList(){
     <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
     <td class="text-xs text-muted">${c.admissao||'\u2014'}</td>
     <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
-    <td>${statusBadge(c.status)}</td>
+    <td>${statusBadge(c.status)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
     <td>${filtroBadge(c.filtro||'OK')}</td>
     <td>${elegBadges(c)}</td>
     <td class="text-sm">${fnum(c.vr)>0?brl(c.vr):'\u2014'}</td>
@@ -1480,8 +1483,9 @@ async function syncConfirmar(tipo,idx){
   const c=item.colab;
   if(tipo==='dem'){
     if(!c){ arr.splice(idx,1); renderSyncStatusPreview(); return; }
-    if(!confirm('Remover '+c.nome+' da base? Os dados ficam no histórico da competência fechada.')) return;
-    try{ await fsDel('colaboradores',c._id); colaboradores=colaboradores.filter(x=>x._id!==c._id); arr.splice(idx,1); toast('Removido: '+c.nome,'success'); renderSyncStatusPreview(); if(currentPage==='base-lista')renderColabList(); }
+    if(!confirm('Marcar '+c.nome+' como Demitido? Ele permanece na base (histórico), sem benefícios.')) return;
+    c.status='Demitido'; c.demitidoEm=_compAtual();
+    try{ await fsSet('colaboradores',c._id,c); arr.splice(idx,1); toast(c.nome+': Demitido ('+c.demitidoEm+')','success'); renderSyncStatusPreview(); if(currentPage==='base-lista')renderColabList(); }
     catch(e){ toast('Erro: '+e.message,'error'); }
     return;
   }
@@ -1494,20 +1498,20 @@ async function syncConfirmar(tipo,idx){
 // Aplica todos os itens de uma categoria de uma vez (exceto admissoes, que sao individuais)
 async function syncConfirmarTodos(tipo){
   const arr=_syncArr(tipo); if(!arr||!arr.length||tipo==='adm') return;
-  if(tipo==='dem' && !confirm('Remover '+arr.length+' colaborador(es) da base? Os dados ficam no histórico da competência fechada.')) return;
+  if(tipo==='dem' && !confirm('Marcar '+arr.length+' colaborador(es) como Demitido? Permanecem na base (histórico), sem benefícios.')) return;
   const itens=arr.filter(i=>i.colab);
+  const compDem=_compAtual();
   try{
     for(let i=0;i<itens.length;i+=400){
       const fatia=itens.slice(i,i+400);
       const b=window._writeBatch(window._db);
       fatia.forEach(item=>{
         const c=item.colab;
-        if(tipo==='dem') b.delete(window._doc('colaboradores',c._id));
+        if(tipo==='dem'){ c.status='Demitido'; c.demitidoEm=compDem; b.set(window._doc('colaboradores',c._id),c); }
         else { c.status=item.cls.status; b.set(window._doc('colaboradores',c._id),c); }
       });
       await b.commit();
     }
-    if(tipo==='dem'){ const ids=new Set(itens.map(i=>i.colab._id)); colaboradores=colaboradores.filter(x=>!ids.has(x._id)); }
     arr.length=0;
     toast(itens.length+' colaborador(es) atualizado(s)','success');
     renderSyncStatusPreview();
@@ -1844,7 +1848,7 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
             <td>${c.nome}</td>
             <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
             <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
-            <td>${statusBadge(c.status)}</td>
+            <td>${statusBadge(c.status)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>
@@ -2526,6 +2530,8 @@ function _proxComp(comp){
 // MM/AAAA -> índice de mês absoluto; diferença em meses entre duas competências.
 function _compMes(comp){ const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/); return m?(+m[2])*12+(+m[1]-1):null; }
 function _mesesEntreComp(a,b){ const ca=_compMes(a), cb=_compMes(b); return (ca==null||cb==null)?null:cb-ca; }
+// Competência atual (a do lançamento, senão o mês corrente) — usada como log.
+function _compAtual(){ const h=new Date(); return /^\d{2}\/\d{4}$/.test(lanComp)?lanComp:(String(h.getMonth()+1).padStart(2,'0')+'/'+h.getFullYear()); }
 
 // Modal de escolha quando a competencia/beneficio ja foi fechada com valores
 // diferentes: substituir o fechamento, jogar p/ competencia futura, ou cancelar.
