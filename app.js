@@ -2639,12 +2639,18 @@ async function exportarPedidoBenef(){
     toast('Mobilidade (Caju): '+n+' arquivo(s) CSV — um por empresa/grupo.','success');
     return;
   }
-  // VR, Café, Cesta: planilha unica (todas as empresas)
-  const nomes={vr:'VR',cafe:'Cafe',cesta:'Cesta_Basica'};
-  const rows=[['CPF','Matrícula','Valor']];
-  det.forEach(d=>rows.push([d.cpf||'',d.mat||'',d.valor]));
-  _baixarXlsx(rows,nomes[benef],'Caju_'+nomes[benef]+'_'+tag+'.xlsx');
-  toast(BENEF_LABELS[benef]+': planilha única exportada.','success');
+  // VR, Café, Cesta: CSV do Caju, planilha única (todas as empresas).
+  // Valor (inteiro) na coluna "Valor Fixo em Auxilio Alimentacao"; demais 0.
+  const nomes={vr:'vr',cafe:'cafe',cesta:'cesta'};
+  const linhas=[CAJU_CSV_HEADER];
+  det.forEach(d=>{
+    const cpf=(d.cpf||'').replace(/\D/g,'').padStart(11,'0');
+    const val=Math.round(fnum(d.valor));
+    if(val>0) linhas.push(cpf+';;'+val+';0;0;0;0;0;0;0;0;0;0');
+  });
+  if(linhas.length<2){ toast('Sem valores de '+BENEF_LABELS[benef]+' para exportar.','info'); return; }
+  _baixarCsvBom(linhas.join(NL),'caju_import_'+nomes[benef]+'_'+tag+'.csv');
+  toast(BENEF_LABELS[benef]+': CSV do Caju (Auxílio Alimentação) exportado.','success');
 }
 
 async function exportarSeniorBenef(){
