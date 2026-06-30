@@ -645,6 +645,49 @@ function abrirAfastExcecaoModal(c){
   });
 }
 
+// Tela ao DEMITIR: marca quais benefícios continuar pagando (aviso prévio /
+// acordo) e por quantos meses, a partir de qual competência. Retorna
+// {benef:[], meses:N, comp:'MM/AAAA'} ou null (cancelar).
+function abrirDemissaoBeneficiosModal(c){
+  return new Promise(resolve=>{
+    document.getElementById('modal-dem-ben')?.remove();
+    const e=c.elegibilidade||{};
+    const mob=inferMob(c);
+    const elegVT=(e.vt!==undefined)?e.vt:(e.mobilidade!==false);
+    const itens=[
+      {k:'cesta', l:'Cesta Básica',             ok:e.cesta!==false},
+      {k:'vr',    l:'Vale Refeição',            ok:e.vr!==false && fnum(c.vr)>0},
+      {k:'cafe',  l:'Café da Manhã',            ok:e.cafe!==false && fnum(c.cafe)>0},
+      {k:'comb',  l:'Combustível (Mobilidade)', ok:e.mobilidade!==false && mob==='combustivel'},
+      {k:'vt',    l:'Vale Transporte',          ok:elegVT && mob==='vt'},
+    ].filter(x=>x.ok);
+    const hoje=new Date();
+    const compDef=/^\d{2}\/\d{4}$/.test(lanComp)?lanComp:(String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear());
+    const checks=itens.length
+      ? itens.map(x=>'<label class="ms-opt" style="display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:13px"><input type="checkbox" id="db-'+x.k+'"> '+x.l+'</label>').join('')
+      : '<span class="text-muted">Sem benefícios elegíveis.</span>';
+    const html='<div class="modal-overlay open" id="modal-dem-ben" data-dynamic="1">'
+      +'<div class="modal" style="max-width:480px"><div class="modal-title">Demissão — manter algum benefício?</div>'
+      +'<div class="modal-sub">'+(c.nome||'')+' — marque os benefícios que continuam sendo pagos (aviso prévio / acordo) e por quantos meses. Deixe tudo desmarcado se não paga mais nada.</div>'
+      +'<div style="margin:12px 0">'+checks+'</div>'
+      +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">'
+        +'<div class="fg"><label>Por quantos meses</label><input type="number" id="db-meses" value="1" min="1" max="12" style="width:90px"></div>'
+        +'<div class="fg"><label>A partir da competência</label><input type="text" id="db-comp" value="'+compDef+'" placeholder="MM/AAAA" style="width:110px"></div>'
+      +'</div>'
+      +'<div class="modal-footer"><button class="btn btn-ghost" id="db-cancel">Cancelar</button><button class="btn btn-primary" id="db-ok">Confirmar</button></div>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend',html);
+    const close=v=>{document.getElementById('modal-dem-ben')?.remove();resolve(v);};
+    document.getElementById('db-cancel').onclick=()=>close(null);
+    document.getElementById('db-ok').onclick=()=>{
+      const benef=itens.filter(x=>document.getElementById('db-'+x.k)?.checked).map(x=>x.k);
+      const meses=Math.max(1,fnum(document.getElementById('db-meses')?.value)||1);
+      const comp=(document.getElementById('db-comp')?.value||'').trim();
+      close({benef,meses,comp});
+    };
+  });
+}
+
 async function salvarColabModal(){
   if(admissaoSync) return salvarAdmissaoSync(); // modal aberto para admissao da sincronizacao
   if(!editColabId) return;
@@ -687,6 +730,17 @@ async function salvarColabModal(){
     dados.afastBen=sel;
   } else if(!ehAfast(dados.status) && ehAfast(statusAnterior)){
     dados.afastBen=[];
+  }
+
+  // Ao DEMITIR: tela para manter benefícios por X meses (aviso prévio/acordo).
+  // Ao sair de Demitido (readmissão), limpa.
+  const ehDem=s=>_statusKey(s).includes('DEMIT');
+  if(ehDem(dados.status) && !ehDem(statusAnterior)){
+    const r=await abrirDemissaoBeneficiosModal(dados);
+    if(r===null) return; // cancelou: não salva
+    dados.demBen=r.benef; dados.demMeses=r.meses; dados.demCompBase=r.comp;
+  } else if(!ehDem(dados.status) && ehDem(statusAnterior)){
+    dados.demBen=[]; dados.demMeses=0; dados.demCompBase='';
   }
 
   Object.assign(colaboradores[idx],dados);
@@ -1943,9 +1997,6 @@ function calcBen(c, dr, du){
   // Valor de cesta: fixo, configuravel por colaborador (padrao 185), gated por elegibilidade
   const cestaVal = (c.elegibilidade?.cesta!==false) ? (fnum(c.cesta)||185) : 0;
 
-  // N/A e Demitido: nada
-  if(grp==='nao_recebe') return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
-
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
@@ -1956,6 +2007,25 @@ function calcBen(c, dr, du){
   const vCafe= (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
   const vComb= (eleg.mobilidade!==false&&mob==='combustivel'&&fnum(c.comb)>0) ? (cfg.comb==='fixo'?fnum(c.comb):calcMob(fnum(c.comb),dr,du)) : 0;
   const vVT  = (elegVT&&mob==='vt') ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
+
+  // N/A e Demitido: nada — EXCETO Demitido com benefícios mantidos por X meses
+  // (aviso prévio / acordo), definidos na tela ao mudar o status p/ Demitido.
+  if(grp==='nao_recebe'){
+    if(_statusKey(st).includes('DEMIT') && Array.isArray(c.demBen) && c.demBen.length && fnum(c.demMeses)>0 && c.demCompBase){
+      const el=_mesesEntreComp(c.demCompBase, lanComp);
+      if(el!=null && el>=0 && el<fnum(c.demMeses)){
+        const db=c.demBen;
+        return {
+          vr:   db.includes('vr')?vVR:0,
+          cafe: db.includes('cafe')?vCafe:0,
+          comb: db.includes('comb')?vComb:0,
+          vt:   db.includes('vt')?vVT:0,
+          cesta:db.includes('cesta')?cestaVal:0
+        };
+      }
+    }
+    return {vr:0,cafe:0,comb:0,vt:0,cesta:0};
+  }
 
   // Afastados: recebe só os benefícios marcados em afastBen (tela ao entrar em
   // afastamento). Sem afastBen (dados legados) = só cesta, regra antiga.
@@ -2453,6 +2523,9 @@ function _proxComp(comp){
   let mm=+m[1]+1, yy=+m[2]; if(mm>12){mm=1;yy++;}
   return String(mm).padStart(2,'0')+'/'+yy;
 }
+// MM/AAAA -> índice de mês absoluto; diferença em meses entre duas competências.
+function _compMes(comp){ const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/); return m?(+m[2])*12+(+m[1]-1):null; }
+function _mesesEntreComp(a,b){ const ca=_compMes(a), cb=_compMes(b); return (ca==null||cb==null)?null:cb-ca; }
 
 // Modal de escolha quando a competencia/beneficio ja foi fechada com valores
 // diferentes: substituir o fechamento, jogar p/ competencia futura, ou cancelar.
