@@ -6173,8 +6173,11 @@ function renderFeriasAgendadas(){
     (c.cargo||'').toLowerCase().includes(q)
   );
 
-  const agendados=base.filter(c=>c.ferMes);
-  const semAgenda=base.filter(c=>!c.ferMes);
+  // "N\u00E3o se aplica" = n\u00E3o eleg\u00EDvel a f\u00E9rias (s\u00F3cio/consultor com f\u00E9rias off).
+  const aplica=c=>c.elegibilidade?.ferias!==false;
+  const naoAplicam=base.filter(c=>!aplica(c));
+  const agendados=base.filter(c=>aplica(c) && c.ferMes);
+  const semAgenda=base.filter(c=>aplica(c) && !c.ferMes);
 
   // Reordena os meses comecando pelo mes atual (visao "proximos meses primeiro")
   const mesAtualIdx=new Date().getMonth();
@@ -6185,7 +6188,8 @@ function renderFeriasAgendadas(){
   if(resumoEl){
     resumoEl.innerHTML=`<div class="alert alert-info">
       <strong>${agendados.length}</strong> colaborador(es) com f\u00E9rias agendadas &middot;
-      <strong>${semAgenda.length}</strong> sem m\u00EAs definido (de ${base.length} no total)
+      <strong>${semAgenda.length}</strong> sem m\u00EAs definido &middot;
+      <strong>${naoAplicam.length}</strong> n\u00E3o se aplicam
     </div>`;
   }
 
