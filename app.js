@@ -841,7 +841,7 @@ const MODULES = {
   ]},
   dashboard:{pages:[
     {id:'dash-main',icon:'',label:'Dashboard Geral'},
-    {id:'usuarios',icon:'',label:'Usuários',master:true},
+    {id:'usuarios',icon:'',label:'Acessos',master:true},
     {id:'teste-senior',icon:'',label:'Teste Senior API'},
   ]}
 };
@@ -6353,8 +6353,17 @@ async function testarConexaoSenior(){
 // ============================================================
 function pgUsuarios(){
   const opts=Object.keys(PAPEIS).map(k=>'<option value="'+k+'">'+PAPEIS[k].label+'</option>').join('');
+  // Referência: perfis (papéis) e tipos de cadastro
+  const escDesc=p=> p.escopo==='all'?'Todas as empresas' : (p.escopo==='um989'?'Somente Férias UM989' : ((p.empresas||[]).join(', ')||'—'));
+  const perfisRows=Object.keys(PAPEIS).map(k=>{const p=PAPEIS[k];
+    return '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px;font-weight:600">'+p.label+'</td>'
+      +'<td style="padding:7px 10px">'+escDesc(p)+'</td>'
+      +'<td style="padding:7px 10px;text-align:center">'+(p.gerencia?'✅':'—')+'</td></tr>';
+  }).join('');
+  const TIPOS=[['OK','CLT normal'],['DUP','CLT com duplicidade (MEI/Sócio)'],['MEI','Contrato MEI'],['SOC','Sócio'],['TER','Terceiros'],['DIR','Diretoria'],['PART','Particular (funcionários dos sócios)']];
+  const tiposRows=TIPOS.map(([k,d])=>'<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px">'+filtroBadge(k)+'</td><td style="padding:7px 10px">'+d+'</td></tr>').join('');
   return `
-    <div class="page-header"><h2>Usuários</h2><p>Crie e gerencie os acessos por papel/empresa. Apenas o Master vê esta página.</p></div>
+    <div class="page-header"><h2>Acessos</h2><p>Gerencie os usuários e consulte os perfis e tipos de cadastro. Apenas o Master vê esta página.</p></div>
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Novo usuário</div>
       <div class="form-grid">
@@ -6366,9 +6375,23 @@ function pgUsuarios(){
       <div class="btn-row"><button class="btn btn-primary" onclick="criarUsuario()">Criar usuário</button></div>
       <div id="usr-msg" style="margin-top:8px"></div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-bottom:14px">
       <div class="card-title">Usuários com acesso</div>
       <div id="usr-lista">Carregando...</div>
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div class="card" style="flex:1;min-width:300px;margin-bottom:0">
+        <div class="card-title">Perfis de acesso (referência)</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--surface2)"><th style="padding:7px 10px;text-align:left">Perfil</th><th style="padding:7px 10px;text-align:left">Escopo</th><th style="padding:7px 10px;text-align:center">Gerencia acessos</th></tr></thead>
+          <tbody>${perfisRows}</tbody></table></div>
+      </div>
+      <div class="card" style="flex:1;min-width:280px;margin-bottom:0">
+        <div class="card-title">Tipos de cadastro (referência)</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--surface2)"><th style="padding:7px 10px;text-align:left">Tipo</th><th style="padding:7px 10px;text-align:left">Descrição</th></tr></thead>
+          <tbody>${tiposRows}</tbody></table></div>
+      </div>
     </div>`;
 }
 
