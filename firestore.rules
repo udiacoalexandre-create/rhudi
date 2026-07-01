@@ -33,6 +33,10 @@ service cloud.firestore {
         (hasUserDoc() && userData().ativo != false && userData().papel == 'master')
       );
     }
+    // Papel restrito UM989: só acessa a coleção um989.
+    function isUM989() {
+      return isSignedIn() && hasUserDoc() && userData().papel == 'um989';
+    }
 
     // ── Controle de acesso (usuarios) ─────────────────────────
     // Qualquer autenticado lê (o app precisa ler o próprio papel);
@@ -44,11 +48,13 @@ service cloud.firestore {
 
     // ── Dados do sistema ──────────────────────────────────────
     // Somente usuários autorizados leem e escrevem.
-    match /colaboradores/{id} { allow read, write: if isAuthorized(); }
-    match /lancamento/{id}    { allow read, write: if isAuthorized(); }
-    match /historico/{id}     { allow read, write: if isAuthorized(); }
-    match /basesSalvas/{id}   { allow read, write: if isAuthorized(); }
-    match /config/{id}        { allow read, write: if isAuthorized(); }
+    // Dados da Udiaço: usuários autorizados, EXCETO o papel restrito UM989.
+    match /colaboradores/{id} { allow read, write: if isAuthorized() && !isUM989(); }
+    match /lancamento/{id}    { allow read, write: if isAuthorized() && !isUM989(); }
+    match /historico/{id}     { allow read, write: if isAuthorized() && !isUM989(); }
+    match /basesSalvas/{id}   { allow read, write: if isAuthorized() && !isUM989(); }
+    match /config/{id}        { allow read, write: if isAuthorized() && !isUM989(); }
+    // Férias UM989: todos os autorizados (inclui o papel UM989).
     match /um989/{id}         { allow read, write: if isAuthorized(); }
 
     // ── Qualquer outra coleção: negado ────────────────────────

@@ -120,6 +120,7 @@ const PAPEIS = {
   guaruja:     {label:'Guarujá',     empresas:['2001','2002','2004','2005']},
   saocarlos:   {label:'São Carlos',  empresas:['3000','3001','3002','3003']},
   resende:     {label:'Resende',     empresas:['4000']},
+  um989:       {label:'UM989 (só férias UM989)', escopo:'um989'},
 };
 // E-mail(s) que são sempre Master (bootstrap inicial do sistema)
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
@@ -845,19 +846,36 @@ const MODULES = {
   ]}
 };
 
+// Papel restrito da UM989: só enxerga a aba de Férias UM989.
+function ehUM989(){ return !!(usuarioAtual && usuarioAtual.papel==='um989'); }
+// Páginas visíveis do módulo conforme o papel do usuário.
+function pagesVisiveis(mod){
+  return (MODULES[mod]?.pages||[])
+    .filter(p=>!p.master||podeGerenciarUsuarios())
+    .filter(p=> ehUM989() ? p.id==='fer-um989' : true);
+}
+// Esconde os módulos que o papel UM989 não pode ver (mostra só Férias).
+function aplicarVisibModulos(){
+  const so=ehUM989();
+  ['base','beneficios','folha','premio','dashboard'].forEach(m=>{
+    const t=document.getElementById('tab-'+m); if(t) t.style.display=so?'none':'';
+  });
+}
+
 function switchModule(mod){
   currentModule=mod;
   document.querySelectorAll('.mod-tab').forEach(t=>t.classList.remove('active'));
   const tabEl=document.getElementById('tab-'+mod);
   if(tabEl) tabEl.classList.add('active');
   buildSidebar(mod);
-  if(MODULES[mod]) showPage(MODULES[mod].pages[0].id);
+  const ps=pagesVisiveis(mod);
+  if(ps[0]) showPage(ps[0].id);
 }
 
 function buildSidebar(mod){
   const nav=document.getElementById('sidebar-nav');
   if(!nav) return;
-  const pages=(MODULES[mod]?.pages||[]).filter(p=>!p.master||podeGerenciarUsuarios());
+  const pages=pagesVisiveis(mod);
   nav.innerHTML=pages.map(p=>{
     const onclick='showPage(\''+p.id+'\')';
     const icon=p.icon?'<span class="s-icon">'+p.icon+'</span> ':'';
@@ -3887,6 +3905,10 @@ async function initApp(user){
   document.getElementById('app-screen').style.display='flex';
   const pi=PAPEIS[usuarioAtual.papel];
   document.getElementById('user-name').textContent=usuarioAtual.nome+' · '+pi.label;
+  aplicarVisibModulos();
+  // UM989: acesso restrito — vai direto para a aba de férias UM989 e não
+  // carrega (nem tenta) os dados do restante da Udiaço.
+  if(ehUM989()){ switchModule('ferias'); return; }
   loadLanCtx();
   if(!lanComp){
     const hoje=new Date();
