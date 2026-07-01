@@ -688,6 +688,44 @@ function abrirDemissaoBeneficiosModal(c){
   });
 }
 
+// Atualiza o "novo saldo" na tela de gozo de férias.
+function _fgUpd(saldo){
+  const g=fnum(document.getElementById('fg-gozados')?.value);
+  const c=fnum(document.getElementById('fg-comprados')?.value);
+  const el=document.getElementById('fg-novo'); if(el) el.textContent=(saldo-g-c)+' dias';
+}
+// Tela ao ENTRAR em Férias: mostra o saldo, pede dias gozados (tirados) e
+// comprados (abono), e o mês/ano do gozo. Retorna {gozados,comprados,mes,ano}
+// ou null (cancelar). Abate do saldo e gera o log fora daqui.
+function abrirFeriasGozoModal(c, saldoAtual){
+  return new Promise(resolve=>{
+    document.getElementById('modal-fer-gozo')?.remove();
+    const h=new Date();
+    const mesesOpts=MESES_FER.map((m,i)=>'<option value="'+m+'" '+(i===h.getMonth()?'selected':'')+'>'+m+'</option>').join('');
+    const html='<div class="modal-overlay open" id="modal-fer-gozo" data-dynamic="1">'
+      +'<div class="modal" style="max-width:480px"><div class="modal-title">Férias — '+(c.nome||'')+'</div>'
+      +'<div class="modal-sub">Saldo atual: <strong>'+saldoAtual+' dias</strong>. Informe os dias tirados (gozados) e comprados (abono).</div>'
+      +'<div class="form-grid cols2" style="margin-top:10px">'
+        +'<div class="fg"><label>Dias gozados (tirados)</label><input type="number" id="fg-gozados" value="0" min="0" max="60" oninput="_fgUpd('+saldoAtual+')"></div>'
+        +'<div class="fg"><label>Dias comprados (abono)</label><input type="number" id="fg-comprados" value="0" min="0" max="30" oninput="_fgUpd('+saldoAtual+')"></div>'
+        +'<div class="fg"><label>Mês do gozo</label><select id="fg-mes">'+mesesOpts+'</select></div>'
+        +'<div class="fg"><label>Ano</label><input type="number" id="fg-ano" value="'+h.getFullYear()+'" min="2020" max="2100"></div>'
+      +'</div>'
+      +'<p class="text-sm" style="margin-top:10px">Novo saldo: <strong id="fg-novo">'+saldoAtual+' dias</strong> — os dias comprados também entram na mobilidade.</p>'
+      +'<div class="modal-footer"><button class="btn btn-ghost" id="fg-cancel">Cancelar</button><button class="btn btn-primary" id="fg-ok">Confirmar</button></div>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend',html);
+    const close=v=>{document.getElementById('modal-fer-gozo')?.remove();resolve(v);};
+    document.getElementById('fg-cancel').onclick=()=>close(null);
+    document.getElementById('fg-ok').onclick=()=>close({
+      gozados:Math.max(0,fnum(document.getElementById('fg-gozados')?.value)),
+      comprados:Math.max(0,fnum(document.getElementById('fg-comprados')?.value)),
+      mes:document.getElementById('fg-mes')?.value||MESES_FER[h.getMonth()],
+      ano:fnum(document.getElementById('fg-ano')?.value)||h.getFullYear()
+    });
+  });
+}
+
 async function salvarColabModal(){
   if(admissaoSync) return salvarAdmissaoSync(); // modal aberto para admissao da sincronizacao
   if(!editColabId) return;
@@ -705,16 +743,20 @@ async function salvarColabModal(){
     registrarVagaFerias(colaboradores[idx]);
   }
 
-  // Ao ENTRAR em Ferias: pergunta dias comprados (abono). Esses dias entram no
-  // calculo da mobilidade e sao abatidos do saldo de ferias.
+  // Ao ENTRAR em Ferias: tela com o saldo atual; informa dias GOZADOS (tirados)
+  // e COMPRADOS (abono). Abate ambos do saldo, guarda comprados p/ a mobilidade
+  // e registra um LOG de férias (mês/ano/dias).
   const ehFer=s=>s==='Ferias'||s==='Férias';
   if(ehFer(dados.status) && !ehFer(statusAnterior)){
-    const r=prompt('Férias de '+(dados.nome||'')+': quantos dias foram COMPRADOS (abono)?\n\nEsses dias entram no cálculo da mobilidade e são abatidos do saldo de férias. (0 se nenhum)','0');
-    if(r!==null){
-      const comp=Math.max(0,fnum(r));
-      dados.ferDiasComprados=comp;
-      const saldoAtual=(dados.ferSaldo!=null?dados.ferSaldo:(colaboradores[idx].ferSaldo!=null?colaboradores[idx].ferSaldo:0));
-      dados.ferSaldo=saldoAtual-comp;
+    const saldoAtual=(dados.ferSaldo!=null?dados.ferSaldo:(colaboradores[idx].ferSaldo!=null?colaboradores[idx].ferSaldo:0));
+    const r=await abrirFeriasGozoModal(dados, saldoAtual);
+    if(r===null) return; // cancelou: não salva
+    dados.ferDiasComprados=r.comprados;
+    dados.ferSaldo=saldoAtual - r.gozados - r.comprados;
+    if(r.gozados>0 || r.comprados>0){
+      const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
+      log.push({mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, em:new Date().toISOString()});
+      dados.feriasLog=log;
     }
   } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
     // Saiu de férias: zera os dias comprados para não vazar na mobilidade.
@@ -4427,6 +4469,10 @@ function abrirDetalheFerias(id){
           </div>
         </div>
         <p class="text-xs text-muted" style="margin-top:10px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
+        ${(Array.isArray(c.feriasLog)&&c.feriasLog.length)?`<div style="margin-top:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Histórico de férias</div>
+          ${c.feriasLog.slice().reverse().map(l=>'<div style="display:flex;justify-content:space-between;font-size:12px;border-bottom:1px solid var(--border);padding:4px 2px"><span>'+(l.mes||'—')+'/'+(l.ano||'')+'</span><span class="text-muted">'+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+'</span></div>').join('')}
+        </div>`:''}
         <div id="ferd-alertas" style="margin-top:10px"></div>
         <div class="modal-footer">
           ${f.cor==='vermelho'?`<button class="btn btn-danger" style="margin-right:auto" onclick="fecharCicloFerias('${id}')" title="+30, pergunta faltas, rola o vencimento">Fechar ciclo (+30)</button>`:''}
