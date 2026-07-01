@@ -3891,8 +3891,8 @@ async function fsSetLan(mat,data){
 }
 
 async function initApp(user){
-  document.getElementById('home-screen').style.display='none';
-  document.getElementById('login-screen').style.display='none';
+  const _hs=document.getElementById('home-screen'); if(_hs) _hs.style.display='none';
+  const _ls=document.getElementById('login-screen'); if(_ls) _ls.style.display='none';
   const ok=await carregarUsuarioAtual(user.email);
   if(!ok){
     // usuário sem acesso liberado
@@ -3926,21 +3926,25 @@ waitFirebase(()=>{
   window._onAuthStateChanged(window._auth, user=>{
     if(user) initApp(user);
     else {
-      document.getElementById('home-screen').style.display='flex';
-      document.getElementById('login-screen').style.display='none';
-      document.getElementById('app-screen').style.display='none';
+      const hs=document.getElementById('home-screen');
+      const ls=document.getElementById('login-screen');
+      const as=document.getElementById('app-screen');
+      if(as) as.style.display='none';
+      // Se a home existir (index novo), mostra a escolha; senão, cai no login.
+      if(hs){ hs.style.display='flex'; if(ls) ls.style.display='none'; }
+      else if(ls){ ls.style.display='flex'; }
     }
   });
 });
 // Tela inicial: navegar entre a home e o login.
 function mostrarLogin(){
-  document.getElementById('home-screen').style.display='none';
-  document.getElementById('login-screen').style.display='flex';
+  const hs=document.getElementById('home-screen'); if(hs) hs.style.display='none';
+  const ls=document.getElementById('login-screen'); if(ls) ls.style.display='flex';
   setTimeout(()=>document.getElementById('login-email')?.focus(),50);
 }
 function voltarHome(){
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('home-screen').style.display='flex';
+  const ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
+  const hs=document.getElementById('home-screen'); if(hs) hs.style.display='flex';
 }
 
 
