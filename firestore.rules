@@ -49,6 +49,7 @@ service cloud.firestore {
     match /historico/{id}     { allow read, write: if isAuthorized(); }
     match /basesSalvas/{id}   { allow read, write: if isAuthorized(); }
     match /config/{id}        { allow read, write: if isAuthorized(); }
+    match /um989/{id}         { allow read, write: if isAuthorized(); }
 
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {

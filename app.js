@@ -93,6 +93,7 @@ function setLanDU(v){ const n=fnum(v); lanDU = n>0?n:22; try{localStorage.setIte
 // atualmente IMPORTADA para a apuracao (congelada). A apuracao de beneficios
 // trabalha sobre baseApuracao, nao sobre a base ao vivo (colaboradores).
 let basesSalvasList = [];   // [{_id, competencia, salvoEm, salvoPor, totalColaboradores, colaboradores:[]}]
+let um989List = [];         // colaboradores da UM989 (só controle de férias)
 let baseApuracao = null;    // base importada para a apuracao
 // Fonte da apuracao: a base importada quando houver, senao a base ao vivo.
 function colsApuracao(){ return baseApuracao && Array.isArray(baseApuracao.colaboradores) ? baseApuracao.colaboradores : colaboradores; }
@@ -830,6 +831,7 @@ const MODULES = {
   ferias:{pages:[
     {id:'fer-radar',icon:'',label:'Radar de F\u00E9rias'},
     {id:'fer-agendadas',icon:'',label:'F\u00E9rias Agendadas'},
+    {id:'fer-um989',icon:'',label:'F\u00E9rias UM989'},
     {id:'fer-import',icon:'',label:'Importar Dados'},
   ]},
   premio:{pages:[
@@ -879,7 +881,7 @@ function renderPage(id){
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
-    'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-import':pgFerImport,
+    'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
   };
   if(id==='usuarios' && !podeGerenciarUsuarios()) return '<div class="empty-state"><div class="empty-icon"></div><p>Acesso restrito.</p></div>';
@@ -897,6 +899,7 @@ function afterRender(id){
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
   if(id==='fer-agendadas') renderFeriasAgendadas();
+  if(id==='fer-um989') loadUM989().then(renderUM989);
   if(id==='dash-main') renderDashMain();
   if(id==='premio-main') afterRenderPremio();
   if(id==='usuarios') renderUsuarios();
@@ -3334,6 +3337,202 @@ async function importarBase(event){
 // ============================================================
 // CONTROLE DE F\u00C9RIAS
 // ============================================================
+// ════════════════════════════════════════════════════════════════
+// FÉRIAS UM989 (agência de marketing — só controle de férias)
+// ════════════════════════════════════════════════════════════════
+async function loadUM989(){
+  try{
+    const snap=await window._getDocs(window._col('um989'));
+    um989List=[]; snap.forEach(d=>um989List.push(Object.assign({_id:d.id},d.data())));
+    um989List.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
+  }catch(e){ console.error('Erro um989:',e); }
+  return um989List;
+}
+// Próximo vencimento = aniversário de admissão (a cada ano, +30).
+function _um989Venc(c){
+  if(c.ferVenc) return _dataLocal(c.ferVenc);
+  const adm=_dataLocal(c.admissao); if(!adm) return null;
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  return _proxVenc(adm.getDate(), adm.getMonth()+1, hoje);
+}
+
+function pgFerUM989(){
+  return `
+    <div class="page-header"><h2>Férias — UM989</h2>
+      <p>Controle de férias da agência UM989 (sem vínculo trabalhista). A cada ano de admissão, +30 dias de saldo.</p></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Novo colaborador</div>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div class="fg" style="flex:1;min-width:220px"><label>Nome</label><input type="text" id="um-nome" placeholder="Nome do colaborador"></div>
+        <div class="fg"><label>Admissão</label><input type="date" id="um-adm"></div>
+        <div class="fg"><label>Saldo inicial (dias)</label><input type="number" id="um-saldo" value="0" min="-90" max="90" style="width:120px"></div>
+        <button class="btn btn-primary btn-sm" onclick="salvarNovoUM989()">Adicionar</button>
+      </div>
+      <div class="text-xs text-muted" style="margin-top:8px">O saldo pode ser negativo (férias antecipadas). Use "+30" a cada aniversário para creditar o novo ciclo.</div>
+    </div>
+    <div id="um989-alerta" style="margin-bottom:12px"></div>
+    <div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">
+      <div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="um-q" placeholder="Nome..." oninput="renderUM989()"></div>
+    </div>
+    <div id="um989-lista"></div>`;
+}
+
+function renderUM989(){
+  const el=document.getElementById('um989-lista'); if(!el) return;
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const q=(document.getElementById('um-q')?.value||'').toLowerCase().trim();
+  let lista=um989List.slice();
+  if(q) lista=lista.filter(c=>(c.nome||'').toLowerCase().includes(q));
+
+  const alertaEl=document.getElementById('um989-alerta');
+  if(alertaEl){
+    const chegaram=um989List.filter(c=>c.agendaInicio && _dataLocal(c.agendaInicio)<=hoje);
+    alertaEl.innerHTML = chegaram.length
+      ? '<div class="alert alert-warning">🗓️ <strong>'+chegaram.length+'</strong> colaborador(es) com férias agendadas que já chegaram — registre o gozo: '
+        +chegaram.map(c=>c.nome+' ('+_dataLocal(c.agendaInicio).toLocaleDateString('pt-BR')+')').join(', ')+'</div>'
+      : '';
+  }
+
+  if(!lista.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">🏖️</div><p>Nenhum colaborador da UM989.</p></div>'; return; }
+
+  el.innerHTML='<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="background:var(--blue-dark);color:#fff">'
+    +'<th style="padding:9px 10px;text-align:left">Nome</th>'
+    +'<th style="padding:9px 10px;text-align:left">Admissão</th>'
+    +'<th style="padding:9px 10px;text-align:left">Próx. venc.</th>'
+    +'<th style="padding:9px 10px;text-align:right">Saldo</th>'
+    +'<th style="padding:9px 10px;text-align:left">Agendamento</th>'
+    +'<th style="padding:9px 10px;text-align:center">Ações</th>'
+    +'</tr></thead><tbody>'
+    +lista.map((c,i)=>{
+      const venc=_um989Venc(c);
+      const saldo=fnum(c.ferSaldo);
+      const agenda=(c.agendaInicio&&c.agendaFim)?(_dataLocal(c.agendaInicio).toLocaleDateString('pt-BR')+' a '+_dataLocal(c.agendaFim).toLocaleDateString('pt-BR')):'—';
+      return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
+        +'<td style="padding:8px 10px;font-weight:600">'+(c.nome||'—')+'</td>'
+        +'<td style="padding:8px 10px">'+(c.admissao?_dataLocal(c.admissao).toLocaleDateString('pt-BR'):'—')+'</td>'
+        +'<td style="padding:8px 10px">'+(venc?_ddmm(venc):'—')+'</td>'
+        +'<td style="padding:8px 10px;text-align:right;font-weight:700;color:'+(saldo<0?'var(--red)':'var(--blue)')+'">'+saldo+' d</td>'
+        +'<td style="padding:8px 10px">'+agenda+'</td>'
+        +'<td style="padding:8px 10px;text-align:center;white-space:nowrap">'
+          +'<button class="btn btn-primary btn-xs" onclick="abrirGozarUM989(\''+c._id+'\')" title="Registrar gozo">Gozar</button> '
+          +'<button class="btn btn-ghost btn-xs" onclick="abrirAgendarUM989(\''+c._id+'\')">Agendar</button> '
+          +'<button class="btn btn-success btn-xs" onclick="fecharCicloUM989(\''+c._id+'\')" title="Soma +30 e rola o vencimento">+30</button> '
+          +'<button class="btn btn-ghost btn-xs" onclick="verLogUM989(\''+c._id+'\')">Log</button> '
+          +'<button class="btn btn-danger btn-xs" onclick="excluirUM989(\''+c._id+'\')">×</button>'
+        +'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+}
+
+async function salvarNovoUM989(){
+  const nome=(document.getElementById('um-nome')?.value||'').trim();
+  const adm=document.getElementById('um-adm')?.value||'';
+  const saldo=fnum(document.getElementById('um-saldo')?.value);
+  if(!nome){ toast('Informe o nome.','error'); return; }
+  const id='um_'+Date.now();
+  const c={_id:id,nome,admissao:adm,ferSaldo:saldo,ferVenc:'',agendaInicio:'',agendaFim:'',feriasLog:[],criadoEm:new Date().toISOString()};
+  try{
+    await fsSet('um989',id,c); um989List.push(c);
+    document.getElementById('um-nome').value=''; document.getElementById('um-adm').value=''; document.getElementById('um-saldo').value='0';
+    toast('Colaborador adicionado.','success'); renderUM989();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+async function excluirUM989(id){
+  const c=um989List.find(x=>x._id===id);
+  if(!confirm('Excluir '+((c&&c.nome)||'este colaborador')+' da UM989?')) return;
+  try{ await fsDel('um989',id); um989List=um989List.filter(x=>x._id!==id); toast('Removido.','success'); renderUM989(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+async function fecharCicloUM989(id){
+  const c=um989List.find(x=>x._id===id); if(!c) return;
+  const venc=_um989Venc(c); if(!venc){ toast('Sem admissão/vencimento.','error'); return; }
+  if(!confirm('Fechar ciclo de '+c.nome+' (venc. '+_ddmm(venc)+')? Soma +30 ao saldo.')) return;
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const nv=_proxVenc(venc.getDate(), venc.getMonth()+1, hoje);
+  c.ferSaldo=fnum(c.ferSaldo)+30; c.ferVenc=_isoLocal(nv);
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'ciclo',dias:30,em:new Date().toISOString()});
+  try{ await fsSet('um989',id,c); toast('+30 dias. Saldo: '+c.ferSaldo+'.','success'); renderUM989(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+function abrirAgendarUM989(id){
+  const c=um989List.find(x=>x._id===id); if(!c) return;
+  document.getElementById('modal-um-agenda')?.remove();
+  const html='<div class="modal-overlay open" id="modal-um-agenda" data-dynamic="1">'
+    +'<div class="modal" style="max-width:440px"><div class="modal-title">Agendar férias — '+(c.nome||'')+'</div>'
+    +'<div class="form-grid cols2" style="margin-top:10px">'
+      +'<div class="fg"><label>Início</label><input type="date" id="uma-ini" value="'+(c.agendaInicio||'')+'"></div>'
+      +'<div class="fg"><label>Fim</label><input type="date" id="uma-fim" value="'+(c.agendaFim||'')+'"></div>'
+    +'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-um-agenda\').remove()">Cancelar</button>'
+      +'<button class="btn btn-primary" onclick="salvarAgendarUM989(\''+id+'\')">Salvar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function salvarAgendarUM989(id){
+  const c=um989List.find(x=>x._id===id); if(!c) return;
+  c.agendaInicio=document.getElementById('uma-ini')?.value||'';
+  c.agendaFim=document.getElementById('uma-fim')?.value||'';
+  try{ await fsSet('um989',id,c); document.getElementById('modal-um-agenda')?.remove(); toast('Agendamento salvo.','success'); renderUM989(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+function abrirGozarUM989(id){
+  const c=um989List.find(x=>x._id===id); if(!c) return;
+  document.getElementById('modal-um-gozar')?.remove();
+  const html='<div class="modal-overlay open" id="modal-um-gozar" data-dynamic="1">'
+    +'<div class="modal" style="max-width:460px"><div class="modal-title">Gozar férias — '+(c.nome||'')+'</div>'
+    +'<div class="modal-sub">Saldo atual: <strong>'+fnum(c.ferSaldo)+' dias</strong>. Informe o período, os dias gozados e a justificativa.</div>'
+    +'<div class="form-grid cols2" style="margin-top:10px">'
+      +'<div class="fg"><label>Início</label><input type="date" id="umg-ini" value="'+(c.agendaInicio||'')+'"></div>'
+      +'<div class="fg"><label>Fim</label><input type="date" id="umg-fim" value="'+(c.agendaFim||'')+'"></div>'
+      +'<div class="fg"><label>Dias gozados</label><input type="number" id="umg-dias" value="0" min="0" max="60"></div>'
+    +'</div>'
+    +'<div class="fg" style="margin-top:8px"><label>Justificativa</label><input type="text" id="umg-just" placeholder="Ex.: férias agendadas / antecipação"></div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-um-gozar\').remove()">Cancelar</button>'
+      +'<button class="btn btn-primary" onclick="salvarGozarUM989(\''+id+'\')">Registrar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function salvarGozarUM989(id){
+  const c=um989List.find(x=>x._id===id); if(!c) return;
+  const dias=Math.max(0,fnum(document.getElementById('umg-dias')?.value));
+  if(dias<=0){ toast('Informe os dias gozados.','error'); return; }
+  const ini=document.getElementById('umg-ini')?.value||'';
+  const fim=document.getElementById('umg-fim')?.value||'';
+  const just=(document.getElementById('umg-just')?.value||'').trim();
+  c.ferSaldo=fnum(c.ferSaldo)-dias;
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'gozo',dias,inicio:ini,fim,justificativa:just,em:new Date().toISOString()});
+  c.agendaInicio=''; c.agendaFim='';
+  try{ await fsSet('um989',id,c); document.getElementById('modal-um-gozar')?.remove(); toast('Gozo registrado. Saldo: '+c.ferSaldo+' dias.','success'); renderUM989(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+function verLogUM989(id){
+  const c=um989List.find(x=>x._id===id); if(!c) return;
+  document.getElementById('modal-um-log')?.remove();
+  const log=Array.isArray(c.feriasLog)?c.feriasLog.slice().reverse():[];
+  const linhas=log.length
+    ? log.map(l=>{
+        if(l.tipo==='ciclo') return '<div style="border-bottom:1px solid var(--border);padding:6px 2px;font-size:12px"><strong style="color:var(--green)">+30</strong> (novo ciclo) <span class="text-muted">('+new Date(l.em).toLocaleDateString('pt-BR')+')</span></div>';
+        const per=(l.inicio?_dataLocal(l.inicio).toLocaleDateString('pt-BR'):'')+(l.fim?' a '+_dataLocal(l.fim).toLocaleDateString('pt-BR'):'');
+        return '<div style="border-bottom:1px solid var(--border);padding:6px 2px;font-size:12px"><strong style="color:var(--red)">-'+l.dias+'d</strong> gozados '+per+(l.justificativa?' · '+l.justificativa:'')+' <span class="text-muted">('+new Date(l.em).toLocaleDateString('pt-BR')+')</span></div>';
+      }).join('')
+    : '<div class="text-muted">Sem registros.</div>';
+  const html='<div class="modal-overlay open" id="modal-um-log" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:520px"><div class="modal-title">Log de férias — '+(c.nome||'')+'</div>'
+    +'<div class="modal-sub">Saldo atual: <strong>'+fnum(c.ferSaldo)+' dias</strong></div>'
+    +'<div style="margin-top:10px;max-height:50vh;overflow:auto">'+linhas+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-um-log\').remove()">Fechar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
 function pgFerImport(){
   return `
     <div class="page-header"><h2> Importar Dados de F\u00E9rias</h2><p>Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
