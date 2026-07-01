@@ -4269,8 +4269,9 @@ function renderFerRadar(){
   const funcF=getMs('rfunc'); // funcao
   const corF=getMs('rcor');   // situacao do farol (cor)
 
-  // Sempre busca da base de colaboradores (Firebase) atualizada em memoria
-  let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
+  // Pessoa única (dedup por CPF; mantém o cadastro principal) — evita
+  // duplicidade CLT + MEI/Sócio no radar. Férias são controladas por 1 cadastro.
+  let f=colaboradoresUnicos().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
   if(empF.length) f=f.filter(c=>empF.some(e=>String(c.mat||'').startsWith(e)));
   if(depF.length) f=f.filter(c=>depF.includes(c.depto||''));
   if(funcF.length) f=f.filter(c=>funcF.includes(funcaoColab(c)));
@@ -6158,7 +6159,9 @@ function renderFeriasAgendadas(){
   const q=(document.getElementById('feragd-q')?.value||'').toLowerCase();
   const depF=document.getElementById('feragd-dep')?.value||'';
 
-  let base=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
+  // Férias são por pessoa única (dedup por CPF; mantém o cadastro principal —
+  // evita duplicidade CLT + MEI/Sócio na lista de agendamentos).
+  let base=colaboradoresUnicos().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
   if(depF) base=base.filter(c=>(c.depto||'')===depF);
   if(q) base=base.filter(c=>
     c.nome.toLowerCase().includes(q) ||
