@@ -692,7 +692,8 @@ function abrirDemissaoBeneficiosModal(c){
 function _fgUpd(saldo){
   const g=fnum(document.getElementById('fg-gozados')?.value);
   const c=fnum(document.getElementById('fg-comprados')?.value);
-  const el=document.getElementById('fg-novo'); if(el) el.textContent=(saldo-g-c)+' dias';
+  const fa=fnum(document.getElementById('fg-faltas')?.value);
+  const el=document.getElementById('fg-novo'); if(el) el.textContent=(saldo-g-c-fa)+' dias';
 }
 // Tela ao ENTRAR em Férias: mostra o saldo, pede dias gozados (tirados) e
 // comprados (abono), e o mês/ano do gozo. Retorna {gozados,comprados,mes,ano}
@@ -708,6 +709,7 @@ function abrirFeriasGozoModal(c, saldoAtual){
       +'<div class="form-grid cols2" style="margin-top:10px">'
         +'<div class="fg"><label>Dias gozados (tirados)</label><input type="number" id="fg-gozados" value="0" min="0" max="60" oninput="_fgUpd('+saldoAtual+')"></div>'
         +'<div class="fg"><label>Dias comprados (abono)</label><input type="number" id="fg-comprados" value="0" min="0" max="30" oninput="_fgUpd('+saldoAtual+')"></div>'
+        +'<div class="fg"><label>Dias de faltas (a descontar)</label><input type="number" id="fg-faltas" value="0" min="0" max="60" oninput="_fgUpd('+saldoAtual+')"></div>'
         +'<div class="fg"><label>Mês do gozo</label><select id="fg-mes">'+mesesOpts+'</select></div>'
         +'<div class="fg"><label>Ano</label><input type="number" id="fg-ano" value="'+h.getFullYear()+'" min="2020" max="2100"></div>'
       +'</div>'
@@ -720,6 +722,7 @@ function abrirFeriasGozoModal(c, saldoAtual){
     document.getElementById('fg-ok').onclick=()=>close({
       gozados:Math.max(0,fnum(document.getElementById('fg-gozados')?.value)),
       comprados:Math.max(0,fnum(document.getElementById('fg-comprados')?.value)),
+      faltas:Math.max(0,fnum(document.getElementById('fg-faltas')?.value)),
       mes:document.getElementById('fg-mes')?.value||MESES_FER[h.getMonth()],
       ano:fnum(document.getElementById('fg-ano')?.value)||h.getFullYear()
     });
@@ -752,10 +755,10 @@ async function salvarColabModal(){
     const r=await abrirFeriasGozoModal(dados, saldoAtual);
     if(r===null) return; // cancelou: não salva
     dados.ferDiasComprados=r.comprados;
-    dados.ferSaldo=saldoAtual - r.gozados - r.comprados;
-    if(r.gozados>0 || r.comprados>0){
+    dados.ferSaldo=saldoAtual - r.gozados - r.comprados - r.faltas;
+    if(r.gozados>0 || r.comprados>0 || r.faltas>0){
       const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
-      log.push({mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, em:new Date().toISOString()});
+      log.push({mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, faltas:r.faltas, em:new Date().toISOString()});
       dados.feriasLog=log;
     }
   } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
@@ -4471,7 +4474,7 @@ function abrirDetalheFerias(id){
         <p class="text-xs text-muted" style="margin-top:10px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
         ${(Array.isArray(c.feriasLog)&&c.feriasLog.length)?`<div style="margin-top:12px">
           <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Histórico de férias</div>
-          ${c.feriasLog.slice().reverse().map(l=>'<div style="display:flex;justify-content:space-between;font-size:12px;border-bottom:1px solid var(--border);padding:4px 2px"><span>'+(l.mes||'—')+'/'+(l.ano||'')+'</span><span class="text-muted">'+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+'</span></div>').join('')}
+          ${c.feriasLog.slice().reverse().map(l=>'<div style="display:flex;justify-content:space-between;font-size:12px;border-bottom:1px solid var(--border);padding:4px 2px"><span>'+(l.mes||'—')+'/'+(l.ano||'')+'</span><span class="text-muted">'+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+(l.faltas?' · '+l.faltas+'d faltas':'')+'</span></div>').join('')}
         </div>`:''}
         <div id="ferd-alertas" style="margin-top:10px"></div>
         <div class="modal-footer">
