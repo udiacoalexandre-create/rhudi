@@ -3891,6 +3891,7 @@ async function fsSetLan(mat,data){
 }
 
 async function initApp(user){
+  document.getElementById('home-screen').style.display='none';
   document.getElementById('login-screen').style.display='none';
   const ok=await carregarUsuarioAtual(user.email);
   if(!ok){
@@ -3925,11 +3926,22 @@ waitFirebase(()=>{
   window._onAuthStateChanged(window._auth, user=>{
     if(user) initApp(user);
     else {
-      document.getElementById('login-screen').style.display='flex';
+      document.getElementById('home-screen').style.display='flex';
+      document.getElementById('login-screen').style.display='none';
       document.getElementById('app-screen').style.display='none';
     }
   });
 });
+// Tela inicial: navegar entre a home e o login.
+function mostrarLogin(){
+  document.getElementById('home-screen').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  setTimeout(()=>document.getElementById('login-email')?.focus(),50);
+}
+function voltarHome(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('home-screen').style.display='flex';
+}
 
 
 // ════════════════════════════════════════════════════════════════

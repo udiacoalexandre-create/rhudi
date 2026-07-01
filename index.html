@@ -81,11 +81,31 @@
 body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
 
 /*  LOGIN  */
-#login-screen {
+#home-screen {
   display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; position: fixed; inset: 0; z-index: 1000;
+  background: linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 50%, #2563EB 100%);
+}
+.home-box { text-align: center; padding: 24px; width: 100%; max-width: 760px; }
+.home-title { color:#fff; font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+.home-sub { color: rgba(255,255,255,.85); font-size: 14px; margin-bottom: 28px; }
+.home-cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+.home-card {
+  background:#fff; border-radius: 18px; padding: 32px 26px; width: 300px;
+  box-shadow: var(--shadow-lg); cursor: pointer; border: 2px solid transparent;
+  transition: transform .12s, border-color .12s;
+}
+.home-card:hover { transform: translateY(-3px); border-color: #93C5FD; }
+.home-card .hc-ico { font-size: 46px; margin-bottom: 12px; }
+.home-card .hc-tit { font-size: 18px; font-weight: 700; color: var(--blue-dark); margin-bottom: 6px; }
+.home-card .hc-desc { font-size: 13px; color: var(--text2); }
+#login-screen {
+  display: none; align-items: center; justify-content: center;
   min-height: 100vh; position: fixed; inset: 0; z-index: 999;
   background: linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 50%, #2563EB 100%);
 }
+.login-back { display:block; text-align:center; margin-top:14px; font-size:12px; color:var(--text2); cursor:pointer; background:none; border:none; width:100%; }
+.login-back:hover { color: var(--blue); }
 .login-card {
   background: #fff; border-radius: 20px; padding: 44px;
   width: 400px; box-shadow: var(--shadow-lg);
@@ -429,6 +449,25 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 <body>
 
 <!-- LOGIN -->
+<div id="home-screen">
+  <div class="home-box">
+    <div class="home-title">🧃 Udiaço — RH</div>
+    <div class="home-sub">Escolha o que deseja acessar</div>
+    <div class="home-cards">
+      <div class="home-card" onclick="mostrarLogin()">
+        <div class="hc-ico">🔐</div>
+        <div class="hc-tit">Sistema de RH</div>
+        <div class="hc-desc">Acesso restrito — entrar com login</div>
+      </div>
+      <div class="home-card" onclick="window.open('buscador.html','_blank')">
+        <div class="hc-ico">🎬</div>
+        <div class="hc-tit">Buscador de treinamentos</div>
+        <div class="hc-desc">Catálogo de vídeos — acesso livre</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="login-screen">
   <div class="login-card">
     <div class="login-logo">🧃</div>
@@ -440,6 +479,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     <input type="password" id="login-senha" class="login-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()">
     <button class="login-btn" onclick="fazerLogin()">Entrar</button>
     <div id="login-error" class="login-error"></div>
+    <button class="login-back" onclick="voltarHome()">← Voltar</button>
   </div>
 </div>
 
