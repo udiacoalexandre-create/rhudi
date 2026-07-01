@@ -4106,6 +4106,7 @@ function pgFerRadar(){
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--border)"></div>Sem dados</div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <input type="text" id="rq" placeholder="Buscar por nome, matrícula, depto ou função..." oninput="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;min-width:230px">
         ${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFerRadar')}
         ${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}
         ${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}
@@ -4268,6 +4269,7 @@ function renderFerRadar(){
   const depF=getMs('rdep');   // departamento
   const funcF=getMs('rfunc'); // funcao
   const corF=getMs('rcor');   // situacao do farol (cor)
+  const q=(document.getElementById('rq')?.value||'').toLowerCase().trim();
 
   // Pessoa única (dedup por CPF; mantém o cadastro principal) — evita
   // duplicidade CLT + MEI/Sócio no radar. Férias são controladas por 1 cadastro.
@@ -4275,6 +4277,7 @@ function renderFerRadar(){
   if(empF.length) f=f.filter(c=>empF.some(e=>String(c.mat||'').startsWith(e)));
   if(depF.length) f=f.filter(c=>depF.includes(c.depto||''));
   if(funcF.length) f=f.filter(c=>funcF.includes(funcaoColab(c)));
+  if(q) f=f.filter(c=>(c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q)||funcaoColab(c).toLowerCase().includes(q));
 
   let comFarol=f.map(c=>({...c,farol:getFarol(c)}));
   if(corF.length) comFarol=comFarol.filter(c=>corF.includes(c.farol.cor));
