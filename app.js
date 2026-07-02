@@ -328,7 +328,7 @@ function formColabHTML(prefix, c){
             <option value="">-- Não agendado --</option>
             ${MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
           </select>
-          <span style="font-size:10px;color:var(--text3);margin-top:2px">Ano calculado automaticamente: <strong id="${prefix}-fer-ano-label">${c?.ferMes?anoAgendado(c.ferMes):'—'}</strong> (atualiza conforme o mês passa)</span>
+          <span style="font-size:10px;color:var(--text3);margin-top:2px">Ano calculado automaticamente: <strong id="${prefix}-fer-ano-label">${c?.ferMes?anoAgendadoColab(c):'—'}</strong> (atualiza conforme o mês passa)</span>
         </div>
         <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="${prefix}-fer-saldo" min="-90" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"><span style="font-size:10px;color:var(--text3);margin-top:2px">Pode ser negativo (férias antecipadas).</span></div>
       </div>
@@ -468,8 +468,9 @@ function onElegChange(prefix, tipo, checked){
 // Atualiza o ano calculado de agendamento conforme o mes escolhido
 function atualizarAnoFerias(prefix){
   const mes=document.getElementById(prefix+'-fer-mes')?.value||'';
+  const adm=document.getElementById(prefix+'-admissao')?.value||'';
   const lbl=document.getElementById(prefix+'-fer-ano-label');
-  if(lbl) lbl.textContent=mes?anoAgendado(mes):'—';
+  if(lbl) lbl.textContent=mes?anoAgendadoColab({ferMes:mes,admissao:adm}):'—';
 }
 
 function toggleMob(prefix){
@@ -3279,7 +3280,7 @@ function exportarBase(){
       sim(elegVR),sim(elegCafe),sim(tr.mob),sim(tr.vt),sim(e.cesta!==false),
       fnum(c.vr),fnum(c.cafe),cestaVal,(!tr.vt&&!tr.mob)?'N/A':(c.mobilidade||'perto'),fnum(c.comb),
       ...vtCols,
-      c.ferMes||'', c.ferMes?anoAgendado(c.ferMes):'', c.ferVenc||'', c.ferSaldo!=null?c.ferSaldo:''
+      c.ferMes||'', c.ferMes?anoAgendadoColab(c):'', c.ferVenc||'', c.ferSaldo!=null?c.ferSaldo:''
     ];
   })];
   const wb=XLSX.utils.book_new();
@@ -4501,10 +4502,22 @@ function anoAgendado(ferMesNome, ref){
   return idx>=base.getMonth() ? ano : ano+1;
 }
 
+// Referência do agendamento: o mês agendado cai a partir de quando o
+// colaborador PODE tirar férias = max(hoje, admissão + 1 ano). Assim um
+// recém-admitido (ex.: admissão 06/2026) agenda para o ano correto (2027).
+function _refAgenda(c){
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  let ref=hoje;
+  const adm=_dataLocal(c&&c.admissao);
+  if(adm){ const ent=new Date(adm); ent.setFullYear(ent.getFullYear()+1); if(ent>ref) ref=ent; }
+  return ref;
+}
+function anoAgendadoColab(c){ return (c&&c.ferMes) ? anoAgendado(c.ferMes, _refAgenda(c)) : '—'; }
+
 // Rotulo "Mes/Ano" para exibicao do agendamento
 function agendamentoLabel(c){
   if(!c||!c.ferMes) return '—';
-  return c.ferMes+'/'+anoAgendado(c.ferMes);
+  return c.ferMes+'/'+anoAgendadoColab(c);
 }
 
 // Parser local de datas ISO (YYYY-MM-DD) em horario local, evitando o
@@ -4527,7 +4540,7 @@ function agendamentoDate(c){
   if(!c||!c.ferMes) return null;
   const idx=MESES_FER.indexOf(c.ferMes);
   if(idx<0) return null;
-  const ano=anoAgendado(c.ferMes);
+  const ano=anoAgendadoColab(c);
   if(typeof ano!=='number') return null;
   return new Date(ano, idx, 1);
 }
@@ -4779,7 +4792,7 @@ function abrirDetalheFerias(id){
               <option value="">-- Nao agendado --</option>
               ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
             </select>
-            <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendado(c.ferMes):'\u2014'}</strong></span>
+            <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'\u2014'}</strong></span>
           </div>
         </div>
         <p class="text-xs text-muted" style="margin-top:10px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
@@ -4848,7 +4861,8 @@ function verificarAlertasFerias(id){
 function atualizarAnoFerd(){
   const sel=document.getElementById('ferd-mes');
   const ano=document.getElementById('ferd-ano');
-  if(ano&&sel) ano.textContent=sel.value?anoAgendado(sel.value):'—';
+  const adm=document.getElementById('ferd-admissao')?.value||'';
+  if(ano&&sel) ano.textContent=sel.value?anoAgendadoColab({ferMes:sel.value,admissao:adm}):'—';
 }
 
 async function salvarDetalheFerias(id){
