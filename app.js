@@ -3970,6 +3970,9 @@ function pgBaseImport(){
         <label class="imp-modo" style="flex:1;min-width:220px"><input type="radio" name="import-modo" value="defpara" style="accent-color:var(--blue)">
           <div><div style="font-weight:600;font-size:14px">Função / Admissão / Férias</div>
             <div class="text-xs text-muted">De/para por nome+matrícula: preenche função, admissão e mês de férias.</div></div></label>
+        <label class="imp-modo" style="flex:1;min-width:220px"><input type="radio" name="import-modo" value="novos" style="accent-color:var(--blue)">
+          <div><div style="font-weight:600;font-size:14px">Novos Colaboradores (modelo RH)</div>
+            <div class="text-xs text-muted">Sobe a planilha modelo preenchida pelo RH. Cria só os novos (ignora quem já existe).</div></div></label>
       </div>
     </div>
     <div class="card">
@@ -3995,6 +3998,7 @@ function processarImport(event){
   const modo=document.querySelector('input[name="import-modo"]:checked')?.value||'sync';
   if(modo==='sync') processarSyncStatus(event);
   else if(modo==='defpara') importarDePara(event);
+  else if(modo==='novos') processarNovos(event);
   else processarCarga(event);
 }
 
@@ -4007,12 +4011,246 @@ document.addEventListener('change', function(e){
       hint.innerHTML='<strong>Sincronizar com Senior:</strong> Colunas: Matrícula (ou Cadastro), Nome, Status. O status define a ação (Trabalhando = admissão, Demitido = remoção, Férias, Afastado...).';
     } else if(e.target.value==='defpara'){
       hint.innerHTML='<strong>Função / Admissão / Férias:</strong> Colunas: Nome, Matrícula, Função, Admissão e a coluna de mês de férias. Casa por nome+matrícula e preenche esses campos.';
+    } else if(e.target.value==='novos'){
+      hint.innerHTML='<strong>Novos Colaboradores (modelo RH):</strong> Use a planilha modelo preenchida (função, benefícios Sim/Não + valor, linhas de VT, férias). O sistema cria apenas os novos e ignora quem já existe (mesma matrícula/CPF).';
     } else {
       hint.innerHTML='<strong>Carga Completa:</strong> Colunas: Matrícula, Nome, CPF, Cargo, Departamento, Status, Filtro (OK/DUP/MEI/SOC), VR/dia, Café/dia, Combustível, Mobilidade.';
     }
     const pv=document.getElementById('import-preview'); if(pv) pv.innerHTML='';
   }
 });
+
+// ════════════════════════════════════════════════════════════════
+// IMPORTAR NOVOS COLABORADORES (modelo RH preenchido pelo RH)
+// Lê a planilha modelo, mostra preview (novos × já existem × erros)
+// e cria APENAS os novos. Colunas casadas pelo texto do cabeçalho.
+// ════════════════════════════════════════════════════════════════
+let novosPendentes=[];
+
+const _normH=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+
+// Localiza a aba e a linha de cabeçalho (a que tem "matricula" e "nome").
+function _acharAbaNovos(wb){
+  for(const name of wb.SheetNames){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,blankrows:false,cellDates:true});
+    for(let i=0;i<Math.min(8,rows.length);i++){
+      const H=(rows[i]||[]).map(_normH);
+      if(H.some(h=>h.includes('matricula')) && H.some(h=>h.includes('nome'))) return {rows,hi:i};
+    }
+  }
+  return null;
+}
+
+// Converte data (Date do Excel, dd/mm/aaaa ou aaaa-mm-dd) para ISO local.
+function _dataParaISO(v){
+  if(v==null||v==='') return '';
+  if(v instanceof Date && !isNaN(v)) return _isoLocal(v);
+  const s=String(v).trim();
+  let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(m){ let y=+m[3]; if(y<100)y+=2000; return y+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0'); }
+  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+  const d=new Date(s); return isNaN(d)?'':_isoLocal(d);
+}
+
+// Casa o texto da linha de VT contra VT_LINHAS (por nome completo ou código).
+function _vtDoTexto(txt){
+  const s=String(txt||'').trim();
+  if(!s) return null;
+  let l=VT_LINHAS.find(x=>x.nome===s);
+  if(!l){ const cod=s.split(/[\s\-]/)[0].trim(); l=VT_LINHAS.find(x=>x.cod&&x.cod===cod); }
+  return l||null;
+}
+
+function processarNovos(event){
+  const file=event.target.files[0]; if(!file) return;
+  const prev=document.getElementById('import-preview');
+  if(prev) prev.innerHTML='<div class="alert alert-info">Processando planilha...</div>';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});
+      const achou=_acharAbaNovos(wb);
+      if(!achou){ prev.innerHTML='<div class="alert alert-error">Não encontrei o cabeçalho (colunas Matrícula e Nome). Use a planilha modelo.</div>'; return; }
+      const {rows,hi}=achou;
+      const H=rows[hi].map(_normH);
+      const col=(...subs)=>H.findIndex(h=>subs.every(s=>h.includes(s)));
+      const iMat=col('matricula'), iNome=col('nome'), iCPF=col('cpf'), iAdm=col('admiss'),
+            iCargo=col('cargo'), iFunc=col('funcao'), iDepto=col('departamento'),
+            iStatus=col('status'), iFiltro=col('tipo','filtro'),
+            iVenc=col('vencimento'), iAgen=col('agendamento'),
+            iVR=col('vr','?'), iVRv=col('vr','valor'),
+            iCafe=col('cafe','?'), iCafev=col('cafe','valor'),
+            iCesta=col('cesta','?'), iCestav=col('cesta','valor'),
+            iMob=col('mobilidade','?'), iMobT=col('tipo mobilidade'), iComb=col('combustivel','valor'),
+            iVT=col('transporte','?'),
+            iL1=col('vt linha 1'), iL1v=col('vt l1','valor'), iL1g=col('vt l1','viagens'),
+            iL2=col('vt linha 2'), iL2v=col('vt l2','valor'), iL2g=col('vt l2','viagens'),
+            iL3=col('vt linha 3'), iL3v=col('vt l3','valor'), iL3g=col('vt l3','viagens'),
+            iFCLT=col('folha clt'), iFMEI=col('folha mei'), iPrem=col('premio'), iFerEl=col('elegivel');
+
+      // Sim/Não com valor padrão quando em branco
+      const flag=(r,idx,def)=>{ if(idx<0) return def; const v=_normH(r[idx]); if(v==='') return def; if(v.startsWith('sim')||v==='s') return true; if(v.startsWith('nao')||v==='n') return false; return def; };
+      const get=(r,idx)=>idx>=0?r[idx]:undefined;
+
+      const FILTROS=['OK','DUP','MEI','SOC','TER','DIR','PART'];
+      const chave=(mat,cpf)=>(String(mat||'').trim())+'|'+String(cpf||'').replace(/\D/g,'');
+      const baseKeys=new Set(colaboradores.map(c=>chave(c.mat,c.cpf)));
+      const baseMat=new Set(colaboradores.map(c=>String(c.mat||'').trim()).filter(Boolean));
+
+      const novos=[], existentes=[], erros=[];
+      const vistosNestaPlanilha=new Set();
+
+      for(let i=hi+1;i<rows.length;i++){
+        const r=rows[i]; if(!r) continue;
+        const nome=String(get(r,iNome)||'').trim();
+        const matRaw=String(get(r,iMat)||'').trim();
+        // ignora linhas totalmente vazias
+        if(!nome && !matRaw && !String(get(r,iCPF)||'').trim()) continue;
+        if(!nome){ erros.push({linha:i+1, motivo:'Sem nome', mat:matRaw}); continue; }
+
+        let filtro=String(get(r,iFiltro)||'').trim();
+        filtro = filtro ? filtro.split(/[—\-]/)[0].trim().toUpperCase() : 'OK';
+        if(!FILTROS.includes(filtro)) filtro='OK';
+
+        const cpf=String(get(r,iCPF)||'').trim();
+        let mat=matRaw;
+        if(!mat && filtro==='PART') mat=cpf.replace(/\D/g,''); // PART usa CPF como matrícula
+        if(!mat){ erros.push({linha:i+1, motivo:'Sem matrícula (obrigatória, exceto PART com CPF)', nome}); continue; }
+
+        const k=chave(mat,cpf);
+        if(baseKeys.has(k) || baseMat.has(mat)){ existentes.push({nome,mat}); continue; }
+        if(vistosNestaPlanilha.has(mat)){ erros.push({linha:i+1, motivo:'Matrícula repetida na planilha', nome, mat}); continue; }
+        vistosNestaPlanilha.add(mat);
+
+        const eleg={
+          vr:flag(r,iVR,false), cafe:flag(r,iCafe,false), cesta:flag(r,iCesta,true),
+          mobilidade:flag(r,iMob,false), vt:flag(r,iVT,false),
+          folhaCLT:flag(r,iFCLT,true), folhaMEI:flag(r,iFMEI,false),
+          premio:flag(r,iPrem,true), ferias:flag(r,iFerEl,true),
+        };
+        if(eleg.vt) eleg.mobilidade=false; // exclusivos
+        eleg.folha=eleg.folhaCLT||eleg.folhaMEI;
+
+        const mobTxt=_normH(get(r,iMobT));
+        const mobSel = mobTxt.includes('perto')?'perto':(mobTxt.includes('carro')?'carro_empresa':'combustivel');
+        const mob = eleg.vt?'vt':(eleg.mobilidade?mobSel:'perto');
+
+        const c={
+          mat, nome:nome.toUpperCase(), cpf,
+          admissao:_dataParaISO(get(r,iAdm)),
+          cargo:String(get(r,iCargo)||'').trim().toUpperCase(),
+          funcao:String(get(r,iFunc)||'').trim().toUpperCase(),
+          depto:String(get(r,iDepto)||'').trim(),
+          status:normalizarStatus(String(get(r,iStatus)||'Trabalhando').trim())||'Trabalhando',
+          filtro, diasFixos:null,
+          ferVenc:_resolveVencInput(String(get(r,iVenc)||''),''),
+          ferMes:(()=>{ const m=String(get(r,iAgen)||'').trim(); return MESES_FER.includes(m)?m:''; })(),
+          ferSaldo:null,
+          mobilidade:mob, elegibilidade:eleg,
+          vr:   eleg.vr?fnum(get(r,iVRv)):0,
+          cafe: eleg.cafe?fnum(get(r,iCafev)):0,
+          cesta:eleg.cesta?fnum(get(r,iCestav)):0,
+          comb: (eleg.mobilidade&&mob==='combustivel')?fnum(get(r,iComb)):0,
+        };
+        // Linhas de VT (até 3 na planilha; 4ª fica zerada)
+        const linhas=[[iL1,iL1v,iL1g],[iL2,iL2v,iL2g],[iL3,iL3v,iL3g]];
+        for(let n=1;n<=4;n++){
+          const src=linhas[n-1];
+          const l=(eleg.vt&&src)?_vtDoTexto(get(r,src[0])):null;
+          c['cod'+n]=l?l.cod:''; c['ben'+n]=l?l.nome:''; c['tp'+n]=l?l.tipo:'';
+          c['vt'+n]=(eleg.vt&&src&&l)?fnum(get(r,src[1])):0;
+          c['v'+n] =(eleg.vt&&src&&l)?fnum(get(r,src[2])):0;
+        }
+        novos.push(c);
+      }
+
+      novosPendentes=novos;
+      renderNovosPreview(novos, existentes, erros);
+    }catch(err){
+      if(prev) prev.innerHTML='<div class="alert alert-error">Erro ao ler a planilha: '+err.message+'</div>';
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function _resumoBen(c){
+  const e=c.elegibilidade||{}; const t=[];
+  if(e.vr) t.push('VR '+brl(c.vr)); if(e.cafe) t.push('Café '+brl(c.cafe));
+  if(e.cesta) t.push('Cesta '+brl(c.cesta));
+  if(e.mobilidade&&c.mobilidade==='combustivel') t.push('Comb '+brl(c.comb));
+  else if(e.mobilidade) t.push(c.mobilidade==='perto'?'Mora perto':'Carro empresa');
+  if(e.vt){ const nl=[1,2,3,4].filter(n=>c['cod'+n]).length; t.push('VT ('+nl+' linha'+(nl!==1?'s':'')+')'); }
+  return t.join(' · ')||'—';
+}
+
+function renderNovosPreview(novos, existentes, erros){
+  const prev=document.getElementById('import-preview'); if(!prev) return;
+  let html='<div class="stat-row" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<div class="stat-card green"><div class="stat-val" style="color:var(--green)">'+novos.length+'</div><div class="stat-label">Novos (serão criados)</div></div>'
+    +'<div class="stat-card"><div class="stat-val">'+existentes.length+'</div><div class="stat-label">Já existem (ignorados)</div></div>'
+    +'<div class="stat-card red"><div class="stat-val" style="color:var(--red)">'+erros.length+'</div><div class="stat-label">Com erro (ignorados)</div></div>'
+    +'</div>';
+
+  if(novos.length){
+    const lin=novos.slice(0,200).map(c=>'<tr>'
+      +'<td style="font-weight:600">'+c.nome+'</td>'
+      +'<td class="text-xs text-muted">'+c.mat+'</td>'
+      +'<td class="text-xs">'+(c.funcao||'—')+'</td>'
+      +'<td class="text-xs">'+(c.depto||'—')+'</td>'
+      +'<td class="text-xs">'+(c.admissao||'—')+'</td>'
+      +'<td class="text-xs">'+c.filtro+'</td>'
+      +'<td class="text-xs">'+_resumoBen(c)+'</td>'
+    +'</tr>').join('');
+    html+='<div class="tbl-wrap" style="max-height:360px;overflow:auto;margin-bottom:12px"><table class="tbl">'
+      +'<thead><tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Depto</th><th>Admissão</th><th>Tipo</th><th>Benefícios</th></tr></thead>'
+      +'<tbody>'+lin+'</tbody></table></div>'
+      +(novos.length>200?'<div class="text-xs text-muted" style="margin-bottom:8px">Mostrando 200 de '+novos.length+'. Todos serão importados.</div>':'');
+  }
+
+  if(existentes.length){
+    html+='<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px">Já existem na base ('+existentes.length+') — serão ignorados</summary>'
+      +'<div class="text-xs text-muted" style="margin-top:6px">'+existentes.map(x=>x.nome+' ('+x.mat+')').join(' · ')+'</div></details>';
+  }
+  if(erros.length){
+    html+='<details style="margin-bottom:10px" open><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--red)">Linhas com erro ('+erros.length+')</summary>'
+      +'<div class="text-xs" style="margin-top:6px">'+erros.map(x=>'Linha '+x.linha+': '+x.motivo+(x.nome?' — '+x.nome:'')+(x.mat?' ('+x.mat+')':'')).join('<br>')+'</div></details>';
+  }
+
+  html+='<div class="btn-row" style="margin-top:6px">'
+    +'<button class="btn btn-primary" onclick="importarNovos()" '+(novos.length?'':'disabled')+'>Importar '+novos.length+' novo'+(novos.length!==1?'s':'')+'</button>'
+    +'</div>';
+  prev.innerHTML=html;
+}
+
+async function importarNovos(){
+  if(!novosPendentes.length){ toast('Nenhum novo colaborador para importar.','warning'); return; }
+  const prev=document.getElementById('import-preview');
+  const lista=novosPendentes.slice();
+  try{
+    // Grava em lotes (limite de 500 por batch do Firestore)
+    let ok=0;
+    for(let i=0;i<lista.length;i+=400){
+      const chunk=lista.slice(i,i+400);
+      const b=window._writeBatch(window._db);
+      chunk.forEach(c=>{
+        c._id=c.mat;
+        c.mobilidade=c.mobilidade||inferMob(c);
+        b.set(window._doc('colaboradores',c._id),c);
+      });
+      await b.commit();
+      chunk.forEach(c=>colaboradores.push(c));
+      ok+=chunk.length;
+    }
+    novosPendentes=[];
+    if(prev) prev.innerHTML='<div class="alert alert-success">✅ <strong>'+ok+'</strong> colaborador'+(ok!==1?'es':'')+' criado'+(ok!==1?'s':'')+'! Base atual: <strong>'+colaboradores.length+'</strong>.</div>';
+    toast('✅ '+ok+' novos importados!','success');
+    setSS('✅ '+colaboradores.length,'ok');
+  }catch(e){
+    if(prev) prev.innerHTML='<div class="alert alert-error">Erro ao gravar: '+e.message+'</div>';
+    toast('Erro ao gravar: '+e.message,'error');
+  }
+}
 
 // ════════════════════════════════════════════════════════════════
 // BASE: DROPDOWN DE DEPARTAMENTO (autocomplete)
