@@ -9,7 +9,7 @@
   import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, getDocs, getDoc, setDoc, deleteDoc, doc, writeBatch }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword }
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, sendPasswordResetEmail }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
@@ -28,6 +28,7 @@
   window._getDocs=getDocs; window._getDoc=getDoc; window._setDoc=setDoc;
   window._deleteDoc=deleteDoc; window._writeBatch=writeBatch;
   window._signIn=(e,p)=>signInWithEmailAndPassword(auth,e,p);
+  window._resetSenha=(e)=>sendPasswordResetEmail(auth,e);
   window._signOut=()=>signOut(auth);
   window._onAuthStateChanged=onAuthStateChanged;
   // Cria a conta de login de outro usuario sem deslogar o atual (app secundario)
@@ -479,6 +480,8 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     <input type="password" id="login-senha" class="login-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()">
     <button class="login-btn" onclick="fazerLogin()">Entrar</button>
     <div id="login-error" class="login-error"></div>
+    <div id="login-info" style="color:#15803d;font-size:12px;text-align:center;margin-top:10px;display:none;padding:8px;background:#dcfce7;border-radius:var(--radius-sm)"></div>
+    <button class="login-back" onclick="esqueciSenha()" style="margin-top:12px">Esqueci minha senha</button>
     <button class="login-back" onclick="voltarHome()">← Voltar</button>
   </div>
 </div>

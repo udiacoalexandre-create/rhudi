@@ -4095,6 +4095,27 @@ function fazerLogin(){
   });
 }
 
+// Auto-atendimento: qualquer usuario pode pedir redefinicao de senha pelo
+// e-mail cadastrado. Usa o recurso nativo do Firebase Auth (sem backend).
+function esqueciSenha(){
+  const email=document.getElementById('login-email')?.value.trim()||'';
+  const errEl=document.getElementById('login-error');
+  const infoEl=document.getElementById('login-info');
+  if(errEl) errEl.style.display='none';
+  if(infoEl) infoEl.style.display='none';
+  if(!email){
+    if(errEl){errEl.textContent='Digite seu e-mail no campo acima para redefinir a senha.';errEl.style.display='block';}
+    return;
+  }
+  const okMsg=()=>{ if(infoEl){infoEl.textContent='Se o e-mail estiver cadastrado, enviamos um link para redefinir a senha. Confira a caixa de entrada (e o spam).';infoEl.style.display='block';} };
+  window._resetSenha(email).then(okMsg).catch(e=>{
+    // Nao revela se o e-mail existe (evita enumeracao de contas).
+    if(e.code==='auth/user-not-found'){ okMsg(); return; }
+    const msgs={'auth/invalid-email':'E-mail invalido.','auth/too-many-requests':'Muitas tentativas. Aguarde alguns minutos.'};
+    if(errEl){errEl.textContent=msgs[e.code]||'Nao foi possivel enviar. Tente novamente.';errEl.style.display='block';}
+  });
+}
+
 function fazerLogout(){
   window._signOut();
   document.getElementById('app-screen').style.display='none';
@@ -6443,6 +6464,7 @@ async function renderUsuarios(){
         +'<td class="text-xs text-muted" style="max-width:220px">'+esc+'</td>'
         +'<td>'+(ativo?'<span class="badge badge-green">Ativo</span>':'<span class="badge badge-gray">Inativo</span>')+'</td>'
         +'<td style="white-space:nowrap">'
+          +'<button class="btn btn-ghost btn-xs" onclick="resetSenhaUsuario(\''+u._id+'\')">Redefinir senha</button> '
           +'<button class="btn btn-ghost btn-xs" onclick="toggleAtivoUsuario(\''+u._id+'\','+(!ativo)+')">'+(ativo?'Desativar':'Ativar')+'</button> '
           +'<button class="btn btn-danger btn-xs" onclick="excluirUsuario(\''+u._id+'\')">Excluir</button>'
         +'</td></tr>';
@@ -6485,6 +6507,18 @@ async function toggleAtivoUsuario(email,ativo){
   if(!ativo && (email===usuarioAtual?.email||MASTER_BOOTSTRAP.includes(email))){ toast('Não é possível desativar este usuário.','error'); return; }
   try{ await window._setDoc(window._doc('usuarios',email),{ativo},{merge:true}); toast(ativo?'Ativado':'Desativado','success'); renderUsuarios(); }
   catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// Master dispara o e-mail de redefinicao para qualquer usuario cadastrado.
+async function resetSenhaUsuario(email){
+  if(!podeGerenciarUsuarios()) return;
+  if(!confirm('Enviar e-mail de redefinição de senha para '+email+'?')) return;
+  try{
+    await window._resetSenha(email);
+    toast('E-mail de redefinição enviado para '+email,'success');
+  }catch(e){
+    toast('Erro ao enviar: '+(e.code||e.message),'error');
+  }
 }
 
 async function excluirUsuario(email){
