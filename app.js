@@ -6255,8 +6255,17 @@ function _premioNormalizar(x){
     total:_num(x.total), receberam:_num(x.receberam), naoReceberam:_num(x.naoReceberam),
     afastados:_num(x.afastados), naoAplica:_num(x.naoAplica),
     causas:{atestado:_num((x.causas||{}).atestado),faltas:_num((x.causas||{}).faltas),atraso:_num((x.causas||{}).atraso),saida:_num((x.causas||{}).saida),abono:_num((x.causas||{}).abono)},
+    criterioAtraso:_num(x.criterioAtraso)||10, criterioSaida:_num(x.criterioSaida)||10,
     excecoes:{f10_30:fx('f10_30'),f30_60:fx('f30_60'),f1_2h:fx('f1_2h'),f2h:fx('f2h')},
   };
+}
+
+// Rótulo do critério em minutos → ">10min", ">1h", ">1h30min"
+function _critLbl(prefix,min){
+  min=_num(min)||10; let t;
+  if(min<60) t='>'+min+'min';
+  else { const h=Math.floor(min/60), r=min%60; t='>'+h+'h'+(r?r+'min':''); }
+  return prefix+' '+t;
 }
 
 // Deriva a agregação a partir de um snapshot fechado do wizard (detalhes por colaborador)
@@ -6291,7 +6300,7 @@ function _premioAggSnap(snap){
   const comp=snap.competencia; const m=String(comp).match(/(\d{1,2})\/(\d{4})/);
   const nome=m?MESES_FER[(+m[1])-1]+' '+m[2]:comp;
   return {competencia:comp,compLabel:nome,periodo:_premioPeriodo(comp),valor:226,fonte:'apuracao',
-    total:det.length,receberam,naoReceberam,afastados,naoAplica,causas,excecoes:ex};
+    total:det.length,receberam,naoReceberam,afastados,naoAplica,causas,criterioAtraso:10,criterioSaida:10,excecoes:ex};
 }
 
 // Período 21 do mês anterior a 20 do mês da competência
@@ -6465,7 +6474,7 @@ function renderPremioMensal(d){
   const leg1=_legenda(seg1.map(s=>({color:s.color,label:s.label,val:s.value,pct:_P(s.value,total)})));
   const g1=_card('Distribuição geral','<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+_svgDonut(seg1,total,'total',150)+'<div style="flex:1;min-width:150px">'+leg1+'</div></div>');
   // Donut causas
-  const seg2=[{value:c.atestado,color:PC.PURPLE,label:'Atestado'},{value:c.faltas,color:PC.PINK,label:'Faltas'},{value:c.atraso,color:PC.AMBER,label:'Atraso >10min'},{value:c.saida,color:PC.ORANGE,label:'Saída ant. >10min'},{value:c.abono,color:PC.RED_DARK,label:'Abono ≥1h'},{value:afast,color:PC.BLUE,label:'Afastados'},{value:na,color:PC.GRAY,label:'Não se aplica'}];
+  const seg2=[{value:c.atestado,color:PC.PURPLE,label:'Atestado'},{value:c.faltas,color:PC.PINK,label:'Faltas'},{value:c.atraso,color:PC.AMBER,label:_critLbl('Atraso',d.criterioAtraso)},{value:c.saida,color:PC.ORANGE,label:_critLbl('Saída ant.',d.criterioSaida)},{value:c.abono,color:PC.RED_DARK,label:'Abono ≥1h'},{value:afast,color:PC.BLUE,label:'Afastados'},{value:na,color:PC.GRAY,label:'Não se aplica'}];
   const leg2=_legenda(seg2.map(s=>({color:s.color,label:s.label,val:s.value,pct:_P(s.value,excl)})));
   const g2=_card('Motivos de não recebimento','<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+_svgDonut(seg2,excl,'excluídos',150)+'<div style="flex:1;min-width:150px">'+leg2+'</div></div>');
   const graficos='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+g1+g2+'</div>';
@@ -6496,7 +6505,7 @@ function renderPremioMensal(d){
 
 function _leituraMensal(d){
   const c=d.causas, total=d.total, excl=d.naoReceberam+d.afastados+d.naoAplica;
-  const cand=[['Atestado',c.atestado],['Faltas',c.faltas],['Atraso >10min',c.atraso],['Saída antecipada >10min',c.saida],['Abono gestor ≥1h',c.abono],['Afastamentos',d.afastados],['Não se aplica',d.naoAplica]];
+  const cand=[['Atestado',c.atestado],['Faltas',c.faltas],[_critLbl('Atraso',d.criterioAtraso),c.atraso],[_critLbl('Saída antecipada',d.criterioSaida),c.saida],['Abono gestor ≥1h',c.abono],['Afastamentos',d.afastados],['Não se aplica',d.naoAplica]];
   cand.sort((a,b)=>b[1]-a[1]);
   const out=[];
   out.push('Taxa de recebimento: <strong>'+_P(d.receberam,total)+'%</strong> ('+d.receberam+' de '+total+').');
@@ -6558,6 +6567,9 @@ function _leituraComp(a,b){
   const dFa=a.causas.faltas-b.causas.faltas; out.push('Faltas: '+b.causas.faltas+' → '+a.causas.faltas+' ('+(dFa>=0?'+':'')+dFa+').');
   const montA=a.receberam*(a.valor||226), montB=b.receberam*(b.valor||226); const dM=montA-montB;
   out.push('Montante pago: '+_brl0(montB)+' → '+_brl0(montA)+' ('+(dM>=0?'+':'')+_brl0(dM)+').');
+  if((a.criterioAtraso||10)!==(b.criterioAtraso||10)){
+    out.push('Mudança de regra: tolerância de atraso/saída passou de '+_critLbl('',b.criterioAtraso).trim()+' para '+_critLbl('',a.criterioAtraso).trim()+' — atraso subiu de '+b.causas.atraso+' para '+a.causas.atraso+' e saída de '+b.causas.saida+' para '+a.causas.saida+'.');
+  }
   return out;
 }
 
@@ -6577,6 +6589,8 @@ function renderPremioEntrada(){
       +fg('Ano','<select id="pd-ano" style="width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">'+anoSel+'</select>')
       +fg('Período (texto)','<input type="text" id="pd-periodo" placeholder="21/04/2026 – 20/05/2026" style="width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">')
       +fg('Valor do benefício (R$)',inp('pd-valor','226',226))
+      +fg('Critério atraso (min)',inp('pd-crit-atr','10',10))
+      +fg('Critério saída (min)',inp('pd-crit-sai','10',10))
     +'</div>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin:8px 0 6px">Totais</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
@@ -6584,7 +6598,7 @@ function renderPremioEntrada(){
     +'</div>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin:8px 0 6px">Causas de não recebimento</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
-      +fg('Atestado',inp('pd-atestado'))+fg('Faltas',inp('pd-faltas'))+fg('Atraso &gt;10min',inp('pd-atraso'))+fg('Saída ant. &gt;10min',inp('pd-saida'))+fg('Abono ≥1h',inp('pd-abono'))
+      +fg('Atestado',inp('pd-atestado'))+fg('Faltas',inp('pd-faltas'))+fg('Atraso',inp('pd-atraso'))+fg('Saída ant.',inp('pd-saida'))+fg('Abono ≥1h',inp('pd-abono'))
     +'</div>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin:8px 0 6px">Exceções por faixa (opcional) — nº de colaboradores</div>'
     +_faixaRow('10–30min','10_30')+_faixaRow('30–60min','30_60')+_faixaRow('1h–2h','1_2h')+_faixaRow('acima 2h','2h')
@@ -6614,6 +6628,7 @@ function editarPremioDados(comp){
     set('pd-periodo',d.periodo); set('pd-valor',d.valor); set('pd-total',d.total); set('pd-receb',d.receberam);
     set('pd-naoreceb',d.naoReceberam); set('pd-afast',d.afastados); set('pd-na',d.naoAplica);
     set('pd-atestado',d.causas.atestado); set('pd-faltas',d.causas.faltas); set('pd-atraso',d.causas.atraso); set('pd-saida',d.causas.saida); set('pd-abono',d.causas.abono);
+    set('pd-crit-atr',d.criterioAtraso||10); set('pd-crit-sai',d.criterioSaida||10);
     const ex=d.excecoes; const map={'10_30':'f10_30','30_60':'f30_60','1_2h':'f1_2h','2h':'f2h'};
     Object.keys(map).forEach(k=>{ set('pd-e-'+k+'-atr',ex[map[k]].atraso||''); set('pd-e-'+k+'-sai',ex[map[k]].saida||''); });
   },60);
@@ -6632,6 +6647,7 @@ async function salvarPremioDados(){
     total:v('pd-total'), receberam:v('pd-receb'), naoReceberam:v('pd-naoreceb'),
     afastados:v('pd-afast'), naoAplica:v('pd-na'),
     causas:{atestado:v('pd-atestado'),faltas:v('pd-faltas'),atraso:v('pd-atraso'),saida:v('pd-saida'),abono:v('pd-abono')},
+    criterioAtraso:v('pd-crit-atr')||10, criterioSaida:v('pd-crit-sai')||10,
     excecoes:{f10_30:exc('10_30'),f30_60:exc('30_60'),f1_2h:exc('1_2h'),f2h:exc('2h')},
     atualizadoEm:new Date().toISOString(),
   };
