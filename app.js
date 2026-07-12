@@ -3165,6 +3165,16 @@ async function renderHistorico(){
         <div style="text-align:right"><div style="font-weight:700;font-size:18px;color:var(--green)">${brl(h.total||0)}</div>${acoes}</div>
       </div></div>`;
     }
+    if(h.modulo==='premio'){
+      const acoesP='<div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">'
+        +'<button class="btn btn-ghost btn-sm" onclick="switchModule(\'premio\');showPage(\'premio-dash\')">Ver no dashboard</button>'
+        +'<button class="btn btn-danger btn-sm" onclick="excluirHist(\''+h._id+'\')">Excluir</button></div>';
+      return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div><div style="font-weight:700;font-size:16px;color:var(--blue)">${h.competencia} — Prêmio Assiduidade</div>
+        <div class="text-sm text-muted" style="margin-top:2px">${h.totalElegiveis||0} de ${h.totalColaboradores||0} receberam · ${data}</div></div>
+        <div style="text-align:right"><div style="font-weight:700;font-size:18px;color:var(--green)">${brl(h.valorTotal||0)}</div>${acoesP}</div>
+      </div></div>`;
+    }
     if(h.totais){
       return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
         <div><div style="font-weight:700;font-size:16px;color:var(--blue)">${h.competencia} — Todos</div>
