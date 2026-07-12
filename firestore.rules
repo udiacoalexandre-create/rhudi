@@ -54,6 +54,7 @@ service cloud.firestore {
     match /historico/{id}     { allow read, write: if isAuthorized() && !isUM989(); }
     match /basesSalvas/{id}   { allow read, write: if isAuthorized() && !isUM989(); }
     match /config/{id}        { allow read, write: if isAuthorized() && !isUM989(); }
+    match /premioDados/{id}    { allow read, write: if isAuthorized() && !isUM989(); }
     // Férias UM989: todos os autorizados (inclui o papel UM989).
     match /um989/{id}         { allow read, write: if isAuthorized(); }
 
