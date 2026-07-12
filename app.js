@@ -6373,10 +6373,13 @@ function renderPremioControls(){
       +'<select id="pd-sel-a" onchange="renderPremioDashBody()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts(premioDadosList[0].competencia)+'</select>';
   }else if(premioDashView==='comparativo'){
     if(premioDadosList.length<2){ el.innerHTML='<span class="text-xs text-muted">Precisa de pelo menos 2 competências salvas.</span>'; return; }
-    el.innerHTML='<label style="font-size:12px;color:var(--text2)">Atual</label>'
-      +'<select id="pd-sel-a" onchange="renderPremioDashBody()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts(premioDadosList[0].competencia)+'</select>'
-      +'<label style="font-size:12px;color:var(--text2)">Anterior</label>'
-      +'<select id="pd-sel-b" onchange="renderPremioDashBody()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts(premioDadosList[1].competencia)+'</select>';
+    const asc=premioDadosList.slice().sort((a,b)=>_compKey(a.competencia)-_compKey(b.competencia));
+    const optAsc=(sel)=>asc.map(d=>'<option value="'+d.competencia+'"'+(d.competencia===sel?' selected':'')+'>'+d.compLabel+'</option>').join('');
+    const sty='padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px';
+    el.innerHTML='<label style="font-size:12px;color:var(--text2)">Período de</label>'
+      +'<select id="pd-sel-de" onchange="renderPremioDashBody()" style="'+sty+'">'+optAsc(asc[0].competencia)+'</select>'
+      +'<label style="font-size:12px;color:var(--text2)">até</label>'
+      +'<select id="pd-sel-ate" onchange="renderPremioDashBody()" style="'+sty+'">'+optAsc(asc[asc.length-1].competencia)+'</select>';
   }else{ el.innerHTML=''; }
 }
 
@@ -6388,9 +6391,13 @@ function renderPremioDashBody(){
   if(!premioDadosList.length){ el.innerHTML='<div class="alert alert-info">Nenhuma competência ainda. Vá em <strong>Entrada de dados</strong> para adicionar (ou use o botão de exemplo).</div>'; return; }
   if(premioDashView==='comparativo'){
     if(premioDadosList.length<2){ el.innerHTML='<div class="alert alert-warning">Salve pelo menos 2 competências para comparar.</div>'; return; }
-    const a=_findComp(document.getElementById('pd-sel-a')?.value)||premioDadosList[0];
-    const b=_findComp(document.getElementById('pd-sel-b')?.value)||premioDadosList[1];
-    el.innerHTML='<div id="premio-print-area">'+renderPremioComparativo(a,b)+'</div>';
+    const asc=premioDadosList.slice().sort((a,b)=>_compKey(a.competencia)-_compKey(b.competencia));
+    let de=_compKey(document.getElementById('pd-sel-de')?.value||asc[0].competencia);
+    let ate=_compKey(document.getElementById('pd-sel-ate')?.value||asc[asc.length-1].competencia);
+    if(de>ate){ const t=de; de=ate; ate=t; }
+    const months=asc.filter(d=>{const k=_compKey(d.competencia); return k>=de&&k<=ate;});
+    if(months.length<2){ el.innerHTML='<div class="alert alert-warning">Selecione um intervalo com pelo menos 2 competências.</div>'; return; }
+    el.innerHTML='<div id="premio-print-area">'+renderPremioComparativo(months)+'</div>';
     return;
   }
   const d=_findComp(document.getElementById('pd-sel-a')?.value)||premioDadosList[0];
@@ -6548,50 +6555,124 @@ function _kpiCmp(label,cur,prev,betterUp,fmt){
     +'<div style="font-size:22px;font-weight:800;color:'+PC.TEXT+';line-height:1">'+f(cur)+'</div>'
     +'<div style="font-size:11px;margin-top:4px;color:'+PC.MUTED+'">vs '+f(prev)+' <span style="color:'+col+';font-weight:700">'+arrow+' '+f(Math.abs(diff))+'</span></div></div>';
 }
-function renderPremioComparativo(a,b){
-  // a = atual, b = anterior
-  const cab='<div style="margin-bottom:14px"><div style="font-size:19px;font-weight:800;color:'+PC.TEXT+'">Relatório Comparativo — Prêmio de Assiduidade</div>'
-    +'<div style="font-size:12px;color:'+PC.MUTED+'">Udiaco · '+b.compLabel+' vs '+a.compLabel+'</div></div>';
-  const kpis='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'
-    +_kpiCmp('Total colaboradores',a.total,b.total,true)
-    +_kpiCmp('Receberam',a.receberam,b.receberam,true)
-    +_kpiCmp('Não receberam',a.naoReceberam,b.naoReceberam,false)
-    +_kpiCmp('Afastados',a.afastados,b.afastados,false)
-    +_kpiCmp('Montante pago',_montanteOf(a),_montanteOf(b),true,_brl0)
-    +'</div>';
-  // G1 taxa recebimento (%)
-  const catsD=['Receberam','Não receberam','Afastados','Não se aplica'];
-  const pctA=[_P(a.receberam,a.total),_P(a.naoReceberam,a.total),_P(a.afastados,a.total),_P(a.naoAplica,a.total)];
-  const pctB=[_P(b.receberam,b.total),_P(b.naoReceberam,b.total),_P(b.afastados,b.total),_P(b.naoAplica,b.total)];
-  const legMeses='<div style="display:flex;gap:14px;font-size:11px;color:#5F5E5A;margin-top:6px"><span><span style="display:inline-block;width:10px;height:10px;background:'+PC.GREEN+';border-radius:2px"></span> '+b.compLabel+'</span><span><span style="display:inline-block;width:10px;height:10px;background:'+PC.PURPLE+';border-radius:2px"></span> '+a.compLabel+'</span></div>';
-  const g1=_card('Taxa de recebimento (%)',_svgBarsAgrupadas(catsD,pctB,pctA,PC.GREEN,PC.PURPLE,'%')+legMeses);
-  // G2 causas absolutas
-  const catsC=['Atestado','Faltas','Atraso','Saída ant.','Abono ≥1h','Outros','Afastados','N/A'];
-  const cvA=[a.causas.atestado,a.causas.faltas,a.causas.atraso,a.causas.saida,a.causas.abono,a.causas.outros||0,a.afastados,a.naoAplica];
-  const cvB=[b.causas.atestado,b.causas.faltas,b.causas.atraso,b.causas.saida,b.causas.abono,b.causas.outros||0,b.afastados,b.naoAplica];
-  const g2=_card('Causas de não recebimento',_svgBarsAgrupadas(catsC,cvB,cvA,PC.GREEN,PC.PURPLE)+legMeses);
-  const graficos='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+g1+g2+'</div>';
-  // Impacto / leitura
-  const montA=_montanteOf(a), montB=_montanteOf(b);
-  const barMont=_svgBarsAgrupadas([b.compLabel,a.compLabel],[montB,0],[0,montA],PC.GREEN,PC.PURPLE);
-  const leitura='<div>'+_leituraComp(a,b).map(x=>'<div style="font-size:11.5px;color:#5F5E5A;margin-bottom:5px">• '+x+'</div>').join('')+'</div>';
-  const impacto=_card('Impacto e leitura dos dados','<div style="display:grid;grid-template-columns:1fr 1.2fr;gap:16px;align-items:center"><div><div style="font-size:11px;color:'+PC.MUTED+';margin-bottom:6px">Montante pago</div>'+barMont+'</div>'+leitura+'</div>');
-  const rodape='<div style="margin-top:14px;text-align:right;font-size:10.5px;color:'+PC.MUTED+'">Comparativo '+b.compLabel+' → '+a.compLabel+' · Valor do benefício: R$ 226,00</div>';
-  return '<div style="max-width:900px">'+cab+kpis+graficos+impacto+rodape+'</div>';
+// Abreviação do mês: "04/2026" → "Abr/26"
+function _mesAbrev(m){ const x=String(m.competencia).match(/(\d{1,2})\/(\d{4})/); return x?MESES_FER[(+x[1])-1].slice(0,3)+'/'+x[2].slice(2):(m.compLabel||m.competencia); }
+const _CORES_MES=[PC.GREEN,PC.PURPLE,PC.AMBER,PC.BLUE,PC.PINK,PC.ORANGE,PC.GREEN_DARK,PC.RED_DARK,'#A8A69E'];
+function _corMes(i){ return _CORES_MES[i%_CORES_MES.length]; }
+
+// Gráfico de linha (1 série) — labels no eixo x, valores nos pontos
+function _svgLinha(labels, values, color, opts){
+  opts=opts||{}; const suf=opts.sufixo||'';
+  const w=Math.max(320, labels.length*72), h=172, pad={l:12,r:14,t:20,b:26};
+  const iw=w-pad.l-pad.r, ih=h-pad.t-pad.b, n=labels.length;
+  const max=Math.max(1,...values), min=Math.min(0,...values);
+  const X=i=> n>1 ? pad.l+iw*i/(n-1) : pad.l+iw/2;
+  const Y=v=> pad.t+ih-(v-min)/((max-min)||1)*ih;
+  const pts=values.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ');
+  let body='<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2.5"/>';
+  values.forEach((v,i)=>{
+    body+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(v).toFixed(1)+'" r="3.4" fill="'+color+'"/>';
+    body+='<text x="'+X(i).toFixed(1)+'" y="'+(Y(v)-8).toFixed(1)+'" text-anchor="middle" font-size="9.5" font-weight="700" fill="'+PC.TEXT+'">'+v+suf+'</text>';
+    body+='<text x="'+X(i).toFixed(1)+'" y="'+(h-8)+'" text-anchor="middle" font-size="8.5" fill="#5F5E5A">'+labels[i]+'</text>';
+  });
+  return '<svg width="100%" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet" style="max-width:'+w+'px">'+body+'</svg>';
 }
 
-function _leituraComp(a,b){
-  const out=[]; const taA=_P(a.receberam,a.total), taB=_P(b.receberam,b.total);
-  const dTaxa=taA-taB;
-  out.push('Taxa de recebimento '+(dTaxa>=0?'subiu':'caiu')+' de '+taB+'% para '+taA+'% ('+(dTaxa>=0?'+':'')+dTaxa+' p.p.).');
-  const dAt=a.causas.atestado-b.causas.atestado; out.push('Atestados: '+b.causas.atestado+' → '+a.causas.atestado+' ('+(dAt>=0?'+':'')+dAt+').');
-  const dFa=a.causas.faltas-b.causas.faltas; out.push('Faltas: '+b.causas.faltas+' → '+a.causas.faltas+' ('+(dFa>=0?'+':'')+dFa+').');
-  const montA=_montanteOf(a), montB=_montanteOf(b); const dM=montA-montB;
-  out.push('Montante pago: '+_brl0(montB)+' → '+_brl0(montA)+' ('+(dM>=0?'+':'')+_brl0(dM)+').');
-  if((a.criterioAtraso||10)!==(b.criterioAtraso||10)){
-    out.push('Mudança de regra: tolerância de atraso/saída passou de '+_critLbl('',b.criterioAtraso).trim()+' para '+_critLbl('',a.criterioAtraso).trim()+' — atraso subiu de '+b.causas.atraso+' para '+a.causas.atraso+' e saída de '+b.causas.saida+' para '+a.causas.saida+'.');
-  }
+// Barras agrupadas com N séries. cats:[], series:[{color,values}]
+function _svgBarsN(cats, series){
+  const w=Math.max(360, cats.length*Math.max(56, series.length*15+18)), h=200, pad={l:8,r:8,t:12,b:48};
+  const iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  let max=1; series.forEach(s=>s.values.forEach(v=>{if(v>max)max=v;}));
+  const gw=iw/cats.length, bw=Math.min(15,(gw*0.72)/series.length);
+  let body='';
+  cats.forEach((c,ci)=>{
+    const gx0=pad.l+gw*ci+(gw-bw*series.length)/2;
+    series.forEach((s,si)=>{
+      const v=s.values[ci]||0, bh=(v/max)*ih, x=gx0+si*bw, y=pad.t+ih-bh;
+      body+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(bw-1.4).toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="'+s.color+'"/>';
+      if(v>0&&bh>13) body+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(y+bh/2).toFixed(1)+'" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="700" fill="#fff">'+v+'</text>';
+    });
+    const cx=pad.l+gw*ci+gw/2;
+    body+='<text x="'+cx.toFixed(1)+'" y="'+(pad.t+ih+10)+'" text-anchor="end" font-size="8.5" fill="#5F5E5A" transform="rotate(-30 '+cx.toFixed(1)+' '+(pad.t+ih+10)+')">'+c+'</text>';
+  });
+  return '<svg width="100%" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet" style="max-width:'+w+'px">'+body+'</svg>';
+}
+function _legendaMeses(series){
+  return '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#5F5E5A;margin-top:6px">'+series.map(s=>'<span><span style="display:inline-block;width:10px;height:10px;background:'+s.color+';border-radius:2px"></span> '+s.name+'</span>').join('')+'</div>';
+}
+
+// Tabela comparativa: meses nas colunas, métricas nas linhas, + Δ do período
+function _tabelaComparativa(months){
+  const f=months[0], l=months[months.length-1];
+  const rows=[
+    {l:'Total colaboradores', v:m=>m.total},
+    {l:'Receberam', v:m=>m.receberam},
+    {l:'% Receberam', v:m=>_P(m.receberam,m.total), fmt:x=>x+'%', pp:true},
+    {l:'Não receberam', v:m=>m.naoReceberam, inv:true},
+    {l:'Afastados', v:m=>m.afastados, inv:true},
+    {l:'Não se aplica', v:m=>m.naoAplica, inv:true},
+    {l:'Montante pago', v:m=>_montanteOf(m), fmt:_brl0},
+    {l:'— Atestado', v:m=>m.causas.atestado, inv:true, sub:true},
+    {l:'— Faltas', v:m=>m.causas.faltas, inv:true, sub:true},
+    {l:'— Atraso', v:m=>m.causas.atraso, inv:true, sub:true},
+    {l:'— Saída ant.', v:m=>m.causas.saida, inv:true, sub:true},
+    {l:'— Abono ≥1h', v:m=>m.causas.abono, inv:true, sub:true},
+    {l:'— Outros', v:m=>m.causas.outros||0, inv:true, sub:true},
+  ];
+  const th='padding:6px 8px;font-size:11px;font-weight:700;color:'+PC.TEXT+';border-bottom:1.5px solid '+PC.MGRAY;
+  const head='<tr><th style="'+th+';text-align:left">Métrica</th>'
+    +months.map(m=>'<th style="'+th+';text-align:center">'+_mesAbrev(m)+'</th>').join('')
+    +'<th style="'+th+';text-align:center">Δ período</th></tr>';
+  const body=rows.map(r=>{
+    const fmt=r.fmt||(x=>x);
+    const cells=months.map(m=>'<td style="padding:5px 8px;text-align:center;font-size:11.5px;color:'+(r.sub?'#5F5E5A':PC.TEXT)+'">'+fmt(r.v(m))+'</td>').join('');
+    const d=r.v(l)-r.v(f);
+    const melhora= d===0?null:(r.inv? d<0 : d>0);
+    const col= melhora==null?PC.MUTED:(melhora?PC.GREEN:PC.ORANGE);
+    const arrow= d===0?'—':(d>0?'▲':'▼');
+    const dTxt= d===0?'—':(arrow+' '+(r.pp?((d>0?'+':'')+d+' p.p.'):fmt(Math.abs(d))));
+    return '<tr style="'+(r.sub?'':'background:'+PC.LGRAY)+'"><td style="padding:5px 8px;text-align:left;font-size:11.5px;'+(r.sub?'color:#5F5E5A':'font-weight:600;color:'+PC.TEXT)+'">'+r.l+'</td>'+cells
+      +'<td style="padding:5px 8px;text-align:center;font-size:11px;font-weight:700;color:'+col+'">'+dTxt+'</td></tr>';
+  }).join('');
+  return _card('Tabela comparativa','<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:'+(180+months.length*70)+'px"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>');
+}
+
+function _leituraPeriodo(months){
+  const f=months[0], l=months[months.length-1], out=[];
+  out.push('Período: <strong>'+months.length+'</strong> competências ('+_mesAbrev(f)+' a '+_mesAbrev(l)+').');
+  const tf=_P(f.receberam,f.total), tl=_P(l.receberam,l.total), dt=tl-tf;
+  out.push('Taxa de recebimento: '+tf+'% → '+tl+'% (<strong>'+(dt>=0?'+':'')+dt+' p.p.</strong> no período).');
+  const bt=months.map(m=>({m,t:_P(m.receberam,m.total)}));
+  const best=bt.reduce((a,b)=>b.t>a.t?b:a), worst=bt.reduce((a,b)=>b.t<a.t?b:a);
+  out.push('Melhor taxa: '+_mesAbrev(best.m)+' ('+best.t+'%) · pior: '+_mesAbrev(worst.m)+' ('+worst.t+'%).');
+  const mf=_montanteOf(f), ml=_montanteOf(l);
+  out.push('Montante pago: '+_brl0(mf)+' → '+_brl0(ml)+' ('+((ml-mf)>=0?'+':'')+_brl0(ml-mf)+').');
+  const crits=[...new Set(months.map(m=>m.criterioAtraso||10))];
+  if(crits.length>1) out.push('Houve mudança na regra de atraso/saída no período (critérios: '+crits.map(c=>c<60?c+'min':(c%60?((c/60).toFixed(1)+'h'):(c/60)+'h')).join(' → ')+').');
   return out;
+}
+
+// Comparativo multi-mês (months = array em ordem cronológica asc)
+function renderPremioComparativo(months){
+  const f=months[0], l=months[months.length-1];
+  const labels=months.map(_mesAbrev);
+  const cab='<div style="margin-bottom:14px"><div style="font-size:19px;font-weight:800;color:'+PC.TEXT+'">Comparativo — Prêmio de Assiduidade</div>'
+    +'<div style="font-size:12px;color:'+PC.MUTED+'">Udiaco · '+f.compLabel+' a '+l.compLabel+' ('+months.length+' competências)</div></div>';
+  // Tendências (linhas)
+  const taxa=months.map(m=>_P(m.receberam,m.total));
+  const montK=months.map(m=>Math.round(_montanteOf(m)/1000));
+  const cardTaxa=_card('Taxa de recebimento (%)',_svgLinha(labels,taxa,PC.GREEN,{sufixo:'%'}));
+  const cardMont=_card('Montante pago (R$ mil)',_svgLinha(labels,montK,PC.GREEN_DARK,{sufixo:'k'}));
+  const trend='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+cardTaxa+cardMont+'</div>';
+  // Causas por mês (barras N séries)
+  const causasCats=['Atestado','Faltas','Atraso','Saída','Abono','Outros'];
+  const series=months.map((m,i)=>({color:_corMes(i),name:_mesAbrev(m),values:[m.causas.atestado,m.causas.faltas,m.causas.atraso,m.causas.saida,m.causas.abono,m.causas.outros||0]}));
+  const cardCausas=_card('Causas de não recebimento por mês',_svgBarsN(causasCats,series)+_legendaMeses(series));
+  // Tabela + leitura
+  const tabela=_tabelaComparativa(months);
+  const leitura=_card('Leitura do período','<div>'+_leituraPeriodo(months).map(x=>'<div style="font-size:11.5px;color:#5F5E5A;margin-bottom:5px">• '+x+'</div>').join('')+'</div>');
+  const rodape='<div style="margin-top:14px;text-align:right;font-size:10.5px;color:'+PC.MUTED+'">Período '+_mesAbrev(f)+' → '+_mesAbrev(l)+' · Valor do benefício: R$ 226,00</div>';
+  return '<div style="max-width:900px">'+cab+trend+cardCausas+'<div style="margin-bottom:16px">'+tabela+'</div>'+leitura+rodape+'</div>';
 }
 
 // ── ENTRADA DE DADOS ─────────────────────────────────────────────
