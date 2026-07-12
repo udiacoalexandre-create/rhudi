@@ -839,6 +839,7 @@ const MODULES = {
   ]},
   premio:{pages:[
     {id:'premio-main',icon:'',label:'Premio Assiduidade'},
+    {id:'premio-dash',icon:'',label:'Dashboard'},
   ]},
   dashboard:{pages:[
     {id:'dash-main',icon:'',label:'Dashboard Geral'},
@@ -903,6 +904,7 @@ function renderPage(id){
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
+    'premio-dash':pgPremioDashboard,
   };
   if(id==='usuarios' && !podeGerenciarUsuarios()) return '<div class="empty-state"><div class="empty-icon"></div><p>Acesso restrito.</p></div>';
   const fn=pages[id];
@@ -922,6 +924,7 @@ function afterRender(id){
   if(id==='fer-um989') loadUM989().then(renderUM989);
   if(id==='dash-main') renderDashMain();
   if(id==='premio-main') afterRenderPremio();
+  if(id==='premio-dash') afterRenderPremioDash();
   if(id==='usuarios') renderUsuarios();
   if(id==='teste-senior') {} // sem afterRender especifico
 }
@@ -6204,6 +6207,457 @@ async function fecharCompetencionPremio(){
 // ================================================================
 // ATUALIZAÇÃO MENSAL DA BASE — Excel da Senior
 // ================================================================
+
+// ================================================================
+// DASHBOARD — PRÊMIO DE ASSIDUIDADE
+// Reproduz o relatório mensal/comparativo (mesma identidade visual).
+// Fonte de dados: entrada manual persistida em 'premioDados' (id MM_YYYY)
+// + competências fechadas do wizard (historico premio_*). Gráficos em SVG.
+// ================================================================
+const PC={GREEN:'#1D9E75',GREEN_DARK:'#085041',GREEN_BG:'#E1F5EE',ORANGE:'#D85A30',RED_DARK:'#993C1D',BLUE:'#378ADD',GRAY:'#888780',PURPLE:'#534AB7',PINK:'#D4537E',AMBER:'#BA7517',RED:'#E24B4A',TEXT:'#2C2C2A',MUTED:'#888780',LGRAY:'#F1EFE8',MGRAY:'#D3D1C7'};
+const _P=(n,t)=>t>0?Math.round(n/t*100):0;
+const _num=v=>{const n=Number(String(v==null?'':v).replace(/[^\d.-]/g,''));return isNaN(n)?0:n;};
+const _brl0=n=>'R$ '+Math.round(n).toLocaleString('pt-BR');
+
+let premioDadosList=[];              // registros de premioDados + snapshots fechados
+let premioDashView='mensal';         // 'mensal' | 'comparativo' | 'entrada'
+
+// Garante o CSS de impressão (1 página A4, só o dashboard) — injetado via JS.
+function ensurePremioPrintCSS(){
+  if(document.getElementById('premio-print-css')) return;
+  const st=document.createElement('style'); st.id='premio-print-css';
+  st.textContent='@media print{body *{visibility:hidden!important}'
+    +'#premio-print-area,#premio-print-area *{visibility:visible!important}'
+    +'#premio-print-area{position:absolute;left:0;top:0;width:100%;padding:0;margin:0}'
+    +'.no-print{display:none!important}@page{size:A4;margin:10mm}}';
+  document.head.appendChild(st);
+}
+
+// Ordena competências MM/YYYY desc
+function _compKey(c){ const m=String(c||'').match(/(\d{1,2})\/(\d{4})/); return m?(+m[2]*100+ +m[1]):0; }
+
+async function carregarPremioDados(){
+  const map={};
+  // 1) entrada manual (premioDados)
+  try{ const s=await window._getDocs(window._col('premioDados')); s.forEach(d=>{ const x=d.data(); map[x.competencia]=_premioNormalizar(x); }); }catch(e){}
+  // 2) competências fechadas do wizard (historico premio_*) — não sobrescreve a manual
+  try{ const s=await window._getDocs(window._col('historico')); s.forEach(d=>{ if(d.id.startsWith('premio_')){ const x=d.data(); if(x.competencia && !map[x.competencia]) map[x.competencia]=_premioAggSnap(x); } }); }catch(e){}
+  premioDadosList=Object.values(map).sort((a,b)=>_compKey(b.competencia)-_compKey(a.competencia));
+}
+
+// Normaliza um registro de premioDados (garante campos)
+function _premioNormalizar(x){
+  const ex=x.excecoes||{};
+  const fx=k=>({atraso:_num((ex[k]||{}).atraso),saida:_num((ex[k]||{}).saida)});
+  return {
+    competencia:x.competencia, compLabel:x.compLabel||x.competencia, periodo:x.periodo||'',
+    valor:_num(x.valor)||226, fonte:x.fonte||'manual',
+    total:_num(x.total), receberam:_num(x.receberam), naoReceberam:_num(x.naoReceberam),
+    afastados:_num(x.afastados), naoAplica:_num(x.naoAplica),
+    causas:{atestado:_num((x.causas||{}).atestado),faltas:_num((x.causas||{}).faltas),atraso:_num((x.causas||{}).atraso),saida:_num((x.causas||{}).saida),abono:_num((x.causas||{}).abono)},
+    excecoes:{f10_30:fx('f10_30'),f30_60:fx('f30_60'),f1_2h:fx('f1_2h'),f2h:fx('f2h')},
+  };
+}
+
+// Deriva a agregação a partir de um snapshot fechado do wizard (detalhes por colaborador)
+function _premioAggSnap(snap){
+  const det=Array.isArray(snap.detalhes)?snap.detalhes:[];
+  const soCesta=(typeof STATUS_SO_CESTA!=='undefined')?STATUS_SO_CESTA:[];
+  let receberam=0,naoReceberam=0,afastados=0,naoAplica=0;
+  const causas={atestado:0,faltas:0,atraso:0,saida:0,abono:0};
+  const ex={f10_30:{atraso:0,saida:0},f30_60:{atraso:0,saida:0},f1_2h:{atraso:0,saida:0},f2h:{atraso:0,saida:0}};
+  const faixa=m=>m<=30?'f10_30':m<=60?'f30_60':m<=120?'f1_2h':'f2h';
+  det.forEach(r=>{
+    const sit=r.situacao||'';
+    if(sit==='N/A'){ naoAplica++; return; }
+    if(soCesta.includes(sit)){ afastados++; return; }
+    const atr=_num(r.atraso), sai=_num(r.saida), abo=_num(r.abono);
+    const temAtest=_num(r.atestado)>0||_num(r.aNoturno)>0||_num(r.aHoras)>0;
+    const temFalta=_num(r.faltas)>0||_num(r.faltaParcial)>0;
+    if(r.recebe==='SIM'){
+      receberam++;
+      if(atr>10){ ex[faixa(atr)].atraso++; }   // exceção: recebeu apesar do atraso
+      if(sai>10){ ex[faixa(sai)].saida++; }
+      return;
+    }
+    // não recebeu — causa primária por prioridade
+    naoReceberam++;
+    if(temAtest) causas.atestado++;
+    else if(temFalta) causas.faltas++;
+    else if(atr>10) causas.atraso++;
+    else if(sai>10) causas.saida++;
+    else if(abo>=60) causas.abono++;
+  });
+  const comp=snap.competencia; const m=String(comp).match(/(\d{1,2})\/(\d{4})/);
+  const nome=m?MESES_FER[(+m[1])-1]+' '+m[2]:comp;
+  return {competencia:comp,compLabel:nome,periodo:_premioPeriodo(comp),valor:226,fonte:'apuracao',
+    total:det.length,receberam,naoReceberam,afastados,naoAplica,causas,excecoes:ex};
+}
+
+// Período 21 do mês anterior a 20 do mês da competência
+function _premioPeriodo(comp){
+  const m=String(comp).match(/(\d{1,2})\/(\d{4})/); if(!m) return '';
+  let mm=+m[1], yy=+m[2]; let pm=mm-1, py=yy; if(pm<1){pm=12;py--;}
+  const p=n=>String(n).padStart(2,'0');
+  return '21/'+p(pm)+'/'+py+' – 20/'+p(mm)+'/'+yy;
+}
+
+// ── Página ───────────────────────────────────────────────────────
+function pgPremioDashboard(){
+  return `
+    <div class="page-header no-print"><h2>Dashboard — Prêmio de Assiduidade</h2>
+      <p>Painel mensal e comparativo no padrão do relatório. Valor do benefício: R$ 226,00.</p></div>
+    <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <div style="display:flex;gap:4px;background:var(--surface2);padding:4px;border-radius:10px">
+        <button class="btn btn-sm" id="pdv-mensal" onclick="setPremioView('mensal')">Mensal</button>
+        <button class="btn btn-sm" id="pdv-comparativo" onclick="setPremioView('comparativo')">Comparativo</button>
+        <button class="btn btn-sm" id="pdv-entrada" onclick="setPremioView('entrada')">Entrada de dados</button>
+      </div>
+      <div id="premio-dash-controls" style="flex:1;display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+      <button class="btn btn-ghost btn-sm" onclick="printPremioDash()">🖨️ Imprimir / PDF</button>
+    </div>
+    <div id="premio-dash-body"><div class="alert alert-info">Carregando...</div></div>`;
+}
+
+async function afterRenderPremioDash(){
+  ensurePremioPrintCSS();
+  await carregarPremioDados();
+  setPremioView(premioDadosList.length?'mensal':'entrada');
+}
+
+function setPremioView(v){
+  premioDashView=v;
+  ['mensal','comparativo','entrada'].forEach(k=>{
+    const b=document.getElementById('pdv-'+k); if(b){ b.className='btn btn-sm'+(k===v?' btn-primary':' btn-ghost'); }
+  });
+  renderPremioControls();
+  renderPremioDashBody();
+}
+
+function renderPremioControls(){
+  const el=document.getElementById('premio-dash-controls'); if(!el) return;
+  const opts=(sel)=>premioDadosList.map(d=>'<option value="'+d.competencia+'"'+(d.competencia===sel?' selected':'')+'>'+d.compLabel+(d.fonte==='apuracao'?' (apuração)':'')+'</option>').join('');
+  if(premioDashView==='mensal'){
+    if(!premioDadosList.length){ el.innerHTML=''; return; }
+    el.innerHTML='<label style="font-size:12px;color:var(--text2)">Competência</label>'
+      +'<select id="pd-sel-a" onchange="renderPremioDashBody()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts(premioDadosList[0].competencia)+'</select>';
+  }else if(premioDashView==='comparativo'){
+    if(premioDadosList.length<2){ el.innerHTML='<span class="text-xs text-muted">Precisa de pelo menos 2 competências salvas.</span>'; return; }
+    el.innerHTML='<label style="font-size:12px;color:var(--text2)">Atual</label>'
+      +'<select id="pd-sel-a" onchange="renderPremioDashBody()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts(premioDadosList[0].competencia)+'</select>'
+      +'<label style="font-size:12px;color:var(--text2)">Anterior</label>'
+      +'<select id="pd-sel-b" onchange="renderPremioDashBody()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts(premioDadosList[1].competencia)+'</select>';
+  }else{ el.innerHTML=''; }
+}
+
+function _findComp(c){ return premioDadosList.find(d=>d.competencia===c); }
+
+function renderPremioDashBody(){
+  const el=document.getElementById('premio-dash-body'); if(!el) return;
+  if(premioDashView==='entrada'){ el.innerHTML=renderPremioEntrada(); return; }
+  if(!premioDadosList.length){ el.innerHTML='<div class="alert alert-info">Nenhuma competência ainda. Vá em <strong>Entrada de dados</strong> para adicionar (ou use o botão de exemplo).</div>'; return; }
+  if(premioDashView==='comparativo'){
+    if(premioDadosList.length<2){ el.innerHTML='<div class="alert alert-warning">Salve pelo menos 2 competências para comparar.</div>'; return; }
+    const a=_findComp(document.getElementById('pd-sel-a')?.value)||premioDadosList[0];
+    const b=_findComp(document.getElementById('pd-sel-b')?.value)||premioDadosList[1];
+    el.innerHTML='<div id="premio-print-area">'+renderPremioComparativo(a,b)+'</div>';
+    return;
+  }
+  const d=_findComp(document.getElementById('pd-sel-a')?.value)||premioDadosList[0];
+  el.innerHTML='<div id="premio-print-area">'+renderPremioMensal(d)+'</div>';
+}
+
+// ── Helpers de UI ────────────────────────────────────────────────
+function _kpi(label,val,valColor,sub,bg){
+  return '<div style="flex:1;min-width:110px;background:'+(bg||PC.LGRAY)+';border-radius:10px;padding:12px 14px">'
+    +'<div style="font-size:10.5px;color:'+PC.MUTED+';text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'+label+'</div>'
+    +'<div style="font-size:23px;font-weight:800;color:'+(valColor||PC.TEXT)+';line-height:1">'+val+'</div>'
+    +(sub?'<div style="font-size:11px;color:'+PC.MUTED+';margin-top:4px">'+sub+'</div>':'')+'</div>';
+}
+function _legenda(items){
+  return '<div style="display:flex;flex-direction:column;gap:4px">'+items.filter(i=>i.val>0||i.always).map(i=>
+    '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#5F5E5A"><span style="width:10px;height:10px;border-radius:2px;background:'+i.color+';display:inline-block;flex:none"></span>'+i.label+' — <strong>'+i.val+'</strong>'+(i.pct!=null?' ('+i.pct+'%)':'')+'</div>').join('')+'</div>';
+}
+function _card(titulo,inner){
+  return '<div style="background:var(--surface);border:1px solid '+PC.MGRAY+';border-radius:12px;padding:14px 16px">'
+    +(titulo?'<div style="font-size:12px;font-weight:700;color:'+PC.TEXT+';margin-bottom:10px">'+titulo+'</div>':'')+inner+'</div>';
+}
+
+// Donut SVG com números brancos nas fatias e total no centro
+function _svgDonut(segs, centerNum, centerLbl, size){
+  size=size||150; const R=size/2, cx=R, cy=R, hole=R*0.62, lblR=R*0.81;
+  const total=segs.reduce((s,x)=>s+x.value,0)||1; let ang=-90;
+  let body='';
+  segs.forEach(s=>{
+    if(s.value<=0) return;
+    const sweep=s.value/total*360;
+    const a0=ang*Math.PI/180, a1=(ang+sweep)*Math.PI/180;
+    const x0=cx+R*Math.cos(a0), y0=cy+R*Math.sin(a0);
+    const x1=cx+R*Math.cos(a1), y1=cy+R*Math.sin(a1);
+    const large=sweep>180?1:0;
+    body+='<path d="M '+cx+' '+cy+' L '+x0.toFixed(2)+' '+y0.toFixed(2)+' A '+R+' '+R+' 0 '+large+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+s.color+'"/>';
+    if(s.value/total*100>=4){
+      const mid=(ang+sweep/2)*Math.PI/180; const lx=cx+lblR*Math.cos(mid), ly=cy+lblR*Math.sin(mid);
+      body+='<text x="'+lx.toFixed(2)+'" y="'+ly.toFixed(2)+'" text-anchor="middle" dominant-baseline="central" font-size="'+(size*0.093).toFixed(1)+'" font-weight="700" fill="#fff">'+s.value+'</text>';
+    }
+    ang+=sweep;
+  });
+  body+='<circle cx="'+cx+'" cy="'+cy+'" r="'+hole.toFixed(1)+'" fill="#fff"/>';
+  body+='<text x="'+cx+'" y="'+(cy-2)+'" text-anchor="middle" dominant-baseline="central" font-size="'+(size*0.17).toFixed(1)+'" font-weight="800" fill="'+PC.TEXT+'">'+centerNum+'</text>';
+  body+='<text x="'+cx+'" y="'+(cy+size*0.13)+'" text-anchor="middle" font-size="'+(size*0.078).toFixed(1)+'" fill="'+PC.MUTED+'">'+centerLbl+'</text>';
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+body+'</svg>';
+}
+
+// Barras verticais agrupadas (2 séries). cats:[], sa/sb:[], sufixo p/ rótulo topo opcional
+function _svgBarsAgrupadas(cats, sa, sb, corA, corB, sufixo){
+  const w=Math.max(300, cats.length*54), h=180, pad={l:8,r:8,t:10,b:44};
+  const iw=w-pad.l-pad.r, ih=h-pad.t-pad.b; const max=Math.max(1,...sa,...sb);
+  const gw=iw/cats.length, bw=Math.min(20, gw*0.34);
+  let body='';
+  cats.forEach((c,i)=>{
+    const gx=pad.l+gw*i+gw/2;
+    [[sa[i],corA,-1],[sb[i],corB,1]].forEach(([v,col,side])=>{
+      const bh=Math.max(0,(v/max)*ih); const x=gx+(side<0?-bw-1:1); const y=pad.t+ih-bh;
+      body+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw+'" height="'+bh.toFixed(1)+'" rx="2" fill="'+col+'"/>';
+      if(v>0){ const inside=bh>16; const ty=inside?(y+bh/2):(y-4);
+        body+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+ty.toFixed(1)+'" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="700" fill="'+(inside?'#fff':PC.TEXT)+'">'+(v+(sufixo||''))+'</text>'; }
+    });
+    // rótulo categoria (rotacionado)
+    body+='<text x="'+gx.toFixed(1)+'" y="'+(pad.t+ih+8)+'" text-anchor="end" font-size="8.5" fill="#5F5E5A" transform="rotate(-32 '+gx.toFixed(1)+' '+(pad.t+ih+8)+')">'+c+'</text>';
+  });
+  return '<svg width="100%" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet" style="max-width:'+w+'px">'+body+'</svg>';
+}
+
+// Barras empilhadas por faixa (Atraso + Saída)
+function _svgBarsEmpilhadas(cats, atrasos, saidas){
+  const w=320,h=170,pad={l:8,r:8,t:10,b:34}; const iw=w-pad.l-pad.r, ih=h-pad.t-pad.b;
+  const tot=cats.map((_,i)=>atrasos[i]+saidas[i]); const max=Math.max(1,...tot);
+  const gw=iw/cats.length, bw=Math.min(34, gw*0.5);
+  let body='';
+  cats.forEach((c,i)=>{
+    const gx=pad.l+gw*i+gw/2; const x=gx-bw/2; let yb=pad.t+ih;
+    [[atrasos[i],PC.AMBER],[saidas[i],PC.ORANGE]].forEach(([v,col])=>{
+      if(v<=0) return; const bh=(v/max)*ih; yb-=bh;
+      body+='<rect x="'+x.toFixed(1)+'" y="'+yb.toFixed(1)+'" width="'+bw+'" height="'+bh.toFixed(1)+'" fill="'+col+'"/>';
+      if(bh>13) body+='<text x="'+gx.toFixed(1)+'" y="'+(yb+bh/2).toFixed(1)+'" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="700" fill="#fff">'+v+'</text>';
+    });
+    body+='<text x="'+gx.toFixed(1)+'" y="'+(pad.t+ih+14)+'" text-anchor="middle" font-size="8.5" fill="#5F5E5A">'+c+'</text>';
+  });
+  return '<svg width="100%" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet" style="max-width:'+w+'px">'+body+'</svg>';
+}
+
+// ── Relatório MENSAL ─────────────────────────────────────────────
+function renderPremioMensal(d){
+  const total=d.total, receb=d.receberam, naoReceb=d.naoReceberam, afast=d.afastados, na=d.naoAplica;
+  const valor=d.valor||226, montante=receb*valor, excl=naoReceb+afast+na;
+  const c=d.causas;
+  const cab='<div style="margin-bottom:14px"><div style="font-size:19px;font-weight:800;color:'+PC.TEXT+'">Premiação por Assiduidade — '+d.compLabel+'</div>'
+    +'<div style="font-size:12px;color:'+PC.MUTED+'">Udiaco Comércio e Ind. de Ferro e Aço'+(d.periodo?' · Período: '+d.periodo:'')+'</div></div>';
+  const kpis='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'
+    +_kpi('Total de colaboradores',total,PC.TEXT,'')
+    +_kpi('Receberam',receb,PC.GREEN,_P(receb,total)+'%')
+    +_kpi('Não receberam',naoReceb,PC.ORANGE,_P(naoReceb,total)+'%')
+    +_kpi('Afastados / N/A',afast+' / '+na,PC.BLUE,_P(afast,total)+'% / '+_P(na,total)+'%')
+    +_kpi('Montante pago',_brl0(montante),PC.GREEN_DARK,receb+' × '+_brl0(valor),PC.GREEN_BG)
+    +'</div>';
+  // Donut distribuição
+  const seg1=[{value:receb,color:PC.GREEN,label:'Receberam'},{value:naoReceb,color:PC.ORANGE,label:'Não receberam'},{value:afast,color:PC.BLUE,label:'Afastados'},{value:na,color:PC.GRAY,label:'Não se aplica'}];
+  const leg1=_legenda(seg1.map(s=>({color:s.color,label:s.label,val:s.value,pct:_P(s.value,total)})));
+  const g1=_card('Distribuição geral','<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+_svgDonut(seg1,total,'total',150)+'<div style="flex:1;min-width:150px">'+leg1+'</div></div>');
+  // Donut causas
+  const seg2=[{value:c.atestado,color:PC.PURPLE,label:'Atestado'},{value:c.faltas,color:PC.PINK,label:'Faltas'},{value:c.atraso,color:PC.AMBER,label:'Atraso >10min'},{value:c.saida,color:PC.ORANGE,label:'Saída ant. >10min'},{value:c.abono,color:PC.RED_DARK,label:'Abono ≥1h'},{value:afast,color:PC.BLUE,label:'Afastados'},{value:na,color:PC.GRAY,label:'Não se aplica'}];
+  const leg2=_legenda(seg2.map(s=>({color:s.color,label:s.label,val:s.value,pct:_P(s.value,excl)})));
+  const g2=_card('Motivos de não recebimento','<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+_svgDonut(seg2,excl,'excluídos',150)+'<div style="flex:1;min-width:150px">'+leg2+'</div></div>');
+  const graficos='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+g1+g2+'</div>';
+  // Exceções
+  let exSec='';
+  const ex=d.excecoes; const faixas=[['f10_30','10–30min',PC.GREEN],['f30_60','30–60min',PC.AMBER],['f1_2h','1h–2h',PC.ORANGE],['f2h','acima 2h',PC.RED_DARK]];
+  const exTot=faixas.reduce((s,[k])=>s+ex[k].atraso+ex[k].saida,0);
+  if(exTot>0){
+    const minis='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+faixas.map(([k,lbl,col])=>{
+      const v=ex[k].atraso+ex[k].saida;
+      return '<div style="flex:1;min-width:90px;border-top:3px solid '+col+';background:'+PC.LGRAY+';border-radius:0 0 8px 8px;padding:8px 10px"><div style="font-size:10px;color:'+PC.MUTED+'">'+lbl+'</div><div style="font-size:20px;font-weight:800;color:'+PC.TEXT+'">'+v+'</div></div>';
+    }).join('')+'</div>';
+    const segF=faixas.map(([k,lbl,col])=>({value:ex[k].atraso+ex[k].saida,color:col,label:lbl}));
+    const dF=_svgDonut(segF,exTot,'exceções',140);
+    const bF=_svgBarsEmpilhadas(faixas.map(f=>f[1]),faixas.map(f=>ex[f[0]].atraso),faixas.map(f=>ex[f[0]].saida));
+    const legTipo='<div style="display:flex;gap:14px;font-size:11px;color:#5F5E5A;margin-top:4px"><span><span style="display:inline-block;width:10px;height:10px;background:'+PC.AMBER+';border-radius:2px"></span> Atraso</span><span><span style="display:inline-block;width:10px;height:10px;background:'+PC.ORANGE+';border-radius:2px"></span> Saída antecipada</span></div>';
+    exSec=_card('Exceções aplicadas este mês','<div style="font-size:12px;color:#5F5E5A;margin-bottom:10px">'+exTot+' colaborador(es) receberam o benefício mesmo com atraso/saída acima de 10 min, por decisão da gestão.</div>'+minis+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:center">'+dF+'<div>'+bF+legTipo+'</div></div>');
+    exSec='<div style="margin-bottom:16px">'+exSec+'</div>';
+  }
+  // Regra oficial
+  const impeditivos=['Qualquer atestado (diurno, noturno ou horas)','Faltas injustificadas','Atraso acima de 10 minutos','Saída antecipada acima de 10 minutos','Afastamento INSS','Abono gestor igual ou acima de 1 hora'];
+  const colE='<div><div style="font-size:12px;font-weight:700;color:'+PC.TEXT+';margin-bottom:8px">Critérios impeditivos</div>'+impeditivos.map(t=>'<div style="font-size:11.5px;color:#5F5E5A;margin-bottom:4px"><span style="color:'+PC.RED+';font-weight:700">✗</span> '+t+'</div>').join('')+'</div>';
+  const colD='<div><div style="font-size:12px;font-weight:700;color:'+PC.TEXT+';margin-bottom:8px">Leitura dos dados</div>'+_leituraMensal(d).map(b=>'<div style="font-size:11.5px;color:#5F5E5A;margin-bottom:5px">• '+b+'</div>').join('')+'</div>';
+  const regra=_card('Regra oficial','<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+colE+colD+'</div>');
+  const rodape='<div style="margin-top:14px;text-align:right;font-size:10.5px;color:'+PC.MUTED+'">Valor do benefício: '+_brl0(valor)+' por colaborador · Total pago: '+_brl0(montante)+(d.periodo?' · Período: '+d.periodo:'')+'</div>';
+  return '<div style="max-width:900px">'+cab+kpis+graficos+exSec+regra+rodape+'</div>';
+}
+
+function _leituraMensal(d){
+  const c=d.causas, total=d.total, excl=d.naoReceberam+d.afastados+d.naoAplica;
+  const cand=[['Atestado',c.atestado],['Faltas',c.faltas],['Atraso >10min',c.atraso],['Saída antecipada >10min',c.saida],['Abono gestor ≥1h',c.abono],['Afastamentos',d.afastados],['Não se aplica',d.naoAplica]];
+  cand.sort((a,b)=>b[1]-a[1]);
+  const out=[];
+  out.push('Taxa de recebimento: <strong>'+_P(d.receberam,total)+'%</strong> ('+d.receberam+' de '+total+').');
+  if(cand[0][1]>0) out.push('Principal causa de exclusão: <strong>'+cand[0][0]+'</strong> ('+cand[0][1]+' casos, '+_P(cand[0][1],excl)+'% das exclusões).');
+  if(cand[1] && cand[1][1]>0) out.push('Segunda causa: '+cand[1][0]+' ('+cand[1][1]+' casos).');
+  const ex=d.excecoes; const exTot=['f10_30','f30_60','f1_2h','f2h'].reduce((s,k)=>s+ex[k].atraso+ex[k].saida,0);
+  out.push(exTot>0?('Exceções concedidas pela gestão: <strong>'+exTot+'</strong> colaborador(es).'):'Nenhuma exceção concedida neste mês.');
+  return out;
+}
+
+// ── Relatório COMPARATIVO ────────────────────────────────────────
+function _kpiCmp(label,cur,prev,betterUp,fmt){
+  const f=fmt||(x=>x); const diff=cur-prev; const up=diff>0;
+  const melhora= diff===0?null:(betterUp?up:!up);
+  const arrow= diff===0?'—':(up?'▲':'▼');
+  const col= melhora==null?PC.MUTED:(melhora?PC.GREEN:PC.ORANGE);
+  return '<div style="flex:1;min-width:110px;background:'+PC.LGRAY+';border-radius:10px;padding:12px 14px">'
+    +'<div style="font-size:10.5px;color:'+PC.MUTED+';text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'+label+'</div>'
+    +'<div style="font-size:22px;font-weight:800;color:'+PC.TEXT+';line-height:1">'+f(cur)+'</div>'
+    +'<div style="font-size:11px;margin-top:4px;color:'+PC.MUTED+'">vs '+f(prev)+' <span style="color:'+col+';font-weight:700">'+arrow+' '+f(Math.abs(diff))+'</span></div></div>';
+}
+function renderPremioComparativo(a,b){
+  // a = atual, b = anterior
+  const cab='<div style="margin-bottom:14px"><div style="font-size:19px;font-weight:800;color:'+PC.TEXT+'">Relatório Comparativo — Prêmio de Assiduidade</div>'
+    +'<div style="font-size:12px;color:'+PC.MUTED+'">Udiaco · '+b.compLabel+' vs '+a.compLabel+'</div></div>';
+  const kpis='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">'
+    +_kpiCmp('Total colaboradores',a.total,b.total,true)
+    +_kpiCmp('Receberam',a.receberam,b.receberam,true)
+    +_kpiCmp('Não receberam',a.naoReceberam,b.naoReceberam,false)
+    +_kpiCmp('Afastados',a.afastados,b.afastados,false)
+    +_kpiCmp('Montante pago',a.receberam*(a.valor||226),b.receberam*(b.valor||226),true,_brl0)
+    +'</div>';
+  // G1 taxa recebimento (%)
+  const catsD=['Receberam','Não receberam','Afastados','Não se aplica'];
+  const pctA=[_P(a.receberam,a.total),_P(a.naoReceberam,a.total),_P(a.afastados,a.total),_P(a.naoAplica,a.total)];
+  const pctB=[_P(b.receberam,b.total),_P(b.naoReceberam,b.total),_P(b.afastados,b.total),_P(b.naoAplica,b.total)];
+  const legMeses='<div style="display:flex;gap:14px;font-size:11px;color:#5F5E5A;margin-top:6px"><span><span style="display:inline-block;width:10px;height:10px;background:'+PC.GREEN+';border-radius:2px"></span> '+b.compLabel+'</span><span><span style="display:inline-block;width:10px;height:10px;background:'+PC.PURPLE+';border-radius:2px"></span> '+a.compLabel+'</span></div>';
+  const g1=_card('Taxa de recebimento (%)',_svgBarsAgrupadas(catsD,pctB,pctA,PC.GREEN,PC.PURPLE,'%')+legMeses);
+  // G2 causas absolutas
+  const catsC=['Atestado','Faltas','Atraso','Saída ant.','Abono ≥1h','Afastados','N/A'];
+  const cvA=[a.causas.atestado,a.causas.faltas,a.causas.atraso,a.causas.saida,a.causas.abono,a.afastados,a.naoAplica];
+  const cvB=[b.causas.atestado,b.causas.faltas,b.causas.atraso,b.causas.saida,b.causas.abono,b.afastados,b.naoAplica];
+  const g2=_card('Causas de não recebimento',_svgBarsAgrupadas(catsC,cvB,cvA,PC.GREEN,PC.PURPLE)+legMeses);
+  const graficos='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+g1+g2+'</div>';
+  // Impacto / leitura
+  const montA=a.receberam*(a.valor||226), montB=b.receberam*(b.valor||226);
+  const barMont=_svgBarsAgrupadas([b.compLabel,a.compLabel],[montB,0],[0,montA],PC.GREEN,PC.PURPLE);
+  const leitura='<div>'+_leituraComp(a,b).map(x=>'<div style="font-size:11.5px;color:#5F5E5A;margin-bottom:5px">• '+x+'</div>').join('')+'</div>';
+  const impacto=_card('Impacto e leitura dos dados','<div style="display:grid;grid-template-columns:1fr 1.2fr;gap:16px;align-items:center"><div><div style="font-size:11px;color:'+PC.MUTED+';margin-bottom:6px">Montante pago</div>'+barMont+'</div>'+leitura+'</div>');
+  const rodape='<div style="margin-top:14px;text-align:right;font-size:10.5px;color:'+PC.MUTED+'">Comparativo '+b.compLabel+' → '+a.compLabel+' · Valor do benefício: R$ 226,00</div>';
+  return '<div style="max-width:900px">'+cab+kpis+graficos+impacto+rodape+'</div>';
+}
+
+function _leituraComp(a,b){
+  const out=[]; const taA=_P(a.receberam,a.total), taB=_P(b.receberam,b.total);
+  const dTaxa=taA-taB;
+  out.push('Taxa de recebimento '+(dTaxa>=0?'subiu':'caiu')+' de '+taB+'% para '+taA+'% ('+(dTaxa>=0?'+':'')+dTaxa+' p.p.).');
+  const dAt=a.causas.atestado-b.causas.atestado; out.push('Atestados: '+b.causas.atestado+' → '+a.causas.atestado+' ('+(dAt>=0?'+':'')+dAt+').');
+  const dFa=a.causas.faltas-b.causas.faltas; out.push('Faltas: '+b.causas.faltas+' → '+a.causas.faltas+' ('+(dFa>=0?'+':'')+dFa+').');
+  const montA=a.receberam*(a.valor||226), montB=b.receberam*(b.valor||226); const dM=montA-montB;
+  out.push('Montante pago: '+_brl0(montB)+' → '+_brl0(montA)+' ('+(dM>=0?'+':'')+_brl0(dM)+').');
+  return out;
+}
+
+// ── ENTRADA DE DADOS ─────────────────────────────────────────────
+function renderPremioEntrada(){
+  const hoje=new Date(); const mesAtual=hoje.getMonth()+1, anoAtual=hoje.getFullYear();
+  const anos=[2024,2025,2026,2027,2028];
+  const mesSel=MESES_FER.map((m,i)=>'<option value="'+(i+1)+'"'+((i+1)===mesAtual?' selected':'')+'>'+m+'</option>').join('');
+  const anoSel=anos.map(a=>'<option value="'+a+'"'+(a===anoAtual?' selected':'')+'>'+a+'</option>').join('');
+  const inp=(id,ph,val)=>'<input type="number" id="'+id+'" min="0" step="1" placeholder="'+(ph||'0')+'" value="'+(val!=null?val:'')+'" style="width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">';
+  const fg=(lbl,el)=>'<div style="flex:1;min-width:120px"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">'+lbl+'</label>'+el+'</div>';
+  const salvas=premioDadosList.length?('<div style="margin-top:16px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">Competências salvas</div>'+premioDadosList.map(d=>'<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="flex:1">'+d.compLabel+' — '+d.receberam+'/'+d.total+' receberam'+(d.fonte==='apuracao'?' <span class="badge badge-blue">apuração</span>':'')+'</span>'+(d.fonte!=='apuracao'?'<button class="btn btn-ghost btn-xs" onclick="editarPremioDados(\''+d.competencia+'\')">Editar</button><button class="btn btn-danger btn-xs" onclick="excluirPremioDados(\''+d.competencia+'\')">Excluir</button>':'')+'</div>').join('')+'</div>'):'';
+  return '<div style="max-width:820px">'
+    +'<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="card-title" style="margin:0">Entrada / edição de competência</div><button class="btn btn-ghost btn-sm" onclick="carregarExemploPremio()">Carregar exemplo (Maio/2026)</button></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+      +fg('Mês','<select id="pd-mes" style="width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">'+mesSel+'</select>')
+      +fg('Ano','<select id="pd-ano" style="width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">'+anoSel+'</select>')
+      +fg('Período (texto)','<input type="text" id="pd-periodo" placeholder="21/04/2026 – 20/05/2026" style="width:100%;padding:7px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">')
+      +fg('Valor do benefício (R$)',inp('pd-valor','226',226))
+    +'</div>'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin:8px 0 6px">Totais</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+      +fg('Total colaboradores',inp('pd-total'))+fg('Receberam',inp('pd-receb'))+fg('Não receberam',inp('pd-naoreceb'))+fg('Afastados',inp('pd-afast'))+fg('Não se aplica',inp('pd-na'))
+    +'</div>'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin:8px 0 6px">Causas de não recebimento</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+      +fg('Atestado',inp('pd-atestado'))+fg('Faltas',inp('pd-faltas'))+fg('Atraso &gt;10min',inp('pd-atraso'))+fg('Saída ant. &gt;10min',inp('pd-saida'))+fg('Abono ≥1h',inp('pd-abono'))
+    +'</div>'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;margin:8px 0 6px">Exceções por faixa (opcional) — nº de colaboradores</div>'
+    +_faixaRow('10–30min','10_30')+_faixaRow('30–60min','30_60')+_faixaRow('1h–2h','1_2h')+_faixaRow('acima 2h','2h')
+    +'<div style="margin-top:14px"><button class="btn btn-primary" onclick="salvarPremioDados()">Salvar competência</button></div>'
+    +'</div>'+salvas+'</div>';
+}
+function _faixaRow(lbl,k){
+  const inp=id=>'<input type="number" id="pd-e-'+id+'" min="0" step="1" placeholder="0" style="width:80px;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">';
+  return '<div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;font-size:12px"><span style="width:80px;color:var(--text2)">'+lbl+'</span>'
+    +'<span>Atraso '+inp(k+'-atr')+'</span><span>Saída '+inp(k+'-sai')+'</span></div>';
+}
+
+function carregarExemploPremio(){
+  const set=(id,v)=>{const e=document.getElementById(id); if(e) e.value=v;};
+  set('pd-mes',5); set('pd-ano',2026); set('pd-periodo','21/04/2026 – 20/05/2026'); set('pd-valor',226);
+  set('pd-total',497); set('pd-receb',302); set('pd-naoreceb',163); set('pd-afast',13); set('pd-na',18);
+  set('pd-atestado',80); set('pd-faltas',20); set('pd-atraso',34); set('pd-saida',16); set('pd-abono',6);
+  toast('Exemplo carregado. Clique em Salvar para ver o dashboard.','success');
+}
+
+function editarPremioDados(comp){
+  const d=_findComp(comp); if(!d){ setPremioView('entrada'); return; }
+  setPremioView('entrada');
+  setTimeout(()=>{
+    const m=String(comp).match(/(\d{1,2})\/(\d{4})/); const set=(id,v)=>{const e=document.getElementById(id); if(e) e.value=v;};
+    if(m){ set('pd-mes',+m[1]); set('pd-ano',+m[2]); }
+    set('pd-periodo',d.periodo); set('pd-valor',d.valor); set('pd-total',d.total); set('pd-receb',d.receberam);
+    set('pd-naoreceb',d.naoReceberam); set('pd-afast',d.afastados); set('pd-na',d.naoAplica);
+    set('pd-atestado',d.causas.atestado); set('pd-faltas',d.causas.faltas); set('pd-atraso',d.causas.atraso); set('pd-saida',d.causas.saida); set('pd-abono',d.causas.abono);
+    const ex=d.excecoes; const map={'10_30':'f10_30','30_60':'f30_60','1_2h':'f1_2h','2h':'f2h'};
+    Object.keys(map).forEach(k=>{ set('pd-e-'+k+'-atr',ex[map[k]].atraso||''); set('pd-e-'+k+'-sai',ex[map[k]].saida||''); });
+  },60);
+}
+
+async function salvarPremioDados(){
+  const v=id=>_num(document.getElementById(id)?.value);
+  const mes=String(v('pd-mes')).padStart(2,'0'), ano=document.getElementById('pd-ano')?.value||'';
+  if(!ano){ toast('Selecione o ano','error'); return; }
+  const comp=mes+'/'+ano; const id=mes+'_'+ano;
+  const exc=(k)=>({atraso:v('pd-e-'+k+'-atr'),saida:v('pd-e-'+k+'-sai')});
+  const doc={
+    competencia:comp, compLabel:MESES_FER[(+mes)-1]+' '+ano,
+    periodo:document.getElementById('pd-periodo')?.value.trim()||_premioPeriodo(comp),
+    valor:v('pd-valor')||226, fonte:'manual',
+    total:v('pd-total'), receberam:v('pd-receb'), naoReceberam:v('pd-naoreceb'),
+    afastados:v('pd-afast'), naoAplica:v('pd-na'),
+    causas:{atestado:v('pd-atestado'),faltas:v('pd-faltas'),atraso:v('pd-atraso'),saida:v('pd-saida'),abono:v('pd-abono')},
+    excecoes:{f10_30:exc('10_30'),f30_60:exc('30_60'),f1_2h:exc('1_2h'),f2h:exc('2h')},
+    atualizadoEm:new Date().toISOString(),
+  };
+  try{
+    await fsSet('premioDados',id,doc);
+    toast('Competência '+doc.compLabel+' salva!','success');
+    await carregarPremioDados();
+    premioDashView='mensal'; setPremioView('mensal');
+    setTimeout(()=>{ const sel=document.getElementById('pd-sel-a'); if(sel){ sel.value=comp; renderPremioDashBody(); } },40);
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+async function excluirPremioDados(comp){
+  const m=String(comp).match(/(\d{1,2})\/(\d{4})/); if(!m) return;
+  if(!confirm('Excluir a competência '+comp+'?')) return;
+  try{ await fsDel('premioDados',m[1].padStart(2,'0')+'_'+m[2]); toast('Excluída.','success'); await carregarPremioDados(); renderPremioEntradaRefresh(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+function renderPremioEntradaRefresh(){ const el=document.getElementById('premio-dash-body'); if(el&&premioDashView==='entrada') el.innerHTML=renderPremioEntrada(); renderPremioControls(); }
+
+function printPremioDash(){
+  if(premioDashView==='entrada'){ toast('Abra o Mensal ou o Comparativo para imprimir.','warning'); return; }
+  ensurePremioPrintCSS();
+  window.print();
+}
+
 
 function pgBaseAtualizacao(){
   const anos=[2024,2025,2026,2027];
