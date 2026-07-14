@@ -4814,6 +4814,8 @@ function pgFerRadar(){
       <div class="filter-group"><label>Departamento</label>${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Função</label>${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Situação</label>${msDropdown('rcor','Situação',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}</div>
+      <div class="filter-group"><label>Agendamento</label>${msDropdown('ragend','Agendamento',[{value:'ok',label:'No prazo'},{value:'bad',label:'Fora do prazo'},{value:'none',label:'Sem agendamento'}],'renderFerRadar')}</div>
+      <div class="filter-group"><label>Mês agendado</label>${msDropdown('rmes','Mês agendado',MESES_FER.map(m=>({value:m,label:m})),'renderFerRadar')}</div>
       <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
     </div>
     <div id="fer-radar-grid"></div>
@@ -4886,6 +4888,11 @@ function agendamentoDate(c){
 // (data em que as ferias dobrariam). Verde = agendado ate esse limite (no
 // prazo); vermelha = agendado apos o limite (dobra); preta = sem agendamento;
 // cinza = sem vencimento p/ comparar.
+// Chave do status de agendamento p/ filtro: none (sem), bad (fora do prazo), ok (no prazo).
+function _agKey(c, vencDate){
+  if(!c||!c.ferMes) return 'none';
+  return agendamentoStatus(c, vencDate).cor==='vermelha' ? 'bad' : 'ok';
+}
 function agendamentoStatus(c, vencDate){
   if(!c||!c.ferMes) return {cor:'preta', tip:'Sem agendamento'};
   const ag=agendamentoDate(c);
@@ -4976,6 +4983,8 @@ function renderFerRadar(){
   const depF=getMs('rdep');   // departamento
   const funcF=getMs('rfunc'); // funcao
   const corF=getMs('rcor');   // situacao do farol (cor)
+  const agF=getMs('ragend');  // status do agendamento (ok/bad/none)
+  const mesF=getMs('rmes');   // mes de agendamento
   const q=(document.getElementById('rq')?.value||'').toLowerCase().trim();
 
   // Pessoa única (dedup por CPF; mantém o cadastro principal) — evita
@@ -4988,6 +4997,8 @@ function renderFerRadar(){
 
   let comFarol=f.map(c=>({...c,farol:getFarol(c)}));
   if(corF.length) comFarol=comFarol.filter(c=>corF.includes(c.farol.cor));
+  if(mesF.length) comFarol=comFarol.filter(c=>mesF.includes(c.ferMes||''));
+  if(agF.length) comFarol=comFarol.filter(c=>agF.includes(_agKey(c,c.farol.vencDate)));
 
   renderFarois(comFarol);
   renderAlertasFeriasMes(comFarol);
