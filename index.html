@@ -137,7 +137,7 @@
 .ds .person__name{ font-weight:500;color:var(--text); }
 .ds .person__sub{ font-size:12px;color:var(--text-muted); }
 /* Tabela clara: sobrescreve o cabecalho escuro e as faixas de coluna, so na Base */
-.ds .tbl thead th{ background:var(--surface-soft);color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-size:11px;font-weight:500;border-top:1px solid var(--border);border-bottom:1px solid var(--border); }
+.ds .tbl thead th{ background:#e2e8f0;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;font-size:11px;font-weight:600;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong); }
 .ds .colab-tbl tbody td:nth-child(odd),
 .ds .colab-tbl tbody td:nth-child(even){ background:var(--surface); }
 .ds .colab-tbl tbody tr:hover td{ background:var(--surface-soft); }
@@ -208,7 +208,7 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .topbar-brand { display: flex; align-items: center; gap: 12px; }
 .topbar-brand .logo {
   width: 32px; height: 32px; border-radius: var(--radius-sm);
-  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700;
+  background: #fff; color: var(--brand); font-size: 15px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
 .topbar-brand h1 { font-size: 16px; font-weight: 600; color: #fff; }
@@ -234,7 +234,7 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   font-family: 'Inter', sans-serif;
 }
 .mod-tab:hover { color: var(--text); background: transparent; }
-.mod-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.mod-tab.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
 .mod-tab .mod-icon { font-size: 17px; display: inline-flex; align-items: center; }
 
 /* LAYOUT */
@@ -252,9 +252,9 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   cursor: pointer; display: flex; align-items: center; gap: 9px;
   transition: all .15s; border-radius: 0;
 }
-.sidebar-btn:hover { background: var(--bg); color: var(--text); }
-.sidebar-btn.active { background: var(--blue-light); color: var(--blue); font-weight: 600; border-right: 3px solid var(--blue); }
-.sidebar-btn .s-icon { font-size: 15px; flex-shrink: 0; }
+.sidebar-btn:hover { background: var(--surface-soft); color: var(--text); }
+.sidebar-btn.active { background: var(--success-bg); color: var(--brand); font-weight: 600; border-right: 3px solid var(--brand); }
+.sidebar-btn .s-icon { font-size: 17px; flex-shrink: 0; display: inline-flex; align-items: center; }
 
 /* MAIN */
 .main-content { flex: 1; padding: 24px; overflow-y: auto; }

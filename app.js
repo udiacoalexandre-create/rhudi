@@ -816,10 +816,10 @@ async function excluirColab(id,nome){
 // ============================================================
 const MODULES = {
   base:{pages:[
-    {id:'base-lista',icon:'',label:'Colaboradores'},
-    {id:'base-import',icon:'',label:'Importar'},
-    {id:'base-novo',icon:'',label:'Novo Colaborador'},
-    {id:'base-versoes',icon:'',label:'Bases Salvas'},
+    {id:'base-lista',icon:'<i class="ti ti-users"></i>',label:'Colaboradores'},
+    {id:'base-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar'},
+    {id:'base-novo',icon:'<i class="ti ti-user-plus"></i>',label:'Novo Colaborador'},
+    {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Bases Salvas'},
   ]},
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'',label:'Lan\u00E7amento Mensal'},
