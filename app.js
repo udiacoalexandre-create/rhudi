@@ -938,13 +938,13 @@ function pgBaseLista(){
   const statusSet=[...new Set(colaboradores.map(c=>c.status||'').filter(Boolean))].sort();
   const benOpts=[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'},{value:'cesta',label:'Cesta Básica'},{value:'sem',label:'Sem benefício'},{value:'comb_vt',label:'Comb+VT (erro?)'},{value:'sem_mob',label:'Sem mobilidade'}];
   return `
-   <div class="bl-page">
+   <div class="bl-page ds">
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div>
-        <h2> Base de Colaboradores</h2>
-        <p>Gerencie todos os colaboradores da empresa</p>
+        <h2 class="page-title">Base de Colaboradores</h2>
+        <p class="page-subtitle">Gerencie todos os colaboradores da empresa</p>
       </div>
-      <button class="btn btn-primary" onclick="abrirAtualizarBase()" style="font-size:14px;padding:11px 20px;box-shadow:var(--shadow-sm);white-space:nowrap">🔄 Atualizar Base</button>
+      <button class="refresh-btn" onclick="abrirAtualizarBase()"><i class="ti ti-refresh"></i> Atualizar Base</button>
     </div>
     <div id="bl-status-resumo" style="margin-bottom:8px"></div>
     <div id="bl-tipo-resumo" style="margin-bottom:12px"></div>
@@ -1110,6 +1110,57 @@ function _resumoCard(n, label, cls, valColor){
     +'<div class="stat-val"'+(valColor?' style="color:'+valColor+'"':'')+'>'+n+'</div>'
     +'<div class="stat-label">'+label+'</div></div>';
 }
+// Card do design system (chip de icone Tabler + valor + rotulo). Escopo .ds.
+function _dsStat(icon, chip, val, label){
+  return '<div class="stat"><div class="stat__chip chip--'+chip+'"><i class="ti ti-'+icon+'"></i></div>'
+    +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
+}
+function _dsStatAccent(icon, val, label){
+  return '<div class="stat stat--accent"><div class="stat__chip"><i class="ti ti-'+icon+'"></i></div>'
+    +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
+}
+// ── Helpers de marcacao (design system) usados so na tabela da Base ──
+function _iniciais(nome){
+  const p=String(nome||'').trim().split(/\s+/).filter(Boolean);
+  return (((p[0]||'')[0]||'')+((p.length>1?p[p.length-1]:'')[0]||'')).toUpperCase()||'?';
+}
+function _dsAvatarVar(status){
+  const g=statusGrupo(status);
+  return g==='trabalhando'?'success':g==='ferias'?'warning':g==='so_cesta'?'danger':'neutral';
+}
+function dsPersonCell(c){
+  const sub=[c.cargo,c.mat].filter(Boolean).join(' · ');
+  return '<div class="person"><span class="avatar avatar--'+_dsAvatarVar(c.status)+'">'+_iniciais(c.nome)+'</span>'
+    +'<span style="min-width:0"><span class="person__name">'+c.nome+'</span>'
+    +(sub?'<br><span class="person__sub">'+sub+'</span>':'')
+    +(c.funcao?'<br><span class="person__sub" style="color:var(--accent-text)">Função: '+c.funcao+'</span>':'')
+    +'</span></div>';
+}
+function dsStatusBadge(status){
+  const g=statusGrupo(status);
+  const v=g==='trabalhando'?'success':g==='ferias'?'warning':g==='so_cesta'?'danger':'neutral';
+  return '<span class="badge badge--'+v+'">'+(getStatusInfo(status).label||status||'—')+'</span>';
+}
+function dsTipoBadge(f){
+  const map={OK:['neutral','OK'],DUP:['purple','DUP'],MEI:['purple','MEI'],SOC:['purple','Sócio'],
+    TER:['warning','Terceiro'],DIR:['danger','Diretoria'],PART:['accent','Particular']};
+  const m=map[(f||'OK').toUpperCase()]||['neutral',f||'OK'];
+  return '<span class="badge badge--'+m[0]+'">'+m[1]+'</span>';
+}
+function dsElegTags(c){
+  const eleg=c.elegibilidade||{}; const t=[];
+  const add=(cls,txt)=>t.push('<span class="tag tag--'+cls+'">'+txt+'</span>');
+  if(eleg.vr!==false&&fnum(c.vr)>0) add('accent','VR');
+  if(eleg.cafe!==false&&fnum(c.cafe)>0) add('accent','Café');
+  const tr=elegTransporte(c);
+  if(tr.mob&&fnum(c.comb)>0) add('accent','Mob.');
+  if(tr.vt&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0)) add('accent','VT');
+  if(eleg.cesta!==false) add('neutral','Cesta');
+  const fclt=eleg.folhaCLT!==undefined?eleg.folhaCLT:(eleg.folha!==false);
+  if(fclt) add('neutral','Folha CLT');
+  if(eleg.folhaMEI===true) add('neutral','Folha MEI');
+  return t.length?t.join(''):'<span class="tag tag--neutral">Nenhum</span>';
+}
 
 // Resumo por SITUACAO (pessoas unicas, exceto Particulares).
 // Afastados agrupa TODOS os motivos (Afastado, Aux. Doenca, Acidente, etc.).
@@ -1123,14 +1174,12 @@ function renderStatusResumo(){
   const nAfa =unicos.filter(c=>statusGrupo(c.status)==='so_cesta').length;
   const nNA  =unicos.filter(ehNA).length;
   const nAtivos=nTrab+nFer+nAfa;
-  el.innerHTML='<div class="stats-grid" style="margin-bottom:12px">'
-    +_resumoCard(nTrab,'Trabalhando','green','var(--green)')
-    +_resumoCard(nFer,'Férias','blue','var(--blue)')
-    +_resumoCard(nAfa,'Afastados','orange','var(--orange)')
-    +_resumoCard(nNA,'N/A','yellow','var(--text2)')
-    +'<div class="stat-card" style="background:var(--blue-dark);border-color:var(--blue-dark)">'
-      +'<div class="stat-val" style="color:#fff">'+nAtivos+'</div>'
-      +'<div class="stat-label" style="color:#DBEAFE">Total de ativos</div></div>'
+  el.innerHTML='<div class="stat-grid">'
+    +_dsStat('user-check','success',nTrab,'Trabalhando')
+    +_dsStat('umbrella','warning',nFer,'Férias')
+    +_dsStat('heartbeat','danger',nAfa,'Afastados')
+    +_dsStat('circle-minus','neutral',nNA,'N/A')
+    +_dsStatAccent('users',nAtivos,'Total de ativos')
     +'</div>';
 }
 
@@ -1144,11 +1193,11 @@ function renderTipoResumo(){
   ativos.forEach(c=>{ const t=(c.filtro||'OK').toUpperCase(); cont[t]=(cont[t]||0)+1; });
   const seen=new Set(); let dup=0;
   ativos.forEach(c=>{ const cpf=(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome)); if(seen.has(cpf)) dup++; else seen.add(cpf); });
-  el.innerHTML='<div class="stats-grid" style="margin-bottom:12px">'
-    +_resumoCard(cont.DIR||0,'Diretoria','red','var(--red)')
-    +_resumoCard(cont.TER||0,'Terceiros','orange','var(--orange)')
-    +_resumoCard(cont.SOC||0,'Sócios','purple','var(--purple)')
-    +_resumoCard(dup,'Duplicados','yellow','var(--text2)')
+  el.innerHTML='<div class="section-label">Por tipo de contrato</div><div class="stat-grid">'
+    +_dsStat('crown','danger',cont.DIR||0,'Diretoria')
+    +_dsStat('briefcase','warning',cont.TER||0,'Terceiros')
+    +_dsStat('user-star','purple',cont.SOC||0,'Sócios')
+    +_dsStat('copy','accent',dup,'Duplicados')
     +'</div>';
 }
 
@@ -1172,13 +1221,13 @@ function renderColabList(){
   }
   tbody.innerHTML=f.map(c=>`<tr>
     <td><code>${c.mat||'\u2014'}</code></td>
-    <td><strong style="font-size:13px">${c.nome}</strong>${c.cargo?'<br><span class="text-xs text-muted">'+c.cargo+'</span>':''}${c.funcao?'<br><span class="text-xs" style="color:var(--blue)">Função: '+c.funcao+'</span>':''}</td>
+    <td>${dsPersonCell(c)}</td>
     <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
     <td class="text-xs text-muted">${c.admissao||'\u2014'}</td>
     <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
-    <td>${statusBadge(c.status)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
-    <td>${filtroBadge(c.filtro||'OK')}</td>
-    <td>${elegBadges(c)}</td>
+    <td>${dsStatusBadge(c.status)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
+    <td>${dsTipoBadge(c.filtro||'OK')}</td>
+    <td>${dsElegTags(c)}</td>
     <td class="text-sm">${fnum(c.vr)>0?brl(c.vr):'\u2014'}</td>
     <td class="text-sm">${fnum(c.cafe)>0?brl(c.cafe):'\u2014'}</td>
     <td>${mobBadge(c)}</td>
