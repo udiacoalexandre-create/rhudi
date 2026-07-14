@@ -7699,7 +7699,6 @@ async function consultarVagaFerias(funcao, depto){
 
 // ============================================================
 // ASSISTENTE: ATUALIZAR BASE (passo a passo)
-// Etapas: Contratacoes -> Demissoes -> Afastados -> Ferias.
 // ============================================================
 const WIZ_STEPS=[
   {id:'contratacoes', label:'Contratações', icon:'<i class="ti ti-user-plus"></i>'},
@@ -7718,7 +7717,8 @@ let wizState=null;
 function abrirAtualizarBase(){
   wizState={idx:0, mode:'intro', contMode:'menu',
     demSel:new Set(), afaReSel:new Set(), afaAddSel:new Set(),
-    rev:{}, doneDem:[], doneAfa:[], contBaseline:null, demConfirmar:false,
+    rev:{}, doneDem:[], doneAfa:[], contBaseline:null,
+    demConfirmar:false, afaConfirmar:null, afaMotivo:'',
     ferTab:'retorno', ferAnivDone:false, ferMesRef:null,
     entFeitos:new Set(), retFeitos:new Set()};
   if(!document.getElementById('wiz-overlay')){
@@ -7751,7 +7751,17 @@ function wizUpdSelCount(key){
   const cfg=map[key]; if(!cfg) return;
   const el=document.getElementById(cfg[1]); if(!el) return;
   const n=wizState[cfg[0]].size;
-  el.textContent = n ? '('+n+' selecionado'+(n>1?'s':'')+')' : '';
+  el.textContent = n ? (n+' selecionado'+(n>1?'s':'')) : '';
+}
+
+function wizPanel(title, right, body){
+  return '<div class="wiz-panel"><div class="wiz-panel__head"><div class="wiz-panel__title">'+title+'</div>'+(right||'<span></span>')+'</div>'
+    +'<div class="wiz-panel__body">'+body+'</div></div>';
+}
+function wizSearchHTML(id,ph){
+  const cb={'wiz-dem-q':'wizRenderDemList','wiz-afare-q':'wizRenderAfaReList','wiz-afaadd-q':'wizRenderAfaAddList','ent-q':'wizFerRenderEntList','aj-q':'wizFerAjusteList'}[id];
+  return '<div class="wiz-search"><i class="ti ti-search"></i>'
+    +'<input type="text" id="'+id+'" class="wiz-input" placeholder="'+ph+'" oninput="'+cb+'()"></div>';
 }
 
 function renderWizard(){
@@ -7759,7 +7769,7 @@ function renderWizard(){
   const step=WIZ_STEPS[wizState.idx];
   const stepper=WIZ_STEPS.map((s,i)=>{
     const done=i<wizState.idx, cur=i===wizState.idx;
-    const bg=cur?'var(--brand)':(done?'var(--brand)':'#E5E7EB');
+    const bg=(cur||done)?'var(--brand)':'#E5E7EB';
     const col=(cur||done)?'#fff':'#6B7280';
     return '<div style="display:flex;align-items:center;gap:6px">'
       +'<div style="width:28px;height:28px;border-radius:50%;background:'+bg+';color:'+col+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">'+(done?'✓':(i+1))+'</div>'
@@ -7770,7 +7780,8 @@ function renderWizard(){
   const body = wizState.mode==='intro' ? wizIntroHTML(step) : wizWorkHTML(step);
   ov.innerHTML='<div class="ds" style="background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;margin:auto">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 22px;background:var(--brand);color:#fff">'
-      +'<div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-refresh"></i> Atualizar Base</div>'
+      +'<div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-refresh"></i> Atualizar Base'
+        +(wizState.mode==='work'?'<span style="opacity:.85;font-weight:500;font-size:14px"> · '+step.label+'</span>':'')+'</div>'
       +'<button onclick="fecharWizard(false)" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">&times;</button>'
     +'</div>'
     +'<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--surface2,#F8F9FB)">'+stepper+'</div>'
@@ -7782,7 +7793,7 @@ function renderWizard(){
       if(wizState.contMode==='individual'){ try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){} }
     }
     if(step.id==='demissoes' && !wizState.rev.demissoes && !wizState.demConfirmar) wizRenderDemList();
-    if(step.id==='afastados' && !wizState.rev.afastados){ wizRenderAfaReList(); wizRenderAfaAddList(); }
+    if(step.id==='afastados' && !wizState.rev.afastados && !wizState.afaConfirmar){ wizRenderAfaReList(); wizRenderAfaAddList(); }
     if(step.id==='ferias'){
       if(!wizState.ferAnivDone){ wizState.ferAnivDone=true; wizRodarAniversarios(); }
       wizFerRenderBody();
@@ -7802,23 +7813,20 @@ function wizIntroHTML(step){
 }
 function wizFooter(){
   const ultima = wizState.idx===WIZ_STEPS.length-1;
-  return '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">'
+  return '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:6px;padding-top:16px;border-top:1px solid var(--border)">'
     +'<button class="btn btn-ghost" onclick="fecharWizard(false)">Salvar e encerrar</button>'
     +'<button class="btn btn-primary" onclick="wizAvancar()">'+(ultima?'Concluir':'Salvar e seguir &raquo;')+'</button>'
     +'</div>';
 }
 function wizWorkHTML(step){
-  const head='<div class="wiz-head"><div class="wiz-head__chip">'+step.icon+'</div>'
-    +'<div><div class="wiz-head__title">'+step.label+'</div><div class="wiz-head__sub">'+WIZ_META[step.id]+'</div></div></div>';
   let inner='';
   if(step.id==='contratacoes') inner=wizContratacoesHTML();
   else if(step.id==='demissoes') inner=wizDemissoesHTML();
   else if(step.id==='afastados') inner=wizAfastadosHTML();
   else if(step.id==='ferias') inner=wizFeriasHTML();
-  return head+inner+wizFooter();
+  return '<p class="wiz-desc">'+WIZ_META[step.id]+'</p>'+inner+wizFooter();
 }
 
-// Linha selecionavel (checkbox) — usada em Demissoes e Afastados.
 function wizRow(setName,c){
   const checked=wizState[setName].has(c._id)?'checked':'';
   return '<label class="wiz-item">'
@@ -7831,27 +7839,25 @@ function wizRow(setName,c){
 function wizBusca(c,q){
   return (c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q);
 }
-function wizSearchHTML(id,ph){
-  return '<div class="wiz-search"><i class="ti ti-search"></i>'
-    +'<input type="text" id="'+id+'" class="wiz-input" placeholder="'+ph+'" oninput="'+({'wiz-dem-q':'wizRenderDemList','wiz-afare-q':'wizRenderAfaReList','wiz-afaadd-q':'wizRenderAfaAddList','ent-q':'wizFerRenderEntList','aj-q':'wizFerAjusteList'}[id])+'()"></div>';
+function wizConfItem(id,c,tipo){
+  return '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
+    +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
+    +dsStatusBadge(c.status)
+    +'<button class="btn btn-ghost btn-sm" onclick="'+tipo+'"><i class="ti ti-x"></i> Excluir</button></div>';
 }
 
-// ── Revisao (Demissoes / Afastados) ──────────────────────────────
+// ── Revisao pos-acao (Demissoes / Afastados) ─────────────────────
 function wizRevHTML(step){
   const done = step==='demissoes'?wizState.doneDem:wizState.doneAfa;
   const rows = done.length ? done.map((e,i)=>
-      '<div class="wiz-item">'
-      +'<span class="wiz-item__main"><span class="wiz-item__name">'+e.nome+'</span> '
+      '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+e.nome+'</span> '
         +(e.info?'<span class="wiz-item__sub">'+e.info+'</span>':'')+'</span>'
       +dsStatusBadge(e.para)
-      +'<button class="btn btn-ghost btn-sm" onclick="wizDesfazer(\''+step+'\','+i+')"><i class="ti ti-arrow-back-up"></i> Desfazer</button>'
-    +'</div>').join('')
+      +'<button class="btn btn-ghost btn-sm" onclick="wizDesfazer(\''+step+'\','+i+')"><i class="ti ti-arrow-back-up"></i> Desfazer</button></div>').join('')
     : '<div class="wiz-empty">Nada registrado nesta etapa.</div>';
-  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
-      +'<div class="wiz-note" style="margin:0"><i class="ti ti-check" style="color:var(--brand)"></i> <strong>'+done.length+'</strong> registrado(s) nesta etapa. Você pode desfazer ou adicionar mais.</div>'
-      +'<button class="btn btn-primary btn-sm" onclick="wizRevSair(\''+step+'\')"><i class="ti ti-plus"></i> Adicionar mais</button>'
-    +'</div>'
-    +'<div class="wiz-list wiz-list--scroll">'+rows+'</div>';
+  return '<div class="alert alert-success" style="margin-bottom:14px"><i class="ti ti-circle-check"></i> <strong>'+done.length+'</strong> registrado(s) nesta etapa. Desfaça algum ou adicione mais antes de seguir.</div>'
+    + wizPanel('<i class="ti ti-list-check"></i> Registrados nesta etapa','<span class="wiz-pill">'+done.length+'</span>','<div class="wiz-list wiz-list--scroll">'+rows+'</div>')
+    + '<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizRevSair(\''+step+'\')"><i class="ti ti-plus"></i> Adicionar mais</button></div>';
 }
 function wizRevSair(step){ wizState.rev[step]=false; renderWizard(); }
 async function wizDesfazer(step,i){
@@ -7881,25 +7887,24 @@ function wizContratacoesHTML(){
   }
   if(m==='lote'){
     return '<button class="btn btn-ghost btn-sm" onclick="wizContModo(\'menu\')"><i class="ti ti-arrow-left"></i> Voltar</button>'
-      +'<p class="wiz-note" style="margin-top:12px">Suba a planilha <strong>modelo-novos-colaboradores</strong> preenchida. O sistema cria só os novos (ignora quem já existe).</p>'
-      +'<div class="wiz-upload" onclick="document.getElementById(\'import-file\').click()">'
-        +'<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="processarNovos(event)">'
-        +'<div style="font-size:26px;color:var(--brand);margin-bottom:6px"><i class="ti ti-upload"></i></div>'
-        +'<div style="font-weight:600">Selecionar planilha modelo</div>'
-        +'<div class="wiz-item__sub">.xlsx ou .xls</div>'
-      +'</div>'
-      +'<div id="import-preview" style="margin-top:14px"></div>';
+      + wizPanel('<i class="ti ti-file-spreadsheet"></i> Importar planilha modelo','',
+          '<p class="wiz-note">Suba a planilha <strong>modelo-novos-colaboradores</strong> preenchida. O sistema cria só os novos (ignora quem já existe).</p>'
+          +'<div class="wiz-upload" onclick="document.getElementById(\'import-file\').click()">'
+            +'<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="processarNovos(event)">'
+            +'<div style="font-size:26px;color:var(--brand);margin-bottom:6px"><i class="ti ti-upload"></i></div>'
+            +'<div style="font-weight:600">Selecionar planilha modelo</div><div class="wiz-item__sub">.xlsx ou .xls</div>'
+          +'</div>'
+          +'<div id="import-preview" style="margin-top:14px"></div>');
   }
   const add=wizContAdicionados();
   let painel='';
   if(add.length){
-    painel='<div style="margin-top:20px">'
-      +'<div class="wiz-section-t"><i class="ti ti-user-check" style="color:var(--brand)"></i> Adicionados nesta etapa ('+add.length+')</div>'
-      +'<div class="wiz-list wiz-list--scroll">'
+    painel=wizPanel('<i class="ti ti-user-check"></i> Adicionados nesta etapa','<span class="wiz-pill">'+add.length+'</span>',
+      '<div class="wiz-list wiz-list--scroll">'
       +add.map(c=>'<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
         +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
         +'<button class="btn btn-ghost btn-sm" onclick="wizExcluirContratacao(\''+c._id+'\')"><i class="ti ti-trash"></i> Excluir</button></div>').join('')
-      +'</div></div>';
+      +'</div>');
   }
   return '<div class="wiz-opts">'
       +'<button class="wiz-optcard" onclick="wizContModo(\'individual\')"><span class="wiz-optcard__ic"><i class="ti ti-user-plus"></i></span>'
@@ -7919,30 +7924,11 @@ async function wizExcluirContratacao(id){
 function wizDemissoesHTML(){
   if(wizState.rev.demissoes) return wizRevHTML('demissoes');
   if(wizState.demConfirmar) return wizDemConfirmHTML();
-  return '<p class="wiz-note">Busque e selecione quem foi desligado. <span id="wiz-dem-count" class="wiz-count"></span></p>'
-    +wizSearchHTML('wiz-dem-q','Buscar por nome, matrícula ou departamento...')
-    +'<div id="wiz-dem-list" class="wiz-list wiz-list--scroll"></div>'
-    +'<div class="wiz-actions"><button class="btn btn-primary btn-sm" onclick="wizDemRevisar()">Revisar selecionados <i class="ti ti-arrow-right"></i></button></div>';
+  return wizPanel('<i class="ti ti-user-minus"></i> Selecionar quem foi desligado','<span id="wiz-dem-count" class="wiz-pill"></span>',
+      wizSearchHTML('wiz-dem-q','Buscar por nome, matrícula ou departamento...')
+      +'<div id="wiz-dem-list" class="wiz-list wiz-list--scroll"></div>')
+    +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizDemRevisar()">Revisar selecionados <i class="ti ti-arrow-right"></i></button></div>';
 }
-function wizDemRevisar(){
-  if(!wizState.demSel.size){ toast('Selecione ao menos um colaborador.','warning'); return; }
-  wizState.demConfirmar=true; renderWizard();
-}
-function wizDemConfirmHTML(){
-  const ids=[...wizState.demSel];
-  const rows=ids.map(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return '';
-    return '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
-      +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
-      +dsStatusBadge(c.status)
-      +'<button class="btn btn-ghost btn-sm" onclick="wizDemExcluir(\''+id+'\')"><i class="ti ti-x"></i> Excluir</button></div>';
-  }).join('');
-  return '<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Confira os <strong>'+ids.length+'</strong> colaborador(es) que serão marcados como <strong>Demitido</strong>. Remova quem não deve entrar ou adicione mais antes de confirmar.</div>'
-    +'<div class="wiz-list wiz-list--scroll">'+rows+'</div>'
-    +'<div class="wiz-actions"><button class="btn btn-ghost btn-sm" onclick="wizDemAddMais()"><i class="ti ti-plus"></i> Adicionar mais</button>'
-    +'<button class="btn btn-danger btn-sm" onclick="wizDemitir()"><i class="ti ti-user-minus"></i> Confirmar demissão ('+ids.length+')</button></div>';
-}
-function wizDemAddMais(){ wizState.demConfirmar=false; renderWizard(); }
-function wizDemExcluir(id){ wizState.demSel.delete(id); if(!wizState.demSel.size) wizState.demConfirmar=false; renderWizard(); }
 function wizRenderDemList(){
   const cont=document.getElementById('wiz-dem-list'); if(!cont) return;
   const q=(document.getElementById('wiz-dem-q')?.value||'').toLowerCase().trim();
@@ -7952,6 +7938,21 @@ function wizRenderDemList(){
   cont.innerHTML = lista.length ? lista.map(c=>wizRow('demSel',c)).join('') : '<div class="wiz-empty">Nenhum colaborador encontrado.</div>';
   wizUpdSelCount('dem');
 }
+function wizDemRevisar(){
+  if(!wizState.demSel.size){ toast('Selecione ao menos um colaborador.','warning'); return; }
+  wizState.demConfirmar=true; renderWizard();
+}
+function wizDemConfirmHTML(){
+  const ids=[...wizState.demSel];
+  const rows=ids.map(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return '';
+    return wizConfItem(id,c,'wizDemExcluir(\''+id+'\')'); }).join('');
+  return '<div class="alert alert-warning" style="margin-bottom:14px"><i class="ti ti-alert-triangle"></i> Confira os <strong>'+ids.length+'</strong> colaborador(es) que serão marcados como <strong>Demitido</strong>.</div>'
+    + wizPanel('<i class="ti ti-user-minus"></i> Confirmar demissões','<span class="wiz-pill">'+ids.length+'</span>','<div class="wiz-list wiz-list--scroll">'+rows+'</div>')
+    + '<div class="wiz-actions" style="justify-content:space-between"><button class="btn btn-ghost btn-sm" onclick="wizDemAddMais()"><i class="ti ti-plus"></i> Adicionar mais</button>'
+    + '<button class="btn btn-danger btn-sm" onclick="wizDemitir()"><i class="ti ti-user-minus"></i> Confirmar demissão ('+ids.length+')</button></div>';
+}
+function wizDemAddMais(){ wizState.demConfirmar=false; renderWizard(); }
+function wizDemExcluir(id){ wizState.demSel.delete(id); if(!wizState.demSel.size) wizState.demConfirmar=false; renderWizard(); }
 async function wizDemitir(){
   const ids=[...wizState.demSel];
   if(!ids.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
@@ -7973,23 +7974,18 @@ async function wizDemitir(){
 // ── ETAPA 3: AFASTADOS ───────────────────────────────────────────
 function wizAfastadosHTML(){
   if(wizState.rev.afastados) return wizRevHTML('afastados');
+  if(wizState.afaConfirmar) return wizAfaConfirmHTML(wizState.afaConfirmar);
   const opts=STATUS_SO_CESTA.map(s=>'<option value="'+s+'">'+getStatusInfo(s).label+'</option>').join('');
-  return '<div style="margin-bottom:22px">'
-    +'<div class="wiz-section-t"><i class="ti ti-arrow-back-up" style="color:var(--brand)"></i> Tirar de afastamento</div>'
-    +'<p class="wiz-note">Quem voltou a trabalhar (status volta para Trabalhando). <span id="wiz-afare-count" class="wiz-count"></span></p>'
-    +wizSearchHTML('wiz-afare-q','Buscar afastado...')
-    +'<div id="wiz-afare-list" class="wiz-list wiz-list--scroll"></div>'
-    +'<div class="wiz-actions"><button class="btn btn-success btn-sm" onclick="wizReativar()"><i class="ti ti-check"></i> Reativar selecionados</button></div>'
-    +'</div>'
-    +'<div>'
-    +'<div class="wiz-section-t"><i class="ti ti-first-aid-kit" style="color:var(--brand)"></i> Adicionar afastamento</div>'
-    +'<div class="wiz-actions" style="margin:0 0 8px"><span class="wiz-item__sub" style="font-weight:600">Motivo:</span>'
-      +'<select id="wiz-afa-status" class="wiz-sel">'+opts+'</select></div>'
-    +'<p class="wiz-note">Selecione quem entra em afastamento. <span id="wiz-afaadd-count" class="wiz-count"></span></p>'
-    +wizSearchHTML('wiz-afaadd-q','Buscar quem afastar...')
-    +'<div id="wiz-afaadd-list" class="wiz-list wiz-list--scroll"></div>'
-    +'<div class="wiz-actions"><button class="btn btn-warning btn-sm" onclick="wizAfastar()"><i class="ti ti-first-aid-kit"></i> Afastar selecionados</button></div>'
-    +'</div>';
+  const p1=wizPanel('<i class="ti ti-arrow-back-up"></i> Tirar de afastamento','<span id="wiz-afare-count" class="wiz-pill"></span>',
+      wizSearchHTML('wiz-afare-q','Buscar afastado...')
+      +'<div id="wiz-afare-list" class="wiz-list wiz-list--scroll"></div>'
+      +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'reativar\')">Revisar <i class="ti ti-arrow-right"></i></button></div>');
+  const p2=wizPanel('<i class="ti ti-first-aid-kit"></i> Adicionar afastamento','<span id="wiz-afaadd-count" class="wiz-pill"></span>',
+      '<div class="wiz-fields" style="margin:0 0 12px"><div class="wiz-field"><label>Motivo</label><select id="wiz-afa-status" class="wiz-sel">'+opts+'</select></div></div>'
+      +wizSearchHTML('wiz-afaadd-q','Buscar quem afastar...')
+      +'<div id="wiz-afaadd-list" class="wiz-list wiz-list--scroll"></div>'
+      +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'afastar\')">Revisar <i class="ti ti-arrow-right"></i></button></div>');
+  return p1+p2;
 }
 function wizRenderAfaReList(){
   const cont=document.getElementById('wiz-afare-list'); if(!cont) return;
@@ -8009,6 +8005,29 @@ function wizRenderAfaAddList(){
   cont.innerHTML = lista.length ? lista.map(c=>wizRow('afaAddSel',c)).join('') : '<div class="wiz-empty">Nenhum colaborador encontrado.</div>';
   wizUpdSelCount('afaAdd');
 }
+function wizAfaRevisar(tipo){
+  if(tipo==='reativar'){ if(!wizState.afaReSel.size){ toast('Selecione ao menos um afastado.','warning'); return; } }
+  else { if(!wizState.afaAddSel.size){ toast('Selecione ao menos um colaborador.','warning'); return; }
+    wizState.afaMotivo=document.getElementById('wiz-afa-status')?.value||'Afastado'; }
+  wizState.afaConfirmar=tipo; renderWizard();
+}
+function wizAfaConfirmHTML(tipo){
+  const isRe=tipo==='reativar';
+  const set=isRe?wizState.afaReSel:wizState.afaAddSel;
+  const ids=[...set];
+  const alvo=isRe?'Trabalhando':(wizState.afaMotivo||'Afastado');
+  const rows=ids.map(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return '';
+    return wizConfItem(id,c,'wizAfaExcluir(\''+tipo+'\',\''+id+'\')'); }).join('');
+  const titulo=isRe?'Confirmar reativação':'Confirmar afastamento';
+  const ic=isRe?'arrow-back-up':'first-aid-kit';
+  const acao=isRe?'<button class="btn btn-success btn-sm" onclick="wizReativar()"><i class="ti ti-check"></i> Reativar ('+ids.length+')</button>'
+                 :'<button class="btn btn-warning btn-sm" onclick="wizAfastar()"><i class="ti ti-first-aid-kit"></i> Afastar ('+ids.length+')</button>';
+  return '<div class="alert alert-info" style="margin-bottom:14px"><i class="ti ti-info-circle"></i> <strong>'+ids.length+'</strong> colaborador(es) → <strong>'+(isRe?'Trabalhando':getStatusInfo(alvo).label)+'</strong>. Revise antes de confirmar.</div>'
+    + wizPanel('<i class="ti ti-'+ic+'"></i> '+titulo,'<span class="wiz-pill">'+ids.length+'</span>','<div class="wiz-list wiz-list--scroll">'+rows+'</div>')
+    + '<div class="wiz-actions" style="justify-content:space-between"><button class="btn btn-ghost btn-sm" onclick="wizAfaAddMais()"><i class="ti ti-plus"></i> Adicionar mais</button>'+acao+'</div>';
+}
+function wizAfaAddMais(){ wizState.afaConfirmar=null; renderWizard(); }
+function wizAfaExcluir(tipo,id){ const set=tipo==='reativar'?wizState.afaReSel:wizState.afaAddSel; set.delete(id); if(!set.size) wizState.afaConfirmar=null; renderWizard(); }
 async function wizReativar(){
   const ids=[...wizState.afaReSel];
   if(!ids.length){ toast('Selecione ao menos um afastado.','warning'); return; }
@@ -8017,21 +8036,21 @@ async function wizReativar(){
     const de=c.status; c.status='Trabalhando'; b.set(window._doc('colaboradores',id),c);
     afet.push(c); wizState.doneAfa.push({id,nome:c.nome,de,para:'Trabalhando',info:'reativado'}); });
   if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
-  try{ await b.commit(); wizState.afaReSel.clear(); wizState.rev.afastados=true;
+  try{ await b.commit(); wizState.afaReSel.clear(); wizState.afaConfirmar=null; wizState.rev.afastados=true;
     toast(afet.length+' colaborador(es) reativados.','success'); renderWizard();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 async function wizAfastar(){
   const ids=[...wizState.afaAddSel];
   if(!ids.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
-  const st=document.getElementById('wiz-afa-status')?.value||'Afastado';
+  const st=wizState.afaMotivo||'Afastado';
   const lbl=getStatusInfo(st).label;
   const b=window._writeBatch(window._db); const afet=[];
   ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
     const de=c.status; c.status=st; b.set(window._doc('colaboradores',id),c);
     afet.push(c); wizState.doneAfa.push({id,nome:c.nome,de,para:st,info:lbl}); });
   if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
-  try{ await b.commit(); wizState.afaAddSel.clear(); wizState.rev.afastados=true;
+  try{ await b.commit(); wizState.afaAddSel.clear(); wizState.afaConfirmar=null; wizState.rev.afastados=true;
     toast(afet.length+' colaborador(es) afastados ('+lbl+').','success'); renderWizard();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
@@ -8122,8 +8141,9 @@ async function wizRodarAniversarios(){
 
 // ---- Retorno ----
 function wizFerBodyRetorno(){
-  return '<p class="wiz-note">Pessoas com status <strong>Férias</strong>. Aplica <strong>saldo − gozados − comprados</strong>, reprograma o agendamento e volta o status para Trabalhando.</p>'
-    +'<div id="ret-list"></div>';
+  return wizPanel('<i class="ti ti-arrow-back-up"></i> Retorno de férias','',
+    '<p class="wiz-note" style="margin-top:0">Pessoas com status <strong>Férias</strong>. Aplica <strong>saldo − gozados − comprados</strong>, reprograma o agendamento e volta o status para Trabalhando.</p>'
+    +'<div id="ret-list"></div>');
 }
 function wizFerRenderRetList(){
   const cont=document.getElementById('ret-list'); if(!cont) return;
@@ -8170,10 +8190,11 @@ function wizFerBodyEntrada(){
   const ref=wizState.ferMesRef||MESES_FER[new Date().getMonth()];
   const sel='<select onchange="wizState.ferMesRef=this.value;wizFerRenderEntList()" class="wiz-sel">'
     +MESES_FER.map(m=>'<option value="'+m+'" '+(m===ref?'selected':'')+'>'+m+'</option>').join('')+'</select>';
-  return '<div class="wiz-actions" style="margin:0 0 10px"><span class="wiz-item__sub" style="font-weight:600">Mês de referência:</span>'+sel+'</div>'
+  return wizPanel('<i class="ti ti-umbrella"></i> Entradas de férias','',
+    '<div class="wiz-actions" style="margin:0 0 10px"><span class="wiz-item__sub" style="font-weight:600">Mês de referência:</span>'+sel+'</div>'
     +'<p class="wiz-note">Confirme a entrada e os dias — <strong>comprados</strong> impactam os benefícios. Status muda para Férias.</p>'
     +wizSearchHTML('ent-q','Buscar (qualquer mês) para antecipar alguém...')
-    +'<div id="ent-list" style="margin-top:10px"></div>';
+    +'<div id="ent-list" style="margin-top:10px"></div>');
 }
 function wizFerRenderEntList(){
   const cont=document.getElementById('ent-list'); if(!cont) return;
@@ -8192,8 +8213,7 @@ function wizFerRenderEntList(){
 }
 function wizFerEntRow(c,ref){
   if(wizState.entFeitos.has(c._id)) return wizFerConfirmedRow(c,'entrada');
-  const outroMes = c.ferMes && c.ferMes!==ref
-    ? ' <span class="badge badge--warning">agend.: '+c.ferMes+'</span>' : '';
+  const outroMes = c.ferMes && c.ferMes!==ref ? ' <span class="badge badge--warning">agend.: '+c.ferMes+'</span>' : '';
   return '<div id="ent-row-'+c._id+'" class="wiz-row">'
     +'<div class="wiz-row__top">'+c.nome+outroMes+' <span class="wiz-item__sub">'+(c.depto||'—')+' &middot; saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d</span></div>'
     +'<div class="wiz-fields">'
@@ -8220,13 +8240,14 @@ async function wizFerConfirmarEntrada(id){
 // ---- Ferias coletivas ----
 function wizFerBodyColetiva(){
   const deptos=getDeptoList();
-  return '<p class="wiz-note">Baixa de dias no saldo de um grupo (férias coletivas). O saldo <strong>pode ficar negativo</strong> até o próximo vencimento.</p>'
+  return wizPanel('<i class="ti ti-users-group"></i> Férias coletivas','',
+    '<p class="wiz-note" style="margin-top:0">Baixa de dias no saldo de um grupo. O saldo <strong>pode ficar negativo</strong> até o próximo vencimento.</p>'
     +'<div class="wiz-fields" style="margin-top:0">'
       +'<div class="wiz-field"><label>Dias a abater</label><input type="number" id="col-dias" class="wiz-num" min="0"></div>'
       +'<div class="wiz-field"><label>Escopo</label><select id="col-dep" class="wiz-sel"><option value="">Todos os ativos</option>'+deptos.map(d=>'<option value="'+d+'">Depto: '+d+'</option>').join('')+'</select></div>'
       +'<label class="wiz-item__sub" style="display:flex;align-items:center;gap:6px;height:34px"><input type="checkbox" id="col-status" style="accent-color:var(--brand)"> Mudar status para Férias</label>'
       +'<button class="btn btn-warning btn-sm" onclick="wizFerColetiva()"><i class="ti ti-users-group"></i> Aplicar</button>'
-    +'</div>';
+    +'</div>');
 }
 async function wizFerColetiva(){
   const dias=Math.max(0,fnum(document.getElementById('col-dias')?.value));
@@ -8258,9 +8279,10 @@ async function wizFerColetiva(){
 
 // ---- Ajuste manual ----
 function wizFerBodyAjuste(){
-  return '<p class="wiz-note">Ajuste manual do saldo (exceções). Exige <strong>justificativa</strong> e registra quem fez.</p>'
+  return wizPanel('<i class="ti ti-adjustments-horizontal"></i> Ajuste manual de saldo','',
+    '<p class="wiz-note" style="margin-top:0">Exceções. Exige <strong>justificativa</strong> e registra quem fez.</p>'
     +wizSearchHTML('aj-q','Buscar colaborador por nome, matrícula ou depto...')
-    +'<div id="aj-list" style="margin-top:10px"></div>';
+    +'<div id="aj-list" style="margin-top:10px"></div>');
 }
 function wizFerAjusteList(){
   const cont=document.getElementById('aj-list'); if(!cont) return;

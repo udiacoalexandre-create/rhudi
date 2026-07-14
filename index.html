@@ -196,6 +196,16 @@
 #wiz-overlay .wiz-num:focus,#wiz-overlay .wiz-sel:focus{ outline:none;border-color:var(--brand); }
 #wiz-overlay .wiz-upload{ border:2px dashed var(--border);border-radius:var(--radius-lg);padding:28px;text-align:center;cursor:pointer;transition:border-color .15s;margin-top:10px; }
 #wiz-overlay .wiz-upload:hover{ border-color:var(--brand); }
+/* Paineis (mesma linguagem das "zonas" da Base) */
+#wiz-overlay .wiz-desc{ font-size:13px;color:var(--text-secondary);margin:0 0 16px; }
+#wiz-overlay .wiz-panel{ background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden; }
+#wiz-overlay .wiz-panel__head{ padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
+#wiz-overlay .wiz-panel__title{ font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px; }
+#wiz-overlay .wiz-panel__title .ti{ color:var(--brand); }
+#wiz-overlay .wiz-panel__body{ padding:16px; }
+#wiz-overlay .wiz-panel__body>.wiz-list:first-child{ margin-top:0; }
+#wiz-overlay .wiz-pill{ background:var(--success-bg);color:var(--brand);font-size:12px;font-weight:700;border-radius:20px;padding:2px 10px; }
+#wiz-overlay .wiz-pill:empty{ display:none; }
 /* Tabela clara: sobrescreve o cabecalho escuro e as faixas de coluna, so na Base */
 .ds .tbl thead th{ background:#e2e8f0;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;font-size:11px;font-weight:600;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong); }
 .ds .colab-tbl tbody td:nth-child(odd),
