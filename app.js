@@ -1101,55 +1101,52 @@ function colaboradoresUnicos(){
   return Object.values(byKey);
 }
 
-// Painel de contagem por situação (pessoas únicas do escopo; duplicados MEI/Sócio contam 1x)
-function renderStatusResumo(){
-  const el=document.getElementById('bl-status-resumo'); if(!el) return;
-  const todos=colaboradoresUnicos();
-  const unicos=todos.filter(c=>(c.filtro||'')!=='PART');       // funcionários
-  const particulares=todos.filter(c=>(c.filtro||'')==='PART'); // à parte
-  // Total = funcionários ATIVOS (demitido fica no histórico, fora do total)
-  const ativos=unicos.filter(c=>!_statusKey(c.status).includes('DEMIT'));
-  const cont={};
-  unicos.forEach(c=>{ const s=(c.status||'—'); cont[s]=(cont[s]||0)+1; });
-  const ordem=STATUS_LIST.map(x=>x.v);
-  const chaves=Object.keys(cont).sort((a,b)=>{
-    const ia=ordem.indexOf(a),ib=ordem.indexOf(b);
-    return (ia<0?99:ia)-(ib<0?99:ib);
-  });
-  const chips=chaves.map(s=>{
-    const info=getStatusInfo(s);
-    return '<div style="display:inline-flex;align-items:center;gap:6px;background:'+info.bg+';color:'+info.cor+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600">'
-      +'<span style="font-size:15px;font-weight:800">'+cont[s]+'</span> '+info.label+'</div>';
-  }).join('');
-  const chipPart = particulares.length
-    ? '<div style="display:inline-flex;align-items:center;gap:6px;background:#CCFBF1;color:#0F766E;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+particulares.length+'</span> Particulares</div>'
-    : '';
-  el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-    +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Situação <span style="text-transform:none;font-weight:400">(pessoas únicas — duplicados MEI/Sócio contam 1×)</span>:</span>'
-    +chips+'<div style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-dark);color:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600"><span style="font-size:15px;font-weight:800">'+ativos.length+'</span> Total ativos</div>'
-    +chipPart+'</div>';
+// Card branco padrao (mesmo visual do Radar/Ferias Agendadas).
+function _resumoCard(n, label, cls, valColor){
+  return '<div class="stat-card'+(cls?' '+cls:'')+'">'
+    +'<div class="stat-val"'+(valColor?' style="color:'+valColor+'"':'')+'>'+n+'</div>'
+    +'<div class="stat-label">'+label+'</div></div>';
 }
 
-// Painel por tipo de contrato (cruza com status; pessoas únicas).
-// Diretoria (DIR) e Terceiros (TER) não têm duplicata MEI/Sócio, então
-// a contagem sobre colaboradoresUnicos() é exata.
+// Resumo por SITUACAO (pessoas unicas, exceto Particulares).
+// Afastados agrupa TODOS os motivos (Afastado, Aux. Doenca, Acidente, etc.).
+// Demitidos NAO entram (ficam so no historico). Total de ativos = Trabalhando + Ferias + Afastados.
+function renderStatusResumo(){
+  const el=document.getElementById('bl-status-resumo'); if(!el) return;
+  const unicos=colaboradoresUnicos().filter(c=>(c.filtro||'').toUpperCase()!=='PART');
+  const ehNA=c=>{ const k=_statusKey(c.status); return k==='N/A'||k==='NA'; };
+  const nTrab=unicos.filter(c=>statusGrupo(c.status)==='trabalhando' && !ehNA(c)).length;
+  const nFer =unicos.filter(c=>statusGrupo(c.status)==='ferias').length;
+  const nAfa =unicos.filter(c=>statusGrupo(c.status)==='so_cesta').length;
+  const nNA  =unicos.filter(ehNA).length;
+  const nAtivos=nTrab+nFer+nAfa;
+  el.innerHTML='<div class="stats-grid" style="margin-bottom:12px">'
+    +_resumoCard(nTrab,'Trabalhando','green','var(--green)')
+    +_resumoCard(nFer,'Férias','blue','var(--blue)')
+    +_resumoCard(nAfa,'Afastados','orange','var(--orange)')
+    +_resumoCard(nNA,'N/A','yellow','var(--text2)')
+    +'<div class="stat-card" style="background:var(--blue-dark);border-color:var(--blue-dark)">'
+      +'<div class="stat-val" style="color:#fff">'+nAtivos+'</div>'
+      +'<div class="stat-label" style="color:#DBEAFE">Total de ativos</div></div>'
+    +'</div>';
+}
+
+// Resumo por TIPO de contrato (base ativa, sem demitidos).
+// Diretoria (DIR), Terceiros (TER), Socios (SOC) e Duplicados (registros MEI/Socio
+// que compartilham CPF com o cadastro principal — colapsados no dedup).
 function renderTipoResumo(){
   const el=document.getElementById('bl-tipo-resumo'); if(!el) return;
-  const unicos=colaboradoresUnicos();
+  const ativos=colaboradores.filter(c=>!_statusKey(c.status).includes('DEMIT'));
   const cont={};
-  unicos.forEach(c=>{ const t=(c.filtro||'OK').toUpperCase(); cont[t]=(cont[t]||0)+1; });
-  const tipos=[
-    {cod:'DIR', label:'👑 Diretoria', bg:'#FEE2E2', cor:'#991B1B'},
-    {cod:'TER', label:'🟠 Terceiros', bg:'#FFEDD5', cor:'#9A3412'},
-    {cod:'PART',label:'👤 Particulares', bg:'#CCFBF1', cor:'#0F766E'},
-  ];
-  const chips=tipos.map(t=>
-    '<div style="display:inline-flex;align-items:center;gap:6px;background:'+t.bg+';color:'+t.cor+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600">'
-    +'<span style="font-size:15px;font-weight:800">'+(cont[t.cod]||0)+'</span> '+t.label+'</div>'
-  ).join('');
-  el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
-    +'<span class="text-xs text-muted" style="text-transform:uppercase;font-weight:700;letter-spacing:.5px">Por tipo de contrato:</span>'
-    +chips+'</div>';
+  ativos.forEach(c=>{ const t=(c.filtro||'OK').toUpperCase(); cont[t]=(cont[t]||0)+1; });
+  const seen=new Set(); let dup=0;
+  ativos.forEach(c=>{ const cpf=(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome)); if(seen.has(cpf)) dup++; else seen.add(cpf); });
+  el.innerHTML='<div class="stats-grid" style="margin-bottom:12px">'
+    +_resumoCard(cont.DIR||0,'Diretoria','red','var(--red)')
+    +_resumoCard(cont.TER||0,'Terceiros','orange','var(--orange)')
+    +_resumoCard(cont.SOC||0,'Sócios','purple','var(--purple)')
+    +_resumoCard(dup,'Duplicados','yellow','var(--text2)')
+    +'</div>';
 }
 
 function renderColabList(){
