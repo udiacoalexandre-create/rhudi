@@ -5009,6 +5009,15 @@ function renderFerRadar(){
 function renderFarois(dados){
   const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
   const bgMap={verde:'#ECFDF5',amarelo:'#FEFCE8',laranja:'#FFF7ED',vermelho:'#FEF2F2',sem:'#F9FAFB',na:'#F3F4F6'};
+  const farolVar={vermelho:'danger',laranja:'warning',amarelo:'accent',verde:'success',sem:'neutral',na:'neutral'};
+  const ddmmaa=d=>d?(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2)):'';
+  const agTag=c=>{
+    if(!c.ferMes) return '<span class="rad-tag rad-tag--none">Sem agendamento</span>';
+    const ag=agendamentoStatus(c,getFarol(c).vencDate);
+    const cls=ag.cor==='verde'?'rad-tag--ok':(ag.cor==='vermelha'?'rad-tag--bad':'rad-tag--neu');
+    const lbl=ag.cor==='verde'?'no prazo':(ag.cor==='vermelha'?'fora do prazo':'agendado');
+    return '<span class="rad-tag '+cls+'">'+lbl+'</span>';
+  };
 
   const colunas=[
     {cor:'vermelho',titulo:'Vencido',icone:''},
@@ -5033,22 +5042,21 @@ function renderFarois(dados){
           +itens.map(c=>{
             const f=c.farol;
             const saldo=(f.dias!=null?f.dias:30);
-            const vencTxt = f.cor==='sem' ? 'Sem data de vencimento'
-              : (f.meses<0 ? 'Venceu em '+f.vencStr : 'Vence em '+f.vencStr);
-            const vencIc = f.cor==='sem' ? 'calendar-x' : (f.meses<0 ? 'alert-triangle' : 'calendar-due');
-            let agHtml;
-            if(!c.ferMes){ agHtml='<span class="rad-tag rad-tag--none">Sem agendamento</span>'; }
-            else {
-              const ag=agendamentoStatus(c,f.vencDate);
-              const cls=ag.cor==='verde'?'rad-tag--ok':(ag.cor==='vermelha'?'rad-tag--bad':'rad-tag--neu');
-              const lbl=ag.cor==='verde'?'no prazo':(ag.cor==='vermelha'?'fora do prazo':'agendado');
-              agHtml='<span>Agend. <strong>'+agendamentoLabel(c)+'</strong></span> <span class="rad-tag '+cls+'">'+lbl+'</span>';
-            }
+            const dd=ddmmaa(f.vencDate);
+            const vencTxt = f.cor==='sem' ? 'Sem vencimento'
+              : (f.meses<0 ? 'Venceu em '+dd : 'Vence em '+dd);
+            const agLinha = c.ferMes
+              ? 'Agend. <strong>'+agendamentoLabel(c)+'</strong> '+agTag(c)
+              : agTag(c);
             return '<div class="rad-card" onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
-              +'<div class="rad-card__top"><span class="rad-card__name">'+c.nome+'</span>'
-                +'<span class="rad-saldo'+(saldo<0?' rad-saldo--neg':'')+'" title="Saldo de dias a tirar">'+saldo+'d</span></div>'
-              +'<div class="rad-line" style="color:'+corMap[col.cor]+'"><i class="ti ti-'+vencIc+'"></i> '+vencTxt+'</div>'
-              +'<div class="rad-line rad-agend"><i class="ti ti-calendar-event"></i> '+agHtml+'</div>'
+              +'<div class="rad-card__l">'
+                +'<div class="rad-card__name">'+c.nome+'</div>'
+                +'<div class="rad-card__saldo'+(saldo<0?' neg':'')+'">Saldo: '+saldo+' dias</div>'
+              +'</div>'
+              +'<div class="rad-card__r">'
+                +'<div class="rad-venc" style="color:'+corMap[col.cor]+'">'+vencTxt+'</div>'
+                +'<div class="rad-agend">'+agLinha+'</div>'
+              +'</div>'
               +'</div>';
           }).join('')
           +'</div></div>';
@@ -5061,35 +5069,30 @@ function renderFarois(dados){
   const order={vermelho:0,laranja:1,amarelo:2,verde:3,sem:4};
   const sorted=[...dados].sort((a,b)=>(order[a.farol.cor]||4)-(order[b.farol.cor]||4));
 
-  if(tbl) tbl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Tabela Detalhada</div>'
+  if(tbl) tbl.innerHTML='<div class="section-label" style="margin-bottom:8px">Tabela detalhada</div>'
     +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
-    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
-    +'<thead><tr style="background:var(--blue-dark);color:#fff">'
-    +'<th style="padding:9px 10px;text-align:left">Status</th>'
-    +'<th style="padding:9px 10px;text-align:left">Matricula</th>'
-    +'<th style="padding:9px 10px;text-align:left">Nome</th>'
+    +'<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr>'
+    +'<th style="padding:9px 10px;text-align:left">Situa\u00e7\u00e3o</th>'
+    +'<th style="padding:9px 10px;text-align:left">Colaborador</th>'
     +'<th style="padding:9px 10px;text-align:left">Departamento</th>'
-    +'<th style="padding:9px 10px;text-align:left">Admissao</th>'
     +'<th style="padding:9px 10px;text-align:left">Vencimento</th>'
-    +'<th style="padding:9px 10px;text-align:right">Saldo (dias)</th>'
-    +'<th style="padding:9px 10px;text-align:left">Mes Agendado</th>'
-    +'<th style="padding:9px 10px;text-align:center">Acoes</th>'
+    +'<th style="padding:9px 10px;text-align:right">Saldo</th>'
+    +'<th style="padding:9px 10px;text-align:left">Agendamento</th>'
+    +'<th style="padding:9px 10px;text-align:center">A\u00e7\u00f5es</th>'
     +'</tr></thead><tbody>'
-    +sorted.map((c,i)=>{
-      const f=c.farol;
-      const cor=corMap[f.cor];
-      return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
-        +'<td style="padding:8px 10px"><div style="width:18px;height:18px;border-radius:50%;background:'+cor+';display:inline-block;vertical-align:middle"></div></td>'
-        +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'\u2014')+'</code></td>'
-        +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
+    +sorted.map(c=>{
+      const f=c.farol; const cor=corMap[f.cor]; const dd=ddmmaa(f.vencDate);
+      const vencCell = f.cor==='sem' ? '\u2014' : (f.meses<0 ? 'Venceu '+dd : 'Vence '+dd);
+      const agCell = c.ferMes ? (agendamentoLabel(c)+' '+agTag(c)) : agTag(c);
+      return '<tr>'
+        +'<td style="padding:8px 10px"><span class="badge badge--'+farolVar[f.cor]+'">'+f.label+'</span></td>'
+        +'<td style="padding:8px 10px"><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'\u2014')+'</code></div></td>'
         +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'\u2014')+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px">'+(c.admissao||'\u2014')+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px;font-weight:600;color:'+cor+'">'+f.vencStr+'</td>'
-        +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'</td>'
-        +'<td style="padding:8px 10px;font-size:11px">'+(c.ferMes||'\u2014')+'</td>'
-        +'<td style="padding:8px 10px;text-align:center;white-space:nowrap">'
-          +'' /* "Fechar ciclo" migrado para o assistente Atualizar Base > Ferias */
-          +'<button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Editar</button></td>'
+        +'<td style="padding:8px 10px;font-size:11px;font-weight:600;color:'+cor+'">'+vencCell+'</td>'
+        +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'d</td>'
+        +'<td style="padding:8px 10px;font-size:11px">'+agCell+'</td>'
+        +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Editar</button></td>'
         +'</tr>';
     }).join('')+'</tbody></table></div>';
 }
