@@ -5054,20 +5054,16 @@ function renderFarois(dados){
             const f=c.farol;
             const saldo=(f.dias!=null?f.dias:30);
             const dd=ddmmaa(f.vencDate);
-            const vencTxt = f.cor==='sem' ? 'Sem vencimento'
-              : (f.meses<0 ? 'Venceu em '+dd : 'Vence em '+dd);
+            const vencTxt = f.cor==='sem' ? 'Sem venc.'
+              : (f.meses<0 ? 'Venceu '+dd : 'Vence '+dd);
             const agLinha = c.ferMes
-              ? 'Agend. <strong>'+agendamentoLabel(c)+'</strong> '+agTag(c)
+              ? (c.ferMes.substring(0,3)+'/'+anoAgendadoColab(c)+' '+agTag(c))
               : agTag(c);
             return '<div class="rad-card" onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
-              +'<div class="rad-card__l">'
-                +'<div class="rad-card__name">'+c.nome+'</div>'
-                +'<div class="rad-card__saldo'+(saldo<0?' neg':'')+'">Saldo: '+saldo+' dias</div>'
-              +'</div>'
-              +'<div class="rad-card__r">'
-                +'<div class="rad-venc" style="color:'+corMap[col.cor]+'">'+vencTxt+'</div>'
-                +'<div class="rad-agend">'+agLinha+'</div>'
-              +'</div>'
+              +'<div class="rad-card__top"><span class="rad-card__name">'+c.nome+'</span>'
+                +'<span class="rad-saldo'+(saldo<0?' neg':'')+'" title="Saldo de dias a tirar">'+saldo+'d</span></div>'
+              +'<div class="rad-venc" style="color:'+corMap[col.cor]+'">'+vencTxt+'</div>'
+              +'<div class="rad-agend">'+agLinha+'</div>'
               +'</div>';
           }).join('')
           +'</div></div>';
