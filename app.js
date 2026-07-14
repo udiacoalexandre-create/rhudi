@@ -2237,19 +2237,23 @@ function pgBenLancamento(){
   const deptos=[...new Set(_base.map(c=>c.depto||'').filter(Boolean))].sort();
   const passos=[
     {n:1,label:'Importar base'},
-    {n:2,label:'Competência e dias'},
-    {n:3,label:'Faltas e extras'},
-    {n:4,label:'Conferir e fechar'},
+    {n:2,label:'Em férias'},
+    {n:3,label:'Afastados'},
+    {n:4,label:'Competência e dias'},
+    {n:5,label:'Faltas e extras'},
+    {n:6,label:'Conferir e fechar'},
   ];
   const tabs='<div class="lan-tabs">'+passos.map(p=>{
     const cls=p.n===lanStep?' lan-tab--active':(p.n<lanStep?' lan-tab--done':'');
     return '<button class="lan-tab'+cls+'" onclick="lanIrPasso('+p.n+')"><span class="lan-tab__n">'+(p.n<lanStep?'✓':p.n)+'</span> '+p.label+'</button>';
   }).join('')+'</div>';
-
   const nav=(prev,next)=>'<div class="lan-navbtns">'
     +(prev?'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span></span>')
     +(next?'<button class="btn btn-primary btn-sm" onclick="lanIrPasso('+next+')">Próximo <i class="ti ti-arrow-right"></i></button>':'<span></span>')
     +'</div>';
+  const head=(n,t,d)=>'<div class="lan-step__head"><span class="lan-step__num">'+n+'</span><div><div class="lan-step__t">'+t+'</div><div class="lan-step__d">'+d+'</div></div></div>';
+  const semBase='<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Nenhuma base importada. Volte ao <strong>Passo 1</strong> para importar. <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="lanIrPasso(1)">Ir ao Passo 1</button></div>';
+  const temBase=!!baseApuracao;
 
   const filtros='<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
     +'<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="lan-q" placeholder="Nome ou matrícula..." oninput="renderLancamento()"></div>'
@@ -2273,45 +2277,72 @@ function pgBenLancamento(){
     +'<td id="lan-tot-vr" style="text-align:right"></td><td id="lan-tot-cafe" style="text-align:right"></td><td id="lan-tot-cesta" style="text-align:right"></td><td id="lan-tot-comb" style="text-align:right"></td><td id="lan-tot-vt" style="text-align:right"></td><td id="lan-tot-geral" style="text-align:right;font-size:13px;color:#86EFAC"></td></tr>'
     +'</tfoot></table></div>';
 
+  // mini-tabela para os passos 2 (ferias) e 3 (afastados)
+  const miniLista=(lista,tipo)=>{
+    if(!lista.length) return '<div class="alert alert-info">'+(tipo==='ferias'?'Ninguém em férias nesta base.':'Ninguém afastado nesta base.')+'</div>';
+    return '<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
+      +'<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+      +'<th style="padding:8px 10px;text-align:left">Colaborador</th><th style="padding:8px 10px;text-align:left">Departamento</th>'
+      +(tipo==='ferias'?'<th style="padding:8px 10px;text-align:left">Situação</th><th style="padding:8px 10px;text-align:right">Dias comprados</th>':'<th style="padding:8px 10px;text-align:left">Motivo</th><th style="padding:8px 10px;text-align:center">Ação</th>')
+      +'</tr></thead><tbody>'
+      +lista.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>{
+        const cel='<td style="padding:8px 10px"><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
+          +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>';
+        if(tipo==='ferias') return '<tr>'+cel+'<td style="padding:8px 10px"><span class="badge badge--warning">Férias</span></td><td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferDiasComprados!=null?c.ferDiasComprados:0)+'d</td></tr>';
+        return '<tr>'+cel+'<td style="padding:8px 10px"><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'
+          +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="lanReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button></td></tr>';
+      }).join('')+'</tbody></table></div>';
+  };
+
   let corpo='';
   if(lanStep===1){
     corpo='<div class="lan-step lan-step--hero">'
-      +'<div class="lan-step__head"><span class="lan-step__num">1</span><div><div class="lan-step__t">Importar a base</div>'
-        +'<div class="lan-step__d">Traz os colaboradores da competência com os <strong>status</strong> e as <strong>férias a descontar</strong>. Use a base salva mais recente (Base → Bases Salvas).</div></div></div>'
+      +head(1,'Importar a base','Traz os colaboradores da competência com os <strong>status</strong> e as <strong>férias a descontar</strong>. Ao importar, a tabela completa aparece abaixo.')
       +'<div id="lan-base-info"></div>'
-      +'<div id="ferias-alert-area" style="margin-top:8px"></div>'
-      +nav(0,2)+'</div>';
+      +nav(0,2)+'</div>'
+      +(temBase?('<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros):'');
   } else if(lanStep===2){
     corpo='<div class="lan-step">'
-      +'<div class="lan-step__head"><span class="lan-step__num">2</span><div><div class="lan-step__t">Competência e dias úteis</div>'
-        +'<div class="lan-step__d">Defina o mês/ano e os dias úteis, e aplique a todos (exceto jornadas travadas no cadastro).</div></div></div>'
+      +head(2,'Colaboradores em férias','Confira quem está de férias nesta base — recebem apenas Cesta e os benefícios dos dias comprados. Ajustes de férias são feitos no Controle de Férias.')
+      +(temBase?miniLista(colsApuracao().filter(c=>statusGrupo(c.status)==='ferias'),'ferias'):semBase)
+      +nav(1,3)+'</div>';
+  } else if(lanStep===3){
+    corpo='<div class="lan-step">'
+      +head(3,'Colaboradores afastados','Confira os afastados. Se alguém voltou, use <strong>Reativar</strong> — a mudança vale nesta apuração e na base.')
+      +(temBase?miniLista(colsApuracao().filter(c=>statusGrupo(c.status)==='so_cesta'),'afastado'):semBase)
+      +nav(2,4)+'</div>';
+  } else if(lanStep===4){
+    corpo='<div class="lan-step">'
+      +head(4,'Competência e dias úteis','Defina o mês/ano e os dias úteis e aplique à tabela importada (exceto jornadas travadas no cadastro).')
       +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'
         +'<div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:120px" value="'+lanComp+'" onchange="onLanCompChange(this.value)"></div>'
         +'<div class="fg"><label>Dias úteis do mês</label><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:100px" onchange="setLanDU(this.value);renderLancamento()"></div>'
         +'<button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>'
       +'</div>'
-      +nav(1,3)+'</div>';
-  } else if(lanStep===3){
+      +nav(3,5)+'</div>';
+  } else if(lanStep===5){
     corpo='<div class="lan-step">'
-      +'<div class="lan-step__head"><span class="lan-step__num">3</span><div><div class="lan-step__t">Faltas e dias extras (manual)</div>'
-        +'<div class="lan-step__d">Preencha, na tabela abaixo, as <strong>faltas</strong> e os <strong>dias extras</strong> de cada colaborador. Faltas e férias descontam; extras somam.</div></div></div>'
-      +nav(2,4)+'</div>'
-      +'<div id="lan-resumo" style="margin-bottom:12px"></div>'
-      +filtros;
+      +head(5,'Faltas e dias extras (manual)','Preencha, na tabela abaixo, as <strong>faltas</strong> e os <strong>dias extras</strong> de cada colaborador. Faltas e férias descontam; extras somam.')
+      +nav(4,6)+'</div>'
+      +'<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros;
   } else {
+    const bo='background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;flex:1;min-width:260px';
     corpo='<div class="lan-step">'
-      +'<div class="lan-step__head"><span class="lan-step__num">4</span><div><div class="lan-step__t">Conferir benefício, fechar e exportar</div>'
-        +'<div class="lan-step__d">Escolha um benefício para conferir só ele na tabela abaixo (com os totais). Se estiver ok, <strong>Fechar</strong> grava o log no Histórico; depois exporte.</div></div></div>'
-      +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
-        +'<div class="fg"><label>Benefício</label>'
-          +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">'
-          +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
-          +'</select></div>'
-        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()" title="Grava o snapshot no Histórico"><i class="ti ti-lock"></i> Fechar (gera log)</button>'
-        +'<button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()">Exportar Via Nova</button>'
-        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()">Exportar Senior</button>'
+      +head(6,'Conferir, fechar e exportar','Escolha o benefício para conferir só ele na tabela abaixo (com os totais). Depois: <strong>Fechar</strong> gera o log; <strong>Exportar</strong> gera o arquivo do que foi fechado.')
+      +'<div class="fg" style="margin-bottom:12px"><label>Benefício em conferência</label>'
+        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;max-width:280px">'
+        +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
+        +'</select></div>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap">'
+        +'<div style="'+bo+'"><div style="font-weight:600;display:flex;align-items:center;gap:7px"><i class="ti ti-lock" style="color:var(--brand)"></i> Fechar competência</div>'
+          +'<div class="text-xs text-muted" style="margin:4px 0 10px">Grava um <strong>snapshot (log)</strong> no Histórico. Não gera arquivo.</div>'
+          +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()">Fechar competência</button></div>'
+        +'<div style="'+bo+'"><div style="font-weight:600;display:flex;align-items:center;gap:7px"><i class="ti ti-download" style="color:var(--brand)"></i> Exportar o que foi fechado</div>'
+          +'<div class="text-xs text-muted" style="margin:4px 0 10px">Gera o arquivo a partir do fechamento. <strong>VT → Via Nova</strong>; demais → <strong>Caju</strong>.</div>'
+          +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()">Exportar</button>'
+          +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()">Exportar Senior</button></div></div>'
       +'</div>'
-      +'<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="lanIrPasso(3)"><i class="ti ti-arrow-left"></i> Voltar</button><span></span></div>'
+      +'<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="lanIrPasso(5)"><i class="ti ti-arrow-left"></i> Voltar</button><span></span></div>'
       +'</div>'
       +'<div id="lan-resumo" style="margin-bottom:12px"></div>';
   }
@@ -2326,11 +2357,21 @@ function pgBenLancamento(){
       ${tabs}
       ${corpo}
     </div>
-    ${(lanStep===3||lanStep===4)?tabela:''}
+    ${(temBase && (lanStep===1||lanStep===5||lanStep===6))?tabela:''}
    </div>`;
 }
 function lanIrPasso(n){ lanStep=n; showPage('ben-lancamento'); }
 function onLanStep4Ben(v){ lanStep4Ben=v; try{ atualizarBotoesExport(); }catch(e){} renderLancamento(); }
+async function lanReativarAfastado(id){
+  const cLive=colaboradores.find(x=>x._id===id);
+  if(cLive){ cLive.status='Trabalhando'; try{ await fsSet('colaboradores',cLive._id,cLive); }catch(e){ toast('Erro: '+e.message,'error'); return; } }
+  if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
+    const cb=baseApuracao.colaboradores.find(x=>x._id===id||(cLive&&x.cpf&&x.cpf===cLive.cpf));
+    if(cb) cb.status='Trabalhando';
+  }
+  toast((cLive?cLive.nome:'Colaborador')+' reativado (Trabalhando).','success');
+  showPage('ben-lancamento');
+}
 
 function popularLanFiltros(){
   const hoje=new Date();
@@ -2576,7 +2617,7 @@ function getLanAtivos(){
   const q=(g('lan-q')||'').toLowerCase();
   const emp=getMs('lemp'), dep=getMs('ldep');
   let ben=getMs('lben');
-  if(lanStep===4 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
+  if(lanStep===6 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
   let f=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
