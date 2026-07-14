@@ -105,6 +105,22 @@
 .ds .page-header p{ font-size:14px;color:var(--text-secondary); }
 .ds thead th{ background:var(--surface-soft);color:var(--text-secondary);text-transform:uppercase;letter-spacing:.03em;font-size:11px;font-weight:600; }
 .ds .stat-card{ border-radius:var(--radius-lg);box-shadow:var(--shadow); }
+/* Passos didaticos (Lancamento de Beneficios) */
+.ds .lan-step{ background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:12px; }
+.ds .lan-step--hero{ border:1px solid var(--brand);background:var(--success-bg); }
+.ds .lan-step__head{ display:flex;align-items:flex-start;gap:10px;margin-bottom:10px; }
+.ds .lan-step__num{ flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center; }
+.ds .lan-step__t{ font-size:14px;font-weight:600;color:var(--text);line-height:1.2; }
+.ds .lan-step__d{ font-size:12px;color:var(--text-secondary);margin-top:2px; }
+.ds .lan-step--hero .lan-step__d{ color:var(--text-secondary); }
+/* Ficha rio de abas (passo a passo) */
+.ds .lan-tabs{ display:flex;gap:2px;border-bottom:2px solid var(--border);margin-bottom:16px;flex-wrap:wrap; }
+.ds .lan-tab{ display:flex;align-items:center;gap:8px;padding:10px 16px;border:none;background:transparent;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-secondary);border-bottom:2px solid transparent;margin-bottom:-2px;font-family:'Inter',sans-serif; }
+.ds .lan-tab:hover{ color:var(--text); }
+.ds .lan-tab--active{ color:var(--brand);border-bottom-color:var(--brand);font-weight:600; }
+.ds .lan-tab__n{ width:22px;height:22px;border-radius:50%;background:var(--surface-soft);color:var(--text-secondary);font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.ds .lan-tab--active .lan-tab__n,.ds .lan-tab--done .lan-tab__n{ background:var(--brand);color:#fff; }
+.ds .lan-navbtns{ display:flex;justify-content:space-between;gap:10px;margin-top:12px; }
 .ds .refresh-btn{ background:var(--brand);color:#fff;border:1px solid var(--brand);border-radius:var(--radius);padding:11px 18px;font-size:14px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap; }
 .ds .refresh-btn:hover{ background:var(--brand-hover); }
 /* Botao primario verde (marca) nas telas migradas para o design system */
