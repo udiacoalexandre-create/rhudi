@@ -958,9 +958,8 @@ function pgBaseLista(){
       <div class="filter-group"><label>Status</label>${msDropdown('status','Status',statusSet.map(x=>({value:x,label:x})))}</div>
       <div class="filter-group"><label>Tipo</label>${msDropdown('tipo','Tipo',[{value:'OK',label:'OK — CLT normal'},{value:'DUP',label:'DUP — CLT com MEI/Sócio'},{value:'MEI',label:'MEI — Contrato MEI'},{value:'SOC',label:'SOC — Sócio'},{value:'TER',label:'TER — Terceiros'},{value:'DIR',label:'DIR — Diretoria'},{value:'PART',label:'PART — Particular'}])}</div>
       <div class="filter-group"><label>Benefício</label>${msDropdown('ben','Benefício',benOpts)}</div>
+      <button class="btn btn-ghost btn-sm" onclick="exportarBase(filtrarColabs())"><i class="ti ti-file-spreadsheet"></i> Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarColabExcel()"> Excel</button>
-      <button class="btn btn-ghost btn-sm" onclick="exportarBase()"> Base</button>
     </div>
     <div id="bl-count" style="margin:10px 0 8px"></div>
     <div class="tbl-wrap bl-scroll">
@@ -1113,11 +1112,11 @@ function _resumoCard(n, label, cls, valColor){
 // Card do design system (chip de icone Tabler + valor + rotulo). Escopo .ds.
 function _dsStat(icon, chip, val, label){
   return '<div class="stat"><div class="stat__chip chip--'+chip+'"><i class="ti ti-'+icon+'"></i></div>'
-    +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
+    +'<div class="stat__body"><div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div></div>';
 }
 function _dsStatAccent(icon, val, label){
   return '<div class="stat stat--accent"><div class="stat__chip"><i class="ti ti-'+icon+'"></i></div>'
-    +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
+    +'<div class="stat__body"><div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div></div>';
 }
 // ── Helpers de marcacao (design system) usados so na tabela da Base ──
 function _iniciais(nome){
@@ -3314,7 +3313,8 @@ async function salvarConfig(){
   catch(e){ console.error(e); }
 }
 
-function exportarBase(){
+function exportarBase(lista){
+  const base=Array.isArray(lista)?lista:colaboradores;
   const sim=b=>b?'SIM':'N\u00C3O';
   const header=[
     'Matr\u00EDcula','Nome','CPF','Cargo','Fun\u00E7\u00E3o','Departamento','Status','Tipo/Filtro','Admiss\u00E3o','Dias Fixos',
@@ -3327,7 +3327,7 @@ function exportarBase(){
     'VT L4 Valor','VT L4 Viagens','VT L4 Tipo','VT L4 C\u00F3digo','VT L4 Linha',
     'M\u00EAs Agendado F\u00E9rias','Ano Agendado (calc)','Vencimento F\u00E9rias','Saldo Dias F\u00E9rias'
   ];
-  const rows=[header, ...colaboradores.map(c=>{
+  const rows=[header, ...base.map(c=>{
     const e=c.elegibilidade||{};
     const tr=elegTransporte(c);
     const elegVR  = e.vr!==undefined?e.vr:fnum(c.vr)>0;
@@ -3350,7 +3350,7 @@ function exportarBase(){
   ws['!cols']=header.map((h,i)=>({wch: i===1?34 : (h.length<8?10:16)}));
   XLSX.utils.book_append_sheet(wb,ws,'Colaboradores');
   XLSX.writeFile(wb,'Base_Completa_Udiaco.xlsx');
-  toast('\u2705 Base completa exportada ('+colaboradores.length+' colaboradores)!','success');
+  toast('\u2705 Planilha completa exportada ('+base.length+' colaboradores)!','success');
 }
 
 function exportarColabExcel(){
