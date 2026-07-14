@@ -4940,7 +4940,7 @@ function getFarol(c){
   const saldo=(c.ferSaldo!=null?c.ferSaldo:30);
 
   // Coluna/cor por PROXIMIDADE do proximo vencimento.
-  if(meses<0)  return {cor:'vermelho',meses,label:'Vencido — fechar ciclo',vencStr,vencDate,dias:saldo};
+  if(meses<0)  return {cor:'vermelho',meses,label:'Vencido',vencStr,vencDate,dias:saldo};
   if(meses<=3) return {cor:'laranja', meses,label:meses<=0?'Vence este mês':'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
   if(meses<=6) return {cor:'amarelo', meses,label:'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
   return {cor:'verde',meses,label:'Vence em '+meses+'m',vencStr,vencDate,dias:saldo};
