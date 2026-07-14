@@ -7718,7 +7718,7 @@ let wizState=null;
 function abrirAtualizarBase(){
   wizState={idx:0, mode:'intro', contMode:'menu',
     demSel:new Set(), afaReSel:new Set(), afaAddSel:new Set(),
-    rev:{}, doneDem:[], doneAfa:[], contBaseline:null,
+    rev:{}, doneDem:[], doneAfa:[], contBaseline:null, demConfirmar:false,
     ferTab:'retorno', ferAnivDone:false, ferMesRef:null,
     entFeitos:new Set(), retFeitos:new Set()};
   if(!document.getElementById('wiz-overlay')){
@@ -7781,7 +7781,7 @@ function renderWizard(){
       if(!wizState.contBaseline) wizState.contBaseline=new Set(colaboradores.map(c=>c._id));
       if(wizState.contMode==='individual'){ try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){} }
     }
-    if(step.id==='demissoes' && !wizState.rev.demissoes) wizRenderDemList();
+    if(step.id==='demissoes' && !wizState.rev.demissoes && !wizState.demConfirmar) wizRenderDemList();
     if(step.id==='afastados' && !wizState.rev.afastados){ wizRenderAfaReList(); wizRenderAfaAddList(); }
     if(step.id==='ferias'){
       if(!wizState.ferAnivDone){ wizState.ferAnivDone=true; wizRodarAniversarios(); }
@@ -7918,11 +7918,31 @@ async function wizExcluirContratacao(id){
 // ── ETAPA 2: DEMISSOES ───────────────────────────────────────────
 function wizDemissoesHTML(){
   if(wizState.rev.demissoes) return wizRevHTML('demissoes');
+  if(wizState.demConfirmar) return wizDemConfirmHTML();
   return '<p class="wiz-note">Busque e selecione quem foi desligado. <span id="wiz-dem-count" class="wiz-count"></span></p>'
     +wizSearchHTML('wiz-dem-q','Buscar por nome, matrícula ou departamento...')
     +'<div id="wiz-dem-list" class="wiz-list wiz-list--scroll"></div>'
-    +'<div class="wiz-actions"><button class="btn btn-danger btn-sm" onclick="wizDemitir()"><i class="ti ti-user-minus"></i> Marcar como Demitido</button></div>';
+    +'<div class="wiz-actions"><button class="btn btn-primary btn-sm" onclick="wizDemRevisar()">Revisar selecionados <i class="ti ti-arrow-right"></i></button></div>';
 }
+function wizDemRevisar(){
+  if(!wizState.demSel.size){ toast('Selecione ao menos um colaborador.','warning'); return; }
+  wizState.demConfirmar=true; renderWizard();
+}
+function wizDemConfirmHTML(){
+  const ids=[...wizState.demSel];
+  const rows=ids.map(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return '';
+    return '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
+      +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
+      +dsStatusBadge(c.status)
+      +'<button class="btn btn-ghost btn-sm" onclick="wizDemExcluir(\''+id+'\')"><i class="ti ti-x"></i> Excluir</button></div>';
+  }).join('');
+  return '<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Confira os <strong>'+ids.length+'</strong> colaborador(es) que serão marcados como <strong>Demitido</strong>. Remova quem não deve entrar ou adicione mais antes de confirmar.</div>'
+    +'<div class="wiz-list wiz-list--scroll">'+rows+'</div>'
+    +'<div class="wiz-actions"><button class="btn btn-ghost btn-sm" onclick="wizDemAddMais()"><i class="ti ti-plus"></i> Adicionar mais</button>'
+    +'<button class="btn btn-danger btn-sm" onclick="wizDemitir()"><i class="ti ti-user-minus"></i> Confirmar demissão ('+ids.length+')</button></div>';
+}
+function wizDemAddMais(){ wizState.demConfirmar=false; renderWizard(); }
+function wizDemExcluir(id){ wizState.demSel.delete(id); if(!wizState.demSel.size) wizState.demConfirmar=false; renderWizard(); }
 function wizRenderDemList(){
   const cont=document.getElementById('wiz-dem-list'); if(!cont) return;
   const q=(document.getElementById('wiz-dem-q')?.value||'').toLowerCase().trim();
@@ -7935,7 +7955,6 @@ function wizRenderDemList(){
 async function wizDemitir(){
   const ids=[...wizState.demSel];
   if(!ids.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
-  if(!confirm('Marcar '+ids.length+' colaborador(es) como DEMITIDO?')) return;
   const comp=_compAtual();
   const b=window._writeBatch(window._db); const afet=[];
   ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
@@ -7945,7 +7964,7 @@ async function wizDemitir(){
   try{
     await b.commit();
     for(const c of afet){ try{ await registrarVagaFerias(c); }catch(e){} }
-    wizState.demSel.clear(); wizState.rev.demissoes=true;
+    wizState.demSel.clear(); wizState.demConfirmar=false; wizState.rev.demissoes=true;
     toast(afet.length+' colaborador(es) marcados como Demitido.','success');
     renderWizard();
   }catch(e){ toast('Erro: '+e.message,'error'); }
