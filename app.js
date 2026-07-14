@@ -831,10 +831,10 @@ const MODULES = {
     {id:'folha-view',icon:'',label:'Visualizar Folha'},
   ]},
   ferias:{pages:[
-    {id:'fer-radar',icon:'',label:'Radar de F\u00E9rias'},
-    {id:'fer-agendadas',icon:'',label:'F\u00E9rias Agendadas'},
-    {id:'fer-um989',icon:'',label:'F\u00E9rias UM989'},
-    {id:'fer-import',icon:'',label:'Importar Dados'},
+    {id:'fer-radar',icon:'<i class="ti ti-radar-2"></i>',label:'Radar de F\u00E9rias'},
+    {id:'fer-agendadas',icon:'<i class="ti ti-calendar-event"></i>',label:'F\u00E9rias Agendadas'},
+    {id:'fer-um989',icon:'<i class="ti ti-users"></i>',label:'F\u00E9rias UM989'},
+    {id:'fer-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar Dados'},
   ]},
   premio:{pages:[
     {id:'premio-main',icon:'',label:'Premio Assiduidade'},
@@ -892,6 +892,7 @@ function showPage(id){
   const main=document.getElementById('main-area');
   if(!main) return;
   main.innerHTML=renderPage(id);
+  main.classList.toggle('ds', String(id).startsWith('fer-'));
   afterRender(id);
 }
 
@@ -4805,7 +4806,7 @@ function exportarFolhaExcel(){
 // ════════════════════════════════════════════════════════════════
 function pgFerRadar(){
   return `
-    <div class="page-header"><h2>Radar de Ferias</h2><p>Farol de vencimento por colaborador.</p></div>
+    <div class="page-header"><h2 class="page-title">Radar de Férias</h2><p class="page-subtitle">Farol de vencimento por colaborador.</p></div>
     <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencido (fechar ciclo)</div>
@@ -5010,15 +5011,14 @@ function renderFerRadar(){
   const stats={verde:0,amarelo:0,laranja:0,vermelho:0,sem:0,na:0};
   comFarol.forEach(c=>stats[c.farol.cor]=(stats[c.farol.cor]||0)+1);
   const statsEl=document.getElementById('fer-stats');
-  if(statsEl) statsEl.innerHTML=`
-    <div class="stats-grid" style="margin-bottom:0">
-      <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${stats.vermelho}</div><div class="stat-label">Vencido</div></div>
-      <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${stats.laranja}</div><div class="stat-label">Vence ≤3m</div></div>
-      <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${stats.amarelo}</div><div class="stat-label">Vence 4-6m</div></div>
-      <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${stats.verde}</div><div class="stat-label">Vence +6m</div></div>
-      <div class="stat-card"><div class="stat-val" style="color:var(--text2)">${stats.sem}</div><div class="stat-label">Sem dados</div></div>
-      <div class="stat-card"><div class="stat-val" style="color:#9CA3AF">${stats.na}</div><div class="stat-label">N/A</div></div>
-    </div>`;
+  if(statsEl) statsEl.innerHTML='<div class="stat-grid">'
+      +_dsStat('alert-triangle','danger',stats.vermelho,'Vencido')
+      +_dsStat('clock-hour-4','warning',stats.laranja,'Vence ≤3m')
+      +_dsStat('calendar-event','accent',stats.amarelo,'Vence 4-6m')
+      +_dsStat('circle-check','success',stats.verde,'Vence +6m')
+      +_dsStat('help','neutral',stats.sem,'Sem dados')
+      +_dsStat('circle-minus','neutral',stats.na,'N/A')
+    +'</div>';
 }
 
 function renderFarois(dados){
@@ -7457,8 +7457,8 @@ function filtrarTabelaFerias(){
 function pgFeriasAgendadas(){
   return `
     <div class="page-header">
-      <h2>F\u00E9rias Agendadas</h2>
-      <p>Visualize quais colaboradores est\u00E3o com f\u00E9rias agendadas em cada m\u00EAs.</p>
+      <h2 class="page-title">F\u00E9rias Agendadas</h2>
+      <p class="page-subtitle">Visualize quais colaboradores est\u00E3o com f\u00E9rias agendadas em cada m\u00EAs.</p>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
       <input type="text" id="feragd-q" placeholder="Buscar por nome, matr\u00EDcula ou departamento..." oninput="renderFeriasAgendadas()"
@@ -7524,11 +7524,11 @@ function renderFeriasAgendadas(){
   // agendadas · afastados · nao se aplicam · pendentes (sem mes)
   const resumoEl=document.getElementById('feragd-resumo');
   if(resumoEl){
-    resumoEl.innerHTML='<div class="stats-grid" style="margin-bottom:0">'
-      +'<div class="stat-card green"><div class="stat-val" style="color:var(--green)">'+agendados.length+'</div><div class="stat-label">Com férias agendadas</div></div>'
-      +'<div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">'+afastados.length+'</div><div class="stat-label">Afastados</div></div>'
-      +'<div class="stat-card"><div class="stat-val" style="color:#9CA3AF">'+naoAplicam.length+'</div><div class="stat-label">Não se aplicam</div></div>'
-      +'<div class="stat-card red"><div class="stat-val" style="color:var(--red)">'+semAgenda.length+'</div><div class="stat-label">Pendentes</div></div>'
+    resumoEl.innerHTML='<div class="stat-grid">'
+      +_dsStat('circle-check','success',agendados.length,'Com férias agendadas')
+      +_dsStat('first-aid-kit','warning',afastados.length,'Afastados')
+      +_dsStat('circle-minus','neutral',naoAplicam.length,'Não se aplicam')
+      +_dsStat('alert-triangle','danger',semAgenda.length,'Pendentes')
       +'</div>';
   }
 
