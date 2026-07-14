@@ -939,9 +939,12 @@ function pgBaseLista(){
   const benOpts=[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'},{value:'cesta',label:'Cesta Básica'},{value:'sem',label:'Sem benefício'},{value:'comb_vt',label:'Comb+VT (erro?)'},{value:'sem_mob',label:'Sem mobilidade'}];
   return `
    <div class="bl-page">
-    <div class="page-header">
-      <h2> Base de Colaboradores</h2>
-      <p>Gerencie todos os colaboradores da empresa</p>
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <h2> Base de Colaboradores</h2>
+        <p>Gerencie todos os colaboradores da empresa</p>
+      </div>
+      <button class="btn btn-primary" onclick="abrirAtualizarBase()" style="font-size:14px;padding:11px 20px;box-shadow:var(--shadow-sm);white-space:nowrap">🔄 Atualizar Base</button>
     </div>
     <div id="bl-status-resumo" style="margin-bottom:8px"></div>
     <div id="bl-tipo-resumo" style="margin-bottom:12px"></div>
@@ -7643,4 +7646,264 @@ async function consultarVagaFerias(funcao, depto){
     const vagas=snap.data().vagas||{};
     return vagas[key]||null;
   }catch(e){ return null; }
+}
+
+// ============================================================
+// ASSISTENTE: ATUALIZAR BASE (passo a passo)
+// Etapas: Contratacoes -> Demissoes -> Afastados -> Ferias.
+// Cada etapa: tela "intro" (Seguir/Pular) e tela "work".
+// Rodape: Salvar e encerrar / Salvar e seguir.
+// ============================================================
+const WIZ_STEPS=[
+  {id:'contratacoes', label:'Contratações', icon:'➕'},
+  {id:'demissoes',    label:'Demissões',    icon:'➖'},
+  {id:'afastados',    label:'Afastados',    icon:'🚑'},
+  {id:'ferias',       label:'Férias',       icon:'🏖️'},
+];
+let wizState=null;
+
+function abrirAtualizarBase(){
+  wizState={idx:0, mode:'intro', contMode:'menu',
+    demSel:new Set(), afaReSel:new Set(), afaAddSel:new Set()};
+  if(!document.getElementById('wiz-overlay')){
+    const ov=document.createElement('div');
+    ov.id='wiz-overlay';
+    ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto';
+    document.body.appendChild(ov);
+  }
+  renderWizard();
+}
+function fecharWizard(concluido){
+  document.getElementById('wiz-overlay')?.remove();
+  wizState=null;
+  if(currentPage==='base-lista') renderColabList();
+  if(concluido) toast('Atualização da base concluída!','success');
+}
+function wizSeguir(){ wizState.mode='work'; wizState.contMode='menu'; renderWizard(); }
+function wizPular(){ wizAvancar(); }
+function wizAvancar(){
+  if(wizState.idx < WIZ_STEPS.length-1){ wizState.idx++; wizState.mode='intro'; renderWizard(); }
+  else { fecharWizard(true); }
+}
+function wizContModo(m){ wizState.contMode=m; renderWizard(); }
+function wizToggle(setName,id){
+  const s=wizState[setName]; if(s.has(id)) s.delete(id); else s.add(id);
+  const map={demSel:'dem',afaReSel:'afaRe',afaAddSel:'afaAdd'}; wizUpdSelCount(map[setName]);
+}
+function wizUpdSelCount(key){
+  const map={dem:['demSel','wiz-dem-count'],afaRe:['afaReSel','wiz-afare-count'],afaAdd:['afaAddSel','wiz-afaadd-count']};
+  const cfg=map[key]; if(!cfg) return;
+  const el=document.getElementById(cfg[1]); if(!el) return;
+  const n=wizState[cfg[0]].size;
+  el.textContent = n ? '('+n+' selecionado'+(n>1?'s':'')+')' : '';
+}
+
+function renderWizard(){
+  const ov=document.getElementById('wiz-overlay'); if(!ov||!wizState) return;
+  const step=WIZ_STEPS[wizState.idx];
+  const stepper=WIZ_STEPS.map((s,i)=>{
+    const done=i<wizState.idx, cur=i===wizState.idx;
+    const bg=cur?'var(--blue)':(done?'var(--green)':'#E5E7EB');
+    const col=(cur||done)?'#fff':'#6B7280';
+    return '<div style="display:flex;align-items:center;gap:6px">'
+      +'<div style="width:28px;height:28px;border-radius:50%;background:'+bg+';color:'+col+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">'+(done?'✓':(i+1))+'</div>'
+      +'<span style="font-size:12px;font-weight:'+(cur?'700':'500')+';color:'+(cur?'var(--text)':'var(--text2)')+'">'+s.icon+' '+s.label+'</span>'
+      +(i<WIZ_STEPS.length-1?'<span style="width:20px;height:2px;background:'+(done?'var(--green)':'#E5E7EB')+';margin:0 2px"></span>':'')
+      +'</div>';
+  }).join('');
+  const body = wizState.mode==='intro' ? wizIntroHTML(step) : wizWorkHTML(step);
+  ov.innerHTML='<div style="background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;margin:auto">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 22px;background:var(--blue-dark);color:#fff">'
+      +'<div style="font-size:16px;font-weight:700">🔄 Atualizar Base</div>'
+      +'<button onclick="fecharWizard(false)" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">&times;</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--surface2,#F8F9FB)">'+stepper+'</div>'
+    +'<div style="padding:22px;max-height:66vh;overflow-y:auto">'+body+'</div>'
+    +'</div>';
+  // inicializacoes/listagens pos-render
+  if(wizState.mode==='work'){
+    if(step.id==='contratacoes' && wizState.contMode==='individual'){
+      try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){}
+    }
+    if(step.id==='demissoes') wizRenderDemList();
+    if(step.id==='afastados'){ wizRenderAfaReList(); wizRenderAfaAddList(); }
+  }
+}
+
+function wizIntroHTML(step){
+  return '<div style="text-align:center;padding:24px 10px">'
+    +'<div style="font-size:46px;margin-bottom:10px">'+step.icon+'</div>'
+    +'<h3 style="margin:0 0 6px;font-size:20px">Etapa: '+step.label+'</h3>'
+    +'<p style="color:var(--text2);margin:0 0 26px">Deseja seguir com esta etapa ou pular para a próxima?</p>'
+    +'<div style="display:flex;gap:12px;justify-content:center">'
+      +'<button class="btn btn-ghost" onclick="wizPular()">Pular etapa</button>'
+      +'<button class="btn btn-primary" onclick="wizSeguir()">Seguir &raquo;</button>'
+    +'</div></div>';
+}
+
+function wizFooter(){
+  const ultima = wizState.idx===WIZ_STEPS.length-1;
+  return '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">'
+    +'<button class="btn btn-ghost" onclick="fecharWizard(false)">Salvar e encerrar</button>'
+    +'<button class="btn btn-primary" onclick="wizAvancar()">'+(ultima?'Concluir':'Salvar e seguir &raquo;')+'</button>'
+    +'</div>';
+}
+
+function wizWorkHTML(step){
+  let inner='';
+  if(step.id==='contratacoes') inner=wizContratacoesHTML();
+  else if(step.id==='demissoes') inner=wizDemissoesHTML();
+  else if(step.id==='afastados') inner=wizAfastadosHTML();
+  else if(step.id==='ferias') inner=wizFeriasHTML();
+  return inner+wizFooter();
+}
+
+// ── Linha selecionavel (checkbox) ────────────────────────────────
+function wizRow(setName,c){
+  const checked=wizState[setName].has(c._id)?'checked':'';
+  return '<label style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer">'
+    +'<input type="checkbox" '+checked+' onchange="wizToggle(\''+setName+'\',\''+c._id+'\')" style="accent-color:var(--blue)">'
+    +'<span style="flex:1;min-width:0"><strong style="font-size:13px">'+c.nome+'</strong> '
+      +'<span class="text-xs text-muted">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
+    +'<span>'+statusBadge(c.status)+'</span>'
+    +'</label>';
+}
+function wizBusca(c,q){
+  return (c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q);
+}
+
+// ── ETAPA 1: CONTRATACOES ────────────────────────────────────────
+function wizContratacoesHTML(){
+  const m=wizState.contMode||'menu';
+  if(m==='individual'){
+    return '<button class="btn btn-ghost btn-sm" onclick="wizContModo(\'menu\')">&laquo; Voltar</button>'
+      +'<div style="margin-top:8px">'+pgBaseNovo()+'</div>';
+  }
+  if(m==='lote'){
+    return '<button class="btn btn-ghost btn-sm" onclick="wizContModo(\'menu\')">&laquo; Voltar</button>'
+      +'<div class="alert alert-info" style="margin-top:10px">Suba a planilha <strong>modelo-novos-colaboradores</strong> preenchida pelo RH. O sistema cria só os novos (ignora quem já existe por matrícula/CPF).</div>'
+      +'<div class="upload-zone" onclick="document.getElementById(\'import-file\').click()" style="border:2px dashed var(--border);border-radius:12px;padding:26px;text-align:center;cursor:pointer">'
+        +'<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="processarNovos(event)">'
+        +'<div style="font-size:28px;margin-bottom:6px">&#8679;</div>'
+        +'<div style="font-weight:600">Selecionar planilha modelo</div>'
+        +'<div class="text-xs text-muted">.xlsx ou .xls</div>'
+      +'</div>'
+      +'<div id="import-preview" style="margin-top:14px"></div>';
+  }
+  return '<p style="color:var(--text2);margin-top:0">Como deseja adicionar colaboradores?</p>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary" onclick="wizContModo(\'individual\')">➕ Adicionar colaborador (individual)</button>'
+      +'<button class="btn btn-success" onclick="wizContModo(\'lote\')">📄 Adicionar em lote (planilha modelo)</button>'
+    +'</div>'
+    +'<div class="text-xs text-muted" style="margin-top:14px">Cada colaborador é salvo assim que você confirma. Ao terminar, use <strong>Salvar e seguir</strong> ou <strong>Salvar e encerrar</strong> abaixo.</div>';
+}
+
+// ── ETAPA 2: DEMISSOES ───────────────────────────────────────────
+function wizDemissoesHTML(){
+  return '<p class="text-xs text-muted" style="margin-top:0">Busque e selecione quem foi desligado. O status muda para <strong>Demitido</strong> — sai dos ativos e fica apenas no histórico. <span id="wiz-dem-count" style="color:var(--blue);font-weight:700"></span></p>'
+    +'<input type="text" id="wiz-dem-q" placeholder="Buscar por nome, matrícula ou departamento..." oninput="wizRenderDemList()" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'
+    +'<div id="wiz-dem-list" style="border:1px solid var(--border);border-radius:8px;margin-top:8px;max-height:320px;overflow-y:auto"></div>'
+    +'<button class="btn btn-danger btn-sm" style="margin-top:10px" onclick="wizDemitir()">Marcar selecionados como Demitido</button>';
+}
+function wizRenderDemList(){
+  const cont=document.getElementById('wiz-dem-list'); if(!cont) return;
+  const q=(document.getElementById('wiz-dem-q')?.value||'').toLowerCase().trim();
+  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe');
+  if(q) lista=lista.filter(c=>wizBusca(c,q));
+  lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,300);
+  cont.innerHTML = lista.length ? lista.map(c=>wizRow('demSel',c)).join('')
+    : '<div class="text-xs text-muted" style="padding:10px">Nenhum colaborador encontrado.</div>';
+  wizUpdSelCount('dem');
+}
+async function wizDemitir(){
+  const ids=[...wizState.demSel];
+  if(!ids.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
+  if(!confirm('Marcar '+ids.length+' colaborador(es) como DEMITIDO?')) return;
+  const comp=_compAtual();
+  const b=window._writeBatch(window._db); const afet=[];
+  ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
+    c.status='Demitido'; c.demitidoEm=comp; b.set(window._doc('colaboradores',id),c); afet.push(c); });
+  if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
+  try{
+    await b.commit();
+    for(const c of afet){ try{ await registrarVagaFerias(c); }catch(e){} }
+    wizState.demSel.clear();
+    toast(afet.length+' colaborador(es) marcados como Demitido.','success');
+    wizRenderDemList();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ── ETAPA 3: AFASTADOS ───────────────────────────────────────────
+function wizAfastadosHTML(){
+  const opts=STATUS_SO_CESTA.map(s=>'<option value="'+s+'">'+getStatusInfo(s).label+'</option>').join('');
+  const inp='width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px';
+  const box='border:1px solid var(--border);border-radius:8px;margin-top:8px;max-height:220px;overflow-y:auto';
+  return '<div style="margin-bottom:24px">'
+    +'<h4 style="margin:0 0 4px;font-size:15px">1) Tirar de afastamento</h4>'
+    +'<p class="text-xs text-muted" style="margin:0 0 8px">Selecione quem voltou a trabalhar (status volta para <strong>Trabalhando</strong>). <span id="wiz-afare-count" style="color:var(--blue);font-weight:700"></span></p>'
+    +'<input type="text" id="wiz-afare-q" placeholder="Buscar afastado..." oninput="wizRenderAfaReList()" style="'+inp+'">'
+    +'<div id="wiz-afare-list" style="'+box+'"></div>'
+    +'<button class="btn btn-success btn-sm" style="margin-top:8px" onclick="wizReativar()">Reativar selecionados</button>'
+    +'</div>'
+    +'<div>'
+    +'<h4 style="margin:0 0 4px;font-size:15px">2) Adicionar afastamento</h4>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin:0 0 8px"><label class="text-xs" style="font-weight:600">Motivo:</label>'
+      +'<select id="wiz-afa-status" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'+opts+'</select></div>'
+    +'<p class="text-xs text-muted" style="margin:0 0 8px">Selecione quem entra em afastamento. <span id="wiz-afaadd-count" style="color:var(--blue);font-weight:700"></span></p>'
+    +'<input type="text" id="wiz-afaadd-q" placeholder="Buscar quem afastar..." oninput="wizRenderAfaAddList()" style="'+inp+'">'
+    +'<div id="wiz-afaadd-list" style="'+box+'"></div>'
+    +'<button class="btn btn-warning btn-sm" style="margin-top:8px" onclick="wizAfastar()">Afastar selecionados</button>'
+    +'</div>';
+}
+function wizRenderAfaReList(){
+  const cont=document.getElementById('wiz-afare-list'); if(!cont) return;
+  const q=(document.getElementById('wiz-afare-q')?.value||'').toLowerCase().trim();
+  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='so_cesta');
+  if(q) lista=lista.filter(c=>wizBusca(c,q));
+  lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome));
+  cont.innerHTML = lista.length ? lista.map(c=>wizRow('afaReSel',c)).join('')
+    : '<div class="text-xs text-muted" style="padding:10px">Ninguém afastado no momento.</div>';
+  wizUpdSelCount('afaRe');
+}
+function wizRenderAfaAddList(){
+  const cont=document.getElementById('wiz-afaadd-list'); if(!cont) return;
+  const q=(document.getElementById('wiz-afaadd-q')?.value||'').toLowerCase().trim();
+  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='trabalhando');
+  if(q) lista=lista.filter(c=>wizBusca(c,q));
+  lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,300);
+  cont.innerHTML = lista.length ? lista.map(c=>wizRow('afaAddSel',c)).join('')
+    : '<div class="text-xs text-muted" style="padding:10px">Nenhum colaborador encontrado.</div>';
+  wizUpdSelCount('afaAdd');
+}
+async function wizReativar(){
+  const ids=[...wizState.afaReSel];
+  if(!ids.length){ toast('Selecione ao menos um afastado.','warning'); return; }
+  const b=window._writeBatch(window._db); const afet=[];
+  ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
+    c.status='Trabalhando'; b.set(window._doc('colaboradores',id),c); afet.push(c); });
+  if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
+  try{ await b.commit(); wizState.afaReSel.clear();
+    toast(afet.length+' colaborador(es) reativados.','success');
+    wizRenderAfaReList(); wizRenderAfaAddList();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+async function wizAfastar(){
+  const ids=[...wizState.afaAddSel];
+  if(!ids.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
+  const st=document.getElementById('wiz-afa-status')?.value||'Afastado';
+  const b=window._writeBatch(window._db); const afet=[];
+  ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
+    c.status=st; b.set(window._doc('colaboradores',id),c); afet.push(c); });
+  if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
+  try{ await b.commit(); wizState.afaAddSel.clear();
+    toast(afet.length+' colaborador(es) afastados ('+getStatusInfo(st).label+').','success');
+    wizRenderAfaReList(); wizRenderAfaAddList();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ── ETAPA 4: FERIAS (em construcao — proxima fase) ───────────────
+function wizFeriasHTML(){
+  return '<div class="alert alert-info"><strong>🏖️ Férias — etapa em construção.</strong><br>'
+    +'Esta é a etapa mais delicada: confirma dias gozados/comprados, abate do saldo no Radar, reprograma o agendamento (substituindo o botão "Fechar ciclo") e impacta os benefícios de dias comprados. '
+    +'Vou implementá-la na próxima fase, alinhando as regras com você antes. Por ora, você pode <strong>Concluir</strong> o assistente.</div>';
 }
