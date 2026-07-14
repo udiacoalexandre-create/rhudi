@@ -4806,31 +4806,16 @@ function exportarFolhaExcel(){
 // ════════════════════════════════════════════════════════════════
 function pgFerRadar(){
   return `
-    <div class="page-header"><h2 class="page-title">Radar de Férias</h2><p class="page-subtitle">Farol de vencimento por colaborador.</p></div>
-    <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--red)"></div>Vencido (fechar ciclo)</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--orange)"></div>Vence em ≤3 meses</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--yellow)"></div>Vence em 4-6 meses</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--green)"></div>Vence em +6 meses</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px"><div style="width:14px;height:14px;border-radius:50%;background:var(--border)"></div>Sem dados</div>
-      </div>
-      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-        <input type="text" id="rq" placeholder="Buscar por nome, matrícula, depto ou função..." oninput="renderFerRadar()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;min-width:230px">
-        ${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFerRadar')}
-        ${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}
-        ${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}
-        ${msDropdown('rcor','Situação',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}
-        <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()">Excel</button>
-      </div>
+    <div class="page-header"><h2 class="page-title">Radar de Férias</h2><p class="page-subtitle">Vencimento e agendamento de férias por colaborador. Cada coluna é um estágio de vencimento; o número no topo é o total.</p></div>
+    <div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">
+      <div class="filter-group" style="flex:1"><label>Buscar</label>
+        <input type="text" id="rq" placeholder="Nome, matrícula, depto ou função..." oninput="renderFerRadar()"></div>
+      <div class="filter-group"><label>Empresa</label>${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFerRadar')}</div>
+      <div class="filter-group"><label>Departamento</label>${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}</div>
+      <div class="filter-group"><label>Função</label>${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}</div>
+      <div class="filter-group"><label>Situação</label>${msDropdown('rcor','Situação',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}</div>
+      <button class="btn btn-ghost btn-sm" onclick="exportarFeriasExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
     </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:16px;font-size:11px;color:var(--text2)">
-      <span style="font-weight:700;text-transform:uppercase;letter-spacing:.5px">Agendamento:</span>
-      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--green)"></div>No prazo (até a dobra)</div>
-      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:var(--red)"></div>Após o limite (dobra)</div>
-      <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:50%;background:#111827"></div>Sem agendamento</div>
-    </div>
-    <div id="fer-stats" style="margin-bottom:16px"></div>
     <div id="fer-radar-grid"></div>
     <div id="fer-tabela" style="margin-top:20px"></div>`;
 }
@@ -5026,7 +5011,7 @@ function renderFarois(dados){
   const bgMap={verde:'#ECFDF5',amarelo:'#FEFCE8',laranja:'#FFF7ED',vermelho:'#FEF2F2',sem:'#F9FAFB',na:'#F3F4F6'};
 
   const colunas=[
-    {cor:'vermelho',titulo:'Vencido (fechar ciclo)',icone:''},
+    {cor:'vermelho',titulo:'Vencido',icone:''},
     {cor:'laranja',titulo:'Vence em ≤3m',icone:''},
     {cor:'amarelo',titulo:'Vence em 4-6m',icone:''},
     {cor:'verde',titulo:'Vence em +6m',icone:''},
@@ -5047,23 +5032,23 @@ function renderFarois(dados){
           +'<div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">'
           +itens.map(c=>{
             const f=c.farol;
-            const dotCor={verde:'var(--green)',vermelha:'var(--red)',preta:'#111827',cinza:'var(--text3)'};
-            const ag=agendamentoStatus(c,f.vencDate);
             const saldo=(f.dias!=null?f.dias:30);
-            const saldoBg=saldo<0?'#FEE2E2':'var(--blue-light)', saldoCor=saldo<0?'#991B1B':'var(--blue-dark)';
-            const btnCiclo = ''; // "Fechar ciclo" migrado para o assistente Atualizar Base > Ferias (+30 automatico no aniversario)
-            return '<div style="background:#fff;border:1px solid '+corMap[col.cor]+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
-              +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
-              +'<div style="display:flex;align-items:center;gap:6px">'
-                +'<span title="'+ag.tip+'" style="flex:0 0 auto;width:10px;height:10px;border-radius:50%;background:'+dotCor[ag.cor]+'"></span>'
-                +'<span style="flex:1;min-width:0;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</span>'
-                +'<span title="Saldo de dias a tirar" style="flex:0 0 auto;background:'+saldoBg+';color:'+saldoCor+';font-size:10px;font-weight:800;border-radius:10px;padding:1px 7px">'+saldo+' d</span>'
-              +'</div>'
-              +'<div style="font-size:10px;color:var(--text2);margin-top:3px">'
-              +(f.cor!=='sem'?'Próx. venc: '+f.vencStr+' &middot; '+f.label:'Sem admissão/venc.')
-              +(c.ferMes?'<br>Agend: '+agendamentoLabel(c):'<br>Sem agendamento')
-              +'</div>'
-              +btnCiclo
+            const vencTxt = f.cor==='sem' ? 'Sem data de vencimento'
+              : (f.meses<0 ? 'Venceu em '+f.vencStr : 'Vence em '+f.vencStr);
+            const vencIc = f.cor==='sem' ? 'calendar-x' : (f.meses<0 ? 'alert-triangle' : 'calendar-due');
+            let agHtml;
+            if(!c.ferMes){ agHtml='<span class="rad-tag rad-tag--none">Sem agendamento</span>'; }
+            else {
+              const ag=agendamentoStatus(c,f.vencDate);
+              const cls=ag.cor==='verde'?'rad-tag--ok':(ag.cor==='vermelha'?'rad-tag--bad':'rad-tag--neu');
+              const lbl=ag.cor==='verde'?'no prazo':(ag.cor==='vermelha'?'fora do prazo':'agendado');
+              agHtml='<span>Agend. <strong>'+agendamentoLabel(c)+'</strong></span> <span class="rad-tag '+cls+'">'+lbl+'</span>';
+            }
+            return '<div class="rad-card" onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
+              +'<div class="rad-card__top"><span class="rad-card__name">'+c.nome+'</span>'
+                +'<span class="rad-saldo'+(saldo<0?' rad-saldo--neg':'')+'" title="Saldo de dias a tirar">'+saldo+'d</span></div>'
+              +'<div class="rad-line" style="color:'+corMap[col.cor]+'"><i class="ti ti-'+vencIc+'"></i> '+vencTxt+'</div>'
+              +'<div class="rad-line rad-agend"><i class="ti ti-calendar-event"></i> '+agHtml+'</div>'
               +'</div>';
           }).join('')
           +'</div></div>';

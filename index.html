@@ -105,6 +105,21 @@
 /* Botao primario verde (marca) nas telas migradas para o design system */
 .ds .btn-primary{ background:var(--brand); border-color:var(--brand); color:#fff; }
 .ds .btn-primary:hover{ background:var(--brand-hover); border-color:var(--brand-hover); }
+/* Radar de Ferias — cards do kanban */
+.ds .rad-card{ background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;transition:box-shadow .12s,border-color .12s; }
+.ds .rad-card:hover{ box-shadow:var(--shadow-md);border-color:var(--border-strong); }
+.ds .rad-card__top{ display:flex;align-items:center;gap:6px;margin-bottom:5px; }
+.ds .rad-card__name{ flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.ds .rad-saldo{ flex:0 0 auto;background:var(--accent-bg);color:var(--accent-text);font-size:10px;font-weight:800;border-radius:10px;padding:1px 7px; }
+.ds .rad-saldo--neg{ background:var(--danger-bg);color:var(--danger-text); }
+.ds .rad-line{ font-size:11px;display:flex;align-items:center;gap:5px;margin-top:3px;font-weight:600; }
+.ds .rad-line .ti{ font-size:13px;flex:0 0 auto; }
+.ds .rad-agend{ color:var(--text-secondary);font-weight:500;flex-wrap:wrap; }
+.ds .rad-tag{ font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px; }
+.ds .rad-tag--ok{ background:var(--success-bg);color:var(--success-text); }
+.ds .rad-tag--bad{ background:var(--danger-bg);color:var(--danger-text); }
+.ds .rad-tag--neu{ background:var(--accent-bg);color:var(--accent-text); }
+.ds .rad-tag--none{ background:var(--surface-soft);color:var(--text-muted); }
 .ds .stat-grid{ display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px; }
 /* Zona/grupo visual (Indicadores) — cards viram chips claros dentro do painel */
 .ds .ds-zone{ background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:18px;box-shadow:var(--shadow); }
