@@ -7661,7 +7661,10 @@ let wizState=null;
 
 function abrirAtualizarBase(){
   wizState={idx:0, mode:'intro', contMode:'menu',
-    demSel:new Set(), afaReSel:new Set(), afaAddSel:new Set()};
+    demSel:new Set(), afaReSel:new Set(), afaAddSel:new Set(),
+    rev:{}, doneDem:[], doneAfa:[], contBaseline:null,
+    ferTab:'retorno', ferAnivDone:false, ferMesRef:null,
+    entFeitos:new Set(), retFeitos:new Set()};
   if(!document.getElementById('wiz-overlay')){
     const ov=document.createElement('div');
     ov.id='wiz-overlay';
@@ -7717,13 +7720,13 @@ function renderWizard(){
     +'<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--surface2,#F8F9FB)">'+stepper+'</div>'
     +'<div style="padding:22px;max-height:66vh;overflow-y:auto">'+body+'</div>'
     +'</div>';
-  // inicializacoes/listagens pos-render
   if(wizState.mode==='work'){
-    if(step.id==='contratacoes' && wizState.contMode==='individual'){
-      try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){}
+    if(step.id==='contratacoes'){
+      if(!wizState.contBaseline) wizState.contBaseline=new Set(colaboradores.map(c=>c._id));
+      if(wizState.contMode==='individual'){ try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){} }
     }
-    if(step.id==='demissoes') wizRenderDemList();
-    if(step.id==='afastados'){ wizRenderAfaReList(); wizRenderAfaAddList(); }
+    if(step.id==='demissoes' && !wizState.rev.demissoes) wizRenderDemList();
+    if(step.id==='afastados' && !wizState.rev.afastados){ wizRenderAfaReList(); wizRenderAfaAddList(); }
     if(step.id==='ferias'){
       if(!wizState.ferAnivDone){ wizState.ferAnivDone=true; wizRodarAniversarios(); }
       wizFerRenderBody();
@@ -7741,7 +7744,6 @@ function wizIntroHTML(step){
       +'<button class="btn btn-primary" onclick="wizSeguir()">Seguir &raquo;</button>'
     +'</div></div>';
 }
-
 function wizFooter(){
   const ultima = wizState.idx===WIZ_STEPS.length-1;
   return '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border)">'
@@ -7749,7 +7751,6 @@ function wizFooter(){
     +'<button class="btn btn-primary" onclick="wizAvancar()">'+(ultima?'Concluir':'Salvar e seguir &raquo;')+'</button>'
     +'</div>';
 }
-
 function wizWorkHTML(step){
   let inner='';
   if(step.id==='contratacoes') inner=wizContratacoesHTML();
@@ -7759,7 +7760,6 @@ function wizWorkHTML(step){
   return inner+wizFooter();
 }
 
-// ── Linha selecionavel (checkbox) ────────────────────────────────
 function wizRow(setName,c){
   const checked=wizState[setName].has(c._id)?'checked':'';
   return '<label style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer">'
@@ -7773,7 +7773,45 @@ function wizBusca(c,q){
   return (c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q);
 }
 
+// ── Tela de revisao (Demissoes / Afastados): desfazer ou adicionar mais ──
+function wizRevHTML(step){
+  const done = step==='demissoes'?wizState.doneDem:wizState.doneAfa;
+  const titulo = step==='demissoes'?'Marcados como Demitido nesta etapa':'Alterações de afastamento nesta etapa';
+  const rows = done.length ? done.map((e,i)=>
+      '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border)">'
+      +'<span style="flex:1;min-width:0"><strong style="font-size:13px">'+e.nome+'</strong> '
+        +(e.info?'<span class="text-xs text-muted">'+e.info+'</span>':'')+'</span>'
+      +'<span>'+statusBadge(e.para)+'</span>'
+      +'<button class="btn btn-ghost btn-xs" onclick="wizDesfazer(\''+step+'\','+i+')" title="Desfazer">✕ Desfazer</button>'
+    +'</div>').join('')
+    : '<div class="text-xs text-muted" style="padding:12px">Nada registrado nesta etapa.</div>';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
+      +'<div style="font-weight:700;font-size:15px">'+titulo+' ('+done.length+')</div>'
+      +'<button class="btn btn-primary btn-sm" onclick="wizRevSair(\''+step+'\')">➕ Adicionar mais</button>'
+    +'</div>'
+    +'<div class="alert alert-success" style="margin-bottom:12px">Confira os selecionados. Você pode <strong>Desfazer</strong> qualquer um ou <strong>Adicionar mais</strong>.</div>'
+    +'<div style="border:1px solid var(--border);border-radius:8px">'+rows+'</div>';
+}
+function wizRevSair(step){ wizState.rev[step]=false; renderWizard(); }
+async function wizDesfazer(step,i){
+  const arr = step==='demissoes'?wizState.doneDem:wizState.doneAfa;
+  const e=arr[i]; if(!e) return;
+  const c=colaboradores.find(x=>x._id===e.id);
+  if(c){
+    c.status=e.de;
+    if(step==='demissoes' && 'demitidoEm' in c) delete c.demitidoEm;
+    try{ await fsSet('colaboradores',e.id,c); }catch(err){ toast('Erro: '+err.message,'error'); return; }
+  }
+  arr.splice(i,1);
+  toast('Desfeito: '+e.nome,'success');
+  renderWizard();
+}
+
 // ── ETAPA 1: CONTRATACOES ────────────────────────────────────────
+function wizContAdicionados(){
+  if(!wizState.contBaseline) return [];
+  return colaboradores.filter(c=>!wizState.contBaseline.has(c._id)).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+}
 function wizContratacoesHTML(){
   const m=wizState.contMode||'menu';
   if(m==='individual'){
@@ -7791,16 +7829,35 @@ function wizContratacoesHTML(){
       +'</div>'
       +'<div id="import-preview" style="margin-top:14px"></div>';
   }
+  const add=wizContAdicionados();
+  let painel='';
+  if(add.length){
+    painel='<div style="margin-top:20px">'
+      +'<div style="font-weight:700;font-size:15px;margin-bottom:8px">Adicionados nesta etapa ('+add.length+')</div>'
+      +'<div style="border:1px solid var(--border);border-radius:8px">'
+      +add.map(c=>'<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border)">'
+        +'<span style="flex:1;min-width:0"><strong style="font-size:13px">'+c.nome+'</strong> <span class="text-xs text-muted">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
+        +'<button class="btn btn-ghost btn-xs" onclick="wizExcluirContratacao(\''+c._id+'\')" title="Excluir">✕ Excluir</button>'
+      +'</div>').join('')
+      +'</div></div>';
+  }
   return '<p style="color:var(--text2);margin-top:0">Como deseja adicionar colaboradores?</p>'
     +'<div style="display:flex;gap:14px;flex-wrap:wrap">'
       +'<button class="btn btn-primary" onclick="wizContModo(\'individual\')">➕ Adicionar colaborador (individual)</button>'
       +'<button class="btn btn-success" onclick="wizContModo(\'lote\')">📄 Adicionar em lote (planilha modelo)</button>'
     +'</div>'
-    +'<div class="text-xs text-muted" style="margin-top:14px">Cada colaborador é salvo assim que você confirma. Ao terminar, use <strong>Salvar e seguir</strong> ou <strong>Salvar e encerrar</strong> abaixo.</div>';
+    +painel;
+}
+async function wizExcluirContratacao(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  if(!confirm('Excluir "'+c.nome+'" da base? (foi adicionado nesta etapa)')) return;
+  try{ await fsDel('colaboradores',id); colaboradores=colaboradores.filter(x=>x._id!==id); toast('Removido: '+c.nome,'success'); renderWizard(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 // ── ETAPA 2: DEMISSOES ───────────────────────────────────────────
 function wizDemissoesHTML(){
+  if(wizState.rev.demissoes) return wizRevHTML('demissoes');
   return '<p class="text-xs text-muted" style="margin-top:0">Busque e selecione quem foi desligado. O status muda para <strong>Demitido</strong> — sai dos ativos e fica apenas no histórico. <span id="wiz-dem-count" style="color:var(--blue);font-weight:700"></span></p>'
     +'<input type="text" id="wiz-dem-q" placeholder="Buscar por nome, matrícula ou departamento..." oninput="wizRenderDemList()" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'
     +'<div id="wiz-dem-list" style="border:1px solid var(--border);border-radius:8px;margin-top:8px;max-height:320px;overflow-y:auto"></div>'
@@ -7823,19 +7880,23 @@ async function wizDemitir(){
   const comp=_compAtual();
   const b=window._writeBatch(window._db); const afet=[];
   ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
-    c.status='Demitido'; c.demitidoEm=comp; b.set(window._doc('colaboradores',id),c); afet.push(c); });
+    const de=c.status;
+    c.status='Demitido'; c.demitidoEm=comp; b.set(window._doc('colaboradores',id),c);
+    afet.push(c); wizState.doneDem.push({id,nome:c.nome,de,para:'Demitido',info:'dem. '+comp}); });
   if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
   try{
     await b.commit();
     for(const c of afet){ try{ await registrarVagaFerias(c); }catch(e){} }
     wizState.demSel.clear();
+    wizState.rev.demissoes=true;
     toast(afet.length+' colaborador(es) marcados como Demitido.','success');
-    wizRenderDemList();
+    renderWizard();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 // ── ETAPA 3: AFASTADOS ───────────────────────────────────────────
 function wizAfastadosHTML(){
+  if(wizState.rev.afastados) return wizRevHTML('afastados');
   const opts=STATUS_SO_CESTA.map(s=>'<option value="'+s+'">'+getStatusInfo(s).label+'</option>').join('');
   const inp='width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px';
   const box='border:1px solid var(--border);border-radius:8px;margin-top:8px;max-height:220px;overflow-y:auto';
@@ -7881,60 +7942,62 @@ async function wizReativar(){
   if(!ids.length){ toast('Selecione ao menos um afastado.','warning'); return; }
   const b=window._writeBatch(window._db); const afet=[];
   ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
-    c.status='Trabalhando'; b.set(window._doc('colaboradores',id),c); afet.push(c); });
+    const de=c.status; c.status='Trabalhando'; b.set(window._doc('colaboradores',id),c);
+    afet.push(c); wizState.doneAfa.push({id,nome:c.nome,de,para:'Trabalhando',info:'reativado'}); });
   if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
-  try{ await b.commit(); wizState.afaReSel.clear();
-    toast(afet.length+' colaborador(es) reativados.','success');
-    wizRenderAfaReList(); wizRenderAfaAddList();
+  try{ await b.commit(); wizState.afaReSel.clear(); wizState.rev.afastados=true;
+    toast(afet.length+' colaborador(es) reativados.','success'); renderWizard();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 async function wizAfastar(){
   const ids=[...wizState.afaAddSel];
   if(!ids.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
   const st=document.getElementById('wiz-afa-status')?.value||'Afastado';
+  const lbl=getStatusInfo(st).label;
   const b=window._writeBatch(window._db); const afet=[];
   ids.forEach(id=>{ const c=colaboradores.find(x=>x._id===id); if(!c) return;
-    c.status=st; b.set(window._doc('colaboradores',id),c); afet.push(c); });
+    const de=c.status; c.status=st; b.set(window._doc('colaboradores',id),c);
+    afet.push(c); wizState.doneAfa.push({id,nome:c.nome,de,para:st,info:lbl}); });
   if(!afet.length){ toast('Nada a atualizar.','warning'); return; }
-  try{ await b.commit(); wizState.afaAddSel.clear();
-    toast(afet.length+' colaborador(es) afastados ('+getStatusInfo(st).label+').','success');
-    wizRenderAfaReList(); wizRenderAfaAddList();
+  try{ await b.commit(); wizState.afaAddSel.clear(); wizState.rev.afastados=true;
+    toast(afet.length+' colaborador(es) afastados ('+lbl+').','success'); renderWizard();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 // ── ETAPA 4: FERIAS ──────────────────────────────────────────────
-// Sub-abas: Retorno · Entradas do mes · Ferias coletivas · Ajuste de saldo.
-// Regras confirmadas com o RH:
-//  - +30 automatico a cada ANIVERSARIO de admissao (config/feriasAniv guarda a
-//    ultima data verificada; nao credita retroativo na 1a vez).
-//  - Retorno: saldo_novo = saldo_atual - gozados - comprados; reprograma
-//    agendamento (mesmo mes/ano seguinte ou outro mes); status -> Trabalhando.
-//  - Entrada: grava dias comprados (impactam beneficios) e gozados; status -> Ferias.
-//  - Coletivas: baixa em lote no saldo (pode ficar negativo).
-//  - Ajuste manual: exige justificativa e registra quem fez (feriasLog.por).
 function wizFeriasHTML(){
   const tab=wizState.ferTab||'retorno';
   const tb=(id,label)=>'<button class="btn '+(tab===id?'btn-primary':'btn-ghost')+' btn-sm" onclick="wizFerTab(\''+id+'\')">'+label+'</button>';
   return '<div id="wiz-fer-aniv"></div>'
     +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'
-      +tb('retorno','↩️ Retorno de férias')
-      +tb('entrada','🏖️ Entradas do mês')
-      +tb('coletiva','👥 Férias coletivas')
-      +tb('ajuste','✏️ Ajuste de saldo')
+      +tb('retorno','↩️ Retorno de férias')+tb('entrada','🏖️ Entradas do mês')
+      +tb('coletiva','👥 Férias coletivas')+tb('ajuste','✏️ Ajuste de saldo')
     +'</div>'
     +'<div id="wiz-fer-body"></div>';
 }
 function wizFerTab(t){ wizState.ferTab=t; renderWizard(); }
-
 function wizFerRenderBody(){
   const body=document.getElementById('wiz-fer-body'); if(!body) return;
   const tab=wizState.ferTab||'retorno';
-  if(tab==='retorno')  body.innerHTML=wizFerBodyRetorno();
-  else if(tab==='entrada')  body.innerHTML=wizFerBodyEntrada();
+  if(tab==='retorno'){ body.innerHTML=wizFerBodyRetorno(); wizFerRenderRetList(); }
+  else if(tab==='entrada'){ body.innerHTML=wizFerBodyEntrada(); wizFerRenderEntList(); }
   else if(tab==='coletiva') body.innerHTML=wizFerBodyColetiva();
   else if(tab==='ajuste'){ body.innerHTML=wizFerBodyAjuste(); wizFerAjusteList(); }
 }
 const _wizPor=()=> (usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'';
+
+// linha "confirmado" (verde) usada em Retorno e Entradas
+function wizFerConfirmedRow(c,tipo){
+  const dias = tipo==='entrada' ? ((c.ferDiasGozados||0)+' gozados, '+(c.ferDiasComprados||0)+' comprados')
+                                : ('novo saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d');
+  return '<div id="'+(tipo==='entrada'?'ent':'ret')+'-row-'+c._id+'" style="border:1.5px solid var(--green);background:#ECFDF5;border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+    +'<div style="display:flex;align-items:center;gap:10px">'
+      +'<span style="color:var(--green);font-weight:800;font-size:18px">✓</span>'
+      +'<span style="flex:1;min-width:0"><strong>'+c.nome+'</strong> <span class="text-xs text-muted">'+dias+'</span></span>'
+      +statusBadge(c.status)
+      +'<span style="color:var(--green);font-weight:700;font-size:12px">Confirmado</span>'
+    +'</div></div>';
+}
 
 // ---- +30 por aniversario de admissao (automatico, idempotente por dia) ----
 function _aniversariosNoIntervalo(adm, desde, ate){
@@ -7955,8 +8018,7 @@ async function aplicarAniversariosFerias(){
   const desde=_dataLocal(cfg.ultimaData);
   if(!desde || desde>=hoje) return {credited:0};
   const por='sistema (aniversario)';
-  let mudou=0, totalDias=0;
-  const alterados=[];
+  let mudou=0, totalDias=0; const alterados=[];
   colaboradores.forEach(c=>{
     if(c.elegibilidade?.ferias===false) return;
     if(_statusKey(c.status).includes('DEMIT')) return;
@@ -7991,17 +8053,23 @@ async function wizRodarAniversarios(){
   else el.innerHTML='<div class="text-xs text-muted" style="margin-bottom:10px">Aniversários em dia — nenhum crédito pendente.</div>';
 }
 
-// ---- Sub-aba: RETORNO de ferias ----
+// ---- Sub-aba: RETORNO ----
 function wizFerBodyRetorno(){
-  const lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='ferias').sort((a,b)=>a.nome.localeCompare(b.nome));
-  const head='<p class="text-xs text-muted">Pessoas com status <strong>Férias</strong>. Confirme os dias: aplica <strong>saldo − gozados − comprados</strong>, reprograma o agendamento e volta o status para Trabalhando.</p>';
-  if(!lista.length) return head+'<div class="alert alert-info">Ninguém com status Férias no momento.</div>';
-  return head+lista.map(c=>wizFerRetRow(c)).join('');
+  return '<p class="text-xs text-muted">Pessoas com status <strong>Férias</strong>. Confirme os dias: aplica <strong>saldo − gozados − comprados</strong>, reprograma o agendamento e volta o status para Trabalhando.</p>'
+    +'<div id="ret-list"></div>';
+}
+function wizFerRenderRetList(){
+  const cont=document.getElementById('ret-list'); if(!cont) return;
+  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='ferias' || wizState.retFeitos.has(c._id));
+  lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome));
+  cont.innerHTML = lista.length ? lista.map(c=>wizFerRetRow(c)).join('')
+    : '<div class="alert alert-info">Ninguém com status Férias no momento.</div>';
 }
 function wizFerRetRow(c){
+  if(wizState.retFeitos.has(c._id)) return wizFerConfirmedRow(c,'retorno');
   const saldo=(c.ferSaldo!=null?c.ferSaldo:0); const mes=c.ferMes||'—';
   const inp='width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px';
-  return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+  return '<div id="ret-row-'+c._id+'" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
     +'<div style="font-weight:600">'+c.nome+' <span class="text-xs text-muted">'+(c.depto||'—')+' &middot; saldo atual '+saldo+'d &middot; agend.: '+mes+'</span></div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
       +'<div><label class="text-xs">Dias gozados</label><br><input type="number" id="ret-g-'+c._id+'" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'" style="'+inp+'"></div>'
@@ -8019,31 +8087,51 @@ async function wizFerConfirmarRetorno(id){
   const comp=Math.max(0,fnum(document.getElementById('ret-c-'+id)?.value));
   const r=document.getElementById('ret-r-'+id)?.value||'mesmo';
   const de=(c.ferSaldo!=null?c.ferSaldo:0);
-  c.ferSaldo=de-g-comp;
-  c.ferDiasGozados=g; c.ferDiasComprados=comp;
+  c.ferSaldo=de-g-comp; c.ferDiasGozados=g; c.ferDiasComprados=comp;
   if(r!=='mesmo') c.ferMes=r;
   c.status='Trabalhando';
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
   c.feriasLog.push({tipo:'retorno',gozados:g,comprados:comp,de,para:c.ferSaldo,ferMes:c.ferMes,em:new Date().toISOString(),por:_wizPor()});
-  try{ await fsSet('colaboradores',id,c); toast('Retorno de '+c.nome+' confirmado. Novo saldo: '+c.ferSaldo+'d.','success'); wizFerRenderBody(); }
-  catch(e){ toast('Erro: '+e.message,'error'); }
+  try{
+    await fsSet('colaboradores',id,c);
+    wizState.retFeitos.add(id);
+    const row=document.getElementById('ret-row-'+id); if(row) row.outerHTML=wizFerConfirmedRow(c,'retorno');
+    toast('Retorno de '+c.nome+' confirmado. Novo saldo: '+c.ferSaldo+'d.','success');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
-// ---- Sub-aba: ENTRADAS do mes ----
+// ---- Sub-aba: ENTRADAS do mes (com busca / antecipacao) ----
 function wizFerBodyEntrada(){
   const ref=wizState.ferMesRef||MESES_FER[new Date().getMonth()];
-  const sel='<select onchange="wizState.ferMesRef=this.value;wizFerRenderBody()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px">'
+  const sel='<select onchange="wizState.ferMesRef=this.value;wizFerRenderEntList()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px">'
     +MESES_FER.map(m=>'<option value="'+m+'" '+(m===ref?'selected':'')+'>'+m+'</option>').join('')+'</select>';
-  const lista=colaboradoresUnicos().filter(c=>c.ferMes===ref && statusGrupo(c.status)==='trabalhando').sort((a,b)=>a.nome.localeCompare(b.nome));
-  let html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><span class="text-xs" style="font-weight:700">Mês de referência:</span>'+sel+'</div>'
-    +'<p class="text-xs text-muted">Agendados para <strong>'+ref+'</strong>. Confirme a entrada e os dias — <strong>comprados</strong> impactam os benefícios pagos em férias. Status muda para Férias.</p>';
-  if(!lista.length) return html+'<div class="alert alert-info">Ninguém agendado para '+ref+' aguardando entrada (ou já estão de férias).</div>';
-  return html+lista.map(c=>wizFerEntRow(c)).join('');
+  return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><span class="text-xs" style="font-weight:700">Mês de referência:</span>'+sel+'</div>'
+    +'<p class="text-xs text-muted">Agendados para o mês. Confirme a entrada e os dias — <strong>comprados</strong> impactam os benefícios. Status muda para Férias.</p>'
+    +'<input type="text" id="ent-q" placeholder="Buscar (qualquer mês) para antecipar alguém..." oninput="wizFerRenderEntList()" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:8px">'
+    +'<div id="ent-list"></div>';
 }
-function wizFerEntRow(c){
+function wizFerRenderEntList(){
+  const cont=document.getElementById('ent-list'); if(!cont) return;
+  const ref=wizState.ferMesRef||MESES_FER[new Date().getMonth()];
+  const q=(document.getElementById('ent-q')?.value||'').toLowerCase().trim();
+  let lista, info='';
+  if(q){
+    lista=colaboradoresUnicos().filter(c=>(statusGrupo(c.status)==='trabalhando'||wizState.entFeitos.has(c._id)) && wizBusca(c,q));
+    info='<div class="text-xs text-muted" style="margin-bottom:6px">Busca em <strong>todos os meses</strong> — dá para antecipar quem está agendado para outro mês.</div>';
+  } else {
+    lista=colaboradoresUnicos().filter(c=>c.ferMes===ref && (statusGrupo(c.status)==='trabalhando'||wizState.entFeitos.has(c._id)));
+  }
+  lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,300);
+  cont.innerHTML = info + (lista.length ? lista.map(c=>wizFerEntRow(c,ref)).join('')
+    : '<div class="alert alert-info">Ninguém '+(q?'encontrado':'agendado para '+ref+' aguardando entrada')+'.</div>');
+}
+function wizFerEntRow(c,ref){
+  if(wizState.entFeitos.has(c._id)) return wizFerConfirmedRow(c,'entrada');
   const inp='width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px';
-  return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
-    +'<div style="font-weight:600">'+c.nome+' <span class="text-xs text-muted">'+(c.depto||'—')+' &middot; saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d</span></div>'
+  const outroMes = c.ferMes && c.ferMes!==ref
+    ? ' <span style="background:#FEF3C7;color:#92400E;font-size:10px;font-weight:700;border-radius:20px;padding:2px 8px">agend.: '+c.ferMes+'</span>' : '';
+  return '<div id="ent-row-'+c._id+'" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+    +'<div style="font-weight:600">'+c.nome+outroMes+' <span class="text-xs text-muted">'+(c.depto||'—')+' &middot; saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d</span></div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
       +'<div><label class="text-xs">Dias gozados</label><br><input type="number" id="ent-g-'+c._id+'" min="0" style="'+inp+'"></div>'
       +'<div><label class="text-xs">Dias comprados</label><br><input type="number" id="ent-c-'+c._id+'" min="0" style="'+inp+'"></div>'
@@ -8057,8 +8145,12 @@ async function wizFerConfirmarEntrada(id){
   c.ferDiasGozados=g; c.ferDiasComprados=comp; c.status='Ferias';
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
   c.feriasLog.push({tipo:'entrada',gozados:g,comprados:comp,em:new Date().toISOString(),por:_wizPor()});
-  try{ await fsSet('colaboradores',id,c); toast(c.nome+' entrou de Férias ('+g+' gozados, '+comp+' comprados).','success'); wizFerRenderBody(); }
-  catch(e){ toast('Erro: '+e.message,'error'); }
+  try{
+    await fsSet('colaboradores',id,c);
+    wizState.entFeitos.add(id);
+    const row=document.getElementById('ent-row-'+id); if(row) row.outerHTML=wizFerConfirmedRow(c,'entrada');
+    toast(c.nome+' entrou de Férias ('+g+' gozados, '+comp+' comprados).','success');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 // ---- Sub-aba: FERIAS COLETIVAS ----
@@ -8101,7 +8193,7 @@ async function wizFerColetiva(){
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
-// ---- Sub-aba: AJUSTE MANUAL de saldo (com justificativa + log) ----
+// ---- Sub-aba: AJUSTE MANUAL de saldo (justificativa + log) ----
 function wizFerBodyAjuste(){
   return '<p class="text-xs text-muted">Ajuste manual do saldo (exceções). Exige <strong>justificativa</strong> e registra quem fez, no histórico do colaborador.</p>'
     +'<input type="text" id="aj-q" placeholder="Buscar colaborador por nome, matrícula ou depto..." oninput="wizFerAjusteList()" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'
