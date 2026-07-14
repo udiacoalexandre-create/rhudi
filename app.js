@@ -5114,45 +5114,71 @@ function abrirDetalheFerias(id){
   const f=getFarol(c);
   const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-  // Remove modal anterior se ainda existir (evita duplicatas)
   document.getElementById('modal-ferias-detalhe')?.remove();
 
+  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
+  const farolVar={vermelho:'danger',laranja:'warning',amarelo:'accent',verde:'success',sem:'neutral',na:'neutral'};
+  const dd=f.vencDate?(String(f.vencDate.getDate()).padStart(2,'0')+'/'+String(f.vencDate.getMonth()+1).padStart(2,'0')+'/'+String(f.vencDate.getFullYear()).slice(-2)):'—';
+  const vencTxt=f.cor==='sem'?'Sem vencimento':(f.meses<0?'Venceu em '+dd:'Vence em '+dd);
+  let agHtml;
+  if(!c.ferMes){ agHtml='<span class="badge badge--neutral">Sem agendamento</span>'; }
+  else { const ag=agendamentoStatus(c,f.vencDate);
+    const bcls=ag.cor==='vermelha'?'danger':(ag.cor==='verde'||ag.cor==='cinza'?'success':'accent');
+    const blbl=ag.cor==='vermelha'?'fora do prazo':(ag.cor==='verde'||ag.cor==='cinza'?'no prazo':'agendado');
+    agHtml='<strong>'+agendamentoLabel(c)+'</strong> <span class="badge badge--'+bcls+'">'+blbl+'</span>'; }
+  const saldo=(c.ferSaldo!=null?c.ferSaldo:30);
+  const logHtml=(Array.isArray(c.feriasLog)&&c.feriasLog.length)?c.feriasLog.slice().reverse().map(l=>{
+    const quando=l.em?new Date(l.em).toLocaleDateString('pt-BR'):((l.mes||'—')+'/'+(l.ano||''));
+    let desc;
+    if(l.tipo==='aniversario') desc='+'+(l.dias||30)+'d (aniversário de admissão) → '+l.para+'d';
+    else if(l.tipo==='retorno') desc='Retorno · '+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+' → '+l.para+'d';
+    else if(l.tipo==='entrada') desc='Entrada · '+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'');
+    else if(l.tipo==='coletiva') desc='Coletivas · −'+(l.dias||0)+'d → '+l.para+'d';
+    else if(l.tipo==='ajuste_manual') desc='Ajuste manual · '+l.de+' → '+l.para+'d'+(l.justificativa?' ('+l.justificativa+')':'');
+    else desc=(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+(l.faltas?' · '+l.faltas+'d faltas':'');
+    return '<div class="ferd-log"><span style="white-space:nowrap">'+quando+'</span><span class="text-muted" style="text-align:right">'+desc+(l.por?' · '+l.por:'')+'</span></div>';
+  }).join(''):'';
+
   const html=`
-    <div class="modal-overlay" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
-      <div class="modal" style="max-width:520px">
-        <div class="modal-title">F\u00E9rias \u2014 ${c.nome}</div>
-        <div class="modal-sub">Matricula ${c.mat||'\u2014'} &middot; Funcao: <strong>${funcaoColab(c)||'\u2014'}</strong> &middot; Vencimento atual: ${f.vencStr} (${f.label})</div>
+    <div class="modal-overlay ds" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
+      <div class="modal" style="max-width:540px">
+        <div class="modal-title" style="display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella" style="color:var(--brand)"></i> ${c.nome}</div>
+        <div class="modal-sub">Matrícula ${c.mat||'—'} &middot; Função: <strong>${funcaoColab(c)||'—'}</strong></div>
+        <div class="ferd-resumo">
+          <div class="ferd-item"><span class="ferd-lbl">Situação</span><span><span class="badge badge--${farolVar[f.cor]}">${f.label}</span></span></div>
+          <div class="ferd-item"><span class="ferd-lbl">Vencimento</span><span class="ferd-val" style="color:${corMap[f.cor]}">${vencTxt}</span></div>
+          <div class="ferd-item"><span class="ferd-lbl">Agendamento</span><span>${agHtml}</span></div>
+          <div class="ferd-item"><span class="ferd-lbl">Saldo atual</span><span class="ferd-val"${saldo<0?' style="color:var(--danger-text)"':''}>${saldo} dias</span></div>
+        </div>
+        <div class="section-label">Editar</div>
         <div class="form-grid cols2">
           <div class="fg">
-            <label>Data de admissao</label>
+            <label>Data de admissão</label>
             <input type="date" id="ferd-admissao" value="${c.admissao||''}">
           </div>
           <div class="fg">
-            <label>Vencimento (próximo ciclo) — dia/mês</label>
+            <label>Vencimento (dia/mês)</label>
             <input type="text" id="ferd-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}">
           </div>
           <div class="fg">
             <label>Saldo de dias a tirar</label>
-            <input type="number" id="ferd-saldo" value="${c.ferSaldo!=null?c.ferSaldo:30}" min="-90" max="90">
+            <input type="number" id="ferd-saldo" value="${saldo}" min="-90" max="90">
           </div>
           <div class="fg">
-            <label>Mes agendado para tirar ferias</label>
+            <label>Mês agendado</label>
             <select id="ferd-mes" onchange="atualizarAnoFerd()">
-              <option value="">-- Nao agendado --</option>
+              <option value="">-- Não agendado --</option>
               ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
             </select>
-            <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'\u2014'}</strong></span>
+            <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'—'}</strong></span>
           </div>
         </div>
-        <p class="text-xs text-muted" style="margin-top:10px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
-        ${(Array.isArray(c.feriasLog)&&c.feriasLog.length)?`<div style="margin-top:12px">
-          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Histórico de férias</div>
-          ${c.feriasLog.slice().reverse().map(l=>'<div style="display:flex;justify-content:space-between;font-size:12px;border-bottom:1px solid var(--border);padding:4px 2px"><span>'+(l.mes||'—')+'/'+(l.ano||'')+'</span><span class="text-muted">'+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+(l.faltas?' · '+l.faltas+'d faltas':'')+'</span></div>').join('')}
-        </div>`:''}
+        <p class="text-xs text-muted" style="margin-top:8px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
+        ${logHtml?`<div style="margin-top:14px"><div class="section-label" style="margin-bottom:6px">Histórico</div><div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px 10px">${logHtml}</div></div>`:''}
         <div id="ferd-alertas" style="margin-top:10px"></div>
         <div class="modal-footer">
           <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Cancelar</button>
-          <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')">Salvar</button>
+          <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')"><i class="ti ti-check"></i> Salvar</button>
         </div>
       </div>
     </div>`;

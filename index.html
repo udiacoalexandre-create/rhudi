@@ -120,6 +120,13 @@
 .ds .rad-tag--bad{ background:var(--danger-bg);color:var(--danger-text); }
 .ds .rad-tag--neu{ background:var(--accent-bg);color:var(--accent-text); }
 .ds .rad-tag--none{ background:var(--surface-soft);color:var(--text-muted); }
+/* Modal de detalhe de ferias */
+.ds .ferd-resumo{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px;background:var(--surface-soft);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px; }
+.ds .ferd-item{ display:flex;flex-direction:column;gap:4px;min-width:0; }
+.ds .ferd-lbl{ font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted); }
+.ds .ferd-val{ font-size:14px;font-weight:700;color:var(--text); }
+.ds .ferd-log{ display:flex;justify-content:space-between;gap:10px;font-size:12px;border-bottom:1px solid var(--border);padding:5px 2px; }
+.ds .ferd-log:last-child{ border-bottom:none; }
 .ds .stat-grid{ display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px; }
 /* Zona/grupo visual (Indicadores) — cards viram chips claros dentro do painel */
 .ds .ds-zone{ background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:18px;box-shadow:var(--shadow); }
