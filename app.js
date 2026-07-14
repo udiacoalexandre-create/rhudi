@@ -222,7 +222,7 @@ function mobBadge(c){
   if(m==='carro_empresa') return '<span class="mob-tag mob-carro">🚘 Carro empresa</span>';
   if(m==='combustivel') return '<span class="mob-tag mob-comb">Comb '+brl(c.comb)+'/mes</span>';
   const vt=[1,2,3,4].filter(n=>fnum(c['vt'+n])>0)
-    .map(n=>'<span class="tag-'+(c['tp'+n]||'pec').toLowerCase()+'">'+(c['tp'+n]||'VT')+'</span>').join(' ');
+    .map(n=>'<span class="tag-'+(c['tp'+n]||'pec').toLowerCase()+'" title="'+(c['tp'+n]||'')+'">'+(c['cod'+n]||c['tp'+n]||'VT')+'</span>').join(' ');
   return vt||'<span class="mob-tag mob-vt">🚌 VT</span>';
 }
 
@@ -817,8 +817,7 @@ async function excluirColab(id,nome){
 const MODULES = {
   base:{pages:[
     {id:'base-lista',icon:'<i class="ti ti-users"></i>',label:'Colaboradores'},
-    {id:'base-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar'},
-    {id:'base-novo',icon:'<i class="ti ti-user-plus"></i>',label:'Novo Colaborador'},
+    {id:'base-atualizar',icon:'<i class="ti ti-refresh"></i>',label:'Atualizar Base',action:'abrirAtualizarBase()'},
     {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Bases Salvas'},
   ]},
   beneficios:{pages:[
@@ -879,7 +878,7 @@ function buildSidebar(mod){
   if(!nav) return;
   const pages=pagesVisiveis(mod);
   nav.innerHTML=pages.map(p=>{
-    const onclick='showPage(\''+p.id+'\')';
+    const onclick=p.action||('showPage(\''+p.id+'\')');
     const icon=p.icon?'<span class="s-icon">'+p.icon+'</span> ':'';
     return '<button class="sidebar-btn" id="snav-'+p.id+'" onclick="'+onclick+'">'+icon+p.label+'</button>';
   }).join('');
@@ -1114,12 +1113,15 @@ function _resumoCard(n, label, cls, valColor){
     +'<div class="stat-label">'+label+'</div></div>';
 }
 // Card do design system (chip de icone Tabler + valor + rotulo). Escopo .ds.
-function _dsStat(icon, chip, val, label){
-  return '<div class="stat"><div class="stat__chip chip--'+chip+'"><i class="ti ti-'+icon+'"></i></div>'
+// click (opcional): expressao JS chamada ao clicar (filtra a tabela).
+function _dsStat(icon, chip, val, label, click){
+  const attr=click?(' onclick="'+click+'" style="cursor:pointer" title="Filtrar a lista por '+label+'"'):'';
+  return '<div class="stat"'+attr+'><div class="stat__chip chip--'+chip+'"><i class="ti ti-'+icon+'"></i></div>'
     +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
 }
-function _dsStatAccent(icon, val, label){
-  return '<div class="stat stat--accent"><div class="stat__chip"><i class="ti ti-'+icon+'"></i></div>'
+function _dsStatAccent(icon, val, label, click){
+  const attr=click?(' onclick="'+click+'" style="cursor:pointer" title="'+label+'"'):'';
+  return '<div class="stat stat--accent"'+attr+'><div class="stat__chip"><i class="ti ti-'+icon+'"></i></div>'
     +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
 }
 // ── Helpers de marcacao (design system) usados so na tabela da Base ──
@@ -1177,12 +1179,32 @@ function renderStatusResumo(){
   const nNA  =unicos.filter(ehNA).length;
   const nAtivos=nTrab+nFer+nAfa;
   el.innerHTML='<div class="stat-grid">'
-    +_dsStat('user-check','success',nTrab,'Trabalhando')
-    +_dsStat('umbrella','warning',nFer,'Férias')
-    +_dsStat('heartbeat','danger',nAfa,'Afastados')
-    +_dsStat('circle-minus','neutral',nNA,'N/A')
-    +_dsStatAccent('users',nAtivos,'Total de ativos')
+    +_dsStat('user-check','success',nTrab,'Trabalhando',"blFiltroStatus('trabalhando')")
+    +_dsStat('umbrella','warning',nFer,'Férias',"blFiltroStatus('ferias')")
+    +_dsStat('heartbeat','danger',nAfa,'Afastados',"blFiltroStatus('so_cesta')")
+    +_dsStat('circle-minus','neutral',nNA,'N/A',"blFiltroStatus('na')")
+    +_dsStatAccent('users',nAtivos,'Total de ativos',"blFiltroStatus('')")
     +'</div>';
+}
+// Clicar num indicador de situacao aplica o filtro de status na tabela.
+function blFiltroStatus(grupo){
+  document.querySelectorAll('.ms-status').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('.ms-tipo').forEach(cb=>cb.checked=false);
+  const statusSet=[...new Set(colaboradores.map(c=>c.status||'').filter(Boolean))];
+  const ehNA=s=>/^N\/?A$/i.test(String(s).trim());
+  let alvos=[];
+  if(grupo==='trabalhando') alvos=statusSet.filter(s=>statusGrupo(s)==='trabalhando' && !ehNA(s));
+  else if(grupo==='ferias')  alvos=statusSet.filter(s=>statusGrupo(s)==='ferias');
+  else if(grupo==='so_cesta')alvos=statusSet.filter(s=>statusGrupo(s)==='so_cesta');
+  else if(grupo==='na')      alvos=statusSet.filter(ehNA);
+  alvos.forEach(s=>{ const cb=document.querySelector('.ms-status[value="'+s+'"]'); if(cb) cb.checked=true; });
+  renderColabList();
+}
+// Clicar num indicador de tipo de contrato aplica o filtro de tipo.
+function blFiltroTipo(cod){
+  document.querySelectorAll('.ms-status').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('.ms-tipo').forEach(cb=>{ cb.checked=(cb.value===cod); });
+  renderColabList();
 }
 
 // Resumo por TIPO de contrato (base ativa, sem demitidos).
@@ -1196,9 +1218,9 @@ function renderTipoResumo(){
   const seen=new Set(); let dup=0;
   ativos.forEach(c=>{ const cpf=(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome)); if(seen.has(cpf)) dup++; else seen.add(cpf); });
   el.innerHTML='<div class="section-label">Por tipo de contrato</div><div class="stat-grid">'
-    +_dsStat('crown','danger',cont.DIR||0,'Diretoria')
-    +_dsStat('briefcase','warning',cont.TER||0,'Terceiros')
-    +_dsStat('user-star','purple',cont.SOC||0,'Sócios')
+    +_dsStat('crown','danger',cont.DIR||0,'Diretoria',"blFiltroTipo('DIR')")
+    +_dsStat('briefcase','warning',cont.TER||0,'Terceiros',"blFiltroTipo('TER')")
+    +_dsStat('user-star','purple',cont.SOC||0,'Sócios',"blFiltroTipo('SOC')")
     +_dsStat('copy','accent',dup,'Duplicados')
     +'</div>';
 }
@@ -2304,11 +2326,10 @@ async function loadBasesSalvas(){
   return basesSalvasList;
 }
 
-async function salvarBaseCompetencia(){
-  const comp=(document.getElementById('bsv-comp')?.value||'').trim();
-  if(!/^\d{2}\/\d{4}$/.test(comp)){ toast('Informe a competência no formato MM/AAAA.','error'); return; }
-  if(!colaboradores.length){ toast('Base vazia — nada para salvar.','error'); return; }
-  if(!confirm('Salvar uma nova versão da base ('+colaboradores.length+' colaboradores) para '+comp+'?')) return;
+// Grava uma versao da base em 'basesSalvas' para a competencia MM/AAAA.
+async function salvarBaseComp(comp, silent){
+  if(!/^\d{2}\/\d{4}$/.test(comp)){ toast('Competência inválida (use MM/AAAA).','error'); return false; }
+  if(!colaboradores.length){ toast('Base vazia — nada para salvar.','error'); return false; }
   const id=comp.replace('/','_')+'__'+Date.now();
   const payload={
     competencia:comp,
@@ -2319,10 +2340,17 @@ async function salvarBaseCompetencia(){
   };
   try{
     await fsSet('basesSalvas',id,payload);
-    toast('Base de '+comp+' salva ('+colaboradores.length+' colaboradores).','success');
     await loadBasesSalvas();
     if(currentPage==='base-versoes') renderBasesSalvas();
-  }catch(e){ toast('Erro ao salvar base: '+e.message,'error'); }
+    if(!silent) toast('Base de '+comp+' salva ('+colaboradores.length+' colaboradores).','success');
+    return true;
+  }catch(e){ toast('Erro ao salvar base: '+e.message,'error'); return false; }
+}
+async function salvarBaseCompetencia(){
+  const comp=(document.getElementById('bsv-comp')?.value||'').trim();
+  if(!/^\d{2}\/\d{4}$/.test(comp)){ toast('Informe a competência no formato MM/AAAA.','error'); return; }
+  if(!confirm('Salvar uma nova versão da base ('+colaboradores.length+' colaboradores) para '+comp+'?')) return;
+  await salvarBaseComp(comp);
 }
 
 async function excluirBaseSalva(id){
@@ -7739,7 +7767,7 @@ function wizSeguir(){ wizState.mode='work'; wizState.contMode='menu'; renderWiza
 function wizPular(){ wizAvancar(); }
 function wizAvancar(){
   if(wizState.idx < WIZ_STEPS.length-1){ wizState.idx++; wizState.mode='intro'; renderWizard(); }
-  else { fecharWizard(true); }
+  else { wizState.mode='fim'; renderWizard(); }
 }
 function wizContModo(m){ wizState.contMode=m; renderWizard(); }
 function wizToggle(setName,id){
@@ -7768,7 +7796,7 @@ function renderWizard(){
   const ov=document.getElementById('wiz-overlay'); if(!ov||!wizState) return;
   const step=WIZ_STEPS[wizState.idx];
   const stepper=WIZ_STEPS.map((s,i)=>{
-    const done=i<wizState.idx, cur=i===wizState.idx;
+    const done=(wizState.mode==='fim')||i<wizState.idx, cur=wizState.mode!=='fim'&&i===wizState.idx;
     const bg=(cur||done)?'var(--brand)':'#E5E7EB';
     const col=(cur||done)?'#fff':'#6B7280';
     return '<div style="display:flex;align-items:center;gap:6px">'
@@ -7777,7 +7805,7 @@ function renderWizard(){
       +(i<WIZ_STEPS.length-1?'<span style="width:20px;height:2px;background:'+(done?'var(--brand)':'#E5E7EB')+';margin:0 2px"></span>':'')
       +'</div>';
   }).join('');
-  const body = wizState.mode==='intro' ? wizIntroHTML(step) : wizWorkHTML(step);
+  const body = wizState.mode==='intro' ? wizIntroHTML(step) : (wizState.mode==='fim' ? wizFinalizarHTML() : wizWorkHTML(step));
   ov.innerHTML='<div class="ds" style="background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;margin:auto">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 22px;background:var(--brand);color:#fff">'
       +'<div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-refresh"></i> Atualizar Base'
@@ -7818,6 +7846,30 @@ function wizFooter(){
     +'<button class="btn btn-ghost" onclick="fecharWizard(false)">Salvar e encerrar</button>'
     +'<button class="btn btn-primary" onclick="wizAvancar()">'+(ultima?'Concluir':'Salvar e seguir &raquo;')+'</button>'
     +'</div>';
+}
+function wizFinalizarHTML(){
+  const now=new Date(); const anoAtual=now.getFullYear();
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const mesSel='<select id="wiz-fim-mes" class="wiz-sel">'+meses.map((m,i)=>'<option value="'+String(i+1).padStart(2,'0')+'" '+(i===now.getMonth()?'selected':'')+'>'+m+'</option>').join('')+'</select>';
+  const anoSel='<select id="wiz-fim-ano" class="wiz-sel">'+[anoAtual-1,anoAtual,anoAtual+1].map(a=>'<option value="'+a+'" '+(a===anoAtual?'selected':'')+'>'+a+'</option>').join('')+'</select>';
+  return '<div style="text-align:center;padding:8px 10px 4px"><div class="wiz-intro-ic"><i class="ti ti-circle-check"></i></div>'
+    +'<h3 class="wiz-intro-title">Atualização concluída!</h3>'
+    +'<p class="wiz-intro-sub">Escolha a competência e salve esta versão da base — ela ficará disponível na aba <strong>Bases Salvas</strong>.</p></div>'
+    + wizPanel('<i class="ti ti-device-floppy"></i> Salvar base','',
+        '<div class="wiz-fields" style="margin-top:0">'
+        +'<div class="wiz-field"><label>Mês (competência)</label>'+mesSel+'</div>'
+        +'<div class="wiz-field"><label>Ano</label>'+anoSel+'</div>'
+        +'<div class="wiz-field"><label>Registros</label><div class="wiz-val">'+colaboradores.length+' colaboradores</div></div>'
+        +'</div>')
+    + '<div class="wiz-actions" style="justify-content:flex-end;border-top:1px solid var(--border);padding-top:16px">'
+    + '<button class="btn btn-ghost" onclick="fecharWizard(false)">Encerrar sem salvar</button>'
+    + '<button class="btn btn-primary" onclick="wizSalvarBaseFinal()"><i class="ti ti-device-floppy"></i> Salvar base</button></div>';
+}
+async function wizSalvarBaseFinal(){
+  const mes=document.getElementById('wiz-fim-mes')?.value||'';
+  const ano=document.getElementById('wiz-fim-ano')?.value||'';
+  const ok=await salvarBaseComp(mes+'/'+ano, true);
+  if(ok){ fecharWizard(false); toast('Base de '+mes+'/'+ano+' salva em Bases Salvas.','success'); }
 }
 function wizWorkHTML(step){
   let inner='';
