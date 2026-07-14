@@ -7443,13 +7443,15 @@ function renderFeriasAgendadas(){
   const mesAtualIdx=new Date().getMonth();
   const mesesOrdenados=[...meses.slice(mesAtualIdx),...meses.slice(0,mesAtualIdx)];
 
-  // Resumo: agendadas · afastados · nao se aplicam
+  // Resumo em cards (mesmo padrao visual do Radar de Ferias):
+  // agendadas · afastados · nao se aplicam · pendentes (sem mes)
   const resumoEl=document.getElementById('feragd-resumo');
   if(resumoEl){
-    resumoEl.innerHTML='<div class="alert alert-info">'
-      +'<strong>'+agendados.length+'</strong> com férias agendadas &middot; '
-      +'<strong>'+afastados.length+'</strong> afastado(s) &middot; '
-      +'<strong>'+naoAplicam.length+'</strong> não se aplicam'
+    resumoEl.innerHTML='<div class="stats-grid" style="margin-bottom:0">'
+      +'<div class="stat-card green"><div class="stat-val" style="color:var(--green)">'+agendados.length+'</div><div class="stat-label">Com férias agendadas</div></div>'
+      +'<div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">'+afastados.length+'</div><div class="stat-label">Afastados</div></div>'
+      +'<div class="stat-card"><div class="stat-val" style="color:#9CA3AF">'+naoAplicam.length+'</div><div class="stat-label">Não se aplicam</div></div>'
+      +'<div class="stat-card red"><div class="stat-val" style="color:var(--red)">'+semAgenda.length+'</div><div class="stat-label">Pendentes</div></div>'
       +'</div>';
   }
 
