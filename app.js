@@ -7487,46 +7487,45 @@ function renderFeriasAgendadas(){
       +'</div>';
   }
 
-  // Lista de baixo: SEM MES definido + AFASTADOS (sinalizados). Demitidos nao entram.
+  // Lista de baixo: DOIS campos separados. Demitidos nao entram em nenhum.
+  //   1) Sem ferias agendadas (pendentes, sem mes definido)
+  //   2) Afastados (Afastado, Aux. Doenca, Acidente Trabalho, etc.) com tag do status
   const semEl=document.getElementById('feragd-sem');
   if(semEl){
-    const pend=[
-      ...afastados.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>({c,tipo:'afastado'})),
-      ...semAgenda.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>({c,tipo:'sem_mes'}))
-    ];
-    if(pend.length===0){
-      semEl.innerHTML='';
-    } else {
-      semEl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Sem férias agendadas ('+pend.length+')</div>'
-        +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
+    // Monta uma tabela para uma lista. tipo='afastado' inclui a coluna Situacao.
+    const tabela=(titulo, lista, tipo)=>{
+      if(!lista.length) return '';
+      const temSit = tipo==='afastado';
+      const acao = tipo==='afastado' ? 'Detalhes' : 'Agendar';
+      return '<div style="margin:0 0 8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">'+titulo+' ('+lista.length+')</div>'
+        +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:22px">'
         +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
         +'<thead><tr style="background:var(--blue-dark);color:#fff">'
         +'<th style="padding:8px 10px;text-align:left">Matricula</th>'
         +'<th style="padding:8px 10px;text-align:left">Nome</th>'
         +'<th style="padding:8px 10px;text-align:left">Cargo</th>'
         +'<th style="padding:8px 10px;text-align:left">Departamento</th>'
-        +'<th style="padding:8px 10px;text-align:left">Situação</th>'
+        +(temSit?'<th style="padding:8px 10px;text-align:left">Situação</th>':'')
         +'<th style="padding:8px 10px;text-align:center">Ações</th>'
         +'</tr></thead><tbody>'
-        +pend.map((p,i)=>{
-          const c=p.c;
-          let sitTag;
-          if(p.tipo==='afastado'){
+        +lista.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map((c,i)=>{
+          let sitCell='';
+          if(temSit){
             const si=getStatusInfo(c.status);
-            sitTag='<span style="background:'+si.bg+';color:'+si.cor+';font-size:10px;font-weight:700;border-radius:20px;padding:2px 9px;border:1px solid '+si.cor+'44">'+si.label+'</span>';
-          } else {
-            sitTag='<span style="background:#F3F4F6;color:#6B7280;font-size:10px;font-weight:600;border-radius:20px;padding:2px 9px">Sem mês definido</span>';
+            sitCell='<td style="padding:8px 10px"><span style="background:'+si.bg+';color:'+si.cor+';font-size:10px;font-weight:700;border-radius:20px;padding:2px 9px;border:1px solid '+si.cor+'44">'+si.label+'</span></td>';
           }
           return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
             +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
             +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
             +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.cargo||'—')+'</td>'
             +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>'
-            +'<td style="padding:8px 10px">'+sitTag+'</td>'
-            +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Agendar</button></td>'
+            +sitCell
+            +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">'+acao+'</button></td>'
             +'</tr>';
         }).join('')+'</tbody></table></div>';
-    }
+    };
+    semEl.innerHTML = tabela('Sem férias agendadas', semAgenda, 'sem_mes')
+                    + tabela('Afastados', afastados, 'afastado');
   }
 }
 
