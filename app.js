@@ -951,7 +951,7 @@ function pgBaseLista(){
       <div id="bl-status-resumo"></div>
       <div id="bl-tipo-resumo"></div>
     </div>
-    <div class="section-label">Pesquisa</div>
+    <div class="section-label">Colaboradores</div>
     <div class="filter-bar" style="align-items:flex-end">
       <div class="filter-group" style="flex:1">
         <label> Buscar</label>
@@ -965,7 +965,6 @@ function pgBaseLista(){
       <button class="btn btn-ghost btn-sm" onclick="exportarBase(filtrarColabs())"><i class="ti ti-file-spreadsheet"></i> Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
     </div>
-    <div class="section-label">Colaboradores</div>
     <div id="bl-count" style="margin:0 0 8px"></div>
     <div class="tbl-wrap bl-scroll">
       <table class="tbl colab-tbl">
@@ -1117,11 +1116,11 @@ function _resumoCard(n, label, cls, valColor){
 // Card do design system (chip de icone Tabler + valor + rotulo). Escopo .ds.
 function _dsStat(icon, chip, val, label){
   return '<div class="stat"><div class="stat__chip chip--'+chip+'"><i class="ti ti-'+icon+'"></i></div>'
-    +'<div class="stat__body"><div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div></div>';
+    +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
 }
 function _dsStatAccent(icon, val, label){
   return '<div class="stat stat--accent"><div class="stat__chip"><i class="ti ti-'+icon+'"></i></div>'
-    +'<div class="stat__body"><div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div></div>';
+    +'<div class="stat__value">'+val+'</div><div class="stat__label">'+label+'</div></div>';
 }
 // ── Helpers de marcacao (design system) usados so na tabela da Base ──
 function _iniciais(nome){
@@ -1133,12 +1132,11 @@ function _dsAvatarVar(status){
   return g==='trabalhando'?'success':g==='ferias'?'warning':g==='so_cesta'?'danger':'neutral';
 }
 function dsPersonCell(c){
-  const sub=[c.cargo,c.mat].filter(Boolean).join(' · ');
-  return '<div class="person"><span class="avatar avatar--'+_dsAvatarVar(c.status)+'">'+_iniciais(c.nome)+'</span>'
-    +'<span style="min-width:0"><span class="person__name">'+c.nome+'</span>'
-    +(sub?'<br><span class="person__sub">'+sub+'</span>':'')
-    +(c.funcao?'<br><span class="person__sub" style="color:var(--accent-text)">Função: '+c.funcao+'</span>':'')
-    +'</span></div>';
+  const tip=[c.cargo,c.funcao?('Função: '+c.funcao):''].filter(Boolean).join(' — ').replace(/"/g,'&quot;');
+  return '<div class="person-name"'+(tip?' title="'+tip+'"':'')+'>'
+    +'<span class="person__name">'+c.nome+'</span>'
+    +(c.cargo?'<span class="person__sub">'+c.cargo+'</span>':'')
+    +'</div>';
 }
 function dsStatusBadge(status){
   const g=statusGrupo(status);
