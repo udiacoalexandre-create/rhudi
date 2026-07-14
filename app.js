@@ -821,14 +821,14 @@ const MODULES = {
     {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Bases Salvas'},
   ]},
   beneficios:{pages:[
-    {id:'ben-lancamento',icon:'',label:'Lan\u00E7amento Mensal'},
-    {id:'ben-importar',icon:'',label:'Importar Faltas'},
-    {id:'ben-historico',icon:'',label:'Hist\u00F3rico'},
-    {id:'ben-config',icon:'',label:'Configura\u00E7\u00F5es'},
+    {id:'ben-lancamento',icon:'<i class="ti ti-clipboard-list"></i>',label:'Lan\u00E7amento Mensal'},
+    {id:'ben-importar',icon:'<i class="ti ti-file-import"></i>',label:'Importar Faltas'},
+    {id:'ben-historico',icon:'<i class="ti ti-history"></i>',label:'Hist\u00F3rico'},
+    {id:'ben-config',icon:'<i class="ti ti-settings"></i>',label:'Configura\u00E7\u00F5es'},
   ]},
   folha:{pages:[
-    {id:'folha-import',icon:'',label:'Importar Relat\u00F3rio'},
-    {id:'folha-view',icon:'',label:'Visualizar Folha'},
+    {id:'folha-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar Relat\u00F3rio'},
+    {id:'folha-view',icon:'<i class="ti ti-report-money"></i>',label:'Visualizar Folha'},
   ]},
   ferias:{pages:[
     {id:'fer-radar',icon:'<i class="ti ti-radar-2"></i>',label:'Radar de F\u00E9rias'},
@@ -836,13 +836,13 @@ const MODULES = {
     {id:'fer-um989',icon:'<i class="ti ti-users"></i>',label:'F\u00E9rias UM989'},
   ]},
   premio:{pages:[
-    {id:'premio-main',icon:'',label:'Premio Assiduidade'},
-    {id:'premio-dash',icon:'',label:'Dashboard'},
+    {id:'premio-main',icon:'<i class="ti ti-trophy"></i>',label:'Premio Assiduidade'},
+    {id:'premio-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
   ]},
   dashboard:{pages:[
-    {id:'dash-main',icon:'',label:'Dashboard Geral'},
-    {id:'usuarios',icon:'',label:'Acessos',master:true},
-    {id:'teste-senior',icon:'',label:'Teste Senior API'},
+    {id:'dash-main',icon:'<i class="ti ti-layout-dashboard"></i>',label:'Dashboard Geral'},
+    {id:'usuarios',icon:'<i class="ti ti-user-cog"></i>',label:'Acessos',master:true},
+    {id:'teste-senior',icon:'<i class="ti ti-plug"></i>',label:'Teste Senior API'},
   ]}
 };
 
@@ -891,7 +891,7 @@ function showPage(id){
   const main=document.getElementById('main-area');
   if(!main) return;
   main.innerHTML=renderPage(id);
-  main.classList.toggle('ds', String(id).startsWith('fer-'));
+  main.classList.add('ds'); // design system em todas as telas
   afterRender(id);
 }
 
