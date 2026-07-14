@@ -7704,10 +7704,10 @@ async function consultarVagaFerias(funcao, depto){
 // Rodape: Salvar e encerrar / Salvar e seguir.
 // ============================================================
 const WIZ_STEPS=[
-  {id:'contratacoes', label:'Contratações', icon:'➕'},
-  {id:'demissoes',    label:'Demissões',    icon:'➖'},
-  {id:'afastados',    label:'Afastados',    icon:'🚑'},
-  {id:'ferias',       label:'Férias',       icon:'🏖️'},
+  {id:'contratacoes', label:'Contratações', icon:'<i class="ti ti-user-plus"></i>'},
+  {id:'demissoes',    label:'Demissões',    icon:'<i class="ti ti-user-minus"></i>'},
+  {id:'afastados',    label:'Afastados',    icon:'<i class="ti ti-first-aid-kit"></i>'},
+  {id:'ferias',       label:'Férias',       icon:'<i class="ti ti-umbrella"></i>'},
 ];
 let wizState=null;
 
@@ -7755,17 +7755,17 @@ function renderWizard(){
   const step=WIZ_STEPS[wizState.idx];
   const stepper=WIZ_STEPS.map((s,i)=>{
     const done=i<wizState.idx, cur=i===wizState.idx;
-    const bg=cur?'var(--blue)':(done?'var(--green)':'#E5E7EB');
+    const bg=cur?'var(--brand)':(done?'var(--brand)':'#E5E7EB');
     const col=(cur||done)?'#fff':'#6B7280';
     return '<div style="display:flex;align-items:center;gap:6px">'
       +'<div style="width:28px;height:28px;border-radius:50%;background:'+bg+';color:'+col+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">'+(done?'✓':(i+1))+'</div>'
       +'<span style="font-size:12px;font-weight:'+(cur?'700':'500')+';color:'+(cur?'var(--text)':'var(--text2)')+'">'+s.icon+' '+s.label+'</span>'
-      +(i<WIZ_STEPS.length-1?'<span style="width:20px;height:2px;background:'+(done?'var(--green)':'#E5E7EB')+';margin:0 2px"></span>':'')
+      +(i<WIZ_STEPS.length-1?'<span style="width:20px;height:2px;background:'+(done?'var(--brand)':'#E5E7EB')+';margin:0 2px"></span>':'')
       +'</div>';
   }).join('');
   const body = wizState.mode==='intro' ? wizIntroHTML(step) : wizWorkHTML(step);
   ov.innerHTML='<div style="background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;margin:auto">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 22px;background:var(--blue-dark);color:#fff">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 22px;background:var(--brand);color:#fff">'
       +'<div style="font-size:16px;font-weight:700">🔄 Atualizar Base</div>'
       +'<button onclick="fecharWizard(false)" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">&times;</button>'
     +'</div>'
