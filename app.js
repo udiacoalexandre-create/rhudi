@@ -946,8 +946,12 @@ function pgBaseLista(){
       </div>
       <button class="refresh-btn" onclick="abrirAtualizarBase()"><i class="ti ti-refresh"></i> Atualizar Base</button>
     </div>
-    <div id="bl-status-resumo" style="margin-bottom:8px"></div>
-    <div id="bl-tipo-resumo" style="margin-bottom:12px"></div>
+    <div class="section-label">Indicadores</div>
+    <div class="ds-zone">
+      <div id="bl-status-resumo"></div>
+      <div id="bl-tipo-resumo"></div>
+    </div>
+    <div class="section-label">Pesquisa</div>
     <div class="filter-bar" style="align-items:flex-end">
       <div class="filter-group" style="flex:1">
         <label> Buscar</label>
@@ -961,7 +965,8 @@ function pgBaseLista(){
       <button class="btn btn-ghost btn-sm" onclick="exportarBase(filtrarColabs())"><i class="ti ti-file-spreadsheet"></i> Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
     </div>
-    <div id="bl-count" style="margin:10px 0 8px"></div>
+    <div class="section-label">Colaboradores</div>
+    <div id="bl-count" style="margin:0 0 8px"></div>
     <div class="tbl-wrap bl-scroll">
       <table class="tbl colab-tbl">
         <thead><tr>
