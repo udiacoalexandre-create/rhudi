@@ -834,7 +834,6 @@ const MODULES = {
     {id:'fer-radar',icon:'<i class="ti ti-radar-2"></i>',label:'Radar de F\u00E9rias'},
     {id:'fer-agendadas',icon:'<i class="ti ti-calendar-event"></i>',label:'F\u00E9rias Agendadas'},
     {id:'fer-um989',icon:'<i class="ti ti-users"></i>',label:'F\u00E9rias UM989'},
-    {id:'fer-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar Dados'},
   ]},
   premio:{pages:[
     {id:'premio-main',icon:'',label:'Premio Assiduidade'},
