@@ -5556,8 +5556,8 @@ function min2str(min){
 function pgPremioAssiduidade(){
   return `
     <div class="page-header">
-      <h2>Premio de Assiduidade</h2>
-      <p>Siga os 7 passos para calcular e exportar o premio. Valor fixo: R$ 226,00</p>
+      <h2 class="page-title">Prêmio de Assiduidade</h2>
+      <p class="page-subtitle">Siga os passos (abas acima) para calcular e exportar o prêmio. Valor fixo: R$ 226,00.</p>
     </div>
     <div id="premio-wizard"></div>`;
 }
@@ -5584,19 +5584,17 @@ function renderPremioWizard(){
   const atual = premioState.passo;
   const passoAtualStr = String(atual);
 
-  // Barra de progresso
-  const barraHtml = '<div style="display:flex;gap:0;margin-bottom:24px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)">'
-    + passos.map(p=>{
+  // Fichário de abas (mesmo padrão do Lançamento de Benefícios)
+  const barraHtml = '<div class="lan-tabs">'
+    + passos.map((p,i)=>{
         const pn = String(p.n);
         const done = (pn < passoAtualStr && pn !== '55') || (passoAtualStr === '6' && pn === 55) || (passoAtualStr === '7' && pn === 55);
         const active = pn === passoAtualStr;
-        const bg = done?'var(--green)':active?'var(--blue)':'var(--surface2)';
-        const color = (done||active)?'#fff':'var(--text3)';
-        return '<div style="flex:1;padding:8px 4px;background:'+bg+';text-align:center;cursor:'+(done?'pointer':'default')+';border-right:1px solid rgba(0,0,0,.1)" '
-          +(done?'onclick="premioIrPasso('+p.n+')"':'')+'>'
-          +'<div style="font-size:11px;font-weight:700;color:'+color+'">'+p.n+'</div>'
-          +'<div style="font-size:9px;color:'+color+';opacity:.85">'+p.label+'</div>'
-          +'</div>';
+        const cls = active?' lan-tab--active':(done?' lan-tab--done':'');
+        const num = (done && !active) ? '✓' : (i+1);
+        const clickable = done || active;
+        return '<button class="lan-tab'+cls+'" '+(clickable?'onclick="premioIrPasso('+p.n+')"':'disabled style="opacity:.45;cursor:default"')+'>'
+          +'<span class="lan-tab__n">'+num+'</span> '+p.label+'</button>';
       }).join('')
     + '</div>';
 
