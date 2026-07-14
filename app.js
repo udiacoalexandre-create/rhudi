@@ -3481,8 +3481,8 @@ function _um989Venc(c){
 
 function pgFerUM989(){
   return `
-    <div class="page-header"><h2>Férias — UM989</h2>
-      <p>Controle de férias da agência UM989 (sem vínculo trabalhista). A cada ano de admissão, +30 dias de saldo.</p></div>
+    <div class="page-header"><h2 class="page-title">Férias — UM989</h2>
+      <p class="page-subtitle">Controle de férias da agência UM989 (sem vínculo trabalhista). A cada ano de admissão, +30 dias de saldo.</p></div>
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Novo colaborador</div>
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
@@ -3532,8 +3532,8 @@ function renderUM989(){
   if(!lista.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">🏖️</div><p>'+(q?'Nenhum resultado.':'Nenhum colaborador ativo na UM989.')+'</p></div>'; return; }
 
   el.innerHTML='<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
-    +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
-    +'<thead><tr style="background:var(--blue-dark);color:#fff">'
+    +'<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr>'
     +'<th style="padding:9px 10px;text-align:left">Nome</th>'
     +'<th style="padding:9px 10px;text-align:left">Admissão</th>'
     +'<th style="padding:9px 10px;text-align:left">Próx. venc.</th>'
@@ -3722,7 +3722,7 @@ async function salvarGozarUM989(id){
 
 function pgFerImport(){
   return `
-    <div class="page-header"><h2> Importar Dados de F\u00E9rias</h2><p>Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
+    <div class="page-header"><h2 class="page-title">Importar Dados de F\u00E9rias</h2><p class="page-subtitle">Atualize as datas de f\u00E9rias a partir do relat\u00F3rio da Senior.</p></div>
     <div class="card">
       <div class="alert alert-info" style="margin-bottom:14px">
         Colunas esperadas: <strong>Matr\u00EDcula, Nome, Data Admiss\u00E3o (opcional), Data In\u00EDcio, Data Fim, Data Vencimento, Dias Dispon\u00EDveis</strong><br>
@@ -7498,18 +7498,18 @@ function filtrarTabelaFerias(){
 function pgFeriasAgendadas(){
   return `
     <div class="page-header">
-      <h2 class="page-title">F\u00E9rias Agendadas</h2>
-      <p class="page-subtitle">Visualize quais colaboradores est\u00E3o com f\u00E9rias agendadas em cada m\u00EAs.</p>
+      <h2 class="page-title">Férias Agendadas</h2>
+      <p class="page-subtitle">Quem está com férias agendadas em cada mês. Clique num colaborador para ver/editar.</p>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
-      <input type="text" id="feragd-q" placeholder="Buscar por nome, matr\u00EDcula ou departamento..." oninput="renderFeriasAgendadas()"
-        style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;flex:1;min-width:230px">
-      ${msDropdown('faemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFeriasAgendadas')}
-      ${msDropdown('fadep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFeriasAgendadas')}
-      ${msDropdown('fafunc','Fun\u00E7\u00E3o',getFuncaoList().map(f=>({value:f,label:f})),'renderFeriasAgendadas')}
-      ${msDropdown('fasit','Situa\u00E7\u00E3o',[{value:'agendado',label:'Agendado'},{value:'sem_mes',label:'Sem m\u00EAs definido'},{value:'afastado',label:'Afastado'},{value:'nao_aplica',label:'N\u00E3o se aplica'}],'renderFeriasAgendadas')}
-      ${msDropdown('favenc','Vencimento',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence \u22643m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFeriasAgendadas')}
-      <button class="btn btn-ghost btn-sm" onclick="exportarFeriasAgendadasExcel()">Excel</button>
+    <div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">
+      <div class="filter-group" style="flex:1"><label>Buscar</label>
+        <input type="text" id="feragd-q" placeholder="Nome, matrícula ou departamento..." oninput="renderFeriasAgendadas()"></div>
+      <div class="filter-group"><label>Empresa</label>${msDropdown('faemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Departamento</label>${msDropdown('fadep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Função</label>${msDropdown('fafunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Situação</label>${msDropdown('fasit','Situação',[{value:'agendado',label:'Agendado'},{value:'sem_mes',label:'Sem mês definido'},{value:'afastado',label:'Afastado'},{value:'nao_aplica',label:'Não se aplica'}],'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Vencimento</label>${msDropdown('favenc','Vencimento',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFeriasAgendadas')}</div>
+      <button class="btn btn-ghost btn-sm" onclick="exportarFeriasAgendadasExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
     </div>
     <div id="feragd-resumo" style="margin-bottom:14px"></div>
     <div id="feragd-grid"></div>
@@ -7593,11 +7593,14 @@ function renderFeriasAgendadas(){
             : itens.map(c=>{
                 const f=getFarol(c);
                 const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
-                return '<div style="background:#fff;border:1px solid '+cor+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
-                  +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="'+c.nome+' — '+(c.cargo||'—')+' — '+(c.depto||'—')+' — Venc: '+f.vencStr+' (clique para editar)">'
-                  +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</div>'
-                  +'<div style="font-size:10px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(c.depto||'—')+'</div>'
-                  +'<div style="font-size:10px;margin-top:2px;color:'+corMap[f.cor]+';font-weight:600">Saldo: '+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'d</div>'
+                const saldo=(c.ferSaldo!=null?c.ferSaldo:f.dias);
+                const dd=f.vencDate?(String(f.vencDate.getDate()).padStart(2,'0')+'/'+String(f.vencDate.getMonth()+1).padStart(2,'0')+'/'+String(f.vencDate.getFullYear()).slice(-2)):'';
+                const vencTxt=f.cor==='sem'?'Sem venc.':(f.meses<0?'Venceu '+dd:'Vence '+dd);
+                return '<div class="rad-card" onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para ver/editar">'
+                  +'<div class="rad-card__top"><span class="rad-card__name">'+c.nome+'</span>'
+                    +'<span class="rad-saldo'+(saldo<0?' neg':'')+'" title="Saldo de dias">'+saldo+'d</span></div>'
+                  +'<div class="rad-venc" style="color:'+corMap[f.cor]+'">'+vencTxt+'</div>'
+                  +(c.depto?'<div class="rad-agend">'+c.depto+'</div>':'')
                   +'</div>';
               }).join(''))
           +'</div></div>';
@@ -7615,26 +7618,21 @@ function renderFeriasAgendadas(){
       if(!lista.length) return '';
       const temSit = tipo==='afastado';
       const acao = tipo==='afastado' ? 'Detalhes' : 'Agendar';
-      return '<div style="margin:0 0 8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">'+titulo+' ('+lista.length+')</div>'
+      return '<div class="section-label" style="margin:0 0 8px">'+titulo+' ('+lista.length+')</div>'
         +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:22px">'
-        +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
-        +'<thead><tr style="background:var(--blue-dark);color:#fff">'
-        +'<th style="padding:8px 10px;text-align:left">Matricula</th>'
-        +'<th style="padding:8px 10px;text-align:left">Nome</th>'
+        +'<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead><tr>'
+        +'<th style="padding:8px 10px;text-align:left">Colaborador</th>'
         +'<th style="padding:8px 10px;text-align:left">Cargo</th>'
         +'<th style="padding:8px 10px;text-align:left">Departamento</th>'
         +(temSit?'<th style="padding:8px 10px;text-align:left">Situação</th>':'')
         +'<th style="padding:8px 10px;text-align:center">Ações</th>'
         +'</tr></thead><tbody>'
-        +lista.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map((c,i)=>{
+        +lista.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>{
           let sitCell='';
-          if(temSit){
-            const si=getStatusInfo(c.status);
-            sitCell='<td style="padding:8px 10px"><span style="background:'+si.bg+';color:'+si.cor+';font-size:10px;font-weight:700;border-radius:20px;padding:2px 9px;border:1px solid '+si.cor+'44">'+si.label+'</span></td>';
-          }
-          return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
-            +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
-            +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
+          if(temSit){ sitCell='<td style="padding:8px 10px"><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'; }
+          return '<tr>'
+            +'<td style="padding:8px 10px"><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
             +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.cargo||'—')+'</td>'
             +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>'
             +sitCell
