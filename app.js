@@ -5118,7 +5118,8 @@ function abrirDetalheFerias(id){
 
   const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
   const farolVar={vermelho:'danger',laranja:'warning',amarelo:'accent',verde:'success',sem:'neutral',na:'neutral'};
-  const dd=f.vencDate?(String(f.vencDate.getDate()).padStart(2,'0')+'/'+String(f.vencDate.getMonth()+1).padStart(2,'0')+'/'+String(f.vencDate.getFullYear()).slice(-2)):'—';
+  const fmt=d=>d?(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2)):'—';
+  const dd=fmt(f.vencDate);
   const vencTxt=f.cor==='sem'?'Sem vencimento':(f.meses<0?'Venceu em '+dd:'Vence em '+dd);
   let agHtml;
   if(!c.ferMes){ agHtml='<span class="badge badge--neutral">Sem agendamento</span>'; }
@@ -5127,6 +5128,7 @@ function abrirDetalheFerias(id){
     const blbl=ag.cor==='vermelha'?'fora do prazo':(ag.cor==='verde'||ag.cor==='cinza'?'no prazo':'agendado');
     agHtml='<strong>'+agendamentoLabel(c)+'</strong> <span class="badge badge--'+bcls+'">'+blbl+'</span>'; }
   const saldo=(c.ferSaldo!=null?c.ferSaldo:30);
+  const admTxt=fmt(_dataLocal(c.admissao));
   const logHtml=(Array.isArray(c.feriasLog)&&c.feriasLog.length)?c.feriasLog.slice().reverse().map(l=>{
     const quando=l.em?new Date(l.em).toLocaleDateString('pt-BR'):((l.mes||'—')+'/'+(l.ano||''));
     let desc;
@@ -5141,44 +5143,54 @@ function abrirDetalheFerias(id){
 
   const html=`
     <div class="modal-overlay ds" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
-      <div class="modal" style="max-width:540px">
-        <div class="modal-title" style="display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella" style="color:var(--brand)"></i> ${c.nome}</div>
-        <div class="modal-sub">Matrícula ${c.mat||'—'} &middot; Função: <strong>${funcaoColab(c)||'—'}</strong></div>
-        <div class="ferd-resumo">
-          <div class="ferd-item"><span class="ferd-lbl">Situação</span><span><span class="badge badge--${farolVar[f.cor]}">${f.label}</span></span></div>
-          <div class="ferd-item"><span class="ferd-lbl">Vencimento</span><span class="ferd-val" style="color:${corMap[f.cor]}">${vencTxt}</span></div>
-          <div class="ferd-item"><span class="ferd-lbl">Agendamento</span><span>${agHtml}</span></div>
-          <div class="ferd-item"><span class="ferd-lbl">Saldo atual</span><span class="ferd-val"${saldo<0?' style="color:var(--danger-text)"':''}>${saldo} dias</span></div>
+      <div class="modal" style="max-width:540px;padding:0;overflow:hidden">
+        <div style="background:var(--brand);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella"></i> ${c.nome}</div>
+          <button onclick="closeModal('modal-ferias-detalhe')" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1">&times;</button>
         </div>
-        <div class="section-label">Editar</div>
-        <div class="form-grid cols2">
-          <div class="fg">
-            <label>Data de admissão</label>
-            <input type="date" id="ferd-admissao" value="${c.admissao||''}">
+        <div style="padding:20px;max-height:70vh;overflow-y:auto">
+          <div class="modal-sub" style="margin-top:0">Matrícula ${c.mat||'—'} &middot; Função: <strong>${funcaoColab(c)||'—'}</strong></div>
+
+          <div id="ferd-view">
+            <div class="ferd-resumo">
+              <div class="ferd-item"><span class="ferd-lbl">Situação</span><span><span class="badge badge--${farolVar[f.cor]}">${f.label}</span></span></div>
+              <div class="ferd-item"><span class="ferd-lbl">Vencimento</span><span class="ferd-val" style="color:${corMap[f.cor]}">${vencTxt}</span></div>
+              <div class="ferd-item"><span class="ferd-lbl">Agendamento</span><span>${agHtml}</span></div>
+              <div class="ferd-item"><span class="ferd-lbl">Saldo atual</span><span class="ferd-val"${saldo<0?' style="color:var(--danger-text)"':''}>${saldo} dias</span></div>
+              <div class="ferd-item"><span class="ferd-lbl">Admissão</span><span class="ferd-val" style="font-weight:600">${admTxt}</span></div>
+            </div>
           </div>
-          <div class="fg">
-            <label>Vencimento (dia/mês)</label>
-            <input type="text" id="ferd-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}">
+
+          <div id="ferd-edit" style="display:none">
+            <div class="section-label">Editar dados de férias</div>
+            <div class="form-grid cols2">
+              <div class="fg"><label>Data de admissão</label><input type="date" id="ferd-admissao" value="${c.admissao||''}"></div>
+              <div class="fg"><label>Vencimento (dia/mês)</label><input type="text" id="ferd-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}"></div>
+              <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="ferd-saldo" value="${saldo}" min="-90" max="90"></div>
+              <div class="fg"><label>Mês agendado</label>
+                <select id="ferd-mes" onchange="atualizarAnoFerd()">
+                  <option value="">-- Não agendado --</option>
+                  ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
+                </select>
+                <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'—'}</strong></span>
+              </div>
+            </div>
+            <p class="text-xs text-muted" style="margin-top:8px">A alteração vale para este colaborador em todo o sistema. Vencimento em dia/mês (o ano é gerido pelo sistema). Saldo pode ser negativo (antecipação).</p>
           </div>
-          <div class="fg">
-            <label>Saldo de dias a tirar</label>
-            <input type="number" id="ferd-saldo" value="${saldo}" min="-90" max="90">
+
+          ${logHtml?`<div style="margin-top:16px"><div class="section-label" style="margin-bottom:6px">Histórico</div><div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px 10px">${logHtml}</div></div>`:''}
+          <div id="ferd-alertas" style="margin-top:10px"></div>
+
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+            <span id="ferd-foot-view" style="display:inline-flex;gap:10px">
+              <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Fechar</button>
+              <button class="btn btn-primary" onclick="ferdEdit(true)"><i class="ti ti-edit"></i> Editar</button>
+            </span>
+            <span id="ferd-foot-edit" style="display:none;gap:10px">
+              <button class="btn btn-ghost" onclick="ferdEdit(false)">Cancelar</button>
+              <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')"><i class="ti ti-check"></i> Salvar</button>
+            </span>
           </div>
-          <div class="fg">
-            <label>Mês agendado</label>
-            <select id="ferd-mes" onchange="atualizarAnoFerd()">
-              <option value="">-- Não agendado --</option>
-              ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
-            </select>
-            <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'—'}</strong></span>
-          </div>
-        </div>
-        <p class="text-xs text-muted" style="margin-top:8px">Vencimento em dia/mês (o ano do próximo ciclo é gerido pelo sistema). Em branco, é calculado da admissão. O saldo pode ser negativo (antecipação).</p>
-        ${logHtml?`<div style="margin-top:14px"><div class="section-label" style="margin-bottom:6px">Histórico</div><div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px 10px">${logHtml}</div></div>`:''}
-        <div id="ferd-alertas" style="margin-top:10px"></div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Cancelar</button>
-          <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')"><i class="ti ti-check"></i> Salvar</button>
         </div>
       </div>
     </div>`;
@@ -5186,6 +5198,14 @@ function abrirDetalheFerias(id){
   document.body.insertAdjacentHTML('beforeend', html);
   document.getElementById('modal-ferias-detalhe')?.classList.add('open');
   verificarAlertasFerias(id);
+}
+function ferdEdit(on){
+  const v=document.getElementById('ferd-view'), e=document.getElementById('ferd-edit');
+  const fv=document.getElementById('ferd-foot-view'), fe=document.getElementById('ferd-foot-edit');
+  if(v) v.style.display=on?'none':'';
+  if(e) e.style.display=on?'':'none';
+  if(fv) fv.style.display=on?'none':'inline-flex';
+  if(fe) fe.style.display=on?'inline-flex':'none';
 }
 
 // Avisa sobre cobertura da FUNCAO ao agendar/trocar ferias e mostra a
