@@ -8194,9 +8194,10 @@ function wizFerBodyEntrada(){
   const ref=wizState.ferMesRef||MESES_FER[new Date().getMonth()];
   const sel='<select onchange="wizState.ferMesRef=this.value;wizFerRenderEntList()" class="wiz-sel">'
     +MESES_FER.map(m=>'<option value="'+m+'" '+(m===ref?'selected':'')+'>'+m+'</option>').join('')+'</select>';
-  return wizPanel('<i class="ti ti-umbrella"></i> Entradas de férias','',
-    '<div class="wiz-actions" style="margin:0 0 10px"><span class="wiz-item__sub" style="font-weight:600">Mês de referência:</span>'+sel+'</div>'
-    +'<p class="wiz-note">Confirme a entrada e os dias — <strong>comprados</strong> impactam os benefícios. Status muda para Férias.</p>'
+  return wizPanel('<i class="ti ti-umbrella"></i> Entrada de férias','',
+    '<p class="wiz-q" style="margin-top:0">Confirma a entrada de férias destes colaboradores?</p>'
+    +'<div class="wiz-actions" style="margin:0 0 10px"><span class="wiz-item__sub" style="font-weight:600">Mês de referência:</span>'+sel+'</div>'
+    +'<p class="wiz-note">Os <strong>dias comprados</strong> impactam os benefícios pagos em férias. O status muda para Férias.</p>'
     +wizSearchHTML('ent-q','Buscar (qualquer mês) para antecipar alguém...')
     +'<div id="ent-list" style="margin-top:10px"></div>');
 }
@@ -8217,13 +8218,15 @@ function wizFerRenderEntList(){
 }
 function wizFerEntRow(c,ref){
   if(wizState.entFeitos.has(c._id)) return wizFerConfirmedRow(c,'entrada');
+  const saldo=(c.ferSaldo!=null?c.ferSaldo:0);
   const outroMes = c.ferMes && c.ferMes!==ref ? ' <span class="badge badge--warning">agend.: '+c.ferMes+'</span>' : '';
   return '<div id="ent-row-'+c._id+'" class="wiz-row">'
-    +'<div class="wiz-row__top">'+c.nome+outroMes+' <span class="wiz-item__sub">'+(c.depto||'—')+' &middot; saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d</span></div>'
+    +'<div class="wiz-row__top">'+c.nome+outroMes+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
     +'<div class="wiz-fields">'
-      +'<div class="wiz-field"><label>Gozados</label><input type="number" id="ent-g-'+c._id+'" class="wiz-num" min="0"></div>'
-      +'<div class="wiz-field"><label>Comprados</label><input type="number" id="ent-c-'+c._id+'" class="wiz-num" min="0"></div>'
-      +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarEntrada(\''+c._id+'\')"><i class="ti ti-umbrella"></i> Confirmar entrada</button>'
+      +'<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ent-g-'+c._id+'" class="wiz-num" min="0"></div>'
+      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ent-c-'+c._id+'" class="wiz-num" min="0"></div>'
+      +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
+      +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarEntrada(\''+c._id+'\')"><i class="ti ti-check"></i> Confirmar</button>'
     +'</div></div>';
 }
 async function wizFerConfirmarEntrada(id){
