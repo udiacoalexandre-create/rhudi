@@ -149,6 +149,53 @@
 #wiz-overlay .btn-primary{ background:var(--brand); border-color:var(--brand); color:#fff; }
 #wiz-overlay .btn-primary:hover{ background:var(--brand-hover); border-color:var(--brand-hover); }
 #wiz-overlay .ti{ vertical-align:-1px; }
+/* Layout interno das etapas do assistente */
+#wiz-overlay .wiz-head{ display:flex;align-items:center;gap:12px;margin-bottom:18px; }
+#wiz-overlay .wiz-head__chip{ width:42px;height:42px;border-radius:11px;background:var(--success-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0; }
+#wiz-overlay .wiz-head__title{ font-size:17px;font-weight:600;color:var(--text);line-height:1.15; }
+#wiz-overlay .wiz-head__sub{ font-size:13px;color:var(--text-secondary);margin-top:2px; }
+#wiz-overlay .wiz-intro-ic{ width:66px;height:66px;border-radius:18px;background:var(--success-bg);color:var(--brand);font-size:34px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px; }
+#wiz-overlay .wiz-intro-title{ font-size:20px;font-weight:600;margin:0 0 6px;color:var(--text); }
+#wiz-overlay .wiz-intro-sub{ color:var(--text-secondary);margin:0 auto 24px;max-width:440px;font-size:14px; }
+#wiz-overlay .wiz-note{ font-size:13px;color:var(--text-secondary);margin:0 0 10px; }
+#wiz-overlay .wiz-input{ width:100%;height:38px;padding:0 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;background:var(--surface);color:var(--text);font-family:'Inter',sans-serif; }
+#wiz-overlay .wiz-input:focus{ outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--success-bg); }
+#wiz-overlay .wiz-search{ position:relative; }
+#wiz-overlay .wiz-search .ti-search{ position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:16px;pointer-events:none; }
+#wiz-overlay .wiz-search .wiz-input{ padding-left:34px; }
+#wiz-overlay .wiz-list{ border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:10px; }
+#wiz-overlay .wiz-list--scroll{ max-height:300px;overflow-y:auto; }
+#wiz-overlay .wiz-item{ display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;margin:0; }
+#wiz-overlay .wiz-item:last-child{ border-bottom:none; }
+#wiz-overlay .wiz-item:hover{ background:var(--surface-soft); }
+#wiz-overlay .wiz-item input[type=checkbox]{ width:16px;height:16px;accent-color:var(--brand);flex-shrink:0; }
+#wiz-overlay .wiz-item__main{ flex:1;min-width:0;overflow:hidden; }
+#wiz-overlay .wiz-item__name{ font-weight:500;font-size:13px;color:var(--text); }
+#wiz-overlay .wiz-item__sub{ font-size:12px;color:var(--text-muted); }
+#wiz-overlay .wiz-empty{ padding:18px;text-align:center;color:var(--text-muted);font-size:13px; }
+#wiz-overlay .wiz-actions{ display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center; }
+#wiz-overlay .wiz-count{ color:var(--brand);font-weight:700; }
+#wiz-overlay .wiz-tabs{ display:flex;gap:4px;flex-wrap:wrap;background:var(--surface-soft);padding:4px;border-radius:var(--radius);margin-bottom:16px; }
+#wiz-overlay .wiz-tab{ flex:1;min-width:110px;padding:8px 10px;border:none;background:transparent;border-radius:calc(var(--radius) - 3px);font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:'Inter',sans-serif; }
+#wiz-overlay .wiz-tab:hover{ color:var(--text); }
+#wiz-overlay .wiz-tab--active{ background:var(--surface);color:var(--brand);box-shadow:var(--shadow); }
+#wiz-overlay .wiz-opts{ display:flex;gap:12px;flex-wrap:wrap; }
+#wiz-overlay .wiz-optcard{ display:flex;gap:12px;align-items:flex-start;flex:1;min-width:230px;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;text-align:left;cursor:pointer;background:var(--surface);font-family:'Inter',sans-serif;transition:border-color .15s,box-shadow .15s; }
+#wiz-overlay .wiz-optcard:hover{ border-color:var(--brand);box-shadow:var(--shadow-md); }
+#wiz-overlay .wiz-optcard__ic{ width:40px;height:40px;border-radius:10px;background:var(--success-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0; }
+#wiz-overlay .wiz-optcard__t{ font-weight:600;font-size:14px;color:var(--text); }
+#wiz-overlay .wiz-optcard__d{ font-size:12px;color:var(--text-secondary);margin-top:2px; }
+#wiz-overlay .wiz-section-t{ font-size:14px;font-weight:600;color:var(--text);margin:0 0 4px;display:flex;align-items:center;gap:7px; }
+#wiz-overlay .wiz-row{ border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px; }
+#wiz-overlay .wiz-row--ok{ border-color:var(--brand);background:var(--success-bg); }
+#wiz-overlay .wiz-row__top{ display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text); }
+#wiz-overlay .wiz-fields{ display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px; }
+#wiz-overlay .wiz-field label{ font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;display:block;margin-bottom:3px; }
+#wiz-overlay .wiz-num{ width:92px;height:34px;padding:0 9px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;background:var(--surface); }
+#wiz-overlay .wiz-sel{ height:34px;padding:0 9px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;background:var(--surface); }
+#wiz-overlay .wiz-num:focus,#wiz-overlay .wiz-sel:focus{ outline:none;border-color:var(--brand); }
+#wiz-overlay .wiz-upload{ border:2px dashed var(--border);border-radius:var(--radius-lg);padding:28px;text-align:center;cursor:pointer;transition:border-color .15s;margin-top:10px; }
+#wiz-overlay .wiz-upload:hover{ border-color:var(--brand); }
 /* Tabela clara: sobrescreve o cabecalho escuro e as faixas de coluna, so na Base */
 .ds .tbl thead th{ background:#e2e8f0;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;font-size:11px;font-weight:600;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong); }
 .ds .colab-tbl tbody td:nth-child(odd),
