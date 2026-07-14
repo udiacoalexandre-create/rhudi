@@ -4971,9 +4971,7 @@ function renderFarois(dados){
             const ag=agendamentoStatus(c,f.vencDate);
             const saldo=(f.dias!=null?f.dias:30);
             const saldoBg=saldo<0?'#FEE2E2':'var(--blue-light)', saldoCor=saldo<0?'#991B1B':'var(--blue-dark)';
-            const btnCiclo = f.cor==='vermelho'
-              ? '<button class="btn btn-danger btn-xs" style="margin-top:6px;width:100%" onclick="event.stopPropagation();fecharCicloFerias(\''+c._id+'\')" title="Soma +30 dias, pergunta faltas e rola o vencimento">Fechar ciclo (+30)</button>'
-              : '';
+            const btnCiclo = ''; // "Fechar ciclo" migrado para o assistente Atualizar Base > Ferias (+30 automatico no aniversario)
             return '<div style="background:#fff;border:1px solid '+corMap[col.cor]+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
               +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para detalhes">'
               +'<div style="display:flex;align-items:center;gap:6px">'
@@ -5025,7 +5023,7 @@ function renderFarois(dados){
         +'<td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'</td>'
         +'<td style="padding:8px 10px;font-size:11px">'+(c.ferMes||'\u2014')+'</td>'
         +'<td style="padding:8px 10px;text-align:center;white-space:nowrap">'
-          +(f.cor==='vermelho'?'<button class="btn btn-danger btn-xs" onclick="fecharCicloFerias(\''+c._id+'\')" title="+30, pergunta faltas, rola vencimento">Fechar ciclo</button> ':'')
+          +'' /* "Fechar ciclo" migrado para o assistente Atualizar Base > Ferias */
           +'<button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Editar</button></td>'
         +'</tr>';
     }).join('')+'</tbody></table></div>';
@@ -5074,7 +5072,6 @@ function abrirDetalheFerias(id){
         </div>`:''}
         <div id="ferd-alertas" style="margin-top:10px"></div>
         <div class="modal-footer">
-          ${f.cor==='vermelho'?`<button class="btn btn-danger" style="margin-right:auto" onclick="fecharCicloFerias('${id}')" title="+30, pergunta faltas, rola o vencimento">Fechar ciclo (+30)</button>`:''}
           <button class="btn btn-ghost" onclick="closeModal('modal-ferias-detalhe')">Cancelar</button>
           <button class="btn btn-primary" onclick="salvarDetalheFerias('${id}')">Salvar</button>
         </div>
@@ -7727,6 +7724,10 @@ function renderWizard(){
     }
     if(step.id==='demissoes') wizRenderDemList();
     if(step.id==='afastados'){ wizRenderAfaReList(); wizRenderAfaAddList(); }
+    if(step.id==='ferias'){
+      if(!wizState.ferAnivDone){ wizState.ferAnivDone=true; wizRodarAniversarios(); }
+      wizFerRenderBody();
+    }
   }
 }
 
@@ -7901,9 +7902,241 @@ async function wizAfastar(){
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
-// ── ETAPA 4: FERIAS (em construcao — proxima fase) ───────────────
+// ── ETAPA 4: FERIAS ──────────────────────────────────────────────
+// Sub-abas: Retorno · Entradas do mes · Ferias coletivas · Ajuste de saldo.
+// Regras confirmadas com o RH:
+//  - +30 automatico a cada ANIVERSARIO de admissao (config/feriasAniv guarda a
+//    ultima data verificada; nao credita retroativo na 1a vez).
+//  - Retorno: saldo_novo = saldo_atual - gozados - comprados; reprograma
+//    agendamento (mesmo mes/ano seguinte ou outro mes); status -> Trabalhando.
+//  - Entrada: grava dias comprados (impactam beneficios) e gozados; status -> Ferias.
+//  - Coletivas: baixa em lote no saldo (pode ficar negativo).
+//  - Ajuste manual: exige justificativa e registra quem fez (feriasLog.por).
 function wizFeriasHTML(){
-  return '<div class="alert alert-info"><strong>🏖️ Férias — etapa em construção.</strong><br>'
-    +'Esta é a etapa mais delicada: confirma dias gozados/comprados, abate do saldo no Radar, reprograma o agendamento (substituindo o botão "Fechar ciclo") e impacta os benefícios de dias comprados. '
-    +'Vou implementá-la na próxima fase, alinhando as regras com você antes. Por ora, você pode <strong>Concluir</strong> o assistente.</div>';
+  const tab=wizState.ferTab||'retorno';
+  const tb=(id,label)=>'<button class="btn '+(tab===id?'btn-primary':'btn-ghost')+' btn-sm" onclick="wizFerTab(\''+id+'\')">'+label+'</button>';
+  return '<div id="wiz-fer-aniv"></div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'
+      +tb('retorno','↩️ Retorno de férias')
+      +tb('entrada','🏖️ Entradas do mês')
+      +tb('coletiva','👥 Férias coletivas')
+      +tb('ajuste','✏️ Ajuste de saldo')
+    +'</div>'
+    +'<div id="wiz-fer-body"></div>';
+}
+function wizFerTab(t){ wizState.ferTab=t; renderWizard(); }
+
+function wizFerRenderBody(){
+  const body=document.getElementById('wiz-fer-body'); if(!body) return;
+  const tab=wizState.ferTab||'retorno';
+  if(tab==='retorno')  body.innerHTML=wizFerBodyRetorno();
+  else if(tab==='entrada')  body.innerHTML=wizFerBodyEntrada();
+  else if(tab==='coletiva') body.innerHTML=wizFerBodyColetiva();
+  else if(tab==='ajuste'){ body.innerHTML=wizFerBodyAjuste(); wizFerAjusteList(); }
+}
+const _wizPor=()=> (usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'';
+
+// ---- +30 por aniversario de admissao (automatico, idempotente por dia) ----
+function _aniversariosNoIntervalo(adm, desde, ate){
+  let n=0;
+  for(let y=desde.getFullYear(); y<=ate.getFullYear(); y++){
+    const aniv=new Date(y, adm.getMonth(), adm.getDate()); aniv.setHours(0,0,0,0);
+    if(aniv>desde && aniv<=ate) n++;
+  }
+  return n;
+}
+async function aplicarAniversariosFerias(){
+  let cfg={};
+  try{ const snap=await window._getDoc(window._doc('config','feriasAniv')); if(snap.exists()) cfg=snap.data()||{}; }
+  catch(e){ return {erro:e.message}; }
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const hojeISO=_isoLocal(hoje);
+  if(!cfg.ultimaData){ try{ await fsSet('config','feriasAniv',{ultimaData:hojeISO}); }catch(e){} return {baseline:true}; }
+  const desde=_dataLocal(cfg.ultimaData);
+  if(!desde || desde>=hoje) return {credited:0};
+  const por='sistema (aniversario)';
+  let mudou=0, totalDias=0;
+  const alterados=[];
+  colaboradores.forEach(c=>{
+    if(c.elegibilidade?.ferias===false) return;
+    if(_statusKey(c.status).includes('DEMIT')) return;
+    const adm=_dataLocal(c.admissao); if(!adm) return;
+    const n=_aniversariosNoIntervalo(adm, desde, hoje);
+    if(n>0){
+      const de=(c.ferSaldo!=null?c.ferSaldo:0);
+      c.ferSaldo=de+30*n;
+      c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+      c.feriasLog.push({tipo:'aniversario',dias:30*n,de,para:c.ferSaldo,em:new Date().toISOString(),por});
+      alterados.push(c); mudou++; totalDias+=30*n;
+    }
+  });
+  try{
+    for(let i=0;i<alterados.length;i+=400){
+      const b=window._writeBatch(window._db);
+      alterados.slice(i,i+400).forEach(c=>b.set(window._doc('colaboradores',c._id),c));
+      await b.commit();
+    }
+    await fsSet('config','feriasAniv',{ultimaData:hojeISO});
+  }catch(e){ return {erro:e.message}; }
+  return {credited:mudou, dias:totalDias};
+}
+async function wizRodarAniversarios(){
+  const el=document.getElementById('wiz-fer-aniv');
+  if(el) el.innerHTML='<div class="text-xs text-muted" style="margin-bottom:10px">Verificando aniversários de admissão (+30)…</div>';
+  const res=await aplicarAniversariosFerias();
+  if(!el) return;
+  if(res.baseline) el.innerHTML='<div class="alert alert-info" style="margin-bottom:12px">Controle de aniversários inicializado. A partir de agora, cada <strong>aniversário de admissão</strong> credita <strong>+30 dias</strong> ao saldo automaticamente.</div>';
+  else if(res.erro) el.innerHTML='<div class="alert alert-error" style="margin-bottom:12px">Não foi possível verificar aniversários: '+res.erro+'</div>';
+  else if(res.credited){ el.innerHTML='<div class="alert alert-success" style="margin-bottom:12px">✅ <strong>+'+res.dias+'</strong> dias creditados a <strong>'+res.credited+'</strong> colaborador(es) por aniversário de admissão.</div>'; if(currentPage==='fer-radar'){ try{ renderFerRadar(); }catch(e){} } }
+  else el.innerHTML='<div class="text-xs text-muted" style="margin-bottom:10px">Aniversários em dia — nenhum crédito pendente.</div>';
+}
+
+// ---- Sub-aba: RETORNO de ferias ----
+function wizFerBodyRetorno(){
+  const lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='ferias').sort((a,b)=>a.nome.localeCompare(b.nome));
+  const head='<p class="text-xs text-muted">Pessoas com status <strong>Férias</strong>. Confirme os dias: aplica <strong>saldo − gozados − comprados</strong>, reprograma o agendamento e volta o status para Trabalhando.</p>';
+  if(!lista.length) return head+'<div class="alert alert-info">Ninguém com status Férias no momento.</div>';
+  return head+lista.map(c=>wizFerRetRow(c)).join('');
+}
+function wizFerRetRow(c){
+  const saldo=(c.ferSaldo!=null?c.ferSaldo:0); const mes=c.ferMes||'—';
+  const inp='width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px';
+  return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+    +'<div style="font-weight:600">'+c.nome+' <span class="text-xs text-muted">'+(c.depto||'—')+' &middot; saldo atual '+saldo+'d &middot; agend.: '+mes+'</span></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
+      +'<div><label class="text-xs">Dias gozados</label><br><input type="number" id="ret-g-'+c._id+'" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'" style="'+inp+'"></div>'
+      +'<div><label class="text-xs">Dias comprados</label><br><input type="number" id="ret-c-'+c._id+'" min="0" value="'+(c.ferDiasComprados!=null?c.ferDiasComprados:'')+'" style="'+inp+'"></div>'
+      +'<div><label class="text-xs">Reagendar</label><br><select id="ret-r-'+c._id+'" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:6px">'
+        +'<option value="mesmo">Mesmo mês ('+mes+') — próximo ano</option>'
+        +MESES_FER.map(m=>'<option value="'+m+'">Outro: '+m+'</option>').join('')
+      +'</select></div>'
+      +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarRetorno(\''+c._id+'\')">Confirmar retorno</button>'
+    +'</div></div>';
+}
+async function wizFerConfirmarRetorno(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const g=Math.max(0,fnum(document.getElementById('ret-g-'+id)?.value));
+  const comp=Math.max(0,fnum(document.getElementById('ret-c-'+id)?.value));
+  const r=document.getElementById('ret-r-'+id)?.value||'mesmo';
+  const de=(c.ferSaldo!=null?c.ferSaldo:0);
+  c.ferSaldo=de-g-comp;
+  c.ferDiasGozados=g; c.ferDiasComprados=comp;
+  if(r!=='mesmo') c.ferMes=r;
+  c.status='Trabalhando';
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'retorno',gozados:g,comprados:comp,de,para:c.ferSaldo,ferMes:c.ferMes,em:new Date().toISOString(),por:_wizPor()});
+  try{ await fsSet('colaboradores',id,c); toast('Retorno de '+c.nome+' confirmado. Novo saldo: '+c.ferSaldo+'d.','success'); wizFerRenderBody(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ---- Sub-aba: ENTRADAS do mes ----
+function wizFerBodyEntrada(){
+  const ref=wizState.ferMesRef||MESES_FER[new Date().getMonth()];
+  const sel='<select onchange="wizState.ferMesRef=this.value;wizFerRenderBody()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px">'
+    +MESES_FER.map(m=>'<option value="'+m+'" '+(m===ref?'selected':'')+'>'+m+'</option>').join('')+'</select>';
+  const lista=colaboradoresUnicos().filter(c=>c.ferMes===ref && statusGrupo(c.status)==='trabalhando').sort((a,b)=>a.nome.localeCompare(b.nome));
+  let html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><span class="text-xs" style="font-weight:700">Mês de referência:</span>'+sel+'</div>'
+    +'<p class="text-xs text-muted">Agendados para <strong>'+ref+'</strong>. Confirme a entrada e os dias — <strong>comprados</strong> impactam os benefícios pagos em férias. Status muda para Férias.</p>';
+  if(!lista.length) return html+'<div class="alert alert-info">Ninguém agendado para '+ref+' aguardando entrada (ou já estão de férias).</div>';
+  return html+lista.map(c=>wizFerEntRow(c)).join('');
+}
+function wizFerEntRow(c){
+  const inp='width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px';
+  return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+    +'<div style="font-weight:600">'+c.nome+' <span class="text-xs text-muted">'+(c.depto||'—')+' &middot; saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d</span></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
+      +'<div><label class="text-xs">Dias gozados</label><br><input type="number" id="ent-g-'+c._id+'" min="0" style="'+inp+'"></div>'
+      +'<div><label class="text-xs">Dias comprados</label><br><input type="number" id="ent-c-'+c._id+'" min="0" style="'+inp+'"></div>'
+      +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarEntrada(\''+c._id+'\')">Confirmar entrada (→ Férias)</button>'
+    +'</div></div>';
+}
+async function wizFerConfirmarEntrada(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const g=Math.max(0,fnum(document.getElementById('ent-g-'+id)?.value));
+  const comp=Math.max(0,fnum(document.getElementById('ent-c-'+id)?.value));
+  c.ferDiasGozados=g; c.ferDiasComprados=comp; c.status='Ferias';
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'entrada',gozados:g,comprados:comp,em:new Date().toISOString(),por:_wizPor()});
+  try{ await fsSet('colaboradores',id,c); toast(c.nome+' entrou de Férias ('+g+' gozados, '+comp+' comprados).','success'); wizFerRenderBody(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ---- Sub-aba: FERIAS COLETIVAS ----
+function wizFerBodyColetiva(){
+  const deptos=getDeptoList();
+  const inp='padding:6px 10px;border:1.5px solid var(--border);border-radius:6px';
+  return '<p class="text-xs text-muted">Baixa de dias no saldo de um grupo (férias coletivas). O saldo <strong>pode ficar negativo</strong> até o próximo vencimento.</p>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'
+      +'<div><label class="text-xs">Dias a abater</label><br><input type="number" id="col-dias" min="0" style="width:110px;'+inp+'"></div>'
+      +'<div><label class="text-xs">Escopo</label><br><select id="col-dep" style="'+inp+'"><option value="">Todos os ativos</option>'+deptos.map(d=>'<option value="'+d+'">Depto: '+d+'</option>').join('')+'</select></div>'
+      +'<label class="text-xs" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="col-status" style="accent-color:var(--blue)"> Mudar status para Férias</label>'
+      +'<button class="btn btn-warning btn-sm" onclick="wizFerColetiva()">Aplicar férias coletivas</button>'
+    +'</div>';
+}
+async function wizFerColetiva(){
+  const dias=Math.max(0,fnum(document.getElementById('col-dias')?.value));
+  if(!dias){ toast('Informe os dias a abater.','warning'); return; }
+  const dep=document.getElementById('col-dep')?.value||'';
+  const mudarStatus=!!document.getElementById('col-status')?.checked;
+  let alvo=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && c.elegibilidade?.ferias!==false);
+  if(dep) alvo=alvo.filter(c=>(c.depto||'')===dep);
+  if(!alvo.length){ toast('Nenhum colaborador no escopo.','warning'); return; }
+  if(!confirm('Aplicar férias coletivas de '+dias+' dia(s) a '+alvo.length+' colaborador(es)?'+(mudarStatus?'\nO status mudará para Férias.':''))) return;
+  const por=_wizPor(); let ok=0;
+  try{
+    for(let i=0;i<alvo.length;i+=400){
+      const chunk=alvo.slice(i,i+400); const b=window._writeBatch(window._db);
+      chunk.forEach(c=>{
+        const de=(c.ferSaldo!=null?c.ferSaldo:0);
+        c.ferSaldo=de-dias;
+        if(mudarStatus) c.status='Ferias';
+        c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+        c.feriasLog.push({tipo:'coletiva',dias,de,para:c.ferSaldo,em:new Date().toISOString(),por});
+        b.set(window._doc('colaboradores',c._id),c);
+      });
+      await b.commit(); ok+=chunk.length;
+    }
+    toast('Férias coletivas aplicadas a '+ok+' colaborador(es).','success');
+    wizFerRenderBody();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ---- Sub-aba: AJUSTE MANUAL de saldo (com justificativa + log) ----
+function wizFerBodyAjuste(){
+  return '<p class="text-xs text-muted">Ajuste manual do saldo (exceções). Exige <strong>justificativa</strong> e registra quem fez, no histórico do colaborador.</p>'
+    +'<input type="text" id="aj-q" placeholder="Buscar colaborador por nome, matrícula ou depto..." oninput="wizFerAjusteList()" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">'
+    +'<div id="aj-list" style="margin-top:8px"></div>';
+}
+function wizFerAjusteList(){
+  const cont=document.getElementById('aj-list'); if(!cont) return;
+  const q=(document.getElementById('aj-q')?.value||'').toLowerCase().trim();
+  if(!q){ cont.innerHTML='<div class="text-xs text-muted" style="padding:8px">Digite para buscar o colaborador.</div>'; return; }
+  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && wizBusca(c,q));
+  lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,40);
+  if(!lista.length){ cont.innerHTML='<div class="text-xs text-muted" style="padding:8px">Nenhum colaborador encontrado.</div>'; return; }
+  const inp='padding:6px 8px;border:1.5px solid var(--border);border-radius:6px';
+  cont.innerHTML=lista.map(c=>{
+    const saldo=(c.ferSaldo!=null?c.ferSaldo:0);
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+      +'<div style="font-weight:600">'+c.nome+' <span class="text-xs text-muted">'+(c.depto||'—')+' &middot; saldo atual '+saldo+'d</span></div>'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">'
+        +'<div><label class="text-xs">Novo saldo</label><br><input type="number" id="aj-s-'+c._id+'" value="'+saldo+'" style="width:100px;'+inp+'"></div>'
+        +'<div style="flex:1;min-width:200px"><label class="text-xs">Justificativa (obrigatória)</label><br><input type="text" id="aj-j-'+c._id+'" placeholder="Motivo do ajuste" style="width:100%;'+inp+'"></div>'
+        +'<button class="btn btn-primary btn-sm" onclick="wizFerAjustar(\''+c._id+'\')">Aplicar ajuste</button>'
+      +'</div></div>';
+  }).join('');
+}
+async function wizFerAjustar(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const el=document.getElementById('aj-s-'+id);
+  if(!el || el.value===''){ toast('Informe o novo saldo.','warning'); return; }
+  const novo=fnum(el.value);
+  const just=(document.getElementById('aj-j-'+id)?.value||'').trim();
+  if(!just){ toast('Justificativa é obrigatória.','warning'); return; }
+  const de=(c.ferSaldo!=null?c.ferSaldo:0);
+  c.ferSaldo=novo;
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'ajuste_manual',de,para:novo,justificativa:just,em:new Date().toISOString(),por:_wizPor()});
+  try{ await fsSet('colaboradores',id,c); toast('Saldo de '+c.nome+' ajustado: '+de+' → '+novo+'d.','success'); wizFerAjusteList(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
 }
