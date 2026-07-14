@@ -7383,15 +7383,14 @@ function pgFeriasAgendadas(){
       <h2>F\u00E9rias Agendadas</h2>
       <p>Visualize quais colaboradores est\u00E3o com f\u00E9rias agendadas em cada m\u00EAs.</p>
     </div>
-    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
-        <input type="text" id="feragd-q" placeholder="Buscar por nome, matr\u00EDcula, departamento ou cargo..." oninput="renderFeriasAgendadas()"
-          style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;flex:1;min-width:220px">
-        <select id="feragd-dep" onchange="renderFeriasAgendadas()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <option value="">Todos os deptos</option>
-          ${getDeptoList().map(d=>'<option value="'+d+'">'+d+'</option>').join('')}
-        </select>
-      </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+      <input type="text" id="feragd-q" placeholder="Buscar por nome, matr\u00EDcula ou departamento..." oninput="renderFeriasAgendadas()"
+        style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;flex:1;min-width:230px">
+      ${msDropdown('faemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFeriasAgendadas')}
+      ${msDropdown('fadep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFeriasAgendadas')}
+      ${msDropdown('fafunc','Fun\u00E7\u00E3o',getFuncaoList().map(f=>({value:f,label:f})),'renderFeriasAgendadas')}
+      ${msDropdown('fasit','Situa\u00E7\u00E3o',[{value:'agendado',label:'Agendado'},{value:'sem_mes',label:'Sem m\u00EAs definido'},{value:'afastado',label:'Afastado'},{value:'nao_aplica',label:'N\u00E3o se aplica'}],'renderFeriasAgendadas')}
+      ${msDropdown('favenc','Vencimento',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence \u22643m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFeriasAgendadas')}
       <button class="btn btn-ghost btn-sm" onclick="exportarFeriasAgendadasExcel()">Excel</button>
     </div>
     <div id="feragd-resumo" style="margin-bottom:14px"></div>
@@ -7399,43 +7398,62 @@ function pgFeriasAgendadas(){
     <div id="feragd-sem" style="margin-top:20px"></div>`;
 }
 
+// Situacao de agendamento de ferias (categorias exclusivas):
+//   nao_aplica -> nao elegivel a ferias (socio/consultor com ferias off)
+//   afastado   -> status do grupo "so_cesta" (Afastado, Aux. Doenca, etc.)
+//   agendado   -> tem mes de ferias definido (ferMes)
+//   sem_mes    -> elegivel e trabalhando, mas sem mes definido
+function _sitAgenda(c){
+  if(c.elegibilidade?.ferias===false) return 'nao_aplica';
+  if(statusGrupo(c.status)==='so_cesta') return 'afastado';
+  return c.ferMes ? 'agendado' : 'sem_mes';
+}
+
 function renderFeriasAgendadas(){
+  bindMsOutside();
+  updateMsCounts();
   const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const q=(document.getElementById('feragd-q')?.value||'').toLowerCase();
-  const depF=document.getElementById('feragd-dep')?.value||'';
+  const q=(document.getElementById('feragd-q')?.value||'').toLowerCase().trim();
+  const empF=getMs('faemp');   // empresa (prefixo da matricula)
+  const depF=getMs('fadep');   // departamento
+  const funcF=getMs('fafunc'); // funcao
+  const sitF=getMs('fasit');   // situacao de agendamento
+  const corF=getMs('favenc');  // situacao de vencimento (cor do farol)
 
-  // Férias são por pessoa única (dedup por CPF; mantém o cadastro principal —
-  // evita duplicidade CLT + MEI/Sócio na lista de agendamentos).
-  let base=colaboradoresUnicos().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
-  if(depF) base=base.filter(c=>(c.depto||'')===depF);
+  // Pessoa unica (dedup por CPF; mantem o cadastro principal) — evita duplicidade
+  // CLT + MEI/Socio. Demitidos / N/A EXCLUIDOS (statusGrupo pega variacoes de escrita).
+  let base=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && _statusKey(c.status)!=='INATIVO');
+  if(empF.length)  base=base.filter(c=>empF.some(e=>String(c.mat||'').startsWith(e)));
+  if(depF.length)  base=base.filter(c=>depF.includes(c.depto||''));
+  if(funcF.length) base=base.filter(c=>funcF.includes(funcaoColab(c)));
   if(q) base=base.filter(c=>
-    c.nome.toLowerCase().includes(q) ||
+    (c.nome||'').toLowerCase().includes(q) ||
     (c.mat||'').toLowerCase().includes(q) ||
-    (c.depto||'').toLowerCase().includes(q) ||
-    (c.cargo||'').toLowerCase().includes(q)
+    (c.depto||'').toLowerCase().includes(q)
   );
+  if(sitF.length) base=base.filter(c=>sitF.includes(_sitAgenda(c)));
+  if(corF.length) base=base.filter(c=>corF.includes(getFarol(c).cor));
 
-  // "N\u00E3o se aplica" = n\u00E3o eleg\u00EDvel a f\u00E9rias (s\u00F3cio/consultor com f\u00E9rias off).
-  const aplica=c=>c.elegibilidade?.ferias!==false;
-  const naoAplicam=base.filter(c=>!aplica(c));
-  const agendados=base.filter(c=>aplica(c) && c.ferMes);
-  const semAgenda=base.filter(c=>aplica(c) && !c.ferMes);
+  const agendados =base.filter(c=>_sitAgenda(c)==='agendado');
+  const afastados =base.filter(c=>_sitAgenda(c)==='afastado');
+  const naoAplicam=base.filter(c=>_sitAgenda(c)==='nao_aplica');
+  const semAgenda =base.filter(c=>_sitAgenda(c)==='sem_mes');
 
   // Reordena os meses comecando pelo mes atual (visao "proximos meses primeiro")
   const mesAtualIdx=new Date().getMonth();
   const mesesOrdenados=[...meses.slice(mesAtualIdx),...meses.slice(0,mesAtualIdx)];
 
-  // Resumo
+  // Resumo: agendadas · afastados · nao se aplicam
   const resumoEl=document.getElementById('feragd-resumo');
   if(resumoEl){
-    resumoEl.innerHTML=`<div class="alert alert-info">
-      <strong>${agendados.length}</strong> colaborador(es) com f\u00E9rias agendadas &middot;
-      <strong>${semAgenda.length}</strong> sem m\u00EAs definido &middot;
-      <strong>${naoAplicam.length}</strong> n\u00E3o se aplicam
-    </div>`;
+    resumoEl.innerHTML='<div class="alert alert-info">'
+      +'<strong>'+agendados.length+'</strong> com férias agendadas &middot; '
+      +'<strong>'+afastados.length+'</strong> afastado(s) &middot; '
+      +'<strong>'+naoAplicam.length+'</strong> não se aplicam'
+      +'</div>';
   }
 
-  // Grid por mes — mesmo padrao visual do kanban de vencimento (renderFarois)
+  // Grid por mes (kanban) — apenas os AGENDADOS
   const grid=document.getElementById('feragd-grid');
   if(grid){
     grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(12,minmax(150px,1fr));gap:10px;align-items:start;overflow-x:auto;padding-bottom:6px">'
@@ -7446,19 +7464,19 @@ function renderFeriasAgendadas(){
         const bg=isAtual?'var(--blue-light)':'var(--surface2)';
         return '<div style="background:'+bg+';border:1.5px solid '+cor+'33;border-radius:var(--radius);padding:10px;min-height:120px">'
           +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1.5px solid '+cor+'33">'
-          +'<span style="font-size:12px;font-weight:700;color:'+cor+'">'+mes.substring(0,3)+(isAtual?' \u2022':'')+'</span>'
+          +'<span style="font-size:12px;font-weight:700;color:'+cor+'">'+mes.substring(0,3)+(isAtual?' •':'')+'</span>'
           +'<span style="background:'+cor+';color:#fff;font-size:12px;font-weight:700;border-radius:20px;padding:2px 9px;min-width:24px;text-align:center">'+itens.length+'</span>'
           +'</div>'
           +'<div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">'
           +(itens.length===0
-            ? '<div class="text-xs text-muted" style="padding:4px 2px">\u2014</div>'
+            ? '<div class="text-xs text-muted" style="padding:4px 2px">—</div>'
             : itens.map(c=>{
                 const f=getFarol(c);
                 const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
                 return '<div style="background:#fff;border:1px solid '+cor+'44;border-radius:6px;padding:7px 9px;cursor:pointer" '
-                  +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="'+c.nome+' \u2014 '+(c.cargo||'\u2014')+' \u2014 '+(c.depto||'\u2014')+' \u2014 Venc: '+f.vencStr+' (clique para editar)">'
+                  +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="'+c.nome+' — '+(c.cargo||'—')+' — '+(c.depto||'—')+' — Venc: '+f.vencStr+' (clique para editar)">'
                   +'<div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.nome+'</div>'
-                  +'<div style="font-size:10px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(c.depto||'\u2014')+'</div>'
+                  +'<div style="font-size:10px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(c.depto||'—')+'</div>'
                   +'<div style="font-size:10px;margin-top:2px;color:'+corMap[f.cor]+';font-weight:600">Saldo: '+(c.ferSaldo!=null?c.ferSaldo:f.dias)+'d</div>'
                   +'</div>';
               }).join(''))
@@ -7467,13 +7485,17 @@ function renderFeriasAgendadas(){
       +'</div>';
   }
 
-  // Lista de colaboradores sem mes definido
+  // Lista de baixo: SEM MES definido + AFASTADOS (sinalizados). Demitidos nao entram.
   const semEl=document.getElementById('feragd-sem');
   if(semEl){
-    if(semAgenda.length===0){
+    const pend=[
+      ...afastados.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>({c,tipo:'afastado'})),
+      ...semAgenda.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>({c,tipo:'sem_mes'}))
+    ];
+    if(pend.length===0){
       semEl.innerHTML='';
     } else {
-      semEl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Sem m\u00EAs de f\u00E9rias definido ('+semAgenda.length+')</div>'
+      semEl.innerHTML='<div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase">Sem férias agendadas ('+pend.length+')</div>'
         +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)">'
         +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
         +'<thead><tr style="background:var(--blue-dark);color:#fff">'
@@ -7481,41 +7503,55 @@ function renderFeriasAgendadas(){
         +'<th style="padding:8px 10px;text-align:left">Nome</th>'
         +'<th style="padding:8px 10px;text-align:left">Cargo</th>'
         +'<th style="padding:8px 10px;text-align:left">Departamento</th>'
-        +'<th style="padding:8px 10px;text-align:center">A\u00E7\u00F5es</th>'
+        +'<th style="padding:8px 10px;text-align:left">Situação</th>'
+        +'<th style="padding:8px 10px;text-align:center">Ações</th>'
         +'</tr></thead><tbody>'
-        +semAgenda.sort((a,b)=>a.nome.localeCompare(b.nome)).map((c,i)=>
-          '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
-          +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'\u2014')+'</code></td>'
-          +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
-          +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.cargo||'\u2014')+'</td>'
-          +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'\u2014')+'</td>'
-          +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Agendar</button></td>'
-          +'</tr>'
-        ).join('')+'</tbody></table></div>';
+        +pend.map((p,i)=>{
+          const c=p.c;
+          let sitTag;
+          if(p.tipo==='afastado'){
+            const si=getStatusInfo(c.status);
+            sitTag='<span style="background:'+si.bg+';color:'+si.cor+';font-size:10px;font-weight:700;border-radius:20px;padding:2px 9px;border:1px solid '+si.cor+'44">'+si.label+'</span>';
+          } else {
+            sitTag='<span style="background:#F3F4F6;color:#6B7280;font-size:10px;font-weight:600;border-radius:20px;padding:2px 9px">Sem mês definido</span>';
+          }
+          return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">'
+            +'<td style="padding:8px 10px"><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
+            +'<td style="padding:8px 10px;font-weight:500">'+c.nome+'</td>'
+            +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.cargo||'—')+'</td>'
+            +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>'
+            +'<td style="padding:8px 10px">'+sitTag+'</td>'
+            +'<td style="padding:8px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')">Agendar</button></td>'
+            +'</tr>';
+        }).join('')+'</tbody></table></div>';
     }
   }
 }
 
 function exportarFeriasAgendadasExcel(){
   const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const base=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
-  const rows=[['Mes Agendado','Matricula','Nome','CPF','Cargo','Departamento','Saldo (dias)','Vencimento']];
-  base.filter(c=>c.ferMes).sort((a,b)=>{
-    const ia=meses.indexOf(a.ferMes), ib=meses.indexOf(b.ferMes);
-    return ia!==ib ? ia-ib : a.nome.localeCompare(b.nome);
+  // Mesma base da tela: pessoa unica, sem demitidos/N/A/Inativo.
+  const base=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && _statusKey(c.status)!=='INATIVO');
+  const rows=[['Situacao','Mes Agendado','Matricula','Nome','CPF','Cargo','Departamento','Saldo (dias)','Vencimento']];
+  const ordem={agendado:0,sem_mes:1,afastado:2,nao_aplica:3};
+  base.slice().sort((a,b)=>{
+    const sa=_sitAgenda(a), sb=_sitAgenda(b);
+    if(ordem[sa]!==ordem[sb]) return ordem[sa]-ordem[sb];
+    if(sa==='agendado'){ const ia=meses.indexOf(a.ferMes), ib=meses.indexOf(b.ferMes); if(ia!==ib) return ia-ib; }
+    return a.nome.localeCompare(b.nome);
   }).forEach(c=>{
     const f=getFarol(c);
-    rows.push([c.ferMes,c.mat||'',c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.ferSaldo!=null?c.ferSaldo:f.dias,f.vencStr]);
-  });
-  base.filter(c=>!c.ferMes).sort((a,b)=>a.nome.localeCompare(b.nome)).forEach(c=>{
-    const f=getFarol(c);
-    rows.push(['Sem mes definido',c.mat||'',c.nome,c.cpf||'',c.cargo||'',c.depto||'',c.ferSaldo!=null?c.ferSaldo:f.dias,f.vencStr]);
+    const sit=_sitAgenda(c);
+    const sitTxt = sit==='afastado' ? getStatusInfo(c.status).label
+                 : sit==='agendado' ? 'Agendado'
+                 : sit==='sem_mes'  ? 'Sem mes definido' : 'Nao se aplica';
+    rows.push([sitTxt, sit==='agendado'?(c.ferMes||''):'', c.mat||'', c.nome, c.cpf||'', c.cargo||'', c.depto||'', c.ferSaldo!=null?c.ferSaldo:f.dias, f.vencStr]);
   });
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb,ws,'Ferias Agendadas');
   XLSX.writeFile(wb,'Ferias_Agendadas.xlsx');
-  toast('\u2705 Excel gerado!','success');
+  toast('✅ Excel gerado!','success');
 }
 
 // ── Alertas mensais no topo do Radar de Ferias ───────────────────
