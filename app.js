@@ -7805,7 +7805,8 @@ function wizIntroHTML(step){
   return '<div style="text-align:center;padding:26px 10px">'
     +'<div class="wiz-intro-ic">'+step.icon+'</div>'
     +'<h3 class="wiz-intro-title">Etapa: '+step.label+'</h3>'
-    +'<p class="wiz-intro-sub">'+WIZ_META[step.id]+' Deseja seguir com esta etapa ou pular para a próxima?</p>'
+    +'<p class="wiz-intro-sub">'+WIZ_META[step.id]+'</p>'
+    +'<p class="wiz-intro-q">Deseja seguir com esta etapa ou pular para a próxima?</p>'
     +'<div class="wiz-actions" style="justify-content:center">'
       +'<button class="btn btn-ghost" onclick="wizPular()">Pular etapa</button>'
       +'<button class="btn btn-primary" onclick="wizSeguir()">Seguir &raquo;</button>'
@@ -8058,11 +8059,12 @@ async function wizAfastar(){
 // ── ETAPA 4: FERIAS ──────────────────────────────────────────────
 function wizFeriasHTML(){
   const tab=wizState.ferTab||'retorno';
-  const tb=(id,icon,label)=>'<button class="wiz-tab'+(tab===id?' wiz-tab--active':'')+'" onclick="wizFerTab(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
+  const big=(id,icon,label)=>'<button class="wiz-tab'+(tab===id?' wiz-tab--active':'')+'" onclick="wizFerTab(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
+  const sec=(id,icon,label)=>'<button class="wiz-secbtn'+(tab===id?' wiz-secbtn--active':'')+'" onclick="wizFerTab(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
   return '<div id="wiz-fer-aniv"></div>'
-    +'<div class="wiz-tabs">'
-      +tb('retorno','arrow-back-up','Retorno')+tb('entrada','umbrella','Entradas do mês')
-      +tb('coletiva','users-group','Coletivas')+tb('ajuste','adjustments-horizontal','Ajuste de saldo')
+    +'<div class="wiz-fer-nav">'
+      +'<div class="wiz-tabs">'+big('retorno','arrow-back-up','Retorno de férias')+big('entrada','umbrella','Entrada de férias')+'</div>'
+      +'<div class="wiz-fer-sec">'+sec('coletiva','users-group','Coletivas')+sec('ajuste','adjustments-horizontal','Ajuste de saldo')+'</div>'
     +'</div>'
     +'<div id="wiz-fer-body"></div>';
 }
@@ -8142,7 +8144,7 @@ async function wizRodarAniversarios(){
 // ---- Retorno ----
 function wizFerBodyRetorno(){
   return wizPanel('<i class="ti ti-arrow-back-up"></i> Retorno de férias','',
-    '<p class="wiz-note" style="margin-top:0">Pessoas com status <strong>Férias</strong>. Aplica <strong>saldo − gozados − comprados</strong>, reprograma o agendamento e volta o status para Trabalhando.</p>'
+    '<p class="wiz-q" style="margin-top:0">Confirma os dados abaixo e o retorno de férias destes colaboradores?</p>'
     +'<div id="ret-list"></div>');
 }
 function wizFerRenderRetList(){
@@ -8154,16 +8156,18 @@ function wizFerRenderRetList(){
 function wizFerRetRow(c){
   if(wizState.retFeitos.has(c._id)) return wizFerConfirmedRow(c,'retorno');
   const saldo=(c.ferSaldo!=null?c.ferSaldo:0); const mes=c.ferMes||'—';
+  const anoProx = c.ferMes ? anoAgendadoColab(c) : '';
   return '<div id="ret-row-'+c._id+'" class="wiz-row">'
-    +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+' &middot; saldo '+saldo+'d &middot; agend.: '+mes+'</span></div>'
+    +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
     +'<div class="wiz-fields">'
-      +'<div class="wiz-field"><label>Gozados</label><input type="number" id="ret-g-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'"></div>'
-      +'<div class="wiz-field"><label>Comprados</label><input type="number" id="ret-c-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasComprados!=null?c.ferDiasComprados:'')+'"></div>'
-      +'<div class="wiz-field"><label>Reagendar</label><select id="ret-r-'+c._id+'" class="wiz-sel">'
-        +'<option value="mesmo">Mesmo mês ('+mes+') — próximo ano</option>'
-        +MESES_FER.map(m=>'<option value="'+m+'">Outro: '+m+'</option>').join('')
+      +'<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ret-g-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'"></div>'
+      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ret-c-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasComprados!=null?c.ferDiasComprados:'')+'"></div>'
+      +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
+      +'<div class="wiz-field"><label>Próximo agendamento</label><select id="ret-r-'+c._id+'" class="wiz-sel">'
+        +'<option value="mesmo">'+mes+(anoProx&&anoProx!=='—'?'/'+anoProx:'')+' (mesmo mês)</option>'
+        +MESES_FER.map(m=>'<option value="'+m+'">Mudar para: '+m+'</option>').join('')
       +'</select></div>'
-      +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarRetorno(\''+c._id+'\')"><i class="ti ti-check"></i> Confirmar retorno</button>'
+      +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarRetorno(\''+c._id+'\')"><i class="ti ti-check"></i> Confirmar</button>'
     +'</div></div>';
 }
 async function wizFerConfirmarRetorno(id){
