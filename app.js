@@ -7522,6 +7522,8 @@ function pgFeriasAgendadas(){
       <div class="filter-group"><label>Função</label>${msDropdown('fafunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Situação</label>${msDropdown('fasit','Situação',[{value:'agendado',label:'Agendado'},{value:'sem_mes',label:'Sem mês definido'},{value:'afastado',label:'Afastado'},{value:'nao_aplica',label:'Não se aplica'}],'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Vencimento</label>${msDropdown('favenc','Vencimento',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Agendamento</label>${msDropdown('faagend','Agendamento',[{value:'ok',label:'No prazo'},{value:'bad',label:'Fora do prazo'},{value:'none',label:'Sem agendamento'}],'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Mês agendado</label>${msDropdown('fames','Mês agendado',MESES_FER.map(m=>({value:m,label:m})),'renderFeriasAgendadas')}</div>
       <button class="btn btn-ghost btn-sm" onclick="exportarFeriasAgendadasExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
     </div>
     <div id="feragd-resumo" style="margin-bottom:14px"></div>
@@ -7550,6 +7552,8 @@ function renderFeriasAgendadas(){
   const funcF=getMs('fafunc'); // funcao
   const sitF=getMs('fasit');   // situacao de agendamento
   const corF=getMs('favenc');  // situacao de vencimento (cor do farol)
+  const agF=getMs('faagend');  // status do agendamento (ok/bad/none)
+  const mesF=getMs('fames');   // mes de agendamento
 
   // Pessoa unica (dedup por CPF; mantem o cadastro principal) — evita duplicidade
   // CLT + MEI/Socio. Demitidos / N/A EXCLUIDOS (statusGrupo pega variacoes de escrita).
@@ -7564,6 +7568,8 @@ function renderFeriasAgendadas(){
   );
   if(sitF.length) base=base.filter(c=>sitF.includes(_sitAgenda(c)));
   if(corF.length) base=base.filter(c=>corF.includes(getFarol(c).cor));
+  if(mesF.length) base=base.filter(c=>mesF.includes(c.ferMes||''));
+  if(agF.length)  base=base.filter(c=>agF.includes(_agKey(c,getFarol(c).vencDate)));
 
   const agendados =base.filter(c=>_sitAgenda(c)==='agendado');
   const afastados =base.filter(c=>_sitAgenda(c)==='afastado');
