@@ -938,7 +938,7 @@ function renderPage(id){
 function afterRender(id){
   if(id==='base-lista') renderColabList();
   if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
-  if(id==='ben-lancamento'){ popularLanFiltros(); lanAutoImportBase().then(renderLancamento); }
+  if(id==='ben-lancamento'){ popularLanFiltros(); lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); }); }
   if(id==='base-versoes') loadBasesSalvas().then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
@@ -2519,11 +2519,13 @@ function renderBaseApuracaoInfo(){
 }
 
 // Importa automaticamente a última base salva quando ainda não há base na apuração.
+// Retorna true se importou algo agora (para re-montar a página com a tabela).
 async function lanAutoImportBase(){
-  if(baseApuracao) return;
+  if(baseApuracao) return false;
   if(!basesSalvasList.length){ try{ await loadBasesSalvas(); }catch(e){} }
   const latest=basesSalvasList[0];
-  if(latest){ baseApuracao=latest; setLanComp(latest.competencia); try{ await loadLancamento(); }catch(e){} }
+  if(latest){ baseApuracao=latest; setLanComp(latest.competencia); try{ await loadLancamento(); }catch(e){} return true; }
+  return false;
 }
 
 async function abrirImportarBase(){
@@ -5657,36 +5659,30 @@ function renderPremioWizard(){
   let conteudo = '';
 
   if(atual === 1){
-    // ── PASSO 1: Base + checagem dos afastados ──
-    const base = colaboradores.filter(c=>c.status!=='Inativo');
-    const trab = base.filter(c=>statusGrupo(c.status)==='trabalhando').length;
-    const afastados = base.filter(c=>statusGrupo(c.status)==='so_cesta').sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-    const afaTbl = afastados.length
-      ? '<div class="tbl-wrap" style="max-height:340px"><table class="tbl"><thead><tr><th>Colaborador</th><th>Departamento</th><th>Situação</th><th style="text-align:center">Voltou a trabalhar?</th></tr></thead><tbody>'
-        + afastados.map(c=>'<tr><td><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
-          +'<td class="text-sm">'+(c.depto||'—')+'</td>'
-          +'<td><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'
-          +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="premioReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button></td></tr>').join('')
-        + '</tbody></table></div>'
-      : '<div class="alert alert-info">Nenhum afastado na base.</div>';
+    // ── PASSO 1: Base importada + filtros + tabela ──
+    const base = _premioBasePop();
     const _ver=basesSalvasList[0];
     const _verDt=_ver&&_ver.salvoEm?new Date(_ver.salvoEm).toLocaleString('pt-BR'):'—';
     const _verLinha=_ver
       ? '<span>Versão: <strong>'+_ver.competencia+'</strong></span><span>Data da versão: <strong>'+_verDt+'</strong></span>'
       : '<span class="text-muted">Sem versão salva em Históricos</span>';
+    const emps=[...new Set(base.map(c=>_empresaKey(c)).filter(Boolean))].sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b)));
+    const selSt='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
     conteudo = '<div class="lan-step">'
-      + head(1,'Importar e conferir a base','A última base salva é importada automaticamente. Confira a versão/data e os <strong>afastados</strong> (ficam como <strong>NÃO</strong> no prêmio). Se alguém voltou, use <strong>Reativar</strong>.')
-      + '<div class="alert alert-success" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-bottom:14px"><span><i class="ti ti-database-import"></i> <strong>Base importada automaticamente</strong></span>'+_verLinha+'<span>'+base.length+' colaboradores</span></div>'
-      + '<div class="stat-grid" style="margin-bottom:12px">'
-        + _dsStat('users','accent',base.length,'Na base')
-        + _dsStat('user-check','success',trab,'Trabalhando')
-        + _dsStat('first-aid-kit','warning',afastados.length,'Afastados / só cesta')
+      + head(1,'Importar e conferir a base','A última base salva é importada automaticamente. Confira a tabela abaixo — recarregue outra versão ou confirme para avançar. Afastados podem ser reativados na própria tabela.')
+      + '<div class="alert alert-success" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-bottom:12px"><span><i class="ti ti-database-import"></i> <strong>Base importada automaticamente</strong></span>'+_verLinha+'<span>'+base.length+' colaboradores</span></div>'
+      // Botões ACIMA dos filtros
+      + '<div class="lan-navbtns" style="margin-bottom:12px"><button class="btn btn-ghost btn-sm" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Recarregar nova base</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="premioIrPasso(2)">Confirmar e avançar <i class="ti ti-arrow-right"></i></button></div>'
+      // Filtros
+      + '<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
+        + '<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="pb-q" placeholder="Nome, matrícula ou departamento..." oninput="renderPremioBaseTabela()"></div>'
+        + '<div class="filter-group"><label>Empresa</label><select id="pb-emp" onchange="renderPremioBaseTabela()" style="'+selSt+'"><option value="">Todas</option>'+emps.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
+        + '<div class="filter-group"><label>Situação</label><select id="pb-sit" onchange="renderPremioBaseTabela()" style="'+selSt+'"><option value="">Todas</option><option value="trabalhando">Trabalhando</option><option value="ferias">Férias</option><option value="afastado">Afastado</option></select></div>'
       + '</div>'
-      + '<div class="lan-sub"><div class="lan-sub__t">Checagem dos afastados ('+afastados.length+')</div>'
-        + '<div class="lan-sub__d">Confira se todos ainda estão afastados. Quem voltou deve ser reativado antes de seguir.</div>'
-        + afaTbl + '</div>'
-      + '<div style="margin:10px 0"><button class="btn btn-ghost btn-sm" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Recarregar nova base</button></div>'
-      + nav(0,2,'Confirmar e avançar')
+      // Tabela importada
+      + '<div class="tbl-wrap" style="max-height:460px"><table class="tbl"><thead><tr><th>Matrícula</th><th>Nome</th><th>Empresa</th><th>Departamento</th><th>Situação</th><th style="text-align:center">Ação</th></tr></thead>'
+        + '<tbody id="premio-base-tbody">'+_premioBaseRows(base)+'</tbody></table></div>'
       + '</div>';
 
   } else if(atual === 2){
@@ -5859,6 +5855,34 @@ function editarValorPremio(idx,v){
 function premioImportarBase(){
   loadColaboradores().then(()=>{ toast('Base recarregada: '+colaboradores.length+' colaboradores.','success'); renderPremioWizard(); });
 }
+// População da base considerada no prêmio (dedup por CPF, exclui demitidos/N/A/inativos)
+function _premioBasePop(){ return colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && _statusKey(c.status)!=='INATIVO'); }
+function _premioBaseFiltrada(){
+  const q=(document.getElementById('pb-q')?.value||'').toLowerCase().trim();
+  const emp=document.getElementById('pb-emp')?.value||'';
+  const sit=document.getElementById('pb-sit')?.value||'';
+  return _premioBasePop().filter(c=>{
+    if(q && !((c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q))) return false;
+    if(emp && !_empresaMatch(c,[emp])) return false;
+    if(sit){ const g=statusGrupo(c.status); if(sit==='trabalhando'&&g!=='trabalhando') return false; if(sit==='afastado'&&g!=='so_cesta') return false; if(sit==='ferias'&&g!=='ferias') return false; }
+    return true;
+  });
+}
+function _premioBaseRows(lista){
+  if(!lista.length) return '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-muted)">Nenhum colaborador com os filtros atuais.</td></tr>';
+  return lista.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>{
+    const g=statusGrupo(c.status);
+    const badge=g==='trabalhando'?'success':g==='so_cesta'?'warning':g==='ferias'?'accent':'neutral';
+    const acao=g==='so_cesta'?'<button class="btn btn-ghost btn-sm" onclick="premioReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button>':'';
+    return '<tr><td><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
+      +'<td style="font-weight:500">'+c.nome+'</td>'
+      +'<td class="text-sm">'+_empresaLabel(_empresaKey(c))+'</td>'
+      +'<td class="text-sm">'+(c.depto||'—')+'</td>'
+      +'<td><span class="badge badge--'+badge+'">'+getStatusInfo(c.status).label+'</span></td>'
+      +'<td style="text-align:center">'+acao+'</td></tr>';
+  }).join('');
+}
+function renderPremioBaseTabela(){ const el=document.getElementById('premio-base-tbody'); if(el) el.innerHTML=_premioBaseRows(_premioBaseFiltrada()); }
 async function premioReativarAfastado(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   c.status='Trabalhando';
