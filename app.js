@@ -927,7 +927,7 @@ function renderPage(id){
 function afterRender(id){
   if(id==='base-lista') renderColabList();
   if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
-  if(id==='ben-lancamento'){ popularLanFiltros(); renderLancamento(); }
+  if(id==='ben-lancamento'){ popularLanFiltros(); lanAutoImportBase().then(renderLancamento); }
   if(id==='base-versoes') loadBasesSalvas().then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
@@ -2318,9 +2318,9 @@ function pgBenLancamento(){
   let corpo='';
   if(lanStep===1){
     corpo='<div class="lan-step">'
-      +head(1,'Importar a base','Traz os colaboradores da competência com os <strong>status</strong> e as <strong>férias a descontar</strong>. Ao importar, a tabela completa aparece abaixo.')
+      +head(1,'Importar e conferir a base','A última base salva é importada automaticamente. Confira a <strong>versão</strong> e a <strong>data</strong>, e siga para a apuração — ou recarregue outra versão.')
       +'<div id="lan-base-info"></div>'
-      +nav(0,2)+'</div>'
+      +'</div>'
       +(temBase?('<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros):'');
   } else if(lanStep===2){
     corpo='<div class="lan-step">'
@@ -2479,25 +2479,31 @@ function renderBasesSalvas(){
 function renderBaseApuracaoInfo(){
   const el=document.getElementById('lan-base-info'); if(!el) return;
   if(baseApuracao){
-    const dt=baseApuracao.salvoEm?new Date(baseApuracao.salvoEm).toLocaleString('pt-BR'):'';
+    const dt=baseApuracao.salvoEm?new Date(baseApuracao.salvoEm).toLocaleString('pt-BR'):'—';
     const n=baseApuracao.totalColaboradores||(baseApuracao.colaboradores||[]).length;
-    // Existe versao salva mais recente que a importada? (avisa p/ reimportar)
     const latest=basesSalvasList[0];
     const desatualizada = latest && latest._id!==baseApuracao._id && String(latest.salvoEm||'')>String(baseApuracao.salvoEm||'');
-    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--green-light);border:1px solid var(--green);border-radius:var(--radius);padding:8px 12px;font-size:13px">'
-      +'<span style="font-weight:700;color:var(--green)">📥 Base importada:</span>'
-      +'<span>'+baseApuracao.competencia+' · '+n+' colaboradores · '+dt+'</span>'
-      +'<button class="btn btn-ghost btn-xs" style="margin-left:auto" onclick="abrirImportarBase()">Trocar base</button></div>'
-      +(desatualizada?'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--radius);padding:8px 12px;font-size:13px;margin-top:6px">'
-        +'<span style="font-weight:700;color:#92400E">⚠️ Existe uma versão mais recente da base ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+').</span>'
-        +'<span class="text-muted">Os ajustes que você salvou depois não estão nesta apuração.</span>'
-        +'<button class="btn btn-warning btn-xs" style="margin-left:auto" onclick="importarBaseApuracao(\''+latest._id+'\')">Atualizar para a mais recente</button></div>':'');
+    el.innerHTML='<div class="alert alert-success" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-bottom:12px">'
+      +'<span><i class="ti ti-database-import"></i> <strong>Base importada automaticamente</strong></span>'
+      +'<span>Versão: <strong>'+baseApuracao.competencia+'</strong></span>'
+      +'<span>Data da versão: <strong>'+dt+'</strong></span>'
+      +'<span>'+n+' colaboradores</span></div>'
+      +(desatualizada?'<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Existe uma versão mais recente da base ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+'). '
+        +'<button class="btn btn-warning btn-sm" style="margin-left:8px" onclick="importarBaseApuracao(\''+latest._id+'\')">Usar a mais recente</button></div>':'')
+      +'<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="abrirImportarBase()"><i class="ti ti-refresh"></i> Recarregar nova base</button>'
+      +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(2)">Confirmar e avançar <i class="ti ti-arrow-right"></i></button></div>';
   } else {
-    el.innerHTML='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:var(--radius);padding:8px 12px;font-size:13px">'
-      +'<span style="font-weight:700;color:#92400E">⚠️ Nenhuma base importada.</span>'
-      +'<span class="text-muted">A apuração precisa de uma base salva.</span>'
-      +'<button class="btn btn-primary btn-xs" style="margin-left:auto" onclick="abrirImportarBase()">Importar base</button></div>';
+    el.innerHTML='<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Nenhuma base salva encontrada. Salve uma versão em <strong>Base de Colaboradores → Históricos</strong>.'
+      +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="abrirImportarBase()">Importar base</button></div>';
   }
+}
+
+// Importa automaticamente a última base salva quando ainda não há base na apuração.
+async function lanAutoImportBase(){
+  if(baseApuracao) return;
+  if(!basesSalvasList.length){ try{ await loadBasesSalvas(); }catch(e){} }
+  const latest=basesSalvasList[0];
+  if(latest){ baseApuracao=latest; setLanComp(latest.competencia); try{ await loadLancamento(); }catch(e){} }
 }
 
 async function abrirImportarBase(){
@@ -5588,7 +5594,8 @@ function pgPremioAssiduidade(){
 }
 
 function afterRenderPremio(){
-  renderPremioWizard();
+  if(!basesSalvasList.length){ loadBasesSalvas().then(()=>renderPremioWizard()).catch(()=>renderPremioWizard()); }
+  else renderPremioWizard();
 }
 
 function renderPremioWizard(){
@@ -5640,9 +5647,14 @@ function renderPremioWizard(){
           +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="premioReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button></td></tr>').join('')
         + '</tbody></table></div>'
       : '<div class="alert alert-info">Nenhum afastado na base.</div>';
+    const _ver=basesSalvasList[0];
+    const _verDt=_ver&&_ver.salvoEm?new Date(_ver.salvoEm).toLocaleString('pt-BR'):'—';
+    const _verLinha=_ver
+      ? '<span>Versão: <strong>'+_ver.competencia+'</strong></span><span>Data da versão: <strong>'+_verDt+'</strong></span>'
+      : '<span class="text-muted">Sem versão salva em Históricos</span>';
     conteudo = '<div class="lan-step">'
-      + head(1,'Importar e conferir a base','Carregue a base atual e <strong>confirme os afastados</strong> — eles ficam como <strong>NÃO</strong> no prêmio. Se alguém voltou, use <strong>Reativar</strong> (altera também na Base de Colaboradores).')
-      + '<div class="alert alert-success" style="margin-bottom:14px"><i class="ti ti-users-group"></i> Base carregada: <strong>'+base.length+'</strong> colaboradores.</div>'
+      + head(1,'Importar e conferir a base','A última base salva é importada automaticamente. Confira a versão/data e os <strong>afastados</strong> (ficam como <strong>NÃO</strong> no prêmio). Se alguém voltou, use <strong>Reativar</strong>.')
+      + '<div class="alert alert-success" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-bottom:14px"><span><i class="ti ti-database-import"></i> <strong>Base importada automaticamente</strong></span>'+_verLinha+'<span>'+base.length+' colaboradores</span></div>'
       + '<div class="stat-grid" style="margin-bottom:12px">'
         + _dsStat('users','accent',base.length,'Na base')
         + _dsStat('user-check','success',trab,'Trabalhando')
@@ -5651,7 +5663,7 @@ function renderPremioWizard(){
       + '<div class="lan-sub"><div class="lan-sub__t">Checagem dos afastados ('+afastados.length+')</div>'
         + '<div class="lan-sub__d">Confira se todos ainda estão afastados. Quem voltou deve ser reativado antes de seguir.</div>'
         + afaTbl + '</div>'
-      + '<div style="margin:10px 0"><button class="btn btn-ghost btn-sm" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Recarregar base</button></div>'
+      + '<div style="margin:10px 0"><button class="btn btn-ghost btn-sm" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Recarregar nova base</button></div>'
       + nav(0,2,'Confirmar e avançar')
       + '</div>';
 
