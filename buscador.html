@@ -11720,12 +11720,309 @@ async function carregar(){
       console.warn("Não consegui baixar",FONTE,"— usando dados embutidos.",e);
     }
   }
+  // Mescla os vídeos salvos no Firestore (quando disponíveis) sobre os embutidos.
+  try{
+    if(window.__fetchTreina){
+      const fs = await window.__fetchTreina();
+      if(fs && fs.length) DADOS = fs;
+    }
+  }catch(e){ console.warn("treinamentos (firestore):",e); }
   montarFiltros();
   estadoInicial();
 }
+window.__DADOS_EMBUTIDOS = DADOS_EMBUTIDOS;
+window.__reloadTreina = carregar;
 
 let t; elQ.addEventListener("input",()=>{clearTimeout(t);t=setTimeout(buscar,120);});
 carregar();
 </script>
+<!-- ============================================================
+     TREINAMENTOS — Firebase (login + Firestore) + painel de upload
+     ============================================================ -->
+<div id="tr-login" class="tr-ov" hidden>
+  <div class="tr-modal">
+    <div class="tr-modal__title">Entrar — Gestão de Treinamentos</div>
+    <p class="tr-modal__sub">Use seu e-mail e senha do sistema Udiaço.</p>
+    <label class="tr-lbl">E-mail</label>
+    <input id="tr-email" type="email" class="tr-inp" autocomplete="username" placeholder="voce@udiaco.com.br">
+    <label class="tr-lbl">Senha</label>
+    <input id="tr-senha" type="password" class="tr-inp" autocomplete="current-password" placeholder="••••••••">
+    <div id="tr-login-erro" class="tr-erro"></div>
+    <div class="tr-modal__foot">
+      <button class="tr-btn tr-btn--ghost" onclick="document.getElementById('tr-login').hidden=true">Cancelar</button>
+      <button class="tr-btn" id="tr-login-btn">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<div id="tr-admin" class="tr-ov" hidden>
+  <div class="tr-modal tr-modal--wide">
+    <div class="tr-modal__title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Gerenciar Treinamentos</span>
+      <button class="tr-btn tr-btn--ghost" onclick="document.getElementById('tr-admin').hidden=true">Fechar</button>
+    </div>
+
+    <div class="tr-sec">Novo vídeo</div>
+    <div class="tr-grid">
+      <div><label class="tr-lbl">ID do vídeo</label><input id="v-id" class="tr-inp" placeholder="v05"></div>
+      <div><label class="tr-lbl">Data</label><input id="v-data" class="tr-inp" placeholder="AAAA-MM-DD"></div>
+      <div style="grid-column:1/-1"><label class="tr-lbl">Título</label><input id="v-titulo" class="tr-inp" placeholder="Módulo ... - ..."></div>
+      <div style="grid-column:1/-1"><label class="tr-lbl">Link do vídeo (Google Drive)</label><input id="v-url" class="tr-inp" placeholder="https://drive.google.com/file/d/.../view"></div>
+      <div><label class="tr-lbl">Módulo principal</label><input id="v-modulo" class="tr-inp" placeholder="Administração de Pessoal"></div>
+      <div><label class="tr-lbl">Nível</label><input id="v-nivel" class="tr-inp" placeholder="Básico / introdutório"></div>
+      <div><label class="tr-lbl">Módulos relacionados (separe por |)</label><input id="v-relac" class="tr-inp" placeholder="eSocial | Ponto Eletrônico"></div>
+      <div><label class="tr-lbl">Fase do projeto</label><input id="v-fase" class="tr-inp" placeholder="Implantação - treinamento inicial"></div>
+    </div>
+
+    <label class="tr-lbl" style="margin-top:12px">Transcrição (formato do YouTube)</label>
+    <textarea id="v-transc" class="tr-inp" rows="6" placeholder="Cole aqui a transcrição gerada pelo YouTube (texto + minutagem)..."></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="tr-btn tr-btn--ghost" id="v-mapear">Mapear transcrição → segmentos</button>
+      <span class="tr-hint">Reconhece a minutagem e gera os trechos. Revise/edite o JSON abaixo antes de salvar.</span>
+    </div>
+
+    <label class="tr-lbl" style="margin-top:12px">Segmentos (JSON) — gerado automaticamente ou colado</label>
+    <textarea id="v-json" class="tr-inp tr-mono" rows="10" placeholder="[ ... ]"></textarea>
+    <div id="v-erro" class="tr-erro"></div>
+    <div class="tr-modal__foot" style="justify-content:space-between">
+      <span class="tr-hint" id="v-count"></span>
+      <button class="tr-btn" id="v-salvar">Salvar vídeo</button>
+    </div>
+
+    <div class="tr-sec" style="margin-top:20px">Vídeos cadastrados <span id="tr-lista-count" class="tr-hint"></span></div>
+    <div id="tr-lista"></div>
+    <div class="tr-modal__foot">
+      <button class="tr-btn tr-btn--ghost" id="tr-migrar">Importar vídeos embutidos p/ o Firestore</button>
+      <button class="tr-btn tr-btn--ghost" id="tr-sair">Sair</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .tr-ov{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:34px 16px;overflow-y:auto}
+  .tr-ov[hidden]{display:none}
+  .tr-modal{background:var(--surface);border-radius:var(--radius-lg);max-width:440px;width:100%;padding:22px;box-shadow:var(--shadow-md)}
+  .tr-modal--wide{max-width:820px}
+  .tr-modal__title{font-weight:700;font-size:18px;color:var(--ink);margin-bottom:4px}
+  .tr-modal__sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .tr-modal__foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+  .tr-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 0 8px;border-top:1px solid var(--line);padding-top:12px}
+  .tr-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tr-lbl{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 4px}
+  .tr-inp{width:100%;font-family:"Inter",sans-serif;font-size:13px;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:var(--radius);padding:9px 11px}
+  .tr-inp:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(4,120,87,.12)}
+  .tr-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .tr-btn{font-family:"Inter",sans-serif;font-weight:600;font-size:13px;cursor:pointer;color:#fff;background:var(--primary);border:1px solid var(--primary);padding:9px 15px;border-radius:var(--radius);transition:background .12s}
+  .tr-btn:hover{background:var(--primary-deep)}
+  .tr-btn--ghost{background:transparent;color:var(--muted);border-color:var(--line)}
+  .tr-btn--ghost:hover{background:var(--bg);color:var(--ink)}
+  .tr-btn--danger{background:transparent;color:var(--danger,#dc2626);border-color:#f3c9c9}
+  .tr-hint{font-size:12px;color:var(--faint)}
+  .tr-erro{color:#b91c1c;font-size:12.5px;margin-top:8px;min-height:1em}
+  .tr-vrow{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--line);border-radius:var(--radius);padding:9px 12px;margin-bottom:6px}
+  .tr-vrow b{font-size:13.5px;color:var(--ink)}
+  .tr-vrow .tr-hint{display:block}
+  .tr-topbtn{margin-left:auto;background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.32);padding:5px 12px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:"Inter",sans-serif}
+  .tr-topbtn:hover{background:rgba(255,255,255,.28)}
+</style>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey:"AIzaSyDUD4CDg3zaZh9dM4_RXuxRmY9bV0YZAok",
+  authDomain:"udiaco-beneficios.firebaseapp.com",
+  projectId:"udiaco-beneficios",
+  storageBucket:"udiaco-beneficios.firebasestorage.app",
+  messagingSenderId:"27505050059",
+  appId:"1:27505050059:web:1aa59e7b14bdc7b796364e"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const COL = "treinamentos";
+
+const $=id=>document.getElementById(id);
+const normLocal = s => (s||"").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+
+/* ---------- leitura (usada pelo carregar() clássico) ---------- */
+window.__fetchTreina = async ()=>{
+  const snap = await getDocs(collection(db, COL));
+  const flat = [];
+  snap.forEach(d=>{ const v=d.data(); (v.segmentos||[]).forEach(s=>flat.push(s)); });
+  return flat;
+};
+
+/* ---------- link com minutagem ---------- */
+function linkTs(url, secs){
+  url = String(url||"").trim();
+  if(!url) return url;
+  if(/youtube\.com|youtu\.be/i.test(url)) return url + (url.includes("?")?"&":"?") + "t="+secs+"s";
+  return url + "#t="+secs+"s"; // Google Drive e afins
+}
+
+/* ---------- parser da transcrição do YouTube ---------- */
+function parseTranscricao(texto, meta){
+  const linhas = texto.split(/\r?\n/).map(l=>l.trim());
+  const isMarker = l => /^\d{1,2}:\d{2}(:\d{2})?$/.test(l);
+  const isReadable = l => /^\d+\s*(seconds?|minutes?|hours?|segundos?|minutos?|horas?)\b/i.test(l);
+  const readableToSec = l => { let s=0,m; const re=/(\d+)\s*(hour|hora|minute|minuto|second|segundo)/gi;
+    while((m=re.exec(l))){ const n=+m[1], u=m[2].toLowerCase(); if(u[0]==="h")s+=n*3600; else if(u.startsWith("min")||u==="minuto")s+=n*60; else s+=n; } return s; };
+  const markerToSec = l => { const p=l.split(":").map(Number); return p.length===3?p[0]*3600+p[1]*60+p[2]:p[0]*60+p[1]; };
+
+  const caps=[]; let cur={start:0,text:""};
+  for(let i=0;i<linhas.length;i++){
+    const l=linhas[i]; if(!l) continue;
+    if(isMarker(l)){
+      let sec=markerToSec(l);
+      if(i+1<linhas.length && isReadable(linhas[i+1])){ sec=readableToSec(linhas[i+1]); i++; }
+      caps.push(cur); cur={start:sec,text:""};
+    } else if(isReadable(l)){ /* solto: ignora */ }
+    else { cur.text += (cur.text?" ":"")+l; }
+  }
+  caps.push(cur);
+  const capsF=caps.filter(c=>c.text.trim().length>1);
+
+  // agrupa em segmentos (~500 chars ou ~55s por trecho)
+  const segs=[]; let g=null;
+  for(const c of capsF){
+    if(!g){ g={start:c.start,text:c.text}; continue; }
+    if(g.text.length>=500 || (c.start-g.start)>=55){ segs.push(g); g={start:c.start,text:c.text}; }
+    else g.text+=" "+c.text;
+  }
+  if(g) segs.push(g);
+
+  const stop=new Set(("a o e de da do das dos que em um uma para por com no na nos nas se ao à os as ou já aqui aí né tá então vou vai isso essa esse aqueles the and").split(" "));
+  return segs.map(s=>{
+    const secs=Math.max(0,Math.round(s.start));
+    const inicio=[Math.floor(secs/3600),Math.floor(secs%3600/60),secs%60].map(n=>String(n).padStart(2,"0")).join(":");
+    const txt=s.text.replace(/\s+/g," ").trim();
+    const tema=((txt.split(/[.?!]/)[0]||txt).trim().slice(0,70))||"Trecho";
+    const resumo=txt.slice(0,420);
+    const freq={}; normLocal(txt).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4&&!stop.has(w))freq[w]=(freq[w]||0)+1; });
+    const kw=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,6).map(x=>x[0]).join(" | ");
+    return { video_id:meta.video_id, titulo:meta.titulo, url:meta.url, data:meta.data,
+      modulo_principal:meta.modulo_principal, modulos_relacionados:meta.modulos_relacionados,
+      fase_projeto:meta.fase_projeto, nivel:meta.nivel,
+      inicio, inicio_segundos:secs, link_timestamp:linkTs(meta.url,secs),
+      tema, subtemas:"", resumo, palavras_chave:kw };
+  });
+}
+function lerMeta(){
+  return { video_id:$("v-id").value.trim(), titulo:$("v-titulo").value.trim(), url:$("v-url").value.trim(),
+    data:$("v-data").value.trim(), modulo_principal:$("v-modulo").value.trim(),
+    modulos_relacionados:$("v-relac").value.trim(), fase_projeto:$("v-fase").value.trim(), nivel:$("v-nivel").value.trim() };
+}
+
+/* ---------- auth ---------- */
+let usuario=null;
+function abrirLogin(){ $("tr-login-erro").textContent=""; $("tr-login").hidden=false; setTimeout(()=>$("tr-email").focus(),60); }
+async function entrar(){
+  $("tr-login-erro").textContent="";
+  try{ await signInWithEmailAndPassword(auth,$("tr-email").value.trim(),$("tr-senha").value); $("tr-login").hidden=true; $("tr-admin").hidden=false; renderLista(); }
+  catch(e){ $("tr-login-erro").textContent="Não foi possível entrar. Verifique e-mail e senha."; }
+}
+onAuthStateChanged(auth,u=>{ usuario=u; montarBotaoTopo(); });
+
+function montarBotaoTopo(){
+  const bar=document.querySelector(".topbar"); if(!bar) return;
+  let b=$("tr-topbtn");
+  if(!b){ b=document.createElement("button"); b.id="tr-topbtn"; b.className="tr-topbtn"; bar.appendChild(b); }
+  if(usuario){ b.textContent="Gerenciar vídeos"; b.onclick=()=>{ $("tr-admin").hidden=false; renderLista(); }; }
+  else { b.textContent="Entrar"; b.onclick=abrirLogin; }
+}
+
+/* ---------- salvar / listar / excluir / migrar ---------- */
+async function salvarVideo(){
+  $("v-erro").textContent="";
+  const meta=lerMeta();
+  if(!meta.video_id){ $("v-erro").textContent="Informe o ID do vídeo."; return; }
+  let segs;
+  try{ segs=JSON.parse($("v-json").value); }catch(e){ $("v-erro").textContent="JSON inválido: "+e.message; return; }
+  if(!Array.isArray(segs)||!segs.length){ $("v-erro").textContent="Sem segmentos para salvar. Mapeie a transcrição ou cole o JSON."; return; }
+  try{
+    await setDoc(doc(db,COL,meta.video_id),{
+      ...meta, segmentos:segs, criadoPor:(usuario&&usuario.email)||"", criadoEm:serverTimestamp()
+    });
+    $("v-erro").textContent="";
+    alert("Vídeo \""+meta.video_id+"\" salvo ("+segs.length+" trechos).");
+    if(window.__reloadTreina) window.__reloadTreina();
+    renderLista();
+  }catch(e){ $("v-erro").textContent="Erro ao salvar: "+e.message; }
+}
+async function renderLista(){
+  const el=$("tr-lista"); if(!el) return;
+  el.innerHTML='<div class="tr-hint">Carregando...</div>';
+  let docs=[];
+  try{ const snap=await getDocs(collection(db,COL)); snap.forEach(d=>docs.push({id:d.id,...d.data()})); }
+  catch(e){ el.innerHTML='<div class="tr-erro">Erro ao listar: '+e.message+'</div>'; return; }
+  $("tr-lista-count").textContent=docs.length?("· "+docs.length+" vídeo(s)"):"";
+  if(!docs.length){ el.innerHTML='<div class="tr-hint">Nenhum vídeo no Firestore ainda. Use o botão abaixo para importar os embutidos, ou cadastre um novo acima.</div>'; return; }
+  docs.sort((a,b)=>String(a.video_id||a.id).localeCompare(String(b.video_id||b.id)));
+  el.innerHTML=docs.map(v=>'<div class="tr-vrow"><div><b>'+(v.video_id||v.id)+' · '+(v.titulo||'(sem título)')+'</b>'
+    +'<span class="tr-hint">'+((v.segmentos||[]).length)+' trechos · '+(v.modulo_principal||'')+(v.data?' · '+v.data:'')+'</span></div>'
+    +'<button class="tr-btn tr-btn--danger" data-del="'+(v.id)+'" data-lbl="'+((v.video_id||v.id)+' — '+(v.titulo||'')).replace(/"/g,'')+'">Excluir</button></div>').join('');
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>excluirVideo(b.dataset.del,b.dataset.lbl));
+}
+async function excluirVideo(id,label){
+  const just=prompt('Excluir "'+label+'" do histórico de treinamentos?\n\nInforme a justificativa (obrigatória):');
+  if(just===null) return;
+  if(!just.trim()){ alert("Justificativa obrigatória para excluir."); return; }
+  try{
+    await setDoc(doc(db,"logsExclusao","treina_"+id+"_"+Date.now()),{
+      colecao:COL, docId:id, label:label||"", justificativa:just.trim(),
+      excluidoPor:(usuario&&usuario.email)||"", excluidoEm:new Date().toISOString()
+    });
+    await deleteDoc(doc(db,COL,id));
+    if(window.__reloadTreina) window.__reloadTreina();
+    renderLista();
+  }catch(e){ alert("Erro ao excluir: "+e.message); }
+}
+async function migrarEmbutidos(){
+  const dados=window.__DADOS_EMBUTIDOS||[];
+  if(!dados.length){ alert("Não há dados embutidos para migrar."); return; }
+  const grupos={};
+  dados.forEach(s=>{ const id=s.video_id||("v_"+(s.titulo||"").slice(0,10)); (grupos[id]=grupos[id]||[]).push(s); });
+  const ids=Object.keys(grupos);
+  if(!confirm("Importar "+ids.length+" vídeo(s) embutido(s) para o Firestore? Vídeos com o mesmo ID serão sobrescritos.")) return;
+  try{
+    for(const id of ids){
+      const segs=grupos[id]; const m=segs[0];
+      await setDoc(doc(db,COL,id),{
+        video_id:id, titulo:m.titulo||"", url:m.url||"", data:m.data||"",
+        modulo_principal:m.modulo_principal||"", modulos_relacionados:m.modulos_relacionados||"",
+        fase_projeto:m.fase_projeto||"", nivel:m.nivel||"",
+        segmentos:segs, criadoPor:(usuario&&usuario.email)||"", criadoEm:serverTimestamp()
+      });
+    }
+    alert(ids.length+" vídeo(s) importado(s) para o Firestore.");
+    if(window.__reloadTreina) window.__reloadTreina();
+    renderLista();
+  }catch(e){ alert("Erro na migração: "+e.message); }
+}
+
+/* ---------- wiring ---------- */
+montarBotaoTopo();
+$("tr-login-btn").onclick=entrar;
+$("tr-senha").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); });
+$("v-mapear").onclick=()=>{
+  const meta=lerMeta();
+  const txt=$("v-transc").value;
+  if(!txt.trim()){ $("v-erro").textContent="Cole a transcrição primeiro."; return; }
+  const segs=parseTranscricao(txt,meta);
+  $("v-json").value=JSON.stringify(segs,null,1);
+  $("v-count").textContent=segs.length+" trecho(s) gerados — revise/edite e salve.";
+  $("v-erro").textContent="";
+};
+$("v-json").addEventListener("input",()=>{ try{ const a=JSON.parse($("v-json").value); $("v-count").textContent=(Array.isArray(a)?a.length:0)+" trecho(s)."; }catch(_){ } });
+$("v-salvar").onclick=salvarVideo;
+$("tr-migrar").onclick=migrarEmbutidos;
+$("tr-sair").onclick=async()=>{ await signOut(auth); $("tr-admin").hidden=true; };
+</script>
+
 </body>
 </html>

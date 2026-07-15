@@ -58,6 +58,17 @@ service cloud.firestore {
     // Férias UM989: todos os autorizados (inclui o papel UM989).
     match /um989/{id}         { allow read, write: if isAuthorized(); }
 
+    // Log de exclusões (justificativas de quem excluiu do histórico).
+    match /logsExclusao/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
+
+    // ── Treinamentos ──────────────────────────────────────────
+    // Leitura PÚBLICA (o índice de treinamentos é aberto, como já era no HTML);
+    // escrita apenas por usuários autorizados (login obrigatório).
+    match /treinamentos/{id}  {
+      allow read:  if true;
+      allow write: if isAuthorized() && !isUM989();
+    }
+
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {
       allow read, write: if false;
