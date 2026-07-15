@@ -2178,6 +2178,12 @@ function calcBen(c, dr, du){
   // Valor de cesta: fixo, configuravel por colaborador (padrao 185), gated por elegibilidade
   const cestaVal = (c.elegibilidade?.cesta!==false) ? (fnum(c.cesta)||CESTA_PADRAO) : 0;
 
+  // Particulares (PART, rastreados por CPF): recebem APENAS cesta básica, nada mais.
+  if((c.filtro||'').toUpperCase()==='PART'){
+    const cVal = (grp==='nao_recebe') ? 0 : (fnum(c.cesta)||CESTA_PADRAO);
+    return {vr:0,cafe:0,comb:0,vt:0,cesta:cVal};
+  }
+
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
   const mob=inferMob(c);
@@ -2631,6 +2637,8 @@ function limparFiltrosLan(){
 
 // Elegível a algum benefício (VR, Café, Cesta, Mobilidade/Comb. ou VT)
 function elegivelBeneficios(c){
+  // Particulares (filtro PART, rastreados por CPF) recebem APENAS cesta básica.
+  if((c.filtro||'').toUpperCase()==='PART') return true;
   const e=c.elegibilidade||{};
   const tr=elegTransporte(c);
   const vr   = e.vr!==undefined?e.vr:fnum(c.vr)>0;
@@ -2642,7 +2650,7 @@ function elegivelBeneficios(c){
 function lanBenMatch(c,b){
   if(b==='vr') return fnum(c.vr)>0&&c.elegibilidade?.vr!==false;
   if(b==='cafe') return fnum(c.cafe)>0&&c.elegibilidade?.cafe!==false;
-  if(b==='cesta') return c.elegibilidade?.cesta!==false;
+  if(b==='cesta') return (c.elegibilidade?.cesta!==false) || (c.filtro||'').toUpperCase()==='PART';
   if(b==='comb') return fnum(c.comb)>0&&inferMob(c)==='combustivel';
   if(b==='vt') return inferMob(c)==='vt'&&[1,2,3,4].some(n=>fnum(c['vt'+n])>0);
   return true;
