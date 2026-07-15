@@ -194,14 +194,25 @@ function closeModal(id){
   else { el.classList.remove('open'); }
 }
 
+// Chave de empresa de um colaborador: particulares (filtro PART) NÃO pertencem
+// a nenhuma empresa → agrupados como 'PART' ("Particulares"). Os demais usam o
+// prefixo de 4 dígitos da matrícula.
+function _empresaKey(c){
+  if(c && c.filtro==='PART') return 'PART';
+  const p=String(c&&c.mat||'').substring(0,4);
+  return p.length===4 ? p : '';
+}
+function _empresaLabel(cod){ return cod==='PART' ? 'Particulares' : cod; }
+// Um colaborador combina com a seleção de empresas (array de códigos)?
+function _empresaMatch(c, sel){
+  return sel.some(e=> e==='PART'
+    ? (c.filtro==='PART')
+    : (c.filtro!=='PART' && String(c.mat||'').startsWith(e)) );
+}
 function getEmpresaList(){
   const g2={};
-  colaboradores.forEach(c=>{
-    if(c.filtro==='PART') return; // particulares não pertencem a empresa
-    const p=String(c.mat||'').substring(0,4);
-    if(p.length===4) g2[p]=(g2[p]||0)+1;
-  });
-  return Object.keys(g2).sort().map(p=>({cod:p,qtd:g2[p]}));
+  colaboradores.forEach(c=>{ const k=_empresaKey(c); if(k) g2[k]=(g2[k]||0)+1; });
+  return Object.keys(g2).sort((a,b)=> a==='PART'?1:(b==='PART'?-1:a.localeCompare(b))).map(p=>({cod:p,qtd:g2[p]}));
 }
 
 function getDeptoList(){
@@ -2254,7 +2265,7 @@ function getLanDR(mat, defaultDU){
 // ============================================================
 function pgBenLancamento(){
   const _base=colsApuracao();
-  const empresas=(()=>{const gg={};_base.forEach(c=>{const p=String(c.mat||'').substring(0,4);if(p.length===4)gg[p]=(gg[p]||0)+1;});return Object.keys(gg).sort().map(p=>({cod:p,qtd:gg[p]}));})();
+  const empresas=(()=>{const gg={};_base.forEach(c=>{const p=_empresaKey(c);if(p)gg[p]=(gg[p]||0)+1;});return Object.keys(gg).sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b))).map(p=>({cod:p,qtd:gg[p]}));})();
   const deptos=[...new Set(_base.map(c=>c.depto||'').filter(Boolean))].sort();
   const passos=[
     {n:1,label:'Importar base'},
@@ -2278,7 +2289,7 @@ function pgBenLancamento(){
 
   const filtros='<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
     +'<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="lan-q" placeholder="Nome ou matrícula..." oninput="renderLancamento()"></div>'
-    +'<div class="filter-group"><label>Empresa</label>'+msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:e.cod+' ('+e.qtd+')'})),'renderLancamento')+'</div>'
+    +'<div class="filter-group"><label>Empresa</label>'+msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:_empresaLabel(e.cod)+' ('+e.qtd+')'})),'renderLancamento')+'</div>'
     +'<div class="filter-group"><label>Departamento</label>'+msDropdown('ldep','Departamento',deptos.map(d=>({value:d,label:d})),'renderLancamento')+'</div>'
     +'<div class="filter-group"><label>Benefício</label>'+msDropdown('lben','Benefício',[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'cesta',label:'Cesta'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'}],'renderLancamento')+'</div>'
     +'<button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()" title="Limpar filtros">Limpar</button>'
@@ -2640,7 +2651,7 @@ function getLanAtivos(){
   let ben=getMs('lben');
   if(lanStep===6 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
   let f=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
-  if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
+  if(emp.length) f=f.filter(c=>_empresaMatch(c,emp));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
   if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
   if(ben.length) f=f.filter(c=>ben.some(b=>lanBenMatch(c,b)));
@@ -4908,7 +4919,7 @@ function pgFerRadar(){
     <div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">
       <div class="filter-group" style="flex:1"><label>Buscar</label>
         <input type="text" id="rq" placeholder="Nome, matrícula, depto ou função..." oninput="renderFerRadar()"></div>
-      <div class="filter-group"><label>Empresa</label>${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFerRadar')}</div>
+      <div class="filter-group"><label>Empresa</label>${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:_empresaLabel(e.cod)})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Departamento</label>${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Função</label>${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Situação</label>${msDropdown('rcor','Situação',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}</div>
@@ -5088,7 +5099,7 @@ function renderFerRadar(){
   // Pessoa única (dedup por CPF; mantém o cadastro principal) — evita
   // duplicidade CLT + MEI/Sócio no radar. Férias são controladas por 1 cadastro.
   let f=colaboradoresUnicos().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && c.status!=='Inativo');
-  if(empF.length) f=f.filter(c=>empF.some(e=>String(c.mat||'').startsWith(e)));
+  if(empF.length) f=f.filter(c=>_empresaMatch(c,empF));
   if(depF.length) f=f.filter(c=>depF.includes(c.depto||''));
   if(funcF.length) f=f.filter(c=>funcF.includes(funcaoColab(c)));
   if(q) f=f.filter(c=>(c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q)||funcaoColab(c).toLowerCase().includes(q));
@@ -5746,7 +5757,7 @@ function _premioFiltros(prefix){
   return '<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
     +'<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="'+prefix+'-q" placeholder="Nome ou matrícula..." oninput="'+prefix+'Filtrar()"></div>'
     +'<div class="filter-group"><label>Situação</label><select id="'+prefix+'-rec" onchange="'+prefix+'Filtrar()"><option value="">Todas</option><option value="SIM">Recebe</option><option value="NAO">Não recebe</option><option value="__PEND">Pendente</option></select></div>'
-    +'<div class="filter-group"><label>Empresa</label><select id="'+prefix+'-emp" onchange="'+prefix+'Filtrar()"><option value="">Todas</option>'+emps.map(e=>'<option value="'+e+'">'+e+'</option>').join('')+'</select></div>'
+    +'<div class="filter-group"><label>Empresa</label><select id="'+prefix+'-emp" onchange="'+prefix+'Filtrar()"><option value="">Todas</option>'+emps.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
     +'<button class="btn btn-ghost btn-sm" onclick="'+prefix+'Limpar()">Limpar</button>'
     +'</div>';
 }
@@ -6115,7 +6126,7 @@ function montarTabelaPremio(){
     return {
       _id: c._id,
       mat: mat,
-      empresa: String(mat||'').substring(0,4),
+      empresa: _empresaKey(c),
       nome: c.nome,
       cpf: c.cpf||'',
       situacao,
@@ -7517,7 +7528,7 @@ function pgFeriasAgendadas(){
     <div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">
       <div class="filter-group" style="flex:1"><label>Buscar</label>
         <input type="text" id="feragd-q" placeholder="Nome, matrícula ou departamento..." oninput="renderFeriasAgendadas()"></div>
-      <div class="filter-group"><label>Empresa</label>${msDropdown('faemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:e.cod})),'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Empresa</label>${msDropdown('faemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:_empresaLabel(e.cod)})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Departamento</label>${msDropdown('fadep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Função</label>${msDropdown('fafunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Situação</label>${msDropdown('fasit','Situação',[{value:'agendado',label:'Agendado'},{value:'sem_mes',label:'Sem mês definido'},{value:'afastado',label:'Afastado'},{value:'nao_aplica',label:'Não se aplica'}],'renderFeriasAgendadas')}</div>
@@ -7558,7 +7569,7 @@ function renderFeriasAgendadas(){
   // Pessoa unica (dedup por CPF; mantem o cadastro principal) — evita duplicidade
   // CLT + MEI/Socio. Demitidos / N/A EXCLUIDOS (statusGrupo pega variacoes de escrita).
   let base=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && _statusKey(c.status)!=='INATIVO');
-  if(empF.length)  base=base.filter(c=>empF.some(e=>String(c.mat||'').startsWith(e)));
+  if(empF.length)  base=base.filter(c=>_empresaMatch(c,empF));
   if(depF.length)  base=base.filter(c=>depF.includes(c.depto||''));
   if(funcF.length) base=base.filter(c=>funcF.includes(funcaoColab(c)));
   if(q) base=base.filter(c=>
