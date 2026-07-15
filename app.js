@@ -5571,14 +5571,14 @@ function renderPremioWizard(){
   if(!el) return;
 
   const passos = [
-    {n:1, label:'Atualizar Base'},
-    {n:2, label:'Iniciar Apuracao'},
-    {n:3, label:'Importar Apontamentos'},
-    {n:4, label:'Analise dos Dados'},
-    {n:5, label:'Aplicar Regras'},
-    {n:55, label:'Revisao MEI'},
-    {n:6, label:'Exportar Caju'},
-    {n:7, label:'Fechar Competencia'},
+    {n:1, label:'Base'},
+    {n:2, label:'Apuração'},
+    {n:3, label:'Apontamentos'},
+    {n:4, label:'Análise'},
+    {n:5, label:'Regras'},
+    {n:55, label:'MEI'},
+    {n:6, label:'Exportar'},
+    {n:7, label:'Fechar'},
   ];
 
   const atual = premioState.passo;
