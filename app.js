@@ -2440,11 +2440,7 @@ async function salvarBaseCompetencia(){
   await salvarBaseComp(comp);
 }
 
-async function excluirBaseSalva(id){
-  if(!confirm('Excluir esta versão salva da base?')) return;
-  try{ await fsDel('basesSalvas',id); await loadBasesSalvas(); renderBasesSalvas(); toast('Versão removida.','success'); }
-  catch(e){ toast('Erro: '+e.message,'error'); }
-}
+function excluirBaseSalva(id,label){ abrirExcluirHistorico('basesSalvas',id,'Base '+(label||'')+' (histórico)','base'); }
 
 function pgBaseVersoes(){
   const hoje=new Date();
@@ -2474,7 +2470,7 @@ function renderBasesSalvas(){
       return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'
         +'<div><div style="font-weight:700;color:var(--blue)">'+b.competencia+atual+'</div>'
         +'<div class="text-xs text-muted">'+dt+' · '+(b.totalColaboradores||0)+' colaboradores'+(b.salvoPor?' · '+b.salvoPor:'')+'</div></div>'
-        +'<button class="btn btn-danger btn-xs" onclick="excluirBaseSalva(\''+b._id+'\')">Excluir</button>'
+        +'<button class="btn btn-danger btn-xs" onclick="excluirBaseSalva(\''+b._id+'\',\''+String(b.competencia||'').replace(/'/g,'')+'\')">Excluir</button>'
         +'</div></div>';
     }).join('');
 }
@@ -3323,9 +3319,10 @@ async function renderHistorico(){
   }
   el.innerHTML=items.map(h=>{
     const data=h.fechadoEm?new Date(h.fechadoEm).toLocaleDateString('pt-BR'):'';
+    const lbl=((h.competencia||'')+' — '+(h.beneficioLabel||(h.modulo==='premio'?'Prêmio Assiduidade':(h.beneficio==='todos'||h.totais?'Todos':h.beneficio||'')))).replace(/'/g,'');
     const acoes='<div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">'
       +'<button class="btn btn-ghost btn-sm" onclick="exportarHistExcel(\''+h._id+'\')">Excel</button>'
-      +'<button class="btn btn-danger btn-sm" onclick="excluirHist(\''+h._id+'\')">Excluir</button></div>';
+      +'<button class="btn btn-danger btn-sm" onclick="excluirHist(\''+h._id+'\',\''+lbl+'\')">Excluir</button></div>';
     if(h.beneficio && h.beneficio!=='todos'){
       return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
         <div><div style="font-weight:700;font-size:16px;color:var(--blue)">${h.competencia} — ${h.beneficioLabel||h.beneficio}</div>
@@ -3336,7 +3333,7 @@ async function renderHistorico(){
     if(h.modulo==='premio'){
       const acoesP='<div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">'
         +'<button class="btn btn-ghost btn-sm" onclick="switchModule(\'premio\');showPage(\'premio-dash\')">Ver no dashboard</button>'
-        +'<button class="btn btn-danger btn-sm" onclick="excluirHist(\''+h._id+'\')">Excluir</button></div>';
+        +'<button class="btn btn-danger btn-sm" onclick="excluirHist(\''+h._id+'\',\''+lbl+'\')">Excluir</button></div>';
       return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
         <div><div style="font-weight:700;font-size:16px;color:var(--blue)">${h.competencia} — Prêmio Assiduidade</div>
         <div class="text-sm text-muted" style="margin-top:2px">${h.totalElegiveis||0} de ${h.totalColaboradores||0} receberam · ${data}</div></div>
@@ -3361,12 +3358,7 @@ async function renderHistorico(){
   }).join('');
 }
 
-async function excluirHist(id){
-  if(!confirm('Excluir este histórico?')) return;
-  await fsDel('historico',id);
-  toast('Removido.','error');
-  renderHistorico();
-}
+function excluirHist(id,label){ abrirExcluirHistorico('historico',id,label||'este registro','historico'); }
 
 async function exportarHistExcel(id){
   const snap=await window._getDocs(window._col('historico'));
@@ -8665,7 +8657,8 @@ async function renderPremioHistorico(){
       +'<td style="text-align:right;font-weight:600">'+brl(h.valorTotal||0)+'</td>'
       +'<td style="text-align:center">'+altBadge+'</td>'
       +'<td style="text-align:center">'+(h.justificativa?'<i class="ti ti-note" title="'+String(h.justificativa).replace(/"/g,'')+'"></i>':'—')+'</td>'
-      +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="exportarCajuHistorico('+i+')"><i class="ti ti-download"></i> Caju</button></td>'
+      +'<td style="text-align:center;white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="exportarCajuHistorico('+i+')"><i class="ti ti-download"></i> Caju</button> '
+        +'<button class="btn btn-ghost btn-sm" title="Excluir" onclick="excluirPremioHist(\''+h._id+'\',\''+String(h.competencia||'').replace(/'/g,'')+' — Prêmio\')"><i class="ti ti-trash" style="color:var(--danger)"></i></button></td>'
       +'</tr>';
   }).join('');
   el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
@@ -8693,3 +8686,44 @@ function exportarCajuHistorico(idx){
   a.click(); URL.revokeObjectURL(url);
   toast('CSV Caju exportado: '+sim.length+' colaboradores','success');
 }
+
+// ================================================================
+// EXCLUSÃO DE HISTÓRICO COM JUSTIFICATIVA (todas as abas) + log
+// ================================================================
+let _exclState=null;
+function abrirExcluirHistorico(col,id,label,refreshKey){
+  _exclState={col,id,label,refreshKey};
+  let ov=document.getElementById('modal-excluir');
+  if(!ov){ ov=document.createElement('div'); ov.id='modal-excluir'; ov.className='modal-overlay'; document.body.appendChild(ov); }
+  const lbl=String(label||'este registro').replace(/</g,'&lt;');
+  ov.innerHTML='<div class="modal" style="max-width:480px">'
+    +'<div class="modal-title" style="color:var(--danger)"><i class="ti ti-trash"></i> Excluir do histórico</div>'
+    +'<div style="padding:2px 0 6px"><p class="text-sm">Você está excluindo <strong>'+lbl+'</strong>. A ação é registrada em log e não pode ser desfeita.</p>'
+    +'<label class="text-xs text-muted" style="display:block;margin:10px 0 4px">Justificativa (obrigatória)</label>'
+    +'<textarea id="excl-justif" rows="3" placeholder="Explique o motivo da exclusão..." style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;resize:vertical"></textarea></div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal(\'modal-excluir\')">Cancelar</button>'
+    +'<button class="btn btn-danger" onclick="confirmarExcluirHistorico()"><i class="ti ti-trash"></i> Excluir</button></div>'
+    +'</div>';
+  openModal('modal-excluir');
+  setTimeout(()=>document.getElementById('excl-justif')?.focus(),60);
+}
+async function confirmarExcluirHistorico(){
+  if(!_exclState) return;
+  const just=(document.getElementById('excl-justif')?.value||'').trim();
+  if(!just){ toast('Informe a justificativa para excluir.','warning'); document.getElementById('excl-justif')?.focus(); return; }
+  const {col,id,label,refreshKey}=_exclState;
+  try{
+    await fsSet('logsExclusao','excl_'+new Date().toISOString().replace(/[^0-9]/g,'')+'_'+id,{
+      colecao:col, docId:id, label:label||'', justificativa:just,
+      excluidoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'', excluidoEm:new Date().toISOString()
+    });
+    await fsDel(col,id);
+    toast('“'+(label||'registro')+'” excluído do histórico.','success');
+  }catch(e){ toast('Erro ao excluir: '+e.message,'error'); return; }
+  closeModal('modal-excluir'); _exclState=null;
+  if(refreshKey==='historico') renderHistorico();
+  else if(refreshKey==='base') loadBasesSalvas().then(()=>{ if(typeof renderBasesSalvas==='function') renderBasesSalvas(); });
+  else if(refreshKey==='premio') renderPremioHistorico();
+}
+// wrappers usados nos botões
+function excluirPremioHist(id,label){ abrirExcluirHistorico('historico',id,label,'premio'); }
