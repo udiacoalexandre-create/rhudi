@@ -1001,6 +1001,7 @@ function pgBaseLista(){
       <div class="filter-group"><label>Status</label>${msDropdown('status','Status',statusSet.map(x=>({value:x,label:x})))}</div>
       <div class="filter-group"><label>Tipo</label>${msDropdown('tipo','Tipo',[{value:'OK',label:'OK — CLT normal'},{value:'DUP',label:'DUP — CLT com MEI/Sócio'},{value:'MEI',label:'MEI — Contrato MEI'},{value:'SOC',label:'SOC — Sócio'},{value:'TER',label:'TER — Terceiros'},{value:'DIR',label:'DIR — Diretoria'},{value:'PART',label:'PART — Particular'}])}</div>
       <div class="filter-group"><label>Benefício</label>${msDropdown('ben','Benefício',benOpts)}</div>
+      <div class="filter-group"><label>Jornada</label>${msDropdown('jornada','Jornada',[{value:'trava',label:'Travada (dias fixos)'},{value:'normal',label:'Dias úteis do mês'}])}</div>
       <button class="btn btn-ghost btn-sm" onclick="exportarBase(filtrarColabs())"><i class="ti ti-file-spreadsheet"></i> Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="limparFiltrosColab()" title="Limpar filtros">Limpar</button>
     </div>
@@ -1034,7 +1035,7 @@ function benMatchColab(c,b){
 
 function filtrarColabs(){
   const q=(g('bl-q')||'').toLowerCase();
-  const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), tipo=getMs('tipo'), ben=getMs('ben');
+  const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), tipo=getMs('tipo'), ben=getMs('ben'), jor=getMs('jornada');
   let f=colaboradores.filter(c=>
     c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
   if(emp.length) f=f.filter(c=>_empresaMatch(c,emp));
@@ -1042,12 +1043,13 @@ function filtrarColabs(){
   if(st.length)  f=f.filter(c=>st.includes(c.status));
   if(tipo.length) f=f.filter(c=>tipo.includes((c.filtro||'OK').toUpperCase()));
   if(ben.length) f=f.filter(c=>ben.some(b=>benMatchColab(c,b)));
+  if(jor.length) f=f.filter(c=>jor.includes(c.diasFixos?'trava':'normal'));
   return f;
 }
 
 function limparFiltrosColab(){
   const q=document.getElementById('bl-q'); if(q) q.value='';
-  document.querySelectorAll('.ms-emp,.ms-dep,.ms-status,.ms-tipo,.ms-ben').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('.ms-emp,.ms-dep,.ms-status,.ms-tipo,.ms-ben,.ms-jornada').forEach(cb=>cb.checked=false);
   renderColabList();
 }
 
@@ -1175,8 +1177,9 @@ function _dsAvatarVar(status){
 }
 function dsPersonCell(c){
   const tip=[c.cargo,c.funcao?('Função: '+c.funcao):''].filter(Boolean).join(' — ').replace(/"/g,'&quot;');
+  const trava=c.diasFixos?' <i class="ti ti-lock" title="Jornada travada: '+c.diasFixos+' dias fixos" style="color:var(--accent);font-size:12px"></i>':'';
   return '<div class="person-name"'+(tip?' title="'+tip+'"':'')+'>'
-    +'<span class="person__name">'+c.nome+'</span>'
+    +'<span class="person__name">'+c.nome+trava+'</span>'
     +(c.cargo?'<span class="person__sub">'+c.cargo+'</span>':'')
     +'</div>';
 }
