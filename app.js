@@ -989,7 +989,7 @@ function pgBaseLista(){
         <label> Buscar</label>
         <input type="text" id="bl-q" placeholder="Nome, matrícula ou CPF..." oninput="renderColabList()">
       </div>
-      <div class="filter-group"><label> Empresa</label>${msDropdown('emp','Empresa',empresas.map(e=>({value:e.cod,label:e.cod+' ('+e.qtd+')'})))}</div>
+      <div class="filter-group"><label> Empresa</label>${msDropdown('emp','Empresa',empresas.map(e=>({value:e.cod,label:_empresaLabel(e.cod)+' ('+e.qtd+')'})))}</div>
       <div class="filter-group"><label> Departamento</label>${msDropdown('dep','Departamento',deptos.map(d=>({value:d,label:d})))}</div>
       <div class="filter-group"><label>Status</label>${msDropdown('status','Status',statusSet.map(x=>({value:x,label:x})))}</div>
       <div class="filter-group"><label>Tipo</label>${msDropdown('tipo','Tipo',[{value:'OK',label:'OK — CLT normal'},{value:'DUP',label:'DUP — CLT com MEI/Sócio'},{value:'MEI',label:'MEI — Contrato MEI'},{value:'SOC',label:'SOC — Sócio'},{value:'TER',label:'TER — Terceiros'},{value:'DIR',label:'DIR — Diretoria'},{value:'PART',label:'PART — Particular'}])}</div>
@@ -1030,7 +1030,7 @@ function filtrarColabs(){
   const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), tipo=getMs('tipo'), ben=getMs('ben');
   let f=colaboradores.filter(c=>
     c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
-  if(emp.length) f=f.filter(c=>emp.some(e=>String(c.mat||'').startsWith(e)));
+  if(emp.length) f=f.filter(c=>_empresaMatch(c,emp));
   if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
   if(st.length)  f=f.filter(c=>st.includes(c.status));
   if(tipo.length) f=f.filter(c=>tipo.includes((c.filtro||'OK').toUpperCase()));
@@ -3135,7 +3135,7 @@ function fmtValCaju(v){ return (parseFloat(v)||0).toFixed(2); }
 
 function getCajuAtivos(empSel){
   let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
-  if(empSel) f=f.filter(c=>String(c.mat||'').startsWith(empSel));
+  if(empSel) f=f.filter(c=>_empresaMatch(c,[empSel]));
   return f;
 }
 
@@ -3219,7 +3219,7 @@ function exportarPorEmpresa(){
       ['vr','cafe','comb'].forEach(tipo=>{
         const nomes={vr:'Vale Refeicao',cafe:'Cafe Manha',comb:'Mobilidade'};
         const rows=[['CPF','Matr\u00EDcula','Valor']];
-        colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp.cod)).forEach(c=>{
+        colaboradores.filter(c=>c.status!=='Inativo'&&_empresaMatch(c,[emp.cod])).forEach(c=>{
           const dr=getLanDR(c.mat,du);
           const {vr,cafe,comb}=calcBen(c,dr,getLanDU(c.mat,du));
           const val=tipo==='vr'?vr:tipo==='cafe'?cafe:comb;
@@ -3228,7 +3228,7 @@ function exportarPorEmpresa(){
         XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),nomes[tipo]);
       });
       const vtRows=[['CPF','NOME','C\u00D3DIGO','BENEF\u00CDCIO','TIPO','VALOR','VIAGENS/DIA','DIAS']];
-      colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp.cod)&&inferMob(c)==='vt').forEach(c=>{
+      colaboradores.filter(c=>c.status!=='Inativo'&&_empresaMatch(c,[emp.cod])&&inferMob(c)==='vt').forEach(c=>{
         const dr=cfg.vt==='mult'?getLanDR(c.mat,du):1;
         [1,2,3,4].forEach(n=>{
           const val=fnum(c['vt'+n]),viag=fnum(c['v'+n]);
@@ -3250,7 +3250,7 @@ function exportarPorEmpresaCaju(){
   empresas.forEach((emp,i)=>{
     setTimeout(()=>{
       const linhas=[header];
-      colaboradores.filter(c=>c.status!=='Inativo'&&String(c.mat||'').startsWith(emp.cod)).forEach(c=>{
+      colaboradores.filter(c=>c.status!=='Inativo'&&_empresaMatch(c,[emp.cod])).forEach(c=>{
         const dr=getLanDR(c.mat,du);
         const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
         const alim=vr+cafe+cesta,mob=comb+vt;
@@ -3303,7 +3303,7 @@ function exportarSenior(tipo){
   const nomes={vr:'VR',cafe:'Cafe_Manha',comb:'Mobilidade',vt:'VT',cesta:'Cesta_Basica'};
   const linhas=['CPF,Empresa,Valor'];
   let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
-  if(empSel) f=f.filter(c=>String(c.mat||'').startsWith(empSel));
+  if(empSel) f=f.filter(c=>_empresaMatch(c,[empSel]));
   f.forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
@@ -3985,8 +3985,8 @@ function renderDashMain(){
           <thead><tr><th>Empresa</th><th>Total</th><th>Trabalhando</th><th>Afastados</th><th>Em F\u00E9rias</th><th>Total Benef\u00EDcios</th></tr></thead>
           <tbody>
             ${getEmpresaList().map(emp=>{
-              const fcAll=colaboradores.filter(c=>String(c.mat||'').startsWith(emp.cod));
-              const fc=unicos.filter(c=>String(c.mat||'').startsWith(emp.cod));
+              const fcAll=colaboradores.filter(c=>_empresaMatch(c,[emp.cod]));
+              const fc=unicos.filter(c=>_empresaMatch(c,[emp.cod]));
               const fa=fc.filter(c=>c.status==='Trabalhando').length;
               const fi=fc.filter(c=>STATUS_SO_CESTA.includes(c.status)).length;
               const ff=fc.filter(c=>ehFerias(c.status)).length;
@@ -4736,7 +4736,7 @@ function getFolhaFiltrada(){
   const empF=document.getElementById('folha-emp')?.value||'';
   let f=folhaData;
   if(q) f=f.filter(d=>d.nome.toLowerCase().includes(q)||d.mat.includes(q));
-  if(empF) f=f.filter(d=>String(d.mat||'').startsWith(empF));
+  if(empF) f=f.filter(d=>_empresaMatch(d,[empF]));
   return f;
 }
 
