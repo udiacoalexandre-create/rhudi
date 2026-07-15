@@ -2264,7 +2264,10 @@ function getLanDR(mat, defaultDU){
 // BENEF\u00CDCIOS: LAN\u00C7AMENTO MENSAL
 // ============================================================
 function pgBenLancamento(){
-  const _base=colsApuracao();
+  // Conta apenas quem realmente aparece na apuração (mesmo filtro do getLanAtivos):
+  // exclui Demitido/N/A e quem não é elegível a nenhum benefício. Assim o número
+  // ao lado da empresa bate com o que o filtro mostra.
+  const _base=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   const empresas=(()=>{const gg={};_base.forEach(c=>{const p=_empresaKey(c);if(p)gg[p]=(gg[p]||0)+1;});return Object.keys(gg).sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b))).map(p=>({cod:p,qtd:gg[p]}));})();
   const deptos=[...new Set(_base.map(c=>c.depto||'').filter(Boolean))].sort();
   const passos=[
