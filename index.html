@@ -113,13 +113,13 @@
 .ds .lan-step__t{ font-size:14px;font-weight:600;color:var(--text);line-height:1.2; }
 .ds .lan-step__d{ font-size:12px;color:var(--text-secondary);margin-top:2px; }
 .ds .lan-step--hero .lan-step__d{ color:var(--text-secondary); }
-/* Fichário de abas sobrepostas (passo a passo) */
-.ds .lan-tabs{ display:flex;gap:3px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;border-bottom:2px solid var(--brand);padding:0 2px; }
-.ds .lan-tab{ display:flex;align-items:center;gap:8px;padding:9px 15px;background:var(--surface-soft);border:1px solid var(--border);border-bottom:none;border-radius:9px 9px 0 0;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-secondary);font-family:'Inter',sans-serif;box-shadow:0 -2px 5px rgba(15,23,42,.05);margin-bottom:-2px;position:relative;z-index:1;transition:background .12s,color .12s; }
-.ds .lan-tab:hover:not(.lan-tab--active){ background:#e9edf3;color:var(--text); }
-.ds .lan-tab--active{ background:var(--surface);color:var(--brand);font-weight:600;border-color:var(--brand);border-bottom:2px solid var(--surface);box-shadow:0 -4px 10px rgba(15,23,42,.12);z-index:3;padding-top:11px; }
-.ds .lan-tab[disabled]{ box-shadow:none; }
-.ds .lan-tab__n{ width:22px;height:22px;border-radius:50%;background:var(--border);color:var(--text-secondary);font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+/* Abas do passo a passo — controle segmentado moderno (pill) */
+.ds .lan-tabs{ display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px;background:var(--surface-soft);border:1px solid var(--border);padding:5px;border-radius:14px; }
+.ds .lan-tab{ display:flex;align-items:center;gap:8px;padding:8px 14px;border:none;background:transparent;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-secondary);font-family:'Inter',sans-serif;transition:background .15s,color .15s,box-shadow .15s; }
+.ds .lan-tab:hover:not(.lan-tab--active):not([disabled]){ color:var(--text);background:rgba(15,23,42,.04); }
+.ds .lan-tab--active{ background:var(--surface);color:var(--brand);font-weight:600;box-shadow:0 1px 3px rgba(15,23,42,.12); }
+.ds .lan-tab[disabled]{ opacity:.5; }
+.ds .lan-tab__n{ width:20px;height:20px;border-radius:50%;background:var(--border);color:var(--text-secondary);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
 .ds .lan-tab--active .lan-tab__n,.ds .lan-tab--done .lan-tab__n{ background:var(--brand);color:#fff; }
 .ds .lan-navbtns{ display:flex;justify-content:space-between;gap:10px;margin-top:12px; }
 .ds .refresh-btn{ background:var(--brand);color:#fff;border:1px solid var(--brand);border-radius:var(--radius);padding:11px 18px;font-size:14px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap; }
