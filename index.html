@@ -293,6 +293,9 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .home-card .hc-ico--blue { background: var(--accent-bg); color: var(--accent-text); }
 .home-card .hc-tit { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
 .home-card .hc-desc { font-size: 13px; color: var(--text-secondary); line-height:1.4; }
+.home-card .hc-cta { margin-top: 18px; display: inline-flex; align-items: center; gap: 6px; background: var(--brand); color:#fff; font-size: 14px; font-weight: 600; padding: 9px 20px; border-radius: var(--radius); box-shadow: var(--shadow-sm); transition: filter .12s; }
+.home-card .hc-cta--blue { background: var(--accent); }
+.home-card:hover .hc-cta { filter: brightness(1.08); }
 #login-screen {
   display: none; align-items: center; justify-content: center;
   min-height: 100vh; position: fixed; inset: 0; z-index: 999;
@@ -658,11 +661,13 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
         <div class="hc-ico"><i class="ti ti-lock"></i></div>
         <div class="hc-tit">Sistema de RH</div>
         <div class="hc-desc">Colaboradores, benefícios, férias e prêmio. Acesso restrito.</div>
+        <div class="hc-cta"><i class="ti ti-login"></i> Entrar</div>
       </div>
       <div class="home-card" onclick="window.open('buscador.html','_blank')">
         <div class="hc-ico hc-ico--blue"><i class="ti ti-movie"></i></div>
         <div class="hc-tit">Treinamentos</div>
         <div class="hc-desc">Catálogo de vídeos de treinamento. Acesso livre.</div>
+        <div class="hc-cta hc-cta--blue">Acessar <i class="ti ti-arrow-right"></i></div>
       </div>
     </div>
   </div>
