@@ -124,6 +124,9 @@
 .ds .lan-tab--done .lan-tab__n{ background:var(--brand);color:#fff; }
 .ds .lan-tab--active .lan-tab__n{ background:var(--brand);color:#fff;width:24px;height:24px;font-size:12px; }
 .ds .lan-navbtns{ display:flex;justify-content:space-between;gap:10px;margin-top:12px; }
+.ds .lan-sub{ border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;background:var(--surface); }
+.ds .lan-sub__t{ font-weight:600;font-size:13px;color:var(--text);margin-bottom:2px; }
+.ds .lan-sub__d{ font-size:12px;color:var(--text-secondary);margin-bottom:10px; }
 .ds .refresh-btn{ background:var(--brand);color:#fff;border:1px solid var(--brand);border-radius:var(--radius);padding:11px 18px;font-size:14px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap; }
 .ds .refresh-btn:hover{ background:var(--brand-hover); }
 /* Botao primario verde (marca) nas telas migradas para o design system */
@@ -703,6 +706,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     <div class="topbar-right">
       <span id="user-name" class="topbar-user"></span>
       <span id="sync-status" class="topbar-sync">⏳</span>
+      <button class="btn-logout" id="btn-config" title="Configurações" onclick="abrirConfig()" style="display:none;padding:6px 10px"><i class="ti ti-settings"></i></button>
       <button class="btn-logout" onclick="fazerLogout()">Sair</button>
     </div>
   </div>
@@ -726,9 +730,6 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     </button>
     <button class="mod-tab" id="tab-dashboard" onclick="switchModule('dashboard')">
       <span class="mod-icon"><i class="ti ti-chart-bar"></i></span> Dashboard
-    </button>
-    <button class="mod-tab" id="tab-config" onclick="switchModule('config')">
-      <span class="mod-icon"><i class="ti ti-settings"></i></span> Configurações
     </button>
   </div>
 

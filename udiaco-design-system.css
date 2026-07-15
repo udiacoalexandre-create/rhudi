@@ -1,0 +1,303 @@
+/* ============================================================
+   UDIAÇO — SISTEMA DE DESIGN "SaaS Moderno"
+   Cole este bloco no <style> do index.html (de preferência no
+   topo, para as variáveis ficarem disponíveis em todo o CSS).
+   Depois use as classes de componente descritas no guia.
+   ============================================================ */
+
+/* Fonte: adicione esta linha no <head> do index.html:
+   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"> */
+
+:root {
+  /* ---------- COR: NEUTROS (base da interface) ---------- */
+  --page-bg:        #f8fafc;  /* fundo geral da página            */
+  --surface:        #ffffff;  /* fundo de cards e tabelas         */
+  --surface-soft:   #f1f5f9;  /* fundo sutil (inputs, th, chips)  */
+  --border:         #e2e8f0;  /* borda hairline padrão            */
+  --border-strong:  #cbd5e1;  /* borda de destaque / hover        */
+
+  --text:           #0f172a;  /* texto principal                  */
+  --text-secondary: #475569;  /* texto de apoio                   */
+  --text-muted:     #94a3b8;  /* placeholders, legendas, labels   */
+
+  /* ---------- COR: DESTAQUE (ações, marca) ---------- */
+  --accent:         #2563eb;  /* azul de ação (botão primário)    */
+  --accent-hover:   #1d4ed8;
+  --accent-bg:      #eff6ff;  /* fundo suave azul (badges, chips) */
+  --accent-text:    #1d4ed8;  /* texto sobre fundo azul suave     */
+  --on-accent:      #ffffff;  /* texto sobre azul sólido          */
+
+  /* ---------- COR: SEMÂNTICA (status) ---------- */
+  --success:        #16a34a;  --success-bg: #f0fdf4;  --success-text: #15803d;
+  --warning:        #d97706;  --warning-bg: #fffbeb;  --warning-text: #b45309;
+  --danger:         #dc2626;  --danger-bg:  #fef2f2;  --danger-text:  #b91c1c;
+  --purple:         #7c3aed;  --purple-bg:  #f5f3ff;  --purple-text:  #6d28d9;
+
+  /* ---------- ESPAÇAMENTO (múltiplos de 4px) ---------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+  --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px;
+
+  /* ---------- CANTOS / SOMBRA ---------- */
+  --radius-sm: 6px;
+  --radius:    10px;   /* controles, inputs, badges */
+  --radius-lg: 14px;   /* cards */
+  --shadow:    0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, .08);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--page-bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   TOPBAR (barra superior)
+   ANTES: fundo azul-marinho saturado.
+   AGORA: fundo branco, borda embaixo, texto escuro.
+   ============================================================ */
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3) var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.topbar__brand {
+  display: flex; align-items: center; gap: var(--space-3);
+  font-weight: 600; font-size: 16px; color: var(--text);
+}
+.topbar__logo {
+  width: 30px; height: 30px; border-radius: var(--radius-sm);
+  background: var(--accent); color: var(--on-accent);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ============================================================
+   ABAS / NAVEGAÇÃO (Base, Benefícios, Dashboard...)
+   ============================================================ */
+.nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-6);
+  display: flex; gap: var(--space-2);
+}
+.nav__item {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  font-size: 14px; color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer; transition: color .15s;
+}
+.nav__item:hover { color: var(--text); }
+.nav__item--active {
+  color: var(--accent); font-weight: 500;
+  border-bottom-color: var(--accent);
+}
+
+/* ============================================================
+   CARD
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.card__header {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.card__body { padding: var(--space-5); }
+
+/* ============================================================
+   STAT CARD (os cartões de número: 461 Trabalhando, etc.)
+   ANTES: borda-esquerda colorida grossa.
+   AGORA: borda fina uniforme + chip de ícone colorido no topo.
+   ============================================================ */
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  transition: border-color .15s, box-shadow .15s;
+}
+.stat:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.stat__chip {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: var(--space-3);
+}
+.stat__value  { font-size: 26px; font-weight: 600; line-height: 1.1; }
+.stat__label  { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Variação sólida (ex.: "Total de ativos") */
+.stat--accent { background: var(--accent); border-color: var(--accent); }
+.stat--accent .stat__value,
+.stat--accent .stat__label { color: var(--on-accent); }
+.stat--accent .stat__label { opacity: .85; }
+
+/* Cores dos chips por tipo (fundo suave + ícone na cor forte) */
+.chip--success { background: var(--success-bg); color: var(--success-text); }
+.chip--warning { background: var(--warning-bg); color: var(--warning-text); }
+.chip--danger  { background: var(--danger-bg);  color: var(--danger-text);  }
+.chip--accent  { background: var(--accent-bg);  color: var(--accent-text);  }
+.chip--purple  { background: var(--purple-bg);  color: var(--purple-text);  }
+
+/* Grade responsiva para os stats */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+/* ============================================================
+   BADGE (status: Trabalhando, Afastado, Cesta, Folha CLT...)
+   ============================================================ */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 11px;
+  border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  white-space: nowrap;
+}
+.badge--success { background: var(--success-bg); color: var(--success-text); }
+.badge--warning { background: var(--warning-bg); color: var(--warning-text); }
+.badge--danger  { background: var(--danger-bg);  color: var(--danger-text);  }
+.badge--accent  { background: var(--accent-bg);  color: var(--accent-text);  }
+.badge--purple  { background: var(--purple-bg);  color: var(--purple-text);  }
+.badge--neutral { background: var(--surface-soft); color: var(--text-secondary); }
+
+/* Tag menos arredondada, para elegibilidade (Cesta, Folha CLT) */
+.tag {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; margin-right: 4px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.tag--accent  { background: var(--accent-bg);  color: var(--accent-text); }
+.tag--neutral { background: var(--surface-soft); color: var(--text-secondary); border: 1px solid var(--border); }
+
+/* ============================================================
+   AVATAR (iniciais na tabela de colaboradores)
+   ============================================================ */
+.avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; flex-shrink: 0;
+  background: var(--accent-bg); color: var(--accent-text);
+}
+.avatar--success { background: var(--success-bg); color: var(--success-text); }
+.avatar--warning { background: var(--warning-bg); color: var(--warning-text); }
+.avatar--danger  { background: var(--danger-bg);  color: var(--danger-text);  }
+
+/* Célula "colaborador" (nome + subtítulo) */
+.person { display: flex; align-items: center; gap: var(--space-3); }
+.person__name { font-weight: 500; color: var(--text); }
+.person__sub  { font-size: 12px; color: var(--text-muted); }
+
+/* ============================================================
+   TABELA
+   ANTES: cabeçalho azul-marinho.
+   AGORA: cabeçalho claro, texto em maiúsculas discretas.
+   ============================================================ */
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th {
+  text-align: left;
+  padding: 10px var(--space-4);
+  font-weight: 500; font-size: 11px; letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-soft);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.table td {
+  padding: 12px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.table tr:hover td { background: var(--surface-soft); }
+.table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   INPUTS E BUSCA
+   ============================================================ */
+.input {
+  height: 38px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 14px; color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.search {
+  display: flex; align-items: center; gap: var(--space-2);
+  height: 38px; padding: 0 var(--space-3);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.search input {
+  border: none; background: transparent; outline: none;
+  flex: 1; font-size: 14px; color: var(--text);
+}
+
+/* ============================================================
+   BOTÕES
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  height: 38px; padding: 0 var(--space-4);
+  border-radius: var(--radius);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text);
+  transition: background .15s, border-color .15s, transform .05s;
+}
+.btn:hover  { background: var(--surface-soft); }
+.btn:active { transform: scale(.98); }
+.btn--primary {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+}
+.btn--primary:hover { background: var(--accent-hover); }
+.btn--success { background: var(--success); color: #fff; border-color: var(--success); }
+.btn--danger  { background: var(--danger);  color: #fff; border-color: var(--danger);  }
+
+/* ============================================================
+   BANNER / AVISO (ex.: "Nenhuma base importada")
+   ============================================================ */
+.banner {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+.banner--warning { background: var(--warning-bg); color: var(--warning-text); }
+.banner--info    { background: var(--accent-bg);  color: var(--accent-text);  }
+
+/* ============================================================
+   TÍTULOS DE SEÇÃO
+   ============================================================ */
+.page-title    { font-size: 22px; font-weight: 600; color: var(--text); margin: 0; }
+.page-subtitle { font-size: 14px; color: var(--text-secondary); margin: 4px 0 0; }
+.section-label {
+  font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin: var(--space-6) 0 var(--space-3);
+}

@@ -55,6 +55,8 @@ function statusGrupo(s){
 // ============================================================
 let CESTA_PADRAO = 185;   // valor padrao da Cesta (config)
 let PREMIO_VAL = 226;     // valor do Premio Assiduidade (config)
+let VR_PADRAO = 0;        // valor padrao de referencia do VR/dia (config)
+let CAFE_PADRAO = 0;      // valor padrao de referencia do Cafe/dia (config)
 let VT_LINHAS = [
   {cod:"",nome:"Selecione a linha",tipo:""},
   {cod:"40115",nome:"40115 - TOP - TREM/METRO - INTERMUNICIPAL - CARTAO TOP",tipo:"TOP"},
@@ -822,11 +824,13 @@ const MODULES = {
   base:{pages:[
     {id:'base-lista',icon:'<i class="ti ti-users"></i>',label:'Colaboradores'},
     {id:'base-atualizar',icon:'<i class="ti ti-refresh"></i>',label:'Atualizar Base',action:'abrirAtualizarBase()'},
-    {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Bases Salvas'},
+    {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Históricos'},
+    {id:'base-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
   ]},
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'<i class="ti ti-clipboard-list"></i>',label:'Lan\u00E7amento Mensal'},
     {id:'ben-historico',icon:'<i class="ti ti-history"></i>',label:'Hist\u00F3rico'},
+    {id:'ben-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
   ]},
   folha:{pages:[
     {id:'folha-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar Relat\u00F3rio'},
@@ -861,13 +865,14 @@ function pagesVisiveis(mod){
 // Esconde os módulos que o papel UM989 não pode ver (mostra só Férias).
 function aplicarVisibModulos(){
   const so=ehUM989();
-  ['base','beneficios','folha','premio','dashboard','config'].forEach(m=>{
+  ['base','beneficios','folha','premio','dashboard'].forEach(m=>{
     const t=document.getElementById('tab-'+m); if(t) t.style.display=so?'none':'';
   });
-  // Configurações: exclusivo do master
-  const tc=document.getElementById('tab-config');
-  if(tc && !so) tc.style.display = podeGerenciarUsuarios() ? '' : 'none';
+  // Configurações: engrenagem no cabeçalho, exclusiva do master
+  const bc=document.getElementById('btn-config');
+  if(bc) bc.style.display = (!so && podeGerenciarUsuarios()) ? '' : 'none';
 }
+function abrirConfig(){ if(!podeGerenciarUsuarios()) return; switchModule('config'); }
 
 function switchModule(mod){
   currentModule=mod;
@@ -906,7 +911,7 @@ function renderPage(id){
   const pages={
     'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'base-versoes':pgBaseVersoes,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
-    'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,
+    'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,'base-dash':pgBaseDashboard,'ben-dash':pgBenDashboard,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
@@ -926,11 +931,13 @@ function afterRender(id){
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
+  if(id==='base-dash') renderBaseDashboard();
+  if(id==='ben-dash') renderBenDashboard();
   if(id==='config-main'){
     const s=configSub||'beneficios';
     if(s==='acessos') renderUsuarios();
     else if(s==='um989') loadUM989().then(renderUM989);
-    else loadConfig().then(()=>{ const ce=document.getElementById('cfg-cesta-val'); if(ce)ce.value=CESTA_PADRAO; const pe=document.getElementById('cfg-premio-val'); if(pe)pe.value=PREMIO_VAL; renderConfigVT(); });
+    else loadConfig().then(()=>{ const set=(id,v)=>{const e=document.getElementById(id); if(e)e.value=v;}; set('cfg-val-vr',VR_PADRAO); set('cfg-val-cafe',CAFE_PADRAO); set('cfg-val-cesta',CESTA_PADRAO); set('cfg-val-premio',PREMIO_VAL); renderConfigVT(); });
   }
   if(id==='fer-agendadas') renderFeriasAgendadas();
   if(id==='fer-um989') loadUM989().then(renderUM989);
@@ -2308,7 +2315,7 @@ function pgBenLancamento(){
 
   let corpo='';
   if(lanStep===1){
-    corpo='<div class="lan-step lan-step--hero">'
+    corpo='<div class="lan-step">'
       +head(1,'Importar a base','Traz os colaboradores da competência com os <strong>status</strong> e as <strong>férias a descontar</strong>. Ao importar, a tabela completa aparece abaixo.')
       +'<div id="lan-base-info"></div>'
       +nav(0,2)+'</div>'
@@ -2338,22 +2345,20 @@ function pgBenLancamento(){
       +nav(4,6)+'</div>'
       +'<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros;
   } else {
-    const bo='background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;flex:1;min-width:260px';
     corpo='<div class="lan-step">'
-      +head(6,'Conferir, fechar e exportar','Escolha o benefício para conferir só ele na tabela abaixo (com os totais). Depois: <strong>Fechar</strong> gera o log; <strong>Exportar</strong> gera o arquivo do que foi fechado.')
-      +'<div class="fg" style="margin-bottom:12px"><label>Benefício em conferência</label>'
-        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;max-width:280px">'
+      +head(6,'Conferir, fechar e exportar','Confira o benefício na tabela, feche a competência e gere os arquivos de exportação.')
+      +'<div class="lan-sub"><div class="lan-sub__t">6.1 · Escolha o benefício</div>'
+        +'<div class="lan-sub__d">Escolha o benefício que deseja executar — a tabela abaixo mostra só ele, com os totais.</div>'
+        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;max-width:300px">'
         +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
         +'</select></div>'
-      +'<div style="display:flex;gap:14px;flex-wrap:wrap">'
-        +'<div style="'+bo+'"><div style="font-weight:600;display:flex;align-items:center;gap:7px"><i class="ti ti-lock" style="color:var(--brand)"></i> Fechar competência</div>'
-          +'<div class="text-xs text-muted" style="margin:4px 0 10px">Grava um <strong>snapshot (log)</strong> no Histórico. Não gera arquivo.</div>'
-          +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()">Fechar competência</button></div>'
-        +'<div style="'+bo+'"><div style="font-weight:600;display:flex;align-items:center;gap:7px"><i class="ti ti-download" style="color:var(--brand)"></i> Exportar o que foi fechado</div>'
-          +'<div class="text-xs text-muted" style="margin:4px 0 10px">Gera o arquivo a partir do fechamento. <strong>VT → Via Nova</strong>; demais → <strong>Caju</strong>.</div>'
-          +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()">Exportar</button>'
-          +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()">Exportar Senior</button></div></div>'
-      +'</div>'
+      +'<div class="lan-sub"><div class="lan-sub__t">6.2 · Fechar competência</div>'
+        +'<div class="lan-sub__d">Feche a competência para salvar o histórico no sistema.</div>'
+        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()"><i class="ti ti-lock"></i> Fechar competência</button></div>'
+      +'<div class="lan-sub"><div class="lan-sub__t">6.3 · Exportar arquivos</div>'
+        +'<div class="lan-sub__d">Gere os arquivos de exportação para o sistema de pagamento (VT → Via Nova; demais → Caju) e para a Senior.</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()"><i class="ti ti-download"></i> Exportar (pagamento)</button>'
+        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()"><i class="ti ti-download"></i> Exportar Senior</button></div></div>'
       +'<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="lanIrPasso(5)"><i class="ti ti-arrow-left"></i> Voltar</button><span></span></div>'
       +'</div>'
       +'<div id="lan-resumo" style="margin-bottom:12px"></div>';
@@ -2443,8 +2448,8 @@ function pgBaseVersoes(){
   const hoje=new Date();
   const compHoje=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
   return `
-    <div class="page-header"><h2>Bases Salvas por Competência</h2>
-      <p>Salve uma versão congelada da base para a competência. A apuração de benefícios parte de uma dessas versões.</p></div>
+    <div class="page-header"><h2 class="page-title">Históricos</h2>
+      <p class="page-subtitle">Versões congeladas da base por competência. A apuração de benefícios parte de uma dessas versões.</p></div>
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Salvar versão da base</div>
       <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
@@ -3423,6 +3428,8 @@ async function salvarConfig(){
     tipoVT: document.querySelector('input[name="cfg-vt"]:checked')?.value||'mult',
     cestaPadrao: CESTA_PADRAO,
     premioValor: PREMIO_VAL,
+    vrPadrao: VR_PADRAO,
+    cafePadrao: CAFE_PADRAO,
   };
   try{ await fsSet('config','calculo',cfg); toast('\u2705 Configura\u00E7\u00E3o salva!','success'); }
   catch(e){ console.error(e); }
@@ -4053,6 +4060,8 @@ async function loadConfig(){
         setR('cfg-vt',c.tipoVT||'mult');
         if(c.cestaPadrao!=null && fnum(c.cestaPadrao)>0) CESTA_PADRAO=fnum(c.cestaPadrao);
         if(c.premioValor!=null && fnum(c.premioValor)>0) PREMIO_VAL=fnum(c.premioValor);
+        if(c.vrPadrao!=null) VR_PADRAO=fnum(c.vrPadrao);
+        if(c.cafePadrao!=null) CAFE_PADRAO=fnum(c.cafePadrao);
       }
       if(d.id==='vtLinhas'){
         const c=d.data();
@@ -8526,41 +8535,34 @@ function pgConfiguracoes(){
 }
 
 function _configBeneficiosHTML(){
-  const modos=[
-    {name:'cfg-vr',label:'Vale Refeição',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor × dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
-    {name:'cfg-cafe',label:'Café da Manhã',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor × dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
-    {name:'cfg-comb',label:'Combustível',sub:'Proporcional /30 com arredondamento especial',opts:[{v:'prop',l:'Proporcional ÷30 (recomendado)'},{v:'fixo',l:'Sempre fixo'}],def:'prop'},
-    {name:'cfg-vt',label:'Vale Transporte',sub:'(Valor linha × viagens) × dias',opts:[{v:'mult',l:'Valor × dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
-    {name:'cfg-cesta',label:'Cesta Básica',sub:'Valor fixo mensal',opts:[{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
+  const inp='padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:130px';
+  const modos={
+    vr:[['mult','Valor × dias'],['fixo','Valor fixo mensal']],
+    cafe:[['mult','Valor × dias'],['fixo','Valor fixo mensal']],
+    comb:[['prop','Proporcional ÷30'],['fixo','Sempre fixo']],
+    vt:[['mult','Valor × dias'],['fixo','Valor fixo mensal']],
+  };
+  const defMode={vr:'mult',cafe:'fixo',comb:'prop',vt:'mult'};
+  const radios=(name)=>modos[name].map(o=>'<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="radio" name="cfg-'+name+'" value="'+o[0]+'"'+(o[0]===defMode[name]?' checked':'')+' onchange="salvarConfigTudo()" style="accent-color:var(--brand)"> '+o[1]+'</label>').join('');
+  const rows=[
+    {key:'vr',label:'Vale Refeição',calc:radios('vr'),val:VR_PADRAO},
+    {key:'cafe',label:'Café da Manhã',calc:radios('cafe'),val:CAFE_PADRAO},
+    {key:'cesta',label:'Cesta Básica',calc:'<span class="badge badge--neutral">Valor fixo mensal</span>',val:CESTA_PADRAO},
+    {key:'comb',label:'Combustível',calc:radios('comb'),val:null},
+    {key:'vt',label:'Vale Transporte',calc:radios('vt'),val:null},
+    {key:'premio',label:'Prêmio Assiduidade',calc:'<span class="badge badge--neutral">Valor fixo</span>',val:PREMIO_VAL},
   ];
-  const inp='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
-  return `
-    <div class="card">
-      <div class="card-title">Tipo de cálculo por benefício</div>
-      <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        ${modos.map((r,i)=>`
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;${i<modos.length-1?'border-bottom:1px solid var(--border)':''}">
-            <div><div style="font-weight:600;font-size:14px">${r.label}</div><div class="text-xs text-muted">${r.sub}</div></div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap">
-              ${r.opts.map(o=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                <input type="radio" name="${r.name}" value="${o.v}" ${o.v===r.def?'checked':''} onchange="salvarConfig()" style="accent-color:var(--brand)"> ${o.l}</label>`).join('')}
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Valores padrão</div>
-      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
-        <div class="fg"><label>Cesta Básica (R$/mês)</label><input type="number" id="cfg-cesta-val" step="0.01" min="0" style="width:150px;${inp}" value="${CESTA_PADRAO}"></div>
-        <div class="fg"><label>Prêmio Assiduidade (R$)</label><input type="number" id="cfg-premio-val" step="0.01" min="0" style="width:150px;${inp}" value="${PREMIO_VAL}"></div>
-        <button class="btn btn-primary btn-sm" onclick="salvarValoresConfig()"><i class="ti ti-check"></i> Salvar valores</button>
-      </div>
-      <div class="text-xs text-muted" style="margin-top:8px">Cesta: valor usado quando o colaborador não tem valor próprio. Prêmio: valor pago a cada colaborador que recebe.</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Linhas de Vale Transporte</div>
-      <div id="config-vt"></div>
-    </div>`;
+  const linhas=rows.map((r,i)=>'<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 18px;'+(i<rows.length-1?'border-bottom:1px solid var(--border)':'')+'">'
+    +'<div style="flex:1;min-width:150px"><div style="font-weight:600;font-size:14px">'+r.label+'</div></div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;min-width:200px">'+r.calc+'</div>'
+    +'<div style="min-width:150px">'+(r.val!=null?'<label class="text-xs text-muted" style="display:block;margin-bottom:2px">Valor padrão (R$)</label><input type="number" step="0.01" min="0" id="cfg-val-'+r.key+'" value="'+r.val+'" style="'+inp+'">':'<span class="text-xs text-muted">valor por colaborador</span>')+'</div>'
+    +'</div>').join('');
+  return '<div class="card"><div class="card-title">Benefícios — cálculo e valores</div>'
+    +'<div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">'+linhas+'</div>'
+    +'<div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="salvarConfigTudo()"><i class="ti ti-check"></i> Salvar configuração</button></div>'
+    +'<div class="text-xs text-muted" style="margin-top:8px">Para cada benefício você define o tipo de cálculo e o valor padrão. VR e Café: valor de referência por dia. Cesta: valor mensal usado quando o colaborador não tem valor próprio. Prêmio: valor pago a cada colaborador. Combustível e VT usam o valor por colaborador/linha.</div>'
+    +'</div>'
+    +'<div class="card"><div class="card-title">Linhas de Vale Transporte</div><div id="config-vt"></div></div>';
 }
 
 function renderConfigVT(){
@@ -8611,9 +8613,111 @@ function vtEditarLinha(cod){
   s('vt-f-cod',l.cod); s('vt-f-nome',l.nome||''); s('vt-f-tipo',l.tipo||'PEC');
 }
 function vtLimparForm(){ ['vt-f-cod','vt-f-nome'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const t=document.getElementById('vt-f-tipo'); if(t)t.value='PEC'; }
-async function salvarValoresConfig(){
-  const ce=document.getElementById('cfg-cesta-val'); const pe=document.getElementById('cfg-premio-val');
-  if(ce && ce.value!=='') CESTA_PADRAO=fnum(ce.value)||185;
-  if(pe && pe.value!=='') PREMIO_VAL=fnum(pe.value)||226;
+async function salvarConfigTudo(){
+  const g=id=>{const e=document.getElementById(id); return e && e.value!==''?fnum(e.value):null;};
+  const vr=g('cfg-val-vr'), cf=g('cfg-val-cafe'), ce=g('cfg-val-cesta'), pr=g('cfg-val-premio');
+  if(vr!=null) VR_PADRAO=vr;
+  if(cf!=null) CAFE_PADRAO=cf;
+  if(ce!=null && ce>0) CESTA_PADRAO=ce;
+  if(pr!=null && pr>0) PREMIO_VAL=pr;
   await salvarConfig();
+}
+// compat
+async function salvarValoresConfig(){ return salvarConfigTudo(); }
+
+// ============================================================
+// DASHBOARDS (Base e Beneficios) — comparativo por competencia/periodo
+// ============================================================
+let dashBaseDe='', dashBaseAte='', dashBenDe='', dashBenAte='';
+function _compKey(c){ const m=String(c||'').match(/^(\d{2})\/(\d{4})$/); return m?(m[2]+m[1]):'000000'; }
+function _compSort(a,b){ return _compKey(a)-_compKey(b); }
+function _periodoSelects(id,comps,de,ate){
+  const opt=(v,sel)=>'<option value="'+v+'"'+(v===sel?' selected':'')+'>'+v+'</option>';
+  return '<div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">'
+    +'<div class="filter-group"><label>De (competência)</label><select id="'+id+'-de" onchange="'+id+'Change()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">'+comps.map(c=>opt(c,de)).join('')+'</select></div>'
+    +'<div class="filter-group"><label>Até (competência)</label><select id="'+id+'-ate" onchange="'+id+'Change()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">'+comps.map(c=>opt(c,ate)).join('')+'</select></div>'
+    +'</div>';
+}
+
+// ── BASE: dashboard (a partir dos Historicos salvos) ─────────────
+function pgBaseDashboard(){
+  return `<div class="page-header"><h2 class="page-title">Dashboard da Base</h2><p class="page-subtitle">Comparativo das competências salvas em Históricos. Filtre por período.</p></div><div id="base-dash-body"></div>`;
+}
+function baseDashChange(){ dashBaseDe=document.getElementById('baseDash-de')?.value||dashBaseDe; dashBaseAte=document.getElementById('baseDash-ate')?.value||dashBaseAte; renderBaseDashboardBody(); }
+async function renderBaseDashboard(){ await loadBasesSalvas(); renderBaseDashboardBody(true); }
+function renderBaseDashboardBody(initFiltro){
+  const el=document.getElementById('base-dash-body'); if(!el) return;
+  const porComp={};
+  basesSalvasList.forEach(b=>{ const c=b.competencia; if(!c) return; if(!porComp[c] || String(b.salvoEm||'')>String(porComp[c].salvoEm||'')) porComp[c]=b; });
+  const comps=Object.keys(porComp).sort(_compSort);
+  if(!comps.length){ el.innerHTML='<div class="alert alert-info">Nenhum histórico salvo ainda. Salve uma versão da base ao concluir o assistente de atualização.</div>'; return; }
+  if(initFiltro || !dashBaseDe || comps.indexOf(dashBaseDe)<0) dashBaseDe=comps[0];
+  if(initFiltro || !dashBaseAte || comps.indexOf(dashBaseAte)<0) dashBaseAte=comps[comps.length-1];
+  const kDe=_compKey(dashBaseDe), kAte=_compKey(dashBaseAte);
+  const sel=comps.filter(c=>_compKey(c)>=Math.min(kDe,kAte) && _compKey(c)<=Math.max(kDe,kAte));
+  const stat=b=>{
+    const cs=(b.colaboradores||[]).filter(c=>{const k=_statusKey(c.status);return !k.includes('DEMIT')&&k!=='N/A'&&k!=='NA'&&k!=='INATIVO';});
+    let trab=0,fer=0,afa=0; cs.forEach(c=>{const g=statusGrupo(c.status); if(g==='trabalhando')trab++; else if(g==='ferias')fer++; else if(g==='so_cesta')afa++;});
+    return {total:cs.length,trab,fer,afa};
+  };
+  const ult=stat(porComp[sel[sel.length-1]]);
+  const kpis='<div class="stat-grid">'
+    +_dsStat('users','accent',ult.total,'Ativos ('+sel[sel.length-1]+')')
+    +_dsStat('user-check','success',ult.trab,'Trabalhando')
+    +_dsStat('umbrella','warning',ult.fer,'Em férias')
+    +_dsStat('first-aid-kit','danger',ult.afa,'Afastados')
+    +'</div>';
+  const linhas=sel.map(c=>{const s=stat(porComp[c]);return '<tr><td style="padding:8px 10px;font-weight:600">'+c+'</td>'
+    +'<td style="padding:8px 10px;text-align:right">'+s.total+'</td><td style="padding:8px 10px;text-align:right">'+s.trab+'</td>'
+    +'<td style="padding:8px 10px;text-align:right">'+s.fer+'</td><td style="padding:8px 10px;text-align:right">'+s.afa+'</td></tr>';}).join('');
+  el.innerHTML=_periodoSelects('baseDash',comps,dashBaseDe,dashBaseAte)+kpis
+    +'<div class="section-label">Comparativo por competência</div>'
+    +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)"><table class="tbl" style="width:100%;border-collapse:collapse;font-size:13px">'
+    +'<thead><tr><th style="padding:8px 10px;text-align:left">Competência</th><th style="padding:8px 10px;text-align:right">Ativos</th><th style="padding:8px 10px;text-align:right">Trabalhando</th><th style="padding:8px 10px;text-align:right">Férias</th><th style="padding:8px 10px;text-align:right">Afastados</th></tr></thead>'
+    +'<tbody>'+linhas+'</tbody></table></div>';
+}
+
+// ── BENEFICIOS: dashboard (a partir dos fechamentos em historico) ─
+function pgBenDashboard(){
+  return `<div class="page-header"><h2 class="page-title">Dashboard de Benefícios</h2><p class="page-subtitle">Comparativo dos fechamentos por competência. Filtre por período.</p></div><div id="ben-dash-body"></div>`;
+}
+function benDashChange(){ dashBenDe=document.getElementById('benDash-de')?.value||dashBenDe; dashBenAte=document.getElementById('benDash-ate')?.value||dashBenAte; renderBenDashboardBody(); }
+let _benDashData={};
+async function renderBenDashboard(){
+  _benDashData={};
+  try{
+    const snap=await window._getDocs(window._col('historico'));
+    snap.forEach(d=>{ const x=d.data(); const comp=x.competencia; if(!comp) return;
+      if(d.id.startsWith('folha_')||d.id.startsWith('premio_')) return;
+      const r=_benDashData[comp]||(_benDashData[comp]={vr:0,cafe:0,cesta:0,comb:0,vt:0,total:0,count:0});
+      if(x.beneficio==='todos' && x.totais){ r.vr=x.totais.vr||0;r.cafe=x.totais.cafe||0;r.cesta=x.totais.cesta||0;r.comb=x.totais.comb||0;r.vt=x.totais.vt||0;r.total=x.totais.geral||0;r.count=x.totalColaboradores||r.count; }
+      else if(x.beneficio && x.total!=null){ r[x.beneficio]=x.total; r.total=(r.vr+r.cafe+r.cesta+r.comb+r.vt); if(x.totalColaboradores>r.count)r.count=x.totalColaboradores; }
+    });
+  }catch(e){ console.error(e); }
+  renderBenDashboardBody(true);
+}
+function renderBenDashboardBody(initFiltro){
+  const el=document.getElementById('ben-dash-body'); if(!el) return;
+  const comps=Object.keys(_benDashData).sort(_compSort);
+  if(!comps.length){ el.innerHTML='<div class="alert alert-info">Nenhum fechamento no Histórico ainda. Feche uma competência no Lançamento Mensal (passo 6).</div>'; return; }
+  if(initFiltro || comps.indexOf(dashBenDe)<0) dashBenDe=comps[0];
+  if(initFiltro || comps.indexOf(dashBenAte)<0) dashBenAte=comps[comps.length-1];
+  const kDe=_compKey(dashBenDe), kAte=_compKey(dashBenAte);
+  const sel=comps.filter(c=>_compKey(c)>=Math.min(kDe,kAte) && _compKey(c)<=Math.max(kDe,kAte));
+  const ult=_benDashData[sel[sel.length-1]];
+  const kpis='<div class="stat-grid">'
+    +_dsStatAccent('cash',brl(ult.total),'Total ('+sel[sel.length-1]+')')
+    +_dsStat('users','accent',ult.count,'Colaboradores')
+    +_dsStat('receipt','success',brl(ult.vr+ult.cafe),'VR + Café')
+    +_dsStat('gift','warning',brl(ult.cesta+ult.comb+ult.vt),'Cesta+Comb+VT')
+    +'</div>';
+  const linhas=sel.map(c=>{const r=_benDashData[c];return '<tr><td style="padding:8px 10px;font-weight:600">'+c+'</td>'
+    +'<td style="padding:8px 10px;text-align:right">'+brl(r.vr)+'</td><td style="padding:8px 10px;text-align:right">'+brl(r.cafe)+'</td>'
+    +'<td style="padding:8px 10px;text-align:right">'+brl(r.cesta)+'</td><td style="padding:8px 10px;text-align:right">'+brl(r.comb)+'</td>'
+    +'<td style="padding:8px 10px;text-align:right">'+brl(r.vt)+'</td><td style="padding:8px 10px;text-align:right;font-weight:700">'+brl(r.total)+'</td></tr>';}).join('');
+  el.innerHTML=_periodoSelects('benDash',comps,dashBenDe,dashBenAte)+kpis
+    +'<div class="section-label">Comparativo por competência</div>'
+    +'<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)"><table class="tbl" style="width:100%;border-collapse:collapse;font-size:13px">'
+    +'<thead><tr><th style="padding:8px 10px;text-align:left">Competência</th><th style="padding:8px 10px;text-align:right">VR</th><th style="padding:8px 10px;text-align:right">Café</th><th style="padding:8px 10px;text-align:right">Cesta</th><th style="padding:8px 10px;text-align:right">Comb.</th><th style="padding:8px 10px;text-align:right">VT</th><th style="padding:8px 10px;text-align:right">Total</th></tr></thead>'
+    +'<tbody>'+linhas+'</tbody></table></div>';
 }
