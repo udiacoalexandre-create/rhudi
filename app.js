@@ -53,7 +53,9 @@ function statusGrupo(s){
 // ============================================================
 // DADOS & ESTADO GLOBAL
 // ============================================================
-const VT_LINHAS = [
+let CESTA_PADRAO = 185;   // valor padrao da Cesta (config)
+let PREMIO_VAL = 226;     // valor do Premio Assiduidade (config)
+let VT_LINHAS = [
   {cod:"",nome:"Selecione a linha",tipo:""},
   {cod:"40115",nome:"40115 - TOP - TREM/METRO - INTERMUNICIPAL - CARTAO TOP",tipo:"TOP"},
   {cod:"42468",nome:"42468 - OSASCO - MUNICIPAL - URUBUPUNGA - BEM",tipo:"PEC"},
@@ -825,7 +827,6 @@ const MODULES = {
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'<i class="ti ti-clipboard-list"></i>',label:'Lan\u00E7amento Mensal'},
     {id:'ben-historico',icon:'<i class="ti ti-history"></i>',label:'Hist\u00F3rico'},
-    {id:'ben-config',icon:'<i class="ti ti-settings"></i>',label:'Configura\u00E7\u00F5es'},
   ]},
   folha:{pages:[
     {id:'folha-import',icon:'<i class="ti ti-file-import"></i>',label:'Importar Relat\u00F3rio'},
@@ -842,8 +843,10 @@ const MODULES = {
   ]},
   dashboard:{pages:[
     {id:'dash-main',icon:'<i class="ti ti-layout-dashboard"></i>',label:'Dashboard Geral'},
-    {id:'usuarios',icon:'<i class="ti ti-user-cog"></i>',label:'Acessos',master:true},
     {id:'teste-senior',icon:'<i class="ti ti-plug"></i>',label:'Teste Senior API'},
+  ]},
+  config:{pages:[
+    {id:'config-main',icon:'<i class="ti ti-settings"></i>',label:'Configurações'},
   ]}
 };
 
@@ -858,9 +861,12 @@ function pagesVisiveis(mod){
 // Esconde os módulos que o papel UM989 não pode ver (mostra só Férias).
 function aplicarVisibModulos(){
   const so=ehUM989();
-  ['base','beneficios','folha','premio','dashboard'].forEach(m=>{
+  ['base','beneficios','folha','premio','dashboard','config'].forEach(m=>{
     const t=document.getElementById('tab-'+m); if(t) t.style.display=so?'none':'';
   });
+  // Configurações: exclusivo do master
+  const tc=document.getElementById('tab-config');
+  if(tc && !so) tc.style.display = podeGerenciarUsuarios() ? '' : 'none';
 }
 
 function switchModule(mod){
@@ -900,7 +906,7 @@ function renderPage(id){
   const pages={
     'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'base-versoes':pgBaseVersoes,'premio-main':pgPremioAssiduidade,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
-    'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,
+    'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
@@ -920,6 +926,12 @@ function afterRender(id){
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
+  if(id==='config-main'){
+    const s=configSub||'beneficios';
+    if(s==='acessos') renderUsuarios();
+    else if(s==='um989') loadUM989().then(renderUM989);
+    else loadConfig().then(()=>{ const ce=document.getElementById('cfg-cesta-val'); if(ce)ce.value=CESTA_PADRAO; const pe=document.getElementById('cfg-premio-val'); if(pe)pe.value=PREMIO_VAL; renderConfigVT(); });
+  }
   if(id==='fer-agendadas') renderFeriasAgendadas();
   if(id==='fer-um989') loadUM989().then(renderUM989);
   if(id==='dash-main') renderDashMain();
@@ -2144,7 +2156,7 @@ function calcBen(c, dr, du){
   const grp = statusGrupo(st); // tolerante a variantes/acentos
 
   // Valor de cesta: fixo, configuravel por colaborador (padrao 185), gated por elegibilidade
-  const cestaVal = (c.elegibilidade?.cesta!==false) ? (fnum(c.cesta)||185) : 0;
+  const cestaVal = (c.elegibilidade?.cesta!==false) ? (fnum(c.cesta)||CESTA_PADRAO) : 0;
 
   const cfg=getCfg();
   const eleg=c.elegibilidade||{};
@@ -3409,6 +3421,8 @@ async function salvarConfig(){
     tipoCafe:document.querySelector('input[name="cfg-cafe"]:checked')?.value||'fixo',
     tipoComb:document.querySelector('input[name="cfg-comb"]:checked')?.value||'prop',
     tipoVT: document.querySelector('input[name="cfg-vt"]:checked')?.value||'mult',
+    cestaPadrao: CESTA_PADRAO,
+    premioValor: PREMIO_VAL,
   };
   try{ await fsSet('config','calculo',cfg); toast('\u2705 Configura\u00E7\u00E3o salva!','success'); }
   catch(e){ console.error(e); }
@@ -3435,7 +3449,7 @@ function exportarBase(lista){
     const elegCafe= e.cafe!==undefined?e.cafe:fnum(c.cafe)>0;
     const elegFCLT= e.folhaCLT!==undefined?e.folhaCLT:(e.folha!==false);
     const elegFMEI= e.folhaMEI===true;
-    const cestaVal= (e.cesta!==false) ? (fnum(c.cesta)||185) : 0;
+    const cestaVal= (e.cesta!==false) ? (fnum(c.cesta)||CESTA_PADRAO) : 0;
     const vtCols=[1,2,3,4].reduce((a,n)=>a.concat([fnum(c['vt'+n]),fnum(c['v'+n]),c['tp'+n]||'',c['cod'+n]||'',c['ben'+n]||'']),[]);
     return [
       c.mat||'',c.nome||'',c.cpf||'',c.cargo||'',c.funcao||'',c.depto||'',c.status||'',c.filtro||'OK',c.admissao||'',c.diasFixos!=null?c.diasFixos:'',
@@ -4037,6 +4051,12 @@ async function loadConfig(){
         setR('cfg-cafe',c.tipoCafe||'fixo');
         setR('cfg-comb',c.tipoComb||'prop');
         setR('cfg-vt',c.tipoVT||'mult');
+        if(c.cestaPadrao!=null && fnum(c.cestaPadrao)>0) CESTA_PADRAO=fnum(c.cestaPadrao);
+        if(c.premioValor!=null && fnum(c.premioValor)>0) PREMIO_VAL=fnum(c.premioValor);
+      }
+      if(d.id==='vtLinhas'){
+        const c=d.data();
+        if(Array.isArray(c.linhas) && c.linhas.length) VT_LINHAS=c.linhas;
       }
     });
   }catch(e){ console.error('Erro config:',e); }
@@ -4476,7 +4496,7 @@ function renderPremioRows(dados){
       +'<td style="text-align:center;font-size:11px;color:'+(d.abono?'var(--red)':'var(--text3)')+'">'+fmtMin(d.abono)+'</td>'
       +'<td style="text-align:center"><span class="badge '+badge+'">'+label+'</span></td>'
       +'<td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+d.motivo+'">'+d.motivo+'</td>'
-      +'<td style="text-align:right;font-weight:600;color:var(--green);font-family:monospace">'+(d.status==='SIM'?brl(226):'-')+'</td>'
+      +'<td style="text-align:right;font-weight:600;color:var(--green);font-family:monospace">'+(d.status==='SIM'?brl(PREMIO_VAL):'-')+'</td>'
     +'</tr>';
   }).join('');
 }
@@ -5731,7 +5751,7 @@ function renderPremioWizard(){
             oninput="filtrarTabelaMei()"
             style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
           <div style="background:#EFF6FF;border-radius:var(--radius-sm);padding:8px 14px;font-size:13px;color:var(--blue);white-space:nowrap" id="mei-resumo">
-            ${meis.filter(r=>r.recebe==='SIM').length} SIM &nbsp;|&nbsp; ${meis.filter(r=>r.recebe==='NAO').length} NAO &nbsp;|&nbsp; ${brl(meis.filter(r=>r.recebe==='SIM').length*226)}
+            ${meis.filter(r=>r.recebe==='SIM').length} SIM &nbsp;|&nbsp; ${meis.filter(r=>r.recebe==='NAO').length} NAO &nbsp;|&nbsp; ${brl(meis.filter(r=>r.recebe==='SIM').length*PREMIO_VAL)}
           </div>
         </div>
         <div style="overflow:auto;border-radius:var(--radius);border:1px solid var(--border);max-height:420px;margin-bottom:14px">
@@ -5770,7 +5790,7 @@ function renderPremioWizard(){
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
           <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${sim.length}</div><div class="stat-label">Receberao</div></div>
           <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${nao.length}</div><div class="stat-label">Nao receberao</div></div>
-          <div class="stat-card green"><div class="stat-val" style="color:var(--green);font-size:16px">${brl(sim.length*226)}</div><div class="stat-label">Total a pagar</div></div>
+          <div class="stat-card green"><div class="stat-val" style="color:var(--green);font-size:16px">${brl(sim.length*PREMIO_VAL)}</div><div class="stat-label">Total a pagar</div></div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <input type="text" id="passo6-q" placeholder="Buscar nome ou matricula..."
@@ -5822,7 +5842,7 @@ function renderPremioWizard(){
         <div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--radius);padding:14px;margin-bottom:16px">
           <div style="font-size:15px;font-weight:700">Competencia: ${premioState.competencia}</div>
           <div style="font-size:13px;margin-top:6px">${premioState.tabela.length} colaboradores analisados</div>
-          <div style="font-size:13px">${sim} receberao o premio — Total: ${brl(sim*226)}</div>
+          <div style="font-size:13px">${sim} receberao o premio — Total: ${brl(sim*PREMIO_VAL)}</div>
         </div>
         <p class="text-sm text-muted" style="margin-bottom:16px">
           Ao fechar, os dados serao salvos no historico e estarao disponiveis para o dashboard e indicadores.
@@ -6156,7 +6176,7 @@ function renderPremioTabelaHTML(comRegras){
         <div class="stat-card red" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--red)">${nao}</div><div style="font-size:11px">Nao</div></div>
 
         <div class="stat-card" style="padding:8px 12px"><div style="font-size:18px;font-weight:700;color:var(--text3)">${vazio}</div><div style="font-size:11px">Pendente</div></div>
-        <div class="stat-card green" style="padding:8px 12px"><div style="font-size:14px;font-weight:700;color:var(--green)">${brl(sim*226)}</div><div style="font-size:11px">Total</div></div>
+        <div class="stat-card green" style="padding:8px 12px"><div style="font-size:14px;font-weight:700;color:var(--green)">${brl(sim*PREMIO_VAL)}</div><div style="font-size:11px">Total</div></div>
       </div>
 
       ${(()=>{
@@ -6276,7 +6296,7 @@ function atualizarMeiRow(sel){
   const nao = meis.filter(r=>r.recebe==='NAO').length;
   // Tentar atualizar o resumo na tela
   const resumo = document.querySelector('[data-mei-resumo]');
-  if(resumo) resumo.textContent = sim+' MEI receberao ('+brl(sim*226)+') | '+nao+' nao receberao';
+  if(resumo) resumo.textContent = sim+' MEI receberao ('+brl(sim*PREMIO_VAL)+') | '+nao+' nao receberao';
 }
 
 function editarRecebeRow(idx, valor){
@@ -6349,7 +6369,7 @@ function exportarPremioCaju(){
   const linhas=[header];
   sim.forEach(r=>{
     const cpf=(r.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
-    linhas.push([cpf,r.mat||'','226.00','0','0','0','0','0','0','0','0','0','0'].join(';'));
+    linhas.push([cpf,r.mat||'',PREMIO_VAL.toFixed(2),'0','0','0','0','0','0','0','0','0','0'].join(';'));
   });
   const blob=new Blob([linhas.join(NL2)],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
@@ -6367,7 +6387,7 @@ function exportarPremioExcel(){
     ...premioState.tabela.map(r=>[r.mat,r.nome,r.cpf,r.situacao,r.recebe,
       min2str(r.atraso),min2str(r.saida),min2str(r.atestado),min2str(r.aHoras),
       min2str(r.aNoturno),min2str(r.faltas),min2str(r.faltaParcial),min2str(r.abono),
-      r.recebe==='SIM'?226:0])
+      r.recebe==='SIM'?PREMIO_VAL:0])
   ];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Premio Assiduidade');
@@ -6387,7 +6407,7 @@ async function fecharCompetencionPremio(){
     totalElegiveis:sim.length,
     totalNaoElegiveis:premioState.tabela.filter(r=>r.recebe==='NAO').length,
     totalAnalisar:premioState.tabela.filter(r=>r.recebe==='ANALISAR').length,
-    valorTotal:sim.length*226,
+    valorTotal:sim.length*PREMIO_VAL,
     detalhes:premioState.tabela,
   };
   try{
@@ -7286,7 +7306,7 @@ function atualizarResumoMei(){
   const sim = meis.filter(r=>r.recebe==='SIM').length;
   const nao = meis.filter(r=>r.recebe==='NAO').length;
   const el = document.getElementById('mei-resumo');
-  if(el) el.innerHTML = sim+' SIM &nbsp;|&nbsp; '+nao+' NAO &nbsp;|&nbsp; '+brl(sim*226);
+  if(el) el.innerHTML = sim+' SIM &nbsp;|&nbsp; '+nao+' NAO &nbsp;|&nbsp; '+brl(sim*PREMIO_VAL);
 }
 
 function renderPasso6Linhas(dados){
@@ -7305,7 +7325,7 @@ function renderPasso6Linhas(dados){
         +'<option value="NAO" '+(r.recebe==='NAO'?'selected':'')+'>NAO</option>'
         +'</select>'
       +'</td>'
-      +'<td style="padding:7px 10px;text-align:right;font-weight:600;font-family:monospace;color:var(--green)">'+(r.recebe==='SIM'?brl(226):'—')+'</td>'
+      +'<td style="padding:7px 10px;text-align:right;font-weight:600;font-family:monospace;color:var(--green)">'+(r.recebe==='SIM'?brl(PREMIO_VAL):'—')+'</td>'
       +'</tr>';
   }).join('');
 }
@@ -8480,4 +8500,120 @@ async function wizFerAjustar(id){
   c.feriasLog.push({tipo:'ajuste_manual',de,para:novo,justificativa:just,em:new Date().toISOString(),por:_wizPor()});
   try{ await fsSet('colaboradores',id,c); toast('Saldo de '+c.nome+' ajustado: '+de+' → '+novo+'d.','success'); wizFerAjusteList(); }
   catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ============================================================
+// CONFIGURACOES (aba propria, apos o Dashboard) — somente master
+// Sub-abas: Beneficios · Acessos e permissoes · UM989
+// ============================================================
+let configSub = 'beneficios';
+function configIrSub(s){ configSub=s; showPage('config-main'); }
+
+function pgConfiguracoes(){
+  if(!podeGerenciarUsuarios()){
+    return '<div class="page-header"><h2 class="page-title">Configurações</h2></div>'
+      +'<div class="empty-state"><div class="empty-icon">🔒</div><p>Acesso restrito ao usuário master.</p></div>';
+  }
+  const sub=configSub||'beneficios';
+  const tb=(id,icon,label)=>'<button class="lan-tab'+(sub===id?' lan-tab--active':'')+'" onclick="configIrSub(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
+  const tabs='<div class="lan-tabs">'+tb('beneficios','gift','Benefícios')+tb('acessos','user-cog','Acessos e permissões')+tb('um989','users','UM989')+'</div>';
+  let corpo='';
+  if(sub==='acessos') corpo=pgUsuarios();
+  else if(sub==='um989') corpo=pgFerUM989();
+  else corpo=_configBeneficiosHTML();
+  return '<div class="page-header"><h2 class="page-title">Configurações</h2><p class="page-subtitle">Central de configurações do sistema — acesso exclusivo do master.</p></div>'
+    +tabs+'<div>'+corpo+'</div>';
+}
+
+function _configBeneficiosHTML(){
+  const modos=[
+    {name:'cfg-vr',label:'Vale Refeição',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor × dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
+    {name:'cfg-cafe',label:'Café da Manhã',sub:'Valor/dia no cadastro',opts:[{v:'mult',l:'Valor × dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
+    {name:'cfg-comb',label:'Combustível',sub:'Proporcional /30 com arredondamento especial',opts:[{v:'prop',l:'Proporcional ÷30 (recomendado)'},{v:'fixo',l:'Sempre fixo'}],def:'prop'},
+    {name:'cfg-vt',label:'Vale Transporte',sub:'(Valor linha × viagens) × dias',opts:[{v:'mult',l:'Valor × dias trabalhados'},{v:'fixo',l:'Valor fixo mensal'}],def:'mult'},
+    {name:'cfg-cesta',label:'Cesta Básica',sub:'Valor fixo mensal',opts:[{v:'fixo',l:'Valor fixo mensal'}],def:'fixo'},
+  ];
+  const inp='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
+  return `
+    <div class="card">
+      <div class="card-title">Tipo de cálculo por benefício</div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        ${modos.map((r,i)=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;${i<modos.length-1?'border-bottom:1px solid var(--border)':''}">
+            <div><div style="font-weight:600;font-size:14px">${r.label}</div><div class="text-xs text-muted">${r.sub}</div></div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              ${r.opts.map(o=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                <input type="radio" name="${r.name}" value="${o.v}" ${o.v===r.def?'checked':''} onchange="salvarConfig()" style="accent-color:var(--brand)"> ${o.l}</label>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Valores padrão</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fg"><label>Cesta Básica (R$/mês)</label><input type="number" id="cfg-cesta-val" step="0.01" min="0" style="width:150px;${inp}" value="${CESTA_PADRAO}"></div>
+        <div class="fg"><label>Prêmio Assiduidade (R$)</label><input type="number" id="cfg-premio-val" step="0.01" min="0" style="width:150px;${inp}" value="${PREMIO_VAL}"></div>
+        <button class="btn btn-primary btn-sm" onclick="salvarValoresConfig()"><i class="ti ti-check"></i> Salvar valores</button>
+      </div>
+      <div class="text-xs text-muted" style="margin-top:8px">Cesta: valor usado quando o colaborador não tem valor próprio. Prêmio: valor pago a cada colaborador que recebe.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Linhas de Vale Transporte</div>
+      <div id="config-vt"></div>
+    </div>`;
+}
+
+function renderConfigVT(){
+  const el=document.getElementById('config-vt'); if(!el) return;
+  const inp='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
+  const linhas=VT_LINHAS.filter(l=>l && l.cod);
+  const rows=linhas.length?linhas.map(l=>
+    '<tr><td style="padding:8px 10px"><code style="font-size:11px">'+l.cod+'</code></td>'
+    +'<td style="padding:8px 10px">'+(l.nome||'—')+'</td>'
+    +'<td style="padding:8px 10px"><span class="badge badge--'+(l.tipo==='TOP'?'accent':'purple')+'">'+(l.tipo||'—')+'</span></td>'
+    +'<td style="padding:8px 10px;text-align:center;white-space:nowrap">'
+      +'<button class="btn btn-ghost btn-sm" title="Editar" onclick="vtEditarLinha(\''+l.cod+'\')"><i class="ti ti-edit"></i></button> '
+      +'<button class="btn btn-ghost btn-sm" title="Excluir" onclick="vtExcluirLinha(\''+l.cod+'\')"><i class="ti ti-trash"></i></button></td></tr>'
+  ).join(''):'<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--text-muted)">Nenhuma linha cadastrada.</td></tr>';
+  el.innerHTML='<div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:14px">'
+    +'<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
+    +'<th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Descrição</th><th style="padding:8px 10px;text-align:left">Tipo</th><th style="padding:8px 10px;text-align:center">Ações</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table></div>'
+    +'<div class="section-label">Adicionar / editar linha</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+      +'<div class="fg"><label>Código</label><input type="text" id="vt-f-cod" style="width:120px;'+inp+'" placeholder="40115"></div>'
+      +'<div class="fg" style="flex:1;min-width:240px"><label>Descrição</label><input type="text" id="vt-f-nome" style="width:100%;'+inp+'" placeholder="40115 - TOP - INTERMUNICIPAL"></div>'
+      +'<div class="fg"><label>Tipo</label><select id="vt-f-tipo" style="'+inp+'"><option value="PEC">PEC</option><option value="TOP">TOP</option></select></div>'
+      +'<button class="btn btn-primary btn-sm" onclick="vtSalvarLinha()"><i class="ti ti-plus"></i> Salvar linha</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="vtLimparForm()">Limpar</button>'
+    +'</div>'
+    +'<div class="text-xs text-muted" style="margin-top:8px">Para editar, informe um código já existente. Estas linhas alimentam o seletor de VT no cadastro do colaborador.</div>';
+}
+async function _vtPersist(){ try{ await fsSet('config','vtLinhas',{linhas:VT_LINHAS}); }catch(e){ toast('Erro ao salvar linhas: '+e.message,'error'); } }
+async function vtSalvarLinha(){
+  const cod=(document.getElementById('vt-f-cod')?.value||'').trim();
+  const nome=(document.getElementById('vt-f-nome')?.value||'').trim();
+  const tipo=(document.getElementById('vt-f-tipo')?.value||'PEC');
+  if(!cod){ toast('Informe o código da linha.','warning'); return; }
+  if(!nome){ toast('Informe a descrição da linha.','warning'); return; }
+  const i=VT_LINHAS.findIndex(l=>l && l.cod===cod);
+  if(i>=0) VT_LINHAS[i]={cod,nome,tipo}; else VT_LINHAS.push({cod,nome,tipo});
+  await _vtPersist(); vtLimparForm(); renderConfigVT(); toast('Linha '+cod+' salva.','success');
+}
+async function vtExcluirLinha(cod){
+  if(!confirm('Excluir a linha de VT '+cod+'?')) return;
+  VT_LINHAS=VT_LINHAS.filter(l=>!(l && l.cod===cod));
+  await _vtPersist(); renderConfigVT(); toast('Linha '+cod+' excluída.','success');
+}
+function vtEditarLinha(cod){
+  const l=VT_LINHAS.find(x=>x && x.cod===cod); if(!l) return;
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
+  s('vt-f-cod',l.cod); s('vt-f-nome',l.nome||''); s('vt-f-tipo',l.tipo||'PEC');
+}
+function vtLimparForm(){ ['vt-f-cod','vt-f-nome'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const t=document.getElementById('vt-f-tipo'); if(t)t.value='PEC'; }
+async function salvarValoresConfig(){
+  const ce=document.getElementById('cfg-cesta-val'); const pe=document.getElementById('cfg-premio-val');
+  if(ce && ce.value!=='') CESTA_PADRAO=fnum(ce.value)||185;
+  if(pe && pe.value!=='') PREMIO_VAL=fnum(pe.value)||226;
+  await salvarConfig();
 }
