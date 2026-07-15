@@ -30,3 +30,11 @@ jobs:
             exit 0
           fi
           exit $code
+      - name: (best-effort) Publicar regras do Firestore
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          npx -y firebase-tools@latest deploy --only firestore:rules --project udiaco-beneficios || true
