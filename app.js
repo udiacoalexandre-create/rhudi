@@ -811,10 +811,17 @@ async function salvarColabModal(){
   }
 
   Object.assign(colaboradores[idx],dados);
+  const savedId=editColabId;
   try{
     await fsSet('colaboradores',editColabId,colaboradores[idx]);
+    // Reflete a edição no snapshot da apuração (Lançamento), se houver
+    if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
+      const cb=baseApuracao.colaboradores.find(x=>x._id===savedId||(x.cpf&&x.cpf===colaboradores[idx].cpf));
+      if(cb) Object.assign(cb,dados);
+    }
     closeModal('modal-colab');editColabId=null;
     if(currentPage==='base-lista') renderColabList();
+    if(currentPage==='ben-lancamento') showPage('ben-lancamento');
     toast('Atualizado!','success');
   }catch(e){toast('Erro: '+e.message,'error');}
 }
@@ -2343,14 +2350,34 @@ function pgBenLancamento(){
       +'</div>'
       +(temBase?('<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros):'');
   } else if(lanStep===2){
+    const _selSt='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
+    const listaF=colsApuracao().filter(c=>statusGrupo(c.status)==='ferias');
+    const empsF=_lanEmpresasDe(listaF);
     corpo='<div class="lan-step">'
-      +head(2,'Colaboradores em férias','Confira quem está de férias nesta base — recebem apenas Cesta e os benefícios dos dias comprados. Ajustes de férias são feitos no Controle de Férias.')
-      +(temBase?miniLista(colsApuracao().filter(c=>statusGrupo(c.status)==='ferias'),'ferias'):semBase)
+      +head(2,'Colaboradores em férias','Confira quem está de férias. Busque/filtre acima da tabela, <strong>edite</strong> quem estiver com algo errado ou <strong>inclua</strong> alguém — as mudanças valem na Base e no Controle de Férias.')
+      +(temBase?(
+        '<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
+        +'<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="lf2-q" placeholder="Nome, matrícula ou departamento..." oninput="renderLanFerList()"></div>'
+        +'<div class="filter-group"><label>Empresa</label><select id="lf2-emp" onchange="renderLanFerList()" style="'+_selSt+'"><option value="">Todas</option>'+empsF.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
+        +'<button class="btn btn-primary btn-sm" onclick="abrirIncluirStatus(\'ferias\')"><i class="ti ti-user-plus"></i> Incluir em férias</button>'
+        +'</div>'
+        +'<div class="tbl-wrap" style="max-height:460px"><table class="tbl"><thead><tr><th>Colaborador</th><th>Departamento</th><th>Empresa</th><th>Situação</th><th style="text-align:right">Dias comprados</th><th style="text-align:center">Ação</th></tr></thead><tbody id="lan-fer-tbody">'+_lanFerRows(listaF)+'</tbody></table></div>'
+      ):semBase)
       +nav(1,3)+'</div>';
   } else if(lanStep===3){
+    const _selSt='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
+    const listaA=colsApuracao().filter(c=>statusGrupo(c.status)==='so_cesta');
+    const empsA=_lanEmpresasDe(listaA);
     corpo='<div class="lan-step">'
-      +head(3,'Colaboradores afastados','Confira os afastados. Se alguém voltou, use <strong>Reativar</strong> — a mudança vale nesta apuração e na base.')
-      +(temBase?miniLista(colsApuracao().filter(c=>statusGrupo(c.status)==='so_cesta'),'afastado'):semBase)
+      +head(3,'Colaboradores afastados','Confira os afastados. Busque/filtre acima da tabela, <strong>edite</strong> quem estiver com algo errado, <strong>reative</strong> quem voltou ou <strong>inclua</strong> alguém — as mudanças valem na Base e no Controle de Férias.')
+      +(temBase?(
+        '<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
+        +'<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="lf3-q" placeholder="Nome, matrícula ou departamento..." oninput="renderLanAfaList()"></div>'
+        +'<div class="filter-group"><label>Empresa</label><select id="lf3-emp" onchange="renderLanAfaList()" style="'+_selSt+'"><option value="">Todas</option>'+empsA.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
+        +'<button class="btn btn-primary btn-sm" onclick="abrirIncluirStatus(\'afastado\')"><i class="ti ti-user-plus"></i> Incluir afastado</button>'
+        +'</div>'
+        +'<div class="tbl-wrap" style="max-height:460px"><table class="tbl"><thead><tr><th>Colaborador</th><th>Departamento</th><th>Empresa</th><th>Situação</th><th style="text-align:center">Ação</th></tr></thead><tbody id="lan-afa-tbody">'+_lanAfaRows(listaA)+'</tbody></table></div>'
+      ):semBase)
       +nav(2,4)+'</div>';
   } else if(lanStep===4){
     corpo='<div class="lan-step">'
@@ -2409,6 +2436,75 @@ async function lanReativarAfastado(id){
     if(cb) cb.status='Trabalhando';
   }
   toast((cLive?cLive.nome:'Colaborador')+' reativado (Trabalhando).','success');
+  showPage('ben-lancamento');
+}
+
+// ── Passo 2/3: listas de férias e afastados com busca/filtro ─────
+function _lanEmpresasDe(lista){ return [...new Set(lista.map(c=>_empresaKey(c)).filter(Boolean))].sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b))); }
+function _lanFiltraLista(grupo, qId, empId){
+  const q=(document.getElementById(qId)?.value||'').toLowerCase().trim();
+  const emp=document.getElementById(empId)?.value||'';
+  return colsApuracao().filter(c=>statusGrupo(c.status)===grupo).filter(c=>{
+    if(q && !((c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q))) return false;
+    if(emp && !_empresaMatch(c,[emp])) return false;
+    return true;
+  }).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+}
+function _lanFerRows(lista){
+  if(!lista.length) return '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--text-muted)">Ninguém em férias com os filtros atuais.</td></tr>';
+  return lista.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>
+    '<tr><td><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
+    +'<td class="text-sm">'+(c.depto||'—')+'</td>'
+    +'<td class="text-sm">'+_empresaLabel(_empresaKey(c))+'</td>'
+    +'<td><span class="badge badge--warning">Férias</span></td>'
+    +'<td style="text-align:right;font-weight:600">'+(c.ferDiasComprados!=null?c.ferDiasComprados:0)+'d</td>'
+    +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')"><i class="ti ti-edit"></i> Editar</button></td></tr>'
+  ).join('');
+}
+function _lanAfaRows(lista){
+  if(!lista.length) return '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text-muted)">Ninguém afastado com os filtros atuais.</td></tr>';
+  return lista.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>
+    '<tr><td><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
+    +'<td class="text-sm">'+(c.depto||'—')+'</td>'
+    +'<td class="text-sm">'+_empresaLabel(_empresaKey(c))+'</td>'
+    +'<td><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'
+    +'<td style="text-align:center;white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="abrirEditar(\''+c._id+'\')"><i class="ti ti-edit"></i> Editar</button> '
+      +'<button class="btn btn-ghost btn-sm" onclick="lanReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button></td></tr>'
+  ).join('');
+}
+function renderLanFerList(){ const el=document.getElementById('lan-fer-tbody'); if(el) el.innerHTML=_lanFerRows(_lanFiltraLista('ferias','lf2-q','lf2-emp')); }
+function renderLanAfaList(){ const el=document.getElementById('lan-afa-tbody'); if(el) el.innerHTML=_lanAfaRows(_lanFiltraLista('so_cesta','lf3-q','lf3-emp')); }
+
+// ── Incluir colaborador em férias / afastados (muda base + controle férias) ──
+function abrirIncluirStatus(tipo){
+  const cands=colsApuracao().filter(c=>statusGrupo(c.status)==='trabalhando').sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  document.getElementById('modal-incluir-status')?.remove();
+  const titulo = tipo==='ferias'?'Incluir colaborador em férias':'Incluir colaborador afastado';
+  const rows = cands.length ? cands.map(c=>'<div class="incl-row" onclick="aplicarIncluirStatus(\''+c._id+'\',\''+tipo+'\')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'"><div><div style="font-weight:600">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code> · '+(c.depto||'—')+'</div></div><span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('') : '<div class="empty-state"><p>Nenhum colaborador trabalhando disponível.</p></div>';
+  const html='<div class="modal-overlay ds open" id="modal-incluir-status" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:520px"><div class="modal-title">'+titulo+'</div>'
+    +'<div class="modal-sub">Selecione o colaborador. A mudança vale na Base de Colaboradores e no Controle de Férias.</div>'
+    +'<input type="text" id="incl-q" placeholder="Buscar nome, matrícula ou departamento..." oninput="filtrarIncluir()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;margin:10px 0">'
+    +'<div id="incl-lista" style="max-height:50vh;overflow:auto">'+rows+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-incluir-status\').remove()">Fechar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function filtrarIncluir(){
+  const q=(document.getElementById('incl-q')?.value||'').toLowerCase();
+  document.querySelectorAll('#incl-lista .incl-row').forEach(r=>{ r.style.display=(!q||(r.dataset.busca||'').includes(q))?'':'none'; });
+}
+async function aplicarIncluirStatus(id,tipo){
+  const cLive=colaboradores.find(x=>x._id===id); if(!cLive) return;
+  cLive.status = tipo==='ferias'?'Ferias':'Afastado';
+  if(tipo==='afastado' && !(Array.isArray(cLive.afastBen)&&cLive.afastBen.length)) cLive.afastBen=['cesta'];
+  try{ await fsSet('colaboradores',id,cLive); }catch(e){ toast('Erro: '+e.message,'error'); return; }
+  if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
+    const cb=baseApuracao.colaboradores.find(x=>x._id===id||(x.cpf&&x.cpf===cLive.cpf));
+    if(cb){ cb.status=cLive.status; if(tipo==='afastado') cb.afastBen=cLive.afastBen; }
+  }
+  document.getElementById('modal-incluir-status')?.remove();
+  toast(cLive.nome+' incluído em '+(tipo==='ferias'?'férias':'afastados')+'.','success');
   showPage('ben-lancamento');
 }
 
@@ -5095,6 +5191,7 @@ async function fecharCicloFerias(id){
     toast('Ciclo fechado: +30'+(faltas?(' −'+faltas+' falta(s)'):'')+'. Saldo: '+novoSaldo+' dias. Próx. venc.: '+_ddmm(nv),'success');
     if(currentPage==='fer-radar') renderFerRadar();
     if(currentPage==='fer-agendadas') renderFeriasAgendadas();
+    if(currentPage==='ben-lancamento') showPage('ben-lancamento');
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
@@ -5395,6 +5492,7 @@ async function salvarDetalheFerias(id){
     closeModal('modal-ferias-detalhe');
     if(currentPage==='fer-radar') renderFerRadar();
     if(currentPage==='fer-agendadas') renderFeriasAgendadas();
+    if(currentPage==='ben-lancamento') showPage('ben-lancamento');
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
