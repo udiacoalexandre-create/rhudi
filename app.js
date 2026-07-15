@@ -5636,20 +5636,31 @@ function renderPremioWizard(){
   let conteudo = '';
 
   if(atual === 1){
-    // ── PASSO 1: Base (simples) ──
+    // ── PASSO 1: Base + checagem dos afastados ──
     const base = colaboradores.filter(c=>c.status!=='Inativo');
     const trab = base.filter(c=>statusGrupo(c.status)==='trabalhando').length;
-    const afa  = base.filter(c=>statusGrupo(c.status)==='so_cesta').length;
+    const afastados = base.filter(c=>statusGrupo(c.status)==='so_cesta').sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+    const afaTbl = afastados.length
+      ? '<div class="tbl-wrap" style="max-height:340px"><table class="tbl"><thead><tr><th>Colaborador</th><th>Departamento</th><th>Situação</th><th style="text-align:center">Voltou a trabalhar?</th></tr></thead><tbody>'
+        + afastados.map(c=>'<tr><td><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
+          +'<td class="text-sm">'+(c.depto||'—')+'</td>'
+          +'<td><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'
+          +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="premioReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button></td></tr>').join('')
+        + '</tbody></table></div>'
+      : '<div class="alert alert-info">Nenhum afastado na base.</div>';
     conteudo = '<div class="lan-step">'
-      + head(1,'Importar a base','Carregue a base atual de colaboradores — o prêmio é calculado sobre ela. Afastamentos e status são mantidos na aba <strong>Base de Colaboradores</strong>.')
+      + head(1,'Importar e conferir a base','Carregue a base atual e <strong>confirme os afastados</strong> — eles ficam como <strong>NÃO</strong> no prêmio. Se alguém voltou, use <strong>Reativar</strong> (altera também na Base de Colaboradores).')
       + '<div class="alert alert-success" style="margin-bottom:14px"><i class="ti ti-users-group"></i> Base carregada: <strong>'+base.length+'</strong> colaboradores.</div>'
-      + '<div class="stat-grid" style="margin-bottom:6px">'
+      + '<div class="stat-grid" style="margin-bottom:12px">'
         + _dsStat('users','accent',base.length,'Na base')
         + _dsStat('user-check','success',trab,'Trabalhando')
-        + _dsStat('first-aid-kit','warning',afa,'Afastados / só cesta')
+        + _dsStat('first-aid-kit','warning',afastados.length,'Afastados / só cesta')
       + '</div>'
+      + '<div class="lan-sub"><div class="lan-sub__t">Checagem dos afastados ('+afastados.length+')</div>'
+        + '<div class="lan-sub__d">Confira se todos ainda estão afastados. Quem voltou deve ser reativado antes de seguir.</div>'
+        + afaTbl + '</div>'
       + '<div style="margin:10px 0"><button class="btn btn-ghost btn-sm" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Recarregar base</button></div>'
-      + nav(0,2,'Avançar')
+      + nav(0,2,'Confirmar e avançar')
       + '</div>';
 
   } else if(atual === 2){
@@ -5821,6 +5832,13 @@ function editarValorPremio(idx,v){
 }
 function premioImportarBase(){
   loadColaboradores().then(()=>{ toast('Base recarregada: '+colaboradores.length+' colaboradores.','success'); renderPremioWizard(); });
+}
+async function premioReativarAfastado(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  c.status='Trabalhando';
+  try{ await fsSet('colaboradores',c._id,c); }catch(e){ toast('Erro: '+e.message,'error'); return; }
+  toast((c.nome||'Colaborador')+' reativado (Trabalhando).','success');
+  renderPremioWizard();
 }
 function premioNovaCompetencia(){
   premioState={passo:1,competencia:'',compLabel:'',baseAtualizada:false,fechado:false,afastados:[],apontamentos:[],tabela:[]};
