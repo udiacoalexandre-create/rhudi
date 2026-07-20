@@ -5034,6 +5034,7 @@ function pgFerRadar(){
       <div class="filter-group"><label>Empresa</label>${msDropdown('remp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:_empresaLabel(e.cod)})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Departamento</label>${msDropdown('rdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerRadar')}</div>
       <div class="filter-group"><label>Função</label>${msDropdown('rfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerRadar')}</div>
+      <div class="filter-group"><label>Status</label>${msDropdown('rstatus','Status',[{value:'trabalhando',label:'Trabalhando'},{value:'ferias',label:'Férias'},{value:'so_cesta',label:'Afastado'}],'renderFerRadar')}</div>
       <div class="filter-group"><label>Situação</label>${msDropdown('rcor','Situação',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFerRadar')}</div>
       <div class="filter-group"><label>Agendamento</label>${msDropdown('ragend','Agendamento',[{value:'ok',label:'No prazo'},{value:'bad',label:'Fora do prazo'},{value:'none',label:'Sem agendamento'}],'renderFerRadar')}</div>
       <div class="filter-group"><label>Mês agendado</label>${msDropdown('rmes','Mês agendado',MESES_FER.map(m=>({value:m,label:m})),'renderFerRadar')}</div>
@@ -5207,6 +5208,7 @@ function renderFerRadar(){
   const corF=getMs('rcor');   // situacao do farol (cor)
   const agF=getMs('ragend');  // status do agendamento (ok/bad/none)
   const mesF=getMs('rmes');   // mes de agendamento
+  const statusF=getMs('rstatus'); // status do colaborador (trabalhando/ferias/so_cesta)
   const q=(document.getElementById('rq')?.value||'').toLowerCase().trim();
 
   // Pessoa única (dedup por CPF; mantém o cadastro principal) — evita
@@ -5215,6 +5217,7 @@ function renderFerRadar(){
   if(empF.length) f=f.filter(c=>_empresaMatch(c,empF));
   if(depF.length) f=f.filter(c=>depF.includes(c.depto||''));
   if(funcF.length) f=f.filter(c=>funcF.includes(funcaoColab(c)));
+  if(statusF.length) f=f.filter(c=>statusF.includes(statusGrupo(c.status)));
   if(q) f=f.filter(c=>(c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q)||funcaoColab(c).toLowerCase().includes(q));
 
   let comFarol=f.map(c=>({...c,farol:getFarol(c)}));
