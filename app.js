@@ -879,6 +879,8 @@ function ehUM989(){ return !!(usuarioAtual && usuarioAtual.papel==='um989'); }
 function pagesVisiveis(mod){
   return (MODULES[mod]?.pages||[])
     .filter(p=>!p.master||podeGerenciarUsuarios())
+    // Férias UM989: só o master e o próprio papel UM989 enxergam.
+    .filter(p=> p.id==='fer-um989' ? (podeGerenciarUsuarios()||ehUM989()) : true)
     .filter(p=> ehUM989() ? p.id==='fer-um989' : true);
 }
 // Esconde os módulos que o papel UM989 não pode ver (mostra só Férias).
@@ -3693,6 +3695,11 @@ function _um989Venc(c){
 }
 
 function pgFerUM989(){
+  // Acesso restrito: só o master e o papel UM989 podem ver o controle de férias da UM989.
+  if(!(podeGerenciarUsuarios()||ehUM989())){
+    return '<div class="page-header"><h2 class="page-title">Férias — UM989</h2></div>'
+      +'<div class="empty-state"><div class="empty-icon">🔒</div><p>Acesso restrito ao usuário master e à equipe da UM989.</p></div>';
+  }
   return `
     <div class="page-header"><h2 class="page-title">Férias — UM989</h2>
       <p class="page-subtitle">Controle de férias da agência UM989 (sem vínculo trabalhista). A cada ano de admissão, +30 dias de saldo.</p></div>

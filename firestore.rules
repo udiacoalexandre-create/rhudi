@@ -55,8 +55,8 @@ service cloud.firestore {
     match /basesSalvas/{id}   { allow read, write: if isAuthorized() && !isUM989(); }
     match /config/{id}        { allow read, write: if isAuthorized() && !isUM989(); }
     match /premioDados/{id}    { allow read, write: if isAuthorized() && !isUM989(); }
-    // Férias UM989: todos os autorizados (inclui o papel UM989).
-    match /um989/{id}         { allow read, write: if isAuthorized(); }
+    // Férias UM989: apenas o Master e o papel UM989.
+    match /um989/{id}         { allow read, write: if isMaster() || isUM989(); }
 
     // Log de exclusões (justificativas de quem excluiu do histórico).
     match /logsExclusao/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
