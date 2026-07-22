@@ -11767,7 +11767,7 @@ carregar();
       <div><label class="tr-lbl">ID do vídeo <span class="tr-hint">(automático)</span></label><input id="v-id" class="tr-inp" placeholder="v05"></div>
       <div><label class="tr-lbl">Data</label><input id="v-data" class="tr-inp" inputmode="numeric" maxlength="10" placeholder="DD/MM/AAAA"></div>
       <div style="grid-column:1/-1"><label class="tr-lbl">Título do módulo</label><input id="v-titulo" class="tr-inp" placeholder="Módulo ... - ..."></div>
-      <div style="grid-column:1/-1"><label class="tr-lbl">Link do vídeo (Google Drive)</label><input id="v-url" class="tr-inp" placeholder="https://drive.google.com/file/d/.../view"></div>
+      <div style="grid-column:1/-1"><label class="tr-lbl">Link do vídeo (Google Drive) <span class="tr-hint">(cole o link de compartilhamento)</span></label><input id="v-url" class="tr-inp" placeholder="https://drive.google.com/file/d/.../view?usp=sharing"></div>
     </div>
 
     <label class="tr-lbl" style="margin-top:12px">Transcrição (formato do YouTube)</label>
@@ -11863,6 +11863,17 @@ window.__fetchTreina = async ()=>{
   return flat;
 };
 
+/* ---------- normaliza link do Google Drive p/ o formato canônico /view ---------- */
+function normalizaLink(url){
+  url = String(url||"").trim();
+  if(!url) return url;
+  if(/drive\.google\.com/i.test(url)){
+    const m = url.match(/\/file\/d\/([A-Za-z0-9_-]+)/) || url.match(/[?&]id=([A-Za-z0-9_-]+)/);
+    if(m) return "https://drive.google.com/file/d/"+m[1]+"/view";
+  }
+  return url; // YouTube e demais: mantém como está
+}
+
 /* ---------- link com minutagem ---------- */
 function linkTs(url, secs){
   url = String(url||"").trim();
@@ -11924,7 +11935,7 @@ function dataParaISO(s){                          // aceita DD/MM/AAAA e devolve
   return m ? (m[3]+"-"+m[2]+"-"+m[1]) : s;         // já ISO ou outro formato: mantém como está
 }
 function lerMeta(){
-  return { video_id:$("v-id").value.trim(), titulo:$("v-titulo").value.trim(), url:$("v-url").value.trim(),
+  return { video_id:$("v-id").value.trim(), titulo:$("v-titulo").value.trim(), url:normalizaLink($("v-url").value),
     data:dataParaISO($("v-data").value), modulo_principal:$("v-modulo").value.trim(),
     modulos_relacionados:$("v-relac").value.trim(), fase_projeto:$("v-fase").value.trim(), nivel:$("v-nivel").value.trim() };
 }
@@ -12120,6 +12131,7 @@ $("v-mapear").onclick=async ()=>{
   $("v-count").textContent=segs.length+" trecho(s) gerados + classificação sugerida — revise/edite e salve.";
   $("v-erro").textContent="";
 };
+$("v-url").addEventListener("change",e=>{ e.target.value=normalizaLink(e.target.value); }); // limpa o link do Drive ao sair do campo
 $("v-data").addEventListener("input",e=>{                 // máscara DD/MM/AAAA
   const d=e.target.value.replace(/\D/g,"").slice(0,8);
   let out=d.slice(0,2); if(d.length>2) out+="/"+d.slice(2,4); if(d.length>4) out+="/"+d.slice(4,8);
