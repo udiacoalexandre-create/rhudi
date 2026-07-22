@@ -11764,21 +11764,24 @@ carregar();
 
     <div class="tr-sec">Novo vídeo</div>
     <div class="tr-grid">
-      <div><label class="tr-lbl">ID do vídeo</label><input id="v-id" class="tr-inp" placeholder="v05"></div>
+      <div><label class="tr-lbl">ID do vídeo <span class="tr-hint">(automático)</span></label><input id="v-id" class="tr-inp" placeholder="v05"></div>
       <div><label class="tr-lbl">Data</label><input id="v-data" class="tr-inp" placeholder="AAAA-MM-DD"></div>
       <div style="grid-column:1/-1"><label class="tr-lbl">Título</label><input id="v-titulo" class="tr-inp" placeholder="Módulo ... - ..."></div>
       <div style="grid-column:1/-1"><label class="tr-lbl">Link do vídeo (Google Drive)</label><input id="v-url" class="tr-inp" placeholder="https://drive.google.com/file/d/.../view"></div>
-      <div><label class="tr-lbl">Módulo principal</label><input id="v-modulo" class="tr-inp" placeholder="Administração de Pessoal"></div>
-      <div><label class="tr-lbl">Nível</label><input id="v-nivel" class="tr-inp" placeholder="Básico / introdutório"></div>
-      <div><label class="tr-lbl">Módulos relacionados (separe por |)</label><input id="v-relac" class="tr-inp" placeholder="eSocial | Ponto Eletrônico"></div>
-      <div><label class="tr-lbl">Fase do projeto</label><input id="v-fase" class="tr-inp" placeholder="Implantação - treinamento inicial"></div>
+      <div><label class="tr-lbl">Módulo principal <span class="tr-hint">(sugerido)</span></label><input id="v-modulo" class="tr-inp" list="dl-modulo" placeholder="Administração de Pessoal"></div>
+      <div><label class="tr-lbl">Nível <span class="tr-hint">(sugerido)</span></label><input id="v-nivel" class="tr-inp" list="dl-nivel" placeholder="Básico / introdutório"></div>
+      <div><label class="tr-lbl">Módulos relacionados (separe por |) <span class="tr-hint">(sugerido)</span></label><input id="v-relac" class="tr-inp" list="dl-relac" placeholder="eSocial | Ponto Eletrônico"></div>
+      <div><label class="tr-lbl">Fase do projeto <span class="tr-hint">(sugerido)</span></label><input id="v-fase" class="tr-inp" list="dl-fase" placeholder="Implantação - treinamento inicial"></div>
     </div>
+    <datalist id="dl-modulo"></datalist><datalist id="dl-nivel"></datalist>
+    <datalist id="dl-relac"></datalist><datalist id="dl-fase"></datalist>
 
     <label class="tr-lbl" style="margin-top:12px">Transcrição (formato do YouTube)</label>
     <textarea id="v-transc" class="tr-inp" rows="6" placeholder="Cole aqui a transcrição gerada pelo YouTube (texto + minutagem)..."></textarea>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
       <button class="tr-btn tr-btn--ghost" id="v-mapear">Mapear transcrição → segmentos</button>
-      <span class="tr-hint">Reconhece a minutagem e gera os trechos. Revise/edite o JSON abaixo antes de salvar.</span>
+      <button class="tr-btn tr-btn--ghost" id="v-sugerir">Sugerir classificação</button>
+      <span class="tr-hint">Mapear gera os trechos e já sugere a classificação (Módulo/Nível/Fase/Relacionados) a partir do catálogo. Revise antes de salvar.</span>
     </div>
 
     <label class="tr-lbl" style="margin-top:12px">Segmentos (JSON) — gerado automaticamente ou colado</label>
@@ -11936,6 +11939,76 @@ function limparNovoVideo(){
   $("v-count").textContent=""; $("v-erro").textContent="";
 }
 
+/* ---------- classificação sugerida (aprende do catálogo já rotulado) ---------- */
+const STOP_CLS=new Set(("a o e de da do das dos que em um uma para por com no na nos nas se ao à os as ou já aqui aí né tá então vou vai isso essa esse aquele aqueles the and como mais mas quando onde qual quais sobre pra pro nao não sim tem ter ser está estão deste desta neste nesta pelo pela sua seu suas seus ele ela eles elas aquilo cada todo toda todos todas aqui bem então também assim depois antes sendo sido pode fazer feito").split(/\s+/));
+let CORPUS=[];   // [{text, modulo_principal, nivel, fase_projeto, modulos_relacionados}]
+
+function tokenizaCls(txt){
+  const out=[]; normLocal(txt).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4 && !STOP_CLS.has(w) && !/^\d+$/.test(w)) out.push(w); });
+  return out;
+}
+function textoDoVideo(v){
+  const partes=[v.titulo||""];
+  (v.segmentos||[]).forEach(s=>partes.push(s.tema||"", s.subtemas||"", s.resumo||"", s.palavras_chave||""));
+  return partes.join(" ");
+}
+function construirCorpus(docs){
+  const byId={};
+  (window.__DADOS_EMBUTIDOS||[]).forEach(s=>{ const id=s.video_id||"?";
+    (byId[id]=byId[id]||{titulo:s.titulo,modulo_principal:s.modulo_principal,nivel:s.nivel,fase_projeto:s.fase_projeto,modulos_relacionados:s.modulos_relacionados,segmentos:[]}).segmentos.push(s); });
+  (docs||[]).forEach(d=>{ byId[d.video_id||d.id]=d; });   // Firestore prevalece sobre o embutido
+  CORPUS=Object.values(byId).map(v=>({ text:textoDoVideo(v),
+    modulo_principal:v.modulo_principal||"", nivel:v.nivel||"",
+    fase_projeto:v.fase_projeto||"", modulos_relacionados:v.modulos_relacionados||"" })).filter(e=>e.text.trim());
+  atualizarDatalists();
+}
+function atualizarDatalists(){
+  const uniq=campo=>{ const s=new Set(); CORPUS.forEach(e=>{ if(e[campo]) s.add(e[campo]); }); return [...s].sort(); };
+  const fill=(id,vals)=>{ const dl=$(id); if(dl) dl.innerHTML=vals.map(v=>'<option value="'+String(v).replace(/"/g,"&quot;")+'">').join(""); };
+  fill("dl-modulo",uniq("modulo_principal")); fill("dl-nivel",uniq("nivel"));
+  fill("dl-fase",uniq("fase_projeto")); fill("dl-relac",uniq("modulos_relacionados"));
+}
+function classificaCampo(tokens, campo){          // Naive Bayes multinomial sobre o CORPUS
+  const classes={}; const vocab=new Set();
+  CORPUS.forEach(e=>{ const val=e[campo]; if(!val) return;
+    const c=classes[val]||(classes[val]={tf:{},total:0,docs:0}); c.docs++;
+    tokenizaCls(e.text).forEach(t=>{ c.tf[t]=(c.tf[t]||0)+1; c.total++; vocab.add(t); }); });
+  const vals=Object.keys(classes); if(!vals.length) return null;
+  const V=vocab.size||1, N=CORPUS.length||1;
+  let best=null, bestScore=-Infinity;
+  vals.forEach(val=>{ const c=classes[val]; let score=Math.log(c.docs/N);
+    tokens.forEach(t=>{ score += Math.log(((c.tf[t]||0)+1)/(c.total+V)); });
+    if(score>bestScore){ bestScore=score; best=val; } });
+  return best;
+}
+function sugereRelacionados(modulo){              // combo mais frequente dentro do módulo previsto
+  const freq={}; CORPUS.forEach(e=>{ if(e.modulo_principal===modulo && e.modulos_relacionados) freq[e.modulos_relacionados]=(freq[e.modulos_relacionados]||0)+1; });
+  const arr=Object.entries(freq).sort((a,b)=>b[1]-a[1]); return arr.length?arr[0][0]:"";
+}
+async function garantirCorpus(){
+  if(CORPUS.length) return;
+  try{ const snap=await getDocs(collection(db,COL)); const docs=[]; snap.forEach(d=>docs.push({id:d.id,...d.data()})); construirCorpus(docs); }
+  catch(_){ construirCorpus([]); }
+}
+async function sugerirClassificacao(preencherSempre){
+  await garantirCorpus();
+  const txt=($("v-transc").value.trim() || $("v-json").value.trim());
+  if(!txt){ $("v-erro").textContent="Cole a transcrição (ou os segmentos) primeiro para eu sugerir a classificação."; return null; }
+  const tokens=tokenizaCls(txt);
+  if(tokens.length<5){ $("v-erro").textContent="Texto muito curto para classificar com segurança."; return null; }
+  if(!CORPUS.length){ $("v-erro").textContent="Ainda não há vídeos classificados para aprender. Importe os embutidos primeiro."; return null; }
+  const modulo=classificaCampo(tokens,"modulo_principal");
+  const nivel=classificaCampo(tokens,"nivel");
+  const fase=classificaCampo(tokens,"fase_projeto");
+  const relac=modulo?sugereRelacionados(modulo):"";
+  const set=(id,val)=>{ const e=$(id); if(!e||!val) return; if(preencherSempre||!e.value.trim()) e.value=val; };
+  set("v-modulo",modulo); set("v-nivel",nivel); set("v-fase",fase); set("v-relac",relac);
+  const parts=[]; if(modulo)parts.push("Módulo: "+modulo); if(nivel)parts.push("Nível: "+nivel); if(fase)parts.push("Fase: "+fase);
+  $("v-count").textContent="Classificação sugerida — "+parts.join(" · ")+". Revise e ajuste se precisar.";
+  $("v-erro").textContent="";
+  return {modulo,nivel,fase,relac};
+}
+
 /* ---------- auth ---------- */
 let usuario=null;
 function abrirLogin(){ $("tr-login-erro").textContent=""; $("tr-login").hidden=false; setTimeout(()=>$("tr-email").focus(),60); }
@@ -11981,6 +12054,7 @@ async function renderLista(){
   catch(e){ el.innerHTML='<div class="tr-erro">Erro ao listar: '+e.message+'</div>'; return; }
   $("tr-lista-count").textContent=docs.length?("· "+docs.length+" vídeo(s)"):"";
   prefillProximoId(docs);
+  construirCorpus(docs);   // aprende do catálogo p/ sugerir classificação e preencher os datalists
   if(!docs.length){ el.innerHTML='<div class="tr-hint">Nenhum vídeo no Firestore ainda. Use o botão abaixo para importar os embutidos, ou cadastre um novo acima.</div>'; return; }
   docs.sort((a,b)=>String(a.video_id||a.id).localeCompare(String(b.video_id||b.id)));
   el.innerHTML=docs.map(v=>'<div class="tr-vrow"><div><b>'+(v.video_id||v.id)+' · '+(v.titulo||'(sem título)')+'</b>'
@@ -12029,15 +12103,16 @@ async function migrarEmbutidos(){
 montarBotaoTopo();
 $("tr-login-btn").onclick=entrar;
 $("tr-senha").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); });
-$("v-mapear").onclick=()=>{
-  const meta=lerMeta();
+$("v-mapear").onclick=async ()=>{
   const txt=$("v-transc").value;
   if(!txt.trim()){ $("v-erro").textContent="Cole a transcrição primeiro."; return; }
-  const segs=parseTranscricao(txt,meta);
+  await sugerirClassificacao(false);            // preenche Módulo/Nível/Fase/Relacionados vazios
+  const segs=parseTranscricao(txt,lerMeta());   // relê a meta já com a classificação sugerida
   $("v-json").value=JSON.stringify(segs,null,1);
-  $("v-count").textContent=segs.length+" trecho(s) gerados — revise/edite e salve.";
+  $("v-count").textContent=segs.length+" trecho(s) gerados + classificação sugerida — revise/edite e salve.";
   $("v-erro").textContent="";
 };
+$("v-sugerir").onclick=()=>sugerirClassificacao(true);   // sobrescreve e mostra o que escolheu
 $("v-json").addEventListener("input",()=>{ try{ const a=JSON.parse($("v-json").value); $("v-count").textContent=(Array.isArray(a)?a.length:0)+" trecho(s)."; }catch(_){ } });
 $("v-salvar").onclick=salvarVideo;
 $("tr-migrar").onclick=migrarEmbutidos;
