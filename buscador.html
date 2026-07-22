@@ -11765,24 +11765,27 @@ carregar();
     <div class="tr-sec">Novo vídeo</div>
     <div class="tr-grid">
       <div><label class="tr-lbl">ID do vídeo <span class="tr-hint">(automático)</span></label><input id="v-id" class="tr-inp" placeholder="v05"></div>
-      <div><label class="tr-lbl">Data</label><input id="v-data" class="tr-inp" placeholder="AAAA-MM-DD"></div>
-      <div style="grid-column:1/-1"><label class="tr-lbl">Título</label><input id="v-titulo" class="tr-inp" placeholder="Módulo ... - ..."></div>
+      <div><label class="tr-lbl">Data</label><input id="v-data" class="tr-inp" inputmode="numeric" maxlength="10" placeholder="DD/MM/AAAA"></div>
+      <div style="grid-column:1/-1"><label class="tr-lbl">Título do módulo</label><input id="v-titulo" class="tr-inp" placeholder="Módulo ... - ..."></div>
       <div style="grid-column:1/-1"><label class="tr-lbl">Link do vídeo (Google Drive)</label><input id="v-url" class="tr-inp" placeholder="https://drive.google.com/file/d/.../view"></div>
-      <div><label class="tr-lbl">Módulo principal <span class="tr-hint">(sugerido)</span></label><input id="v-modulo" class="tr-inp" list="dl-modulo" placeholder="Administração de Pessoal"></div>
-      <div><label class="tr-lbl">Nível <span class="tr-hint">(sugerido)</span></label><input id="v-nivel" class="tr-inp" list="dl-nivel" placeholder="Básico / introdutório"></div>
-      <div><label class="tr-lbl">Módulos relacionados (separe por |) <span class="tr-hint">(sugerido)</span></label><input id="v-relac" class="tr-inp" list="dl-relac" placeholder="eSocial | Ponto Eletrônico"></div>
-      <div><label class="tr-lbl">Fase do projeto <span class="tr-hint">(sugerido)</span></label><input id="v-fase" class="tr-inp" list="dl-fase" placeholder="Implantação - treinamento inicial"></div>
     </div>
-    <datalist id="dl-modulo"></datalist><datalist id="dl-nivel"></datalist>
-    <datalist id="dl-relac"></datalist><datalist id="dl-fase"></datalist>
 
     <label class="tr-lbl" style="margin-top:12px">Transcrição (formato do YouTube)</label>
     <textarea id="v-transc" class="tr-inp" rows="6" placeholder="Cole aqui a transcrição gerada pelo YouTube (texto + minutagem)..."></textarea>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-      <button class="tr-btn tr-btn--ghost" id="v-mapear">Mapear transcrição → segmentos</button>
-      <button class="tr-btn tr-btn--ghost" id="v-sugerir">Sugerir classificação</button>
-      <span class="tr-hint">Mapear gera os trechos e já sugere a classificação (Módulo/Nível/Fase/Relacionados) a partir do catálogo. Revise antes de salvar.</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
+      <button class="tr-btn" id="v-mapear">Mapear transcrição e sugerir classificação</button>
+      <span class="tr-hint">Gera os segmentos (JSON) e preenche a classificação abaixo a partir do catálogo. Revise antes de salvar.</span>
     </div>
+
+    <div class="tr-sec" style="margin-top:16px">Classificação sugerida</div>
+    <div class="tr-grid">
+      <div><label class="tr-lbl">Módulo principal</label><input id="v-modulo" class="tr-inp" list="dl-modulo" placeholder="Administração de Pessoal"></div>
+      <div><label class="tr-lbl">Nível</label><input id="v-nivel" class="tr-inp" list="dl-nivel" placeholder="Básico / introdutório"></div>
+      <div><label class="tr-lbl">Módulos relacionados (separe por |)</label><input id="v-relac" class="tr-inp" list="dl-relac" placeholder="eSocial | Ponto Eletrônico"></div>
+      <div><label class="tr-lbl">Fase do projeto</label><input id="v-fase" class="tr-inp" list="dl-fase" placeholder="Implantação - treinamento inicial"></div>
+    </div>
+    <datalist id="dl-modulo"></datalist><datalist id="dl-nivel"></datalist>
+    <datalist id="dl-relac"></datalist><datalist id="dl-fase"></datalist>
 
     <label class="tr-lbl" style="margin-top:12px">Segmentos (JSON) — gerado automaticamente ou colado</label>
     <textarea id="v-json" class="tr-inp tr-mono" rows="10" placeholder="[ ... ]"></textarea>
@@ -11915,9 +11918,14 @@ function parseTranscricao(texto, meta){
       tema, subtemas:"", resumo, palavras_chave:kw };
   });
 }
+function dataParaISO(s){                          // aceita DD/MM/AAAA e devolve AAAA-MM-DD
+  s=(s||"").trim();
+  const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  return m ? (m[3]+"-"+m[2]+"-"+m[1]) : s;         // já ISO ou outro formato: mantém como está
+}
 function lerMeta(){
   return { video_id:$("v-id").value.trim(), titulo:$("v-titulo").value.trim(), url:$("v-url").value.trim(),
-    data:$("v-data").value.trim(), modulo_principal:$("v-modulo").value.trim(),
+    data:dataParaISO($("v-data").value), modulo_principal:$("v-modulo").value.trim(),
     modulos_relacionados:$("v-relac").value.trim(), fase_projeto:$("v-fase").value.trim(), nivel:$("v-nivel").value.trim() };
 }
 
@@ -12112,7 +12120,11 @@ $("v-mapear").onclick=async ()=>{
   $("v-count").textContent=segs.length+" trecho(s) gerados + classificação sugerida — revise/edite e salve.";
   $("v-erro").textContent="";
 };
-$("v-sugerir").onclick=()=>sugerirClassificacao(true);   // sobrescreve e mostra o que escolheu
+$("v-data").addEventListener("input",e=>{                 // máscara DD/MM/AAAA
+  const d=e.target.value.replace(/\D/g,"").slice(0,8);
+  let out=d.slice(0,2); if(d.length>2) out+="/"+d.slice(2,4); if(d.length>4) out+="/"+d.slice(4,8);
+  e.target.value=out;
+});
 $("v-json").addEventListener("input",()=>{ try{ const a=JSON.parse($("v-json").value); $("v-count").textContent=(Array.isArray(a)?a.length:0)+" trecho(s)."; }catch(_){ } });
 $("v-salvar").onclick=salvarVideo;
 $("tr-migrar").onclick=migrarEmbutidos;
