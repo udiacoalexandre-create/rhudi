@@ -11918,6 +11918,24 @@ function lerMeta(){
     modulos_relacionados:$("v-relac").value.trim(), fase_projeto:$("v-fase").value.trim(), nivel:$("v-nivel").value.trim() };
 }
 
+/* ---------- próximo ID automático (maior vNN + 1) ---------- */
+function calcProximoId(ids){
+  let max=0;
+  (ids||[]).forEach(id=>{ const m=/^v(\d+)$/i.exec(String(id||"").trim()); if(m){ const n=+m[1]; if(n>max)max=n; } });
+  return "v"+String(max+1).padStart(2,"0");
+}
+function prefillProximoId(docs){
+  const inp=$("v-id"); if(!inp) return;
+  const emb=(window.__DADOS_EMBUTIDOS||[]).map(s=>s&&s.video_id);
+  const prox=calcProximoId((docs||[]).map(d=>d.video_id||d.id).concat(emb));
+  inp.placeholder=prox; inp.dataset.auto=prox;
+  if(!inp.value.trim()) inp.value=prox;   // não sobrescreve se o usuário digitou algo
+}
+function limparNovoVideo(){
+  ["v-id","v-data","v-titulo","v-url","v-transc","v-json"].forEach(id=>{ const e=$(id); if(e)e.value=""; });
+  $("v-count").textContent=""; $("v-erro").textContent="";
+}
+
 /* ---------- auth ---------- */
 let usuario=null;
 function abrirLogin(){ $("tr-login-erro").textContent=""; $("tr-login").hidden=false; setTimeout(()=>$("tr-email").focus(),60); }
@@ -11951,7 +11969,8 @@ async function salvarVideo(){
     $("v-erro").textContent="";
     alert("Vídeo \""+meta.video_id+"\" salvo ("+segs.length+" trechos).");
     if(window.__reloadTreina) window.__reloadTreina();
-    renderLista();
+    limparNovoVideo();
+    renderLista();   // recalcula e preenche o próximo ID
   }catch(e){ $("v-erro").textContent="Erro ao salvar: "+e.message; }
 }
 async function renderLista(){
@@ -11961,6 +11980,7 @@ async function renderLista(){
   try{ const snap=await getDocs(collection(db,COL)); snap.forEach(d=>docs.push({id:d.id,...d.data()})); }
   catch(e){ el.innerHTML='<div class="tr-erro">Erro ao listar: '+e.message+'</div>'; return; }
   $("tr-lista-count").textContent=docs.length?("· "+docs.length+" vídeo(s)"):"";
+  prefillProximoId(docs);
   if(!docs.length){ el.innerHTML='<div class="tr-hint">Nenhum vídeo no Firestore ainda. Use o botão abaixo para importar os embutidos, ou cadastre um novo acima.</div>'; return; }
   docs.sort((a,b)=>String(a.video_id||a.id).localeCompare(String(b.video_id||b.id)));
   el.innerHTML=docs.map(v=>'<div class="tr-vrow"><div><b>'+(v.video_id||v.id)+' · '+(v.titulo||'(sem título)')+'</b>'
