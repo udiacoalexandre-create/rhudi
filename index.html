@@ -467,14 +467,14 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .bl-page .page-header, .bl-page .filter-bar, .bl-page #bl-count, .bl-page #bl-status-resumo, .bl-page #bl-tipo-resumo, .bl-page #lan-resumo, .bl-page .ds-zone, .bl-page .section-label { flex: 0 0 auto; }
 .bl-page .bl-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .bl-page .bl-scroll thead th { position: sticky; top: 0; z-index: 6; }
-/* Base: faixa de indicadores mais compacta — sobra mais espaço para a lista */
-.bl-page .ds-zone { padding: 8px 10px; margin-bottom: 10px; }
-.bl-page .section-label { margin: 2px 0 5px; font-size: 11px; }
-.bl-page .stat-grid { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 7px; margin-bottom: 7px; }
-.bl-page .stat { padding: 5px 9px; gap: 7px; }
-.bl-page .stat__chip { width: 24px; height: 24px; font-size: 13px; }
-.bl-page .stat__value { font-size: 16px; }
-.bl-page .stat__label { font-size: 11px; }
+/* Base: faixa de indicadores BEM compacta — sobra bem mais espaço para a lista */
+.bl-page .ds-zone { padding: 6px 8px; margin-bottom: 8px; }
+.bl-page .section-label { margin: 0 0 4px; font-size: 10px; }
+.bl-page .ds-zone .stat-grid { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; margin-bottom: 6px; }
+.bl-page .ds-zone .stat { padding: 4px 8px; gap: 6px; min-height: 0; }
+.bl-page .ds-zone .stat__chip { display: none; }
+.bl-page .ds-zone .stat__value { font-size: 15px; }
+.bl-page .ds-zone .stat__label { font-size: 10.5px; }
 
 /* BADGES */
 .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
