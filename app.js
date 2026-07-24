@@ -7,6 +7,7 @@ const STATUS_LIST = [
   {v:'Ferias',        label:'Férias',              cor:'#1D4ED8', bg:'#DBEAFE'},
   {v:'Ferias Coletiva',label:'Férias Coletiva',    cor:'#1D4ED8', bg:'#DBEAFE'},
   {v:'Afastado',      label:'Afastado',            cor:'#92400E', bg:'#FEF3C7'},
+  {v:'Afastado Definitivo',label:'Afastado Definitivo',cor:'#9F1239', bg:'#FFE4E6'},
   {v:'Auxilio Doenca',label:'Auxílio Doença',      cor:'#92400E', bg:'#FEF3C7'},
   {v:'Acidente Trabalho',label:'Acidente Trabalho',cor:'#92400E', bg:'#FEF3C7'},
   {v:'Lic. Maternidade',label:'Lic. Maternidade',  cor:'#6D28D9', bg:'#EDE9FE'},
@@ -18,7 +19,7 @@ const STATUS_LIST = [
 
 // Grupos de status para regras de beneficios
 const STATUS_RECEBE_TUDO    = ['Trabalhando','Ferias','Ferias Coletiva'];
-const STATUS_SO_CESTA       = ['Afastado','Auxilio Doenca','Acidente Trabalho',
+const STATUS_SO_CESTA       = ['Afastado','Afastado Definitivo','Auxilio Doenca','Acidente Trabalho',
                                'Lic. Maternidade','Lic. Paternidade','Auxilio Reclusao'];
 const STATUS_NAO_RECEBE     = ['Demitido','N/A'];
 
@@ -7175,20 +7176,23 @@ async function processarAtualizacao(event){
     const baseMap={};
     colaboradores.forEach(c=>{ if(c.mat) baseMap[c.mat]=c; });
 
+    // Afastados definitivos: apartados dos demais — o relatório NUNCA altera o status
+    // deles (só muda por ação manual na Base).
+    const ehDefinitivo=c=>_statusKey(c.status)==='AFASTADO DEFINITIVO';
+    const afastadosDef=colaboradores.filter(c=>c.mat && ehDefinitivo(c));
+
     const novos=[], demitidos=[], mudancas=[];
     let iguais=0;
 
     // Novos: estão na Senior mas não na base
     Object.values(seniorMap).forEach(s=>{
-      if(!baseMap[s.mat]){
-        novos.push(s);
+      const c=baseMap[s.mat];
+      if(!c){ novos.push(s); return; }
+      if(ehDefinitivo(c)) return;                 // travado: ignora o que o relatório indicar
+      if(c.status!==s.status){
+        mudancas.push({colab:c, novoStatus:s.status, statusAnterior:c.status});
       } else {
-        const c=baseMap[s.mat];
-        if(c.status!==s.status){
-          mudancas.push({colab:c, novoStatus:s.status, statusAnterior:c.status});
-        } else {
-          iguais++;
-        }
+        iguais++;
       }
     });
 
@@ -7197,15 +7201,16 @@ async function processarAtualizacao(event){
       if(!seniorMap[c.mat]) demitidos.push(c);
     });
 
-    atuPendente={novos,demitidos,mudancas,iguais};
-    renderAtuPreview(novos,demitidos,mudancas,iguais);
+    atuPendente={novos,demitidos,mudancas,iguais,afastadosDef};
+    renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef);
     event.target.value='';
   };
   reader.readAsBinaryString(file);
 }
 
-function renderAtuPreview(novos,demitidos,mudancas,iguais){
+function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef){
   const prev=document.getElementById('atu-preview'); if(!prev) return;
+  afastadosDef=afastadosDef||[];
 
   let html=`
     <div class="stats-grid" style="margin-bottom:16px">
@@ -7214,6 +7219,23 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais){
       <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${demitidos.length}</div><div class="stat-label">Possiveis demissoes</div></div>
       <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${mudancas.length}</div><div class="stat-label">Mudancas de status</div></div>
     </div>`;
+
+  // Afastados definitivos — apartados dos demais: informativo, o relatório não os altera.
+  if(afastadosDef.length>0){
+    html+=`<div class="card" style="margin-bottom:12px;border-left:3px solid #9F1239">
+      <div class="card-title" style="color:#9F1239">Afastados definitivos — mantidos (${afastadosDef.length})</div>
+      <div class="alert alert-info" style="margin-bottom:8px">Marcados como <strong>Afastado Definitivo</strong> e <strong>apartados</strong>: o relatorio da Senior nao altera o status deles. Para mudar, faca manualmente na Base.</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Matricula</th><th>Nome</th><th>Departamento</th><th>Status</th></tr></thead>
+        <tbody>${afastadosDef.map(c=>`<tr>
+          <td><code>${c.mat||'—'}</code></td>
+          <td>${c.nome}</td>
+          <td class="text-sm text-muted">${c.depto||'—'}</td>
+          <td>${statusBadge(c.status)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
 
   // Mudanças de status
   if(mudancas.length>0){
