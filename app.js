@@ -4287,8 +4287,9 @@ async function initApp(user){
   mostrarPortal();
 }
 
-// Portal pós-login: grade com um bloco por MÓDULO que o papel acessa.
-// O que a pessoa não acessa não aparece.
+// Portal pós-login: ícones das PLATAFORMAS que o papel acessa.
+// "Sistema de RH" abre o app completo (os módulos permitidos ficam juntos lá
+// dentro); "Treinamentos" abre a outra plataforma. O que não tem acesso não aparece.
 function mostrarPortal(){
   const hs=document.getElementById('home-screen');
   const ls=document.getElementById('login-screen');
@@ -4298,22 +4299,18 @@ function mostrarPortal(){
   const pi=PAPEIS[usuarioAtual.papel]||{label:usuarioAtual.papel};
   const body=document.getElementById('portal-body');
   if(body){
-    const card=(onclick,icon,tit,cls)=>'<div class="home-card" onclick="'+onclick+'">'
-      +'<div class="hc-ico'+(cls?' '+cls:'')+'"><i class="ti ti-'+icon+'"></i></div>'
-      +'<div class="hc-tit">'+tit+'</div>'
-      +'<div class="hc-cta"><i class="ti ti-arrow-right"></i> Abrir</div></div>';
     const tiles=[];
-    if(ehUM989()){
-      tiles.push(card("entrarBeneficios('ferias')",'umbrella','Férias UM989'));
-    } else {
-      tiles.push(card("entrarBeneficios('base')",'users','Base de Colaboradores'));
-      tiles.push(card("entrarBeneficios('beneficios')",'gift','Benefícios'));
-      tiles.push(card("entrarBeneficios('ferias')",'umbrella','Controle de Férias'));
-      tiles.push(card("entrarBeneficios('folha')",'cash','Folha de Pagamento'));
-      tiles.push(card("entrarBeneficios('premio')",'trophy','Prêmio Assiduidade'));
-      tiles.push(card("entrarBeneficios('dashboard')",'chart-bar','Dashboard'));
-      tiles.push(card("window.location.href='buscador.html'",'movie','Treinamentos','hc-ico--blue'));
-      if(podeGerenciarUsuarios()) tiles.push(card("entrarBeneficios('config')",'settings','Configurações'));
+    tiles.push('<div class="home-card" onclick="entrarBeneficios()">'
+      +'<div class="hc-ico"><i class="ti ti-briefcase"></i></div>'
+      +'<div class="hc-tit">Sistema de RH</div>'
+      +'<div class="hc-desc">'+(ehUM989()?'Controle de Férias UM989.':'Colaboradores, benefícios, férias, folha, prêmio e dashboard.')+'</div>'
+      +'<div class="hc-cta"><i class="ti ti-arrow-right"></i> Acessar</div></div>');
+    if(!ehUM989()){   // Treinamentos: todos os papéis, exceto UM989
+      tiles.push('<div class="home-card" onclick="window.location.href=\'buscador.html\'">'
+        +'<div class="hc-ico hc-ico--blue"><i class="ti ti-movie"></i></div>'
+        +'<div class="hc-tit">Treinamentos</div>'
+        +'<div class="hc-desc">Catálogo de vídeos de treinamento.</div>'
+        +'<div class="hc-cta hc-cta--blue">Acessar <i class="ti ti-arrow-right"></i></div></div>');
     }
     body.innerHTML=tiles.join('');
   }
@@ -4327,17 +4324,16 @@ function voltarPortal(){
   mostrarPortal();
 }
 
-// Entra no app de Benefícios já no módulo escolhido no portal.
-function entrarBeneficios(destino){
+// Abre o app COMPLETO de RH (os módulos permitidos aparecem na barra de módulos).
+function entrarBeneficios(){
   const hs=document.getElementById('home-screen'); if(hs) hs.style.display='none';
   document.getElementById('app-screen').style.display='flex';
   const pi=PAPEIS[usuarioAtual.papel];
   document.getElementById('user-name').textContent=usuarioAtual.nome+' · '+pi.label;
   aplicarVisibModulos();
-  // UM989: acesso restrito — sempre vai para a aba de férias UM989.
+  // UM989: acesso restrito — vai direto para a aba de férias UM989.
   if(ehUM989()){ switchModule('ferias'); return; }
-  const ir=()=>{ if(destino==='config'){ abrirConfig(); } else { switchModule(destino||'base'); } };
-  if(window.__benefLoaded){ ir(); return; }
+  if(window.__benefLoaded){ switchModule(currentModule||'base'); return; }
   loadLanCtx();
   if(!lanComp){
     const hoje=new Date();
@@ -4345,7 +4341,7 @@ function entrarBeneficios(destino){
   }
   Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadBasesSalvas()]).then(()=>{
     window.__benefLoaded=true;
-    ir();
+    switchModule('base');
     checarRetornosFeriasBoot();
   });
 }
