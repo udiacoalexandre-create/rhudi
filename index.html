@@ -467,14 +467,20 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .bl-page .page-header, .bl-page .filter-bar, .bl-page #bl-count, .bl-page #bl-status-resumo, .bl-page #bl-tipo-resumo, .bl-page #lan-resumo, .bl-page .ds-zone, .bl-page .section-label { flex: 0 0 auto; }
 .bl-page .bl-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .bl-page .bl-scroll thead th { position: sticky; top: 0; z-index: 6; }
-/* Base: faixa de indicadores BEM compacta — sobra bem mais espaço para a lista */
-.bl-page .ds-zone { padding: 6px 8px; margin-bottom: 8px; }
+/* Base: indicadores numa linha só, cards estreitos — ícone à esquerda,
+   número em cima e rótulo embaixo. Sobra bem mais espaço para a lista. */
 .bl-page .section-label { margin: 0 0 4px; font-size: 10px; }
-.bl-page .ds-zone .stat-grid { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; margin-bottom: 6px; }
-.bl-page .ds-zone .stat { padding: 4px 8px; gap: 6px; min-height: 0; }
-.bl-page .ds-zone .stat__chip { display: none; }
-.bl-page .ds-zone .stat__value { font-size: 15px; }
-.bl-page .ds-zone .stat__label { font-size: 10.5px; }
+.bl-page .ds-zone { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; margin-bottom: 8px; }
+.bl-page .ds-zone > div { display: contents; }          /* #bl-status-resumo / #bl-tipo-resumo */
+.bl-page .ds-zone .stat-grid { display: contents; }      /* funde as duas grades numa linha */
+.bl-page .ds-zone .stat {
+  display: grid; grid-template-columns: auto 1fr; grid-template-areas: "chip value" "chip label";
+  column-gap: 6px; row-gap: 0; align-items: center;
+  padding: 4px 9px; flex: 1 1 96px; min-width: 92px; max-width: 150px;
+}
+.bl-page .ds-zone .stat__chip { grid-area: chip; align-self: center; width: 26px; height: 26px; font-size: 14px; }
+.bl-page .ds-zone .stat__value { grid-area: value; align-self: end; font-size: 15px; line-height: 1.1; }
+.bl-page .ds-zone .stat__label { grid-area: label; align-self: start; font-size: 10px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* BADGES */
 .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
