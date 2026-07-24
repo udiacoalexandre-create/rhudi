@@ -8576,11 +8576,15 @@ function wizFerRetRow(c){
   if(wizState.retFeitos.has(c._id)) return wizFerConfirmedRow(c,'retorno');
   const saldo=(c.ferSaldo!=null?c.ferSaldo:0); const mes=c.ferMes||'—';
   const anoProx = c.ferMes ? anoAgendadoColab(c) : '';
+  const temPeriodo = !!(c.ferInicio && c.ferFim);
+  const camposDias = temPeriodo
+    ? '<div class="wiz-field"><label>Período (gozado)</label><div class="wiz-val">'+_ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim))+' ('+_diasCorridos(c.ferInicio,c.ferFim)+'d)</div></div>'
+    : '<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ret-g-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'"></div>'
+      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ret-c-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasComprados!=null?c.ferDiasComprados:'')+'"></div>';
   return '<div id="ret-row-'+c._id+'" class="wiz-row">'
     +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
     +'<div class="wiz-fields">'
-      +'<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ret-g-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'"></div>'
-      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ret-c-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasComprados!=null?c.ferDiasComprados:'')+'"></div>'
+      +camposDias
       +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
       +'<div class="wiz-field"><label>Próximo agendamento</label><select id="ret-r-'+c._id+'" class="wiz-sel">'
         +'<option value="mesmo">'+mes+(anoProx&&anoProx!=='—'?'/'+anoProx:'')+' (mesmo mês)</option>'
@@ -8591,20 +8595,29 @@ function wizFerRetRow(c){
 }
 async function wizFerConfirmarRetorno(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
-  const g=Math.max(0,fnum(document.getElementById('ret-g-'+id)?.value));
-  const comp=Math.max(0,fnum(document.getElementById('ret-c-'+id)?.value));
-  const r=document.getElementById('ret-r-'+id)?.value||'mesmo';
+  const temPeriodo=!!(c.ferInicio && c.ferFim);
   const de=(c.ferSaldo!=null?c.ferSaldo:0);
-  c.ferSaldo=de-g-comp; c.ferDiasGozados=g; c.ferDiasComprados=comp;
+  let g, comp;
+  if(temPeriodo){
+    // Saldo já foi abatido na ENTRADA; aqui só confirma o retorno.
+    g=_diasCorridos(c.ferInicio,c.ferFim); comp=fnum(c.ferDiasComprados);
+  } else {
+    // Legado (entrou sem período): abate o saldo no retorno.
+    g=Math.max(0,fnum(document.getElementById('ret-g-'+id)?.value));
+    comp=Math.max(0,fnum(document.getElementById('ret-c-'+id)?.value));
+    c.ferSaldo=de-g-comp; c.ferDiasGozados=g; c.ferDiasComprados=comp;
+  }
+  const r=document.getElementById('ret-r-'+id)?.value||'mesmo';
   if(r!=='mesmo') c.ferMes=r;
   c.status='Trabalhando';
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
-  c.feriasLog.push({tipo:'retorno',gozados:g,comprados:comp,de,para:c.ferSaldo,ferMes:c.ferMes,em:new Date().toISOString(),por:_wizPor()});
+  c.feriasLog.push({tipo:'retorno',inicio:c.ferInicio||'',fim:c.ferFim||'',gozados:g,comprados:comp,de,para:c.ferSaldo,ferMes:c.ferMes,em:new Date().toISOString(),por:_wizPor()});
+  c.ferInicio=''; c.ferFim=''; c.ferDiasComprados=0;   // fecha o período
   try{
     await fsSet('colaboradores',id,c);
     wizState.retFeitos.add(id);
     const row=document.getElementById('ret-row-'+id); if(row) row.outerHTML=wizFerConfirmedRow(c,'retorno');
-    toast('Retorno de '+c.nome+' confirmado. Novo saldo: '+c.ferSaldo+'d.','success');
+    toast('Retorno de '+c.nome+' confirmado. Saldo: '+c.ferSaldo+'d.','success');
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
@@ -8616,7 +8629,7 @@ function wizFerBodyEntrada(){
   return wizPanel('<i class="ti ti-umbrella"></i> Entrada de férias','',
     '<p class="wiz-q" style="margin-top:0">Confirma a entrada de férias destes colaboradores?</p>'
     +'<div class="wiz-actions" style="margin:0 0 10px"><span class="wiz-item__sub" style="font-weight:600">Mês de referência:</span>'+sel+'</div>'
-    +'<p class="wiz-note">Os <strong>dias comprados</strong> impactam os benefícios pagos em férias. O status muda para Férias.</p>'
+    +'<p class="wiz-note">Informe o <strong>período</strong> (início/término); os dias gozados são calculados em dias corridos e abatidos do saldo. O status muda para Férias e o período reflete nos benefícios da competência.</p>'
     +wizSearchHTML('ent-q','Buscar (qualquer mês) para antecipar alguém...')
     +'<div id="ent-list" style="margin-top:10px"></div>');
 }
@@ -8642,24 +8655,32 @@ function wizFerEntRow(c,ref){
   return '<div id="ent-row-'+c._id+'" class="wiz-row">'
     +'<div class="wiz-row__top">'+c.nome+outroMes+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
     +'<div class="wiz-fields">'
-      +'<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ent-g-'+c._id+'" class="wiz-num" min="0"></div>'
-      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ent-c-'+c._id+'" class="wiz-num" min="0"></div>'
+      +'<div class="wiz-field"><label>Início</label><input type="date" id="ent-i-'+c._id+'" class="wiz-num" value="'+(c.ferInicio||'')+'"></div>'
+      +'<div class="wiz-field"><label>Término</label><input type="date" id="ent-f-'+c._id+'" class="wiz-num" value="'+(c.ferFim||'')+'"></div>'
+      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ent-c-'+c._id+'" class="wiz-num" min="0" value="'+(fnum(c.ferDiasComprados)||'')+'"></div>'
       +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
       +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarEntrada(\''+c._id+'\')"><i class="ti ti-check"></i> Confirmar</button>'
     +'</div></div>';
 }
 async function wizFerConfirmarEntrada(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
-  const g=Math.max(0,fnum(document.getElementById('ent-g-'+id)?.value));
+  const inicio=document.getElementById('ent-i-'+id)?.value||'';
+  const fim=document.getElementById('ent-f-'+id)?.value||'';
   const comp=Math.max(0,fnum(document.getElementById('ent-c-'+id)?.value));
-  c.ferDiasGozados=g; c.ferDiasComprados=comp; c.status='Ferias';
+  if(!inicio||!fim){ toast('Informe início e término das férias.','error'); return; }
+  if(fim<inicio){ toast('O término não pode ser antes do início.','error'); return; }
+  const g=_diasCorridos(inicio,fim);
+  const de=(c.ferSaldo!=null?c.ferSaldo:0);
+  c.ferInicio=inicio; c.ferFim=fim; c.ferDiasGozados=g; c.ferDiasComprados=comp;
+  c.ferSaldo=de-g-comp; c.status='Ferias';   // abate na ENTRADA (período conhecido)
+  const d=_dataLocal(inicio); if(d && !c.ferMes) c.ferMes=MESES_FER[d.getMonth()];
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
-  c.feriasLog.push({tipo:'entrada',gozados:g,comprados:comp,em:new Date().toISOString(),por:_wizPor()});
+  c.feriasLog.push({tipo:'entrada',inicio,fim,gozados:g,comprados:comp,de,para:c.ferSaldo,em:new Date().toISOString(),por:_wizPor()});
   try{
     await fsSet('colaboradores',id,c);
     wizState.entFeitos.add(id);
     const row=document.getElementById('ent-row-'+id); if(row) row.outerHTML=wizFerConfirmedRow(c,'entrada');
-    toast(c.nome+' entrou de Férias ('+g+' gozados, '+comp+' comprados).','success');
+    toast(c.nome+' entrou de Férias ('+g+' dias gozados, '+comp+' comprados).','success');
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
