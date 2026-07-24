@@ -342,11 +342,15 @@ function formColabHTML(prefix, c){
       <div class="form-grid">
         <div class="fg"><label>Vencimento (próximo ciclo) — dia/mês</label><input type="text" id="${prefix}-fer-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}"><span style="font-size:10px;color:var(--text3);margin-top:2px">Em branco: calculado da admissão (véspera do aniversário). O ano do próximo vencimento é gerido pelo sistema.</span></div>
         <div class="fg"><label>Mês de agendamento das férias</label>
-          <select id="${prefix}-fer-mes" onchange="atualizarAnoFerias('${prefix}')">
+          <select id="${prefix}-fer-mes">
             <option value="">-- Não agendado --</option>
             ${MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
           </select>
-          <span style="font-size:10px;color:var(--text3);margin-top:2px">Ano calculado automaticamente: <strong id="${prefix}-fer-ano-label">${c?.ferMes?anoAgendadoColab(c):'—'}</strong> (atualiza conforme o mês passa)</span>
+        </div>
+        <div class="fg"><label>Ano do agendamento</label>
+          <select id="${prefix}-fer-ano">
+            ${(()=>{const ay=new Date().getFullYear();const ac=anoAgendadoColab(c||{});const cur=(c&&c.ferAno&&+c.ferAno>=ay)?+c.ferAno:(typeof ac==='number'?ac:ay);return [ay,ay+1,ay+2,ay+3].map(a=>'<option value="'+a+'" '+(a===cur?'selected':'')+'>'+a+'</option>').join('');})()}
+          </select>
         </div>
         <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="${prefix}-fer-saldo" min="-90" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"><span style="font-size:10px;color:var(--text3);margin-top:2px">Pode ser negativo (férias antecipadas).</span></div>
         <div class="fg"><label>Início das férias (período atual)</label><input type="date" id="${prefix}-fer-inicio" value="${c?.ferInicio||''}"></div>
@@ -533,6 +537,7 @@ function getColabFromForm(prefix){
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
     ferVenc:  _resolveVencInput(document.getElementById(prefix+'-fer-venc')?.value||'', (prefix==='e'&&editColabId)?(colaboradores.find(x=>x._id===editColabId)?.ferVenc||''):''),
     ferMes:   document.getElementById(prefix+'-fer-mes')?.value||'',
+    ferAno:   (()=>{const mm=document.getElementById(prefix+'-fer-mes')?.value||''; return mm?(fnum(document.getElementById(prefix+'-fer-ano')?.value)||''):'';})(),
     ferInicio: document.getElementById(prefix+'-fer-inicio')?.value||'',
     ferFim:    document.getElementById(prefix+'-fer-fim')?.value||'',
     ferSaldo: (()=>{const v=document.getElementById(prefix+'-fer-saldo')?.value; return (v!==''&&v!=null&&v!==undefined)?fnum(v):null;})(),
@@ -5138,7 +5143,11 @@ function _refAgenda(c){
   if(adm){ const ent=new Date(adm); ent.setFullYear(ent.getFullYear()+1); if(ent>ref) ref=ent; }
   return ref;
 }
-function anoAgendadoColab(c){ return (c&&c.ferMes) ? anoAgendado(c.ferMes, _refAgenda(c)) : '—'; }
+function anoAgendadoColab(c){
+  const cy=new Date().getFullYear();
+  if(c && c.ferAno && +c.ferAno>=cy) return +c.ferAno;   // ano informado explicitamente
+  return (c&&c.ferMes) ? anoAgendado(c.ferMes, _refAgenda(c)) : '—';
+}
 
 // Rotulo "Mes/Ano" para exibicao do agendamento
 function agendamentoLabel(c){
@@ -8574,23 +8583,52 @@ function wizFerRenderRetList(){
 }
 function wizFerRetRow(c){
   if(wizState.retFeitos.has(c._id)) return wizFerConfirmedRow(c,'retorno');
-  const saldo=(c.ferSaldo!=null?c.ferSaldo:0); const mes=c.ferMes||'—';
-  const anoProx = c.ferMes ? anoAgendadoColab(c) : '';
+  const saldo=(c.ferSaldo!=null?c.ferSaldo:0);
   const temPeriodo = !!(c.ferInicio && c.ferFim);
+  const gozadoNum = temPeriodo ? _diasCorridos(c.ferInicio,c.ferFim) : (c.ferDiasGozados||0);
   const resumoGozo = temPeriodo
-    ? _ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim))+' ('+_diasCorridos(c.ferInicio,c.ferFim)+'d gozados)'
-    : ((c.ferDiasGozados||0)+'d gozados'+(c.ferDiasComprados?' · '+c.ferDiasComprados+'d comprados':''));
+    ? _ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim))+' ('+gozadoNum+'d gozados)'
+    : (gozadoNum+'d gozados'+(c.ferDiasComprados?' · '+c.ferDiasComprados+'d comprados':''));
+  const anoAtual=new Date().getFullYear();
+  const anoProx=anoAgendadoColab(c); const anoSel=(typeof anoProx==='number')?anoProx:anoAtual;
+  const anos=[anoAtual,anoAtual+1,anoAtual+2,anoAtual+3];
   return '<div id="ret-row-'+c._id+'" class="wiz-row">'
     +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
     +'<div class="wiz-fields">'
       +'<div class="wiz-field"><label>'+(temPeriodo?'Período gozado':'Gozo')+'</label><div class="wiz-val">'+resumoGozo+'</div></div>'
       +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
-      +'<div class="wiz-field"><label>Próximo agendamento</label><select id="ret-r-'+c._id+'" class="wiz-sel">'
-        +'<option value="mesmo">'+mes+(anoProx&&anoProx!=='—'?'/'+anoProx:'')+' (mesmo mês)</option>'
-        +MESES_FER.map(m=>'<option value="'+m+'">Mudar para: '+m+'</option>').join('')
+      +'<div class="wiz-field"><label>Próximo agend. — mês</label><select id="ret-rm-'+c._id+'" class="wiz-sel">'
+        +'<option value="">-- nenhum --</option>'
+        +MESES_FER.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')
+      +'</select></div>'
+      +'<div class="wiz-field"><label>Ano</label><select id="ret-ry-'+c._id+'" class="wiz-sel">'
+        +anos.map(a=>'<option value="'+a+'" '+(a===anoSel?'selected':'')+'>'+a+'</option>').join('')
       +'</select></div>'
       +'<button class="btn btn-primary btn-sm" onclick="wizFerConfirmarRetorno(\''+c._id+'\')"><i class="ti ti-check"></i> Confirmar</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="wizFerRetCorrigir(\''+c._id+'\')"><i class="ti ti-pencil"></i> Corrigir dias/saldo</button>'
+    +'</div>'
+    +'<div id="ret-corr-'+c._id+'" style="display:none;margin-top:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px">'
+      +'<div class="wiz-fields" style="margin:0">'
+        +'<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ret-cg-'+c._id+'" class="wiz-num" min="0" value="'+gozadoNum+'"></div>'
+        +'<div class="wiz-field"><label>Saldo</label><input type="number" id="ret-cs-'+c._id+'" class="wiz-num" value="'+saldo+'"></div>'
+        +'<div class="wiz-field" style="flex:1;min-width:180px"><label>Justificativa (obrigatória)</label><input type="text" id="ret-cj-'+c._id+'" class="wiz-input" style="height:34px" placeholder="Motivo da correção"></div>'
+        +'<button class="btn btn-primary btn-sm" onclick="wizFerRetAplicarCorrecao(\''+c._id+'\')"><i class="ti ti-check"></i> Aplicar correção</button>'
+      +'</div>'
     +'</div></div>';
+}
+function wizFerRetCorrigir(id){ const el=document.getElementById('ret-corr-'+id); if(el) el.style.display=(el.style.display==='none'?'block':'none'); }
+async function wizFerRetAplicarCorrecao(id){
+  const c=colaboradores.find(x=>x._id===id); if(!c) return;
+  const g=Math.max(0,fnum(document.getElementById('ret-cg-'+id)?.value));
+  const s=fnum(document.getElementById('ret-cs-'+id)?.value);
+  const j=(document.getElementById('ret-cj-'+id)?.value||'').trim();
+  if(!j){ toast('Justificativa é obrigatória para corrigir.','warning'); return; }
+  const deS=(c.ferSaldo!=null?c.ferSaldo:0), deG=(c.ferDiasGozados||0);
+  c.ferDiasGozados=g; c.ferSaldo=s;
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'ajuste_manual',de:deS,para:s,justificativa:'[correção no retorno] dias gozados '+deG+'→'+g+' · '+j,em:new Date().toISOString(),por:_wizPor()});
+  try{ await fsSet('colaboradores',id,c); toast('Correção aplicada para '+c.nome+'.','success'); wizFerRenderRetList(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
 }
 async function wizFerConfirmarRetorno(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
@@ -8601,8 +8639,10 @@ async function wizFerConfirmarRetorno(id){
   // Período: saldo já foi abatido na ENTRADA (não reabate). Legado (sem período):
   // abate agora com os dias já registrados na entrada.
   if(!temPeriodo){ c.ferSaldo=de-g-comp; }
-  const r=document.getElementById('ret-r-'+id)?.value||'mesmo';
-  if(r!=='mesmo') c.ferMes=r;
+  // Próximo agendamento: mês e ano informados separadamente ('' = sem agendamento).
+  const novoMes=document.getElementById('ret-rm-'+id)?.value||'';
+  c.ferMes=novoMes;
+  c.ferAno= novoMes ? (fnum(document.getElementById('ret-ry-'+id)?.value)||'') : '';
   c.status='Trabalhando';
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
   c.feriasLog.push({tipo:'retorno',inicio:c.ferInicio||'',fim:c.ferFim||'',gozados:g,comprados:comp,de,para:c.ferSaldo,ferMes:c.ferMes,em:new Date().toISOString(),por:_wizPor()});
