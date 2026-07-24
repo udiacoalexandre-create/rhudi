@@ -8212,7 +8212,7 @@ function renderWizard(){
       if(wizState.contMode==='individual'){ try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){} }
     }
     if(step.id==='demissoes' && !wizState.rev.demissoes && !wizState.demConfirmar) wizRenderDemList();
-    if(step.id==='afastados' && !wizState.rev.afastados && !wizState.afaConfirmar){ wizRenderAfaReList(); wizRenderAfaAddList(); }
+    if(step.id==='afastados' && !wizState.rev.afastados && !wizState.afaConfirmar){ wizRenderAfaReList(); wizRenderAfaDefList(); wizRenderAfaAddList(); }
     if(step.id==='ferias'){
       if(!wizState.ferAnivDone){ wizState.ferAnivDone=true; wizRodarAniversarios(); }
       wizFerRenderBody();
@@ -8424,17 +8424,29 @@ function wizAfastadosHTML(){
       wizSearchHTML('wiz-afare-q','Buscar afastado...')
       +'<div id="wiz-afare-list" class="wiz-list wiz-list--scroll"></div>'
       +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'reativar\')">Revisar <i class="ti ti-arrow-right"></i></button></div>');
+  const pdef=wizPanel('<i class="ti ti-lock"></i> Afastados definitivos','<span id="wiz-afadef-count" class="wiz-pill"></span>',
+      '<p class="wiz-note" style="margin:0 0 8px">Apartados: não entram em "Tirar de afastamento". Para mudar o status de um deles, edite na Base.</p>'
+      +'<div id="wiz-afadef-list" class="wiz-list wiz-list--scroll"></div>');
   const p2=wizPanel('<i class="ti ti-first-aid-kit"></i> Adicionar afastamento','<span id="wiz-afaadd-count" class="wiz-pill"></span>',
       '<div class="wiz-fields" style="margin:0 0 12px"><div class="wiz-field"><label>Motivo</label><select id="wiz-afa-status" class="wiz-sel">'+opts+'</select></div></div>'
       +wizSearchHTML('wiz-afaadd-q','Buscar quem afastar...')
       +'<div id="wiz-afaadd-list" class="wiz-list wiz-list--scroll"></div>'
       +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'afastar\')">Revisar <i class="ti ti-arrow-right"></i></button></div>');
-  return p1+p2;
+  return p1+pdef+p2;
+}
+// Lista (apartada, somente leitura) dos afastados definitivos.
+function wizRenderAfaDefList(){
+  const cont=document.getElementById('wiz-afadef-list'); if(!cont) return;
+  const lista=colaboradoresUnicos().filter(c=>_statusKey(c.status)==='AFASTADO DEFINITIVO').sort((a,b)=>a.nome.localeCompare(b.nome));
+  const cnt=document.getElementById('wiz-afadef-count'); if(cnt) cnt.textContent=lista.length||'';
+  cont.innerHTML = lista.length ? lista.map(c=>'<div class="wiz-item" style="cursor:default">'
+    +'<span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> <span class="wiz-item__sub">'+(c.mat||'—')+' · '+(c.depto||'—')+'</span></span>'
+    +dsStatusBadge(c.status)+'</div>').join('') : '<div class="wiz-empty">Nenhum afastado definitivo.</div>';
 }
 function wizRenderAfaReList(){
   const cont=document.getElementById('wiz-afare-list'); if(!cont) return;
   const q=(document.getElementById('wiz-afare-q')?.value||'').toLowerCase().trim();
-  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='so_cesta');
+  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='so_cesta' && _statusKey(c.status)!=='AFASTADO DEFINITIVO');
   if(q) lista=lista.filter(c=>wizBusca(c,q));
   lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome));
   cont.innerHTML = lista.length ? lista.map(c=>wizRow('afaReSel',c)).join('') : '<div class="wiz-empty">Ninguém afastado no momento.</div>';
