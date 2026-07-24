@@ -11882,6 +11882,9 @@ function linkTs(url, secs){
   return url + "#t="+secs+"s"; // Google Drive e afins
 }
 
+/* ---------- stopwords (SEM acento — os tokens são normalizados por normLocal) ---------- */
+const STOP=new Set(("a o e de da do das dos que em um uma uns umas para pra pro por com no na nos nas se ao aos os as ou ja aqui ai ne ta la agora ainda entao pois porque como mais mas muito pouco quando onde qual quais sobre sim nao tem ter ser esta estao estou estava sao foi era vai vou vem vamos vamo ir dar deu ver fica ficar fazer fazendo feito pode poder posso precisa isso essa esse esses essas este estes aquele aquela aqueles aquilo cada todo toda todos todas algum alguma seu sua seus suas meu minha nosso ele ela eles elas voce voces gente pessoal parte partes depois antes tambem assim bem entao tipo coisa coisas certo entendi entendeu beleza tchau obrigada obrigado oi ola ok hein olha deste desta neste nesta pelo pela the and sync video time").split(/\s+/));
+
 /* ---------- parser da transcrição do YouTube ---------- */
 function parseTranscricao(texto, meta){
   const linhas = texto.split(/\r?\n/).map(l=>l.trim());
@@ -11913,15 +11916,17 @@ function parseTranscricao(texto, meta){
   }
   if(g) segs.push(g);
 
-  const stop=new Set(("a o e de da do das dos que em um uma para por com no na nos nas se ao à os as ou já aqui aí né tá então vou vai isso essa esse aqueles the and").split(" "));
   return segs.map(s=>{
     const secs=Math.max(0,Math.round(s.start));
     const inicio=[Math.floor(secs/3600),Math.floor(secs%3600/60),secs%60].map(n=>String(n).padStart(2,"0")).join(":");
     const txt=s.text.replace(/\s+/g," ").trim();
-    const tema=((txt.split(/[.?!]/)[0]||txt).trim().slice(0,70))||"Trecho";
     const resumo=txt.slice(0,420);
-    const freq={}; normLocal(txt).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4&&!stop.has(w))freq[w]=(freq[w]||0)+1; });
+    const freq={}; normLocal(txt).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4&&!STOP.has(w))freq[w]=(freq[w]||0)+1; });
     const kw=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,6).map(x=>x[0]).join(" | ");
+    // tema = frase com mais palavras-chave do trecho (melhor que a 1ª frase p/ diálogo)
+    const sents=txt.split(/(?<=[.?!])\s+/).map(x=>x.trim()).filter(x=>x.length>=12);
+    const scoreSent=x=>{ let sc=0; normLocal(x).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4&&!STOP.has(w)) sc+=(freq[w]||1); }); return sc/Math.sqrt(x.length); };
+    const tema=((sents.length?sents.slice().sort((a,b)=>scoreSent(b)-scoreSent(a))[0]:txt)||"").trim().slice(0,80)||"Trecho";
     return { video_id:meta.video_id, titulo:meta.titulo, url:meta.url, data:meta.data,
       modulo_principal:meta.modulo_principal, modulos_relacionados:meta.modulos_relacionados,
       fase_projeto:meta.fase_projeto, nivel:meta.nivel,
@@ -11959,11 +11964,11 @@ function limparNovoVideo(){
 }
 
 /* ---------- classificação sugerida (aprende do catálogo já rotulado) ---------- */
-const STOP_CLS=new Set(("a o e de da do das dos que em um uma para por com no na nos nas se ao à os as ou já aqui aí né tá então vou vai isso essa esse aquele aqueles the and como mais mas quando onde qual quais sobre pra pro nao não sim tem ter ser está estão deste desta neste nesta pelo pela sua seu suas seus ele ela eles elas aquilo cada todo toda todos todas aqui bem então também assim depois antes sendo sido pode fazer feito").split(/\s+/));
+const ROTULOS_LIXO=new Set(["Não classificado","Nao classificado",""]); // nunca sugerir estes rótulos
 let CORPUS=[];   // [{text, modulo_principal, nivel, fase_projeto, modulos_relacionados}]
 
 function tokenizaCls(txt){
-  const out=[]; normLocal(txt).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4 && !STOP_CLS.has(w) && !/^\d+$/.test(w)) out.push(w); });
+  const out=[]; normLocal(txt).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>=4 && !STOP.has(w) && !/^\d+$/.test(w)) out.push(w); });
   return out;
 }
 function textoDoVideo(v){
@@ -11982,14 +11987,14 @@ function construirCorpus(docs){
   atualizarDatalists();
 }
 function atualizarDatalists(){
-  const uniq=campo=>{ const s=new Set(); CORPUS.forEach(e=>{ if(e[campo]) s.add(e[campo]); }); return [...s].sort(); };
+  const uniq=campo=>{ const s=new Set(); CORPUS.forEach(e=>{ if(e[campo] && !ROTULOS_LIXO.has(e[campo])) s.add(e[campo]); }); return [...s].sort(); };
   const fill=(id,vals)=>{ const dl=$(id); if(dl) dl.innerHTML=vals.map(v=>'<option value="'+String(v).replace(/"/g,"&quot;")+'">').join(""); };
   fill("dl-modulo",uniq("modulo_principal")); fill("dl-nivel",uniq("nivel"));
   fill("dl-fase",uniq("fase_projeto")); fill("dl-relac",uniq("modulos_relacionados"));
 }
 function classificaCampo(tokens, campo){          // Naive Bayes multinomial sobre o CORPUS
   const classes={}; const vocab=new Set();
-  CORPUS.forEach(e=>{ const val=e[campo]; if(!val) return;
+  CORPUS.forEach(e=>{ const val=e[campo]; if(!val || ROTULOS_LIXO.has(val)) return;
     const c=classes[val]||(classes[val]={tf:{},total:0,docs:0}); c.docs++;
     tokenizaCls(e.text).forEach(t=>{ c.tf[t]=(c.tf[t]||0)+1; c.total++; vocab.add(t); }); });
   const vals=Object.keys(classes); if(!vals.length) return null;
@@ -12009,9 +12014,18 @@ async function garantirCorpus(){
   try{ const snap=await getDocs(collection(db,COL)); const docs=[]; snap.forEach(d=>docs.push({id:d.id,...d.data()})); construirCorpus(docs); }
   catch(_){ construirCorpus([]); }
 }
+// Texto usado p/ classificar: MESMO formato do treino (título + tema/resumo/palavras-chave
+// dos segmentos). Só cai na transcrição crua se ainda não houver segmentos mapeados.
+function textoParaClassificar(){
+  let corpo="";
+  try{ const arr=JSON.parse($("v-json").value); if(Array.isArray(arr)&&arr.length)
+    corpo=arr.map(s=>[s.tema||"",s.subtemas||"",s.resumo||"",s.palavras_chave||""].join(" ")).join(" "); }catch(_){}
+  if(!corpo.trim()) corpo=$("v-transc").value.trim();
+  return (($("v-titulo").value||"").trim()+" "+corpo).trim();
+}
 async function sugerirClassificacao(preencherSempre){
   await garantirCorpus();
-  const txt=($("v-transc").value.trim() || $("v-json").value.trim());
+  const txt=textoParaClassificar();
   if(!txt){ $("v-erro").textContent="Cole a transcrição (ou os segmentos) primeiro para eu sugerir a classificação."; return null; }
   const tokens=tokenizaCls(txt);
   if(tokens.length<5){ $("v-erro").textContent="Texto muito curto para classificar com segurança."; return null; }
@@ -12125,8 +12139,9 @@ $("tr-senha").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); });
 $("v-mapear").onclick=async ()=>{
   const txt=$("v-transc").value;
   if(!txt.trim()){ $("v-erro").textContent="Cole a transcrição primeiro."; return; }
-  await sugerirClassificacao(false);            // preenche Módulo/Nível/Fase/Relacionados vazios
-  const segs=parseTranscricao(txt,lerMeta());   // relê a meta já com a classificação sugerida
+  $("v-json").value=JSON.stringify(parseTranscricao(txt,lerMeta()),null,1);   // 1) gera segmentos (rótulos ainda vazios)
+  await sugerirClassificacao(false);                                          // 2) classifica sobre os segmentos limpos
+  const segs=parseTranscricao(txt,lerMeta());                                 // 3) re-gera já com a classificação sugerida
   $("v-json").value=JSON.stringify(segs,null,1);
   $("v-count").textContent=segs.length+" trecho(s) gerados + classificação sugerida — revise/edite e salve.";
   $("v-erro").textContent="";
