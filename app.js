@@ -8657,6 +8657,7 @@ function wizFerRetRow(c){
     +'<div id="ret-corr-'+c._id+'" style="display:none;margin-top:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px">'
       +'<div class="wiz-fields" style="margin:0">'
         +'<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ret-cg-'+c._id+'" class="wiz-num" min="0" value="'+gozadoNum+'"></div>'
+        +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ret-cc-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasComprados||0)+'"></div>'
         +'<div class="wiz-field"><label>Saldo</label><input type="number" id="ret-cs-'+c._id+'" class="wiz-num" value="'+saldo+'"></div>'
         +'<div class="wiz-field" style="flex:1;min-width:180px"><label>Justificativa (obrigatória)</label><input type="text" id="ret-cj-'+c._id+'" class="wiz-input" style="height:34px" placeholder="Motivo da correção"></div>'
         +'<button class="btn btn-primary btn-sm" onclick="wizFerRetAplicarCorrecao(\''+c._id+'\')"><i class="ti ti-check"></i> Aplicar correção</button>'
@@ -8667,13 +8668,14 @@ function wizFerRetCorrigir(id){ const el=document.getElementById('ret-corr-'+id)
 async function wizFerRetAplicarCorrecao(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const g=Math.max(0,fnum(document.getElementById('ret-cg-'+id)?.value));
+  const comp=Math.max(0,fnum(document.getElementById('ret-cc-'+id)?.value));
   const s=fnum(document.getElementById('ret-cs-'+id)?.value);
   const j=(document.getElementById('ret-cj-'+id)?.value||'').trim();
   if(!j){ toast('Justificativa é obrigatória para corrigir.','warning'); return; }
-  const deS=(c.ferSaldo!=null?c.ferSaldo:0), deG=(c.ferDiasGozados||0);
-  c.ferDiasGozados=g; c.ferSaldo=s;
+  const deS=(c.ferSaldo!=null?c.ferSaldo:0), deG=(c.ferDiasGozados||0), deC=(c.ferDiasComprados||0);
+  c.ferDiasGozados=g; c.ferDiasComprados=comp; c.ferSaldo=s;
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
-  c.feriasLog.push({tipo:'ajuste_manual',de:deS,para:s,justificativa:'[correção no retorno] dias gozados '+deG+'→'+g+' · '+j,em:new Date().toISOString(),por:_wizPor()});
+  c.feriasLog.push({tipo:'ajuste_manual',de:deS,para:s,justificativa:'[correção no retorno] gozados '+deG+'→'+g+' · comprados '+deC+'→'+comp+' · '+j,em:new Date().toISOString(),por:_wizPor()});
   try{ await fsSet('colaboradores',id,c); toast('Correção aplicada para '+c.nome+'.','success'); wizFerRenderRetList(); }
   catch(e){ toast('Erro: '+e.message,'error'); }
 }
