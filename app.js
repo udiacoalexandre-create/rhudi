@@ -104,7 +104,12 @@ let um989List = [];         // colaboradores da UM989 (só controle de férias)
 let um989Ficha = null;      // id do colaborador aberto na ficha (ou null = lista)
 let baseApuracao = null;    // base importada para a apuracao
 // Fonte da apuracao: a base importada quando houver, senao a base ao vivo.
-function colsApuracao(){ return baseApuracao && Array.isArray(baseApuracao.colaboradores) ? baseApuracao.colaboradores : colaboradores; }
+// Aplica o escopo do papel (esconde empresas fora do papel) tambem na base
+// congelada — a base ao vivo ja e filtrada em aplicarEscopoColaboradores().
+function colsApuracao(){
+  const arr = baseApuracao && Array.isArray(baseApuracao.colaboradores) ? baseApuracao.colaboradores : colaboradores;
+  return escopoUsuario()==='all' ? arr : arr.filter(c=>empresaPermitida(c.mat));
+}
 let currentModule = 'base';
 let currentPage = '';
 let editColabId = null;
@@ -4278,19 +4283,62 @@ async function initApp(user){
     if(errEl){ errEl.textContent='Usuário sem acesso liberado. Procure o administrador (Master).'; errEl.style.display='block'; }
     return;
   }
+  // Login único: cai no PORTAL (lançador) e a pessoa escolhe a plataforma.
+  mostrarPortal();
+}
+
+// Portal pós-login: monta os blocos conforme o papel do usuário.
+function mostrarPortal(){
+  const hs=document.getElementById('home-screen');
+  const ls=document.getElementById('login-screen');
+  const as=document.getElementById('app-screen');
+  if(ls) ls.style.display='none';
+  if(as) as.style.display='none';
+  const pi=PAPEIS[usuarioAtual.papel]||{label:usuarioAtual.papel};
+  const body=document.getElementById('portal-body');
+  if(body){
+    const tiles=[];
+    tiles.push('<div class="home-card" onclick="entrarBeneficios()">'
+      +'<div class="hc-ico"><i class="ti ti-briefcase"></i></div>'
+      +'<div class="hc-tit">Benefícios</div>'
+      +'<div class="hc-desc">'+(ehUM989()?'Controle de Férias UM989.':'Colaboradores, benefícios, férias, folha e prêmio.')+'</div>'
+      +'<div class="hc-cta"><i class="ti ti-arrow-right"></i> Acessar</div></div>');
+    if(!ehUM989()){   // Treinamentos: todos os papéis, exceto UM989
+      tiles.push('<div class="home-card" onclick="window.location.href=\'buscador.html\'">'
+        +'<div class="hc-ico hc-ico--blue"><i class="ti ti-movie"></i></div>'
+        +'<div class="hc-tit">Treinamentos</div>'
+        +'<div class="hc-desc">Catálogo de vídeos de treinamento.</div>'
+        +'<div class="hc-cta hc-cta--blue">Acessar <i class="ti ti-arrow-right"></i></div></div>');
+    }
+    body.innerHTML=tiles.join('');
+  }
+  const info=document.getElementById('portal-user');
+  if(info) info.textContent=usuarioAtual.nome+' · '+pi.label;
+  if(hs) hs.style.display='flex';
+}
+
+function voltarPortal(){
+  const as=document.getElementById('app-screen'); if(as) as.style.display='none';
+  mostrarPortal();
+}
+
+// Entra na plataforma de Benefícios (a partir do portal).
+function entrarBeneficios(){
+  const hs=document.getElementById('home-screen'); if(hs) hs.style.display='none';
   document.getElementById('app-screen').style.display='flex';
   const pi=PAPEIS[usuarioAtual.papel];
   document.getElementById('user-name').textContent=usuarioAtual.nome+' · '+pi.label;
   aplicarVisibModulos();
-  // UM989: acesso restrito — vai direto para a aba de férias UM989 e não
-  // carrega (nem tenta) os dados do restante da Udiaço.
+  // UM989: acesso restrito — vai direto para a aba de férias UM989.
   if(ehUM989()){ switchModule('ferias'); return; }
+  if(window.__benefLoaded){ switchModule(currentModule||'base'); return; }
   loadLanCtx();
   if(!lanComp){
     const hoje=new Date();
     setLanComp(String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear());
   }
   Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadBasesSalvas()]).then(()=>{
+    window.__benefLoaded=true;
     switchModule('base');
     checarRetornosFeriasBoot();
   });
@@ -4311,13 +4359,10 @@ waitFirebase(()=>{
   window._onAuthStateChanged(window._auth, user=>{
     if(user) initApp(user);
     else {
-      const hs=document.getElementById('home-screen');
-      const ls=document.getElementById('login-screen');
-      const as=document.getElementById('app-screen');
-      if(as) as.style.display='none';
-      // Se a home existir (index novo), mostra a escolha; senão, cai no login.
-      if(hs){ hs.style.display='flex'; if(ls) ls.style.display='none'; }
-      else if(ls){ ls.style.display='flex'; }
+      // Deslogado: o portal é pós-login, então mostramos direto o login.
+      const hs=document.getElementById('home-screen'); if(hs) hs.style.display='none';
+      const as=document.getElementById('app-screen'); if(as) as.style.display='none';
+      const ls=document.getElementById('login-screen'); if(ls) ls.style.display='flex';
     }
   });
 });

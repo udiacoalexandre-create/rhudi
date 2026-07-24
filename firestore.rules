@@ -62,10 +62,10 @@ service cloud.firestore {
     match /logsExclusao/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
 
     // ── Treinamentos ──────────────────────────────────────────
-    // Leitura PÚBLICA (o índice de treinamentos é aberto, como já era no HTML);
-    // escrita apenas por usuários autorizados (login obrigatório).
+    // Login único: leitura e escrita apenas por usuários autorizados,
+    // EXCETO o papel UM989 (que só acessa Férias UM989).
     match /treinamentos/{id}  {
-      allow read:  if true;
+      allow read:  if isAuthorized() && !isUM989();
       allow write: if isAuthorized() && !isUM989();
     }
 

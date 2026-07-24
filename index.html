@@ -656,24 +656,16 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 <body>
 
 <!-- LOGIN -->
+<!-- PORTAL (pós-login): mostra só as plataformas que o papel permite -->
 <div id="home-screen">
   <div class="home-box">
     <div class="home-logo">U</div>
     <div class="home-title">Udiaço</div>
-    <div class="home-sub">Escolha o sistema que deseja acessar</div>
-    <div class="home-cards">
-      <div class="home-card" onclick="mostrarLogin()">
-        <div class="hc-ico"><i class="ti ti-lock"></i></div>
-        <div class="hc-tit">Sistema de RH</div>
-        <div class="hc-desc">Colaboradores, benefícios, férias e prêmio. Acesso restrito.</div>
-        <div class="hc-cta"><i class="ti ti-login"></i> Entrar</div>
-      </div>
-      <div class="home-card" onclick="window.open('buscador.html','_blank')">
-        <div class="hc-ico hc-ico--blue"><i class="ti ti-movie"></i></div>
-        <div class="hc-tit">Treinamentos</div>
-        <div class="hc-desc">Catálogo de vídeos de treinamento. Acesso livre.</div>
-        <div class="hc-cta hc-cta--blue">Acessar <i class="ti ti-arrow-right"></i></div>
-      </div>
+    <div class="home-sub">Selecione a plataforma que deseja acessar</div>
+    <div class="home-cards" id="portal-body"></div>
+    <div style="margin-top:20px;font-size:12px;color:#64748b;display:flex;align-items:center;justify-content:center;gap:12px">
+      <span id="portal-user"></span>
+      <button class="login-back" onclick="fazerLogout()" style="margin:0">Sair</button>
     </div>
   </div>
 </div>
@@ -691,7 +683,6 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     <div id="login-error" class="login-error"></div>
     <div id="login-info" style="color:#15803d;font-size:12px;text-align:center;margin-top:10px;display:none;padding:8px;background:#dcfce7;border-radius:var(--radius-sm)"></div>
     <button class="login-back" onclick="esqueciSenha()" style="margin-top:12px">Esqueci minha senha</button>
-    <button class="login-back" onclick="voltarHome()">← Voltar</button>
   </div>
 </div>
 
@@ -706,6 +697,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     <div class="topbar-right">
       <span id="user-name" class="topbar-user"></span>
       <span id="sync-status" class="topbar-sync">⏳</span>
+      <button class="btn-logout" title="Voltar ao portal" onclick="voltarPortal()" style="padding:6px 10px"><i class="ti ti-layout-grid"></i> Portal</button>
       <button class="btn-logout" id="btn-config" title="Configurações" onclick="abrirConfig()" style="display:none;padding:6px 10px"><i class="ti ti-settings"></i></button>
       <button class="btn-logout" onclick="fazerLogout()">Sair</button>
     </div>

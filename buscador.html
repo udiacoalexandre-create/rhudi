@@ -11836,7 +11836,7 @@ carregar();
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp }
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -12042,22 +12042,51 @@ async function sugerirClassificacao(preencherSempre){
   return {modulo,nivel,fase,relac};
 }
 
-/* ---------- auth ---------- */
-let usuario=null;
+/* ---------- auth (login único / SSO com o portal) ---------- */
+let usuario=null, papelUsuario=null;
+const MASTER_BOOTSTRAP=['alexandre.magalhaes@udiaco.com.br'];
 function abrirLogin(){ $("tr-login-erro").textContent=""; $("tr-login").hidden=false; setTimeout(()=>$("tr-email").focus(),60); }
 async function entrar(){
   $("tr-login-erro").textContent="";
   try{ await signInWithEmailAndPassword(auth,$("tr-email").value.trim(),$("tr-senha").value); $("tr-login").hidden=true; $("tr-admin").hidden=false; renderLista(); }
   catch(e){ $("tr-login-erro").textContent="Não foi possível entrar. Verifique e-mail e senha."; }
 }
-onAuthStateChanged(auth,u=>{ usuario=u; montarBotaoTopo(); });
+
+// Portão: Treinamentos agora exige login (mesma sessão do portal) e bloqueia UM989.
+function _gate(){ let g=$("tr-gate"); if(!g){ g=document.createElement("div"); g.id="tr-gate"; g.style.cssText="position:fixed;inset:0;z-index:9999;background:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:Inter,sans-serif"; document.body.appendChild(g); } return g; }
+function gateMsg(html){ const g=_gate(); g.innerHTML=html; g.style.display="flex"; }
+function gateOff(){ const g=$("tr-gate"); if(g) g.style.display="none"; }
+gateMsg('<div style="color:#64748b;font-size:15px">Verificando acesso…</div>');
+
+onAuthStateChanged(auth, async u=>{
+  usuario=u;
+  if(!u){ gateMsg('<div style="color:#64748b;font-size:15px">Redirecionando para o login…</div>'); location.href="index.html"; return; }
+  const mail=(u.email||"").toLowerCase();
+  let d=null;
+  try{ const s=await getDoc(doc(db,"usuarios",mail)); if(s.exists()) d=s.data(); }catch(e){}
+  const boot=MASTER_BOOTSTRAP.includes(mail);
+  const autorizado = boot || (d && d.ativo!==false);
+  papelUsuario = boot ? "master" : (d && d.papel) || null;
+  if(!autorizado || papelUsuario==="um989"){
+    gateMsg('<div style="max-width:420px"><div style="font-size:40px">🔒</div>'
+      +'<h2 style="color:#0f172a;margin:8px 0 4px">Sem acesso aos Treinamentos</h2>'
+      +'<p style="color:#64748b;font-size:14px">Seu perfil não tem acesso a esta plataforma.</p>'
+      +'<a href="index.html" style="display:inline-block;margin-top:14px;background:#047857;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600">Voltar ao portal</a></div>');
+    return;
+  }
+  gateOff();
+  montarBotaoTopo();
+  // Recarrega do Firestore já autenticado (o carregar() inicial roda antes da auth).
+  if(window.__reloadTreina){ try{ window.__reloadTreina(); }catch(e){} }
+});
 
 function montarBotaoTopo(){
   const bar=document.querySelector(".topbar"); if(!bar) return;
+  let p=$("tr-portalbtn");
+  if(!p){ p=document.createElement("button"); p.id="tr-portalbtn"; p.className="tr-topbtn"; p.textContent="← Portal"; p.onclick=()=>location.href="index.html"; bar.appendChild(p); }
   let b=$("tr-topbtn");
   if(!b){ b=document.createElement("button"); b.id="tr-topbtn"; b.className="tr-topbtn"; bar.appendChild(b); }
-  if(usuario){ b.textContent="Gerenciar vídeos"; b.onclick=()=>{ $("tr-admin").hidden=false; renderLista(); }; }
-  else { b.textContent="Entrar"; b.onclick=abrirLogin; }
+  b.textContent="Gerenciar vídeos"; b.onclick=()=>{ $("tr-admin").hidden=false; renderLista(); };
 }
 
 /* ---------- salvar / listar / excluir / migrar ---------- */
