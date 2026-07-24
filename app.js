@@ -349,6 +349,8 @@ function formColabHTML(prefix, c){
           <span style="font-size:10px;color:var(--text3);margin-top:2px">Ano calculado automaticamente: <strong id="${prefix}-fer-ano-label">${c?.ferMes?anoAgendadoColab(c):'—'}</strong> (atualiza conforme o mês passa)</span>
         </div>
         <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="${prefix}-fer-saldo" min="-90" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"><span style="font-size:10px;color:var(--text3);margin-top:2px">Pode ser negativo (férias antecipadas).</span></div>
+        <div class="fg"><label>Início das férias (período atual)</label><input type="date" id="${prefix}-fer-inicio" value="${c?.ferInicio||''}"></div>
+        <div class="fg"><label>Término das férias</label><input type="date" id="${prefix}-fer-fim" value="${c?.ferFim||''}"><span style="font-size:10px;color:var(--text3);margin-top:2px">Define se o colaborador está de férias e reflete nos benefícios da competência. Ao entrar em Férias, também pode ser informado na janela que abre.</span></div>
       </div>
     </div>
     <div class="card" id="${prefix}-card-vr" style="display:none">
@@ -531,6 +533,8 @@ function getColabFromForm(prefix){
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
     ferVenc:  _resolveVencInput(document.getElementById(prefix+'-fer-venc')?.value||'', (prefix==='e'&&editColabId)?(colaboradores.find(x=>x._id===editColabId)?.ferVenc||''):''),
     ferMes:   document.getElementById(prefix+'-fer-mes')?.value||'',
+    ferInicio: document.getElementById(prefix+'-fer-inicio')?.value||'',
+    ferFim:    document.getElementById(prefix+'-fer-fim')?.value||'',
     ferSaldo: (()=>{const v=document.getElementById(prefix+'-fer-saldo')?.value; return (v!==''&&v!=null&&v!==undefined)?fnum(v):null;})(),
     mobilidade:mob, elegibilidade:eleg,
     vr:   eleg.vr?fnum(document.getElementById(prefix+'-vr')?.value):0,
@@ -712,9 +716,12 @@ function abrirDemissaoBeneficiosModal(c){
 
 // Atualiza o "novo saldo" na tela de gozo de férias.
 function _fgUpd(saldo){
-  const g=fnum(document.getElementById('fg-gozados')?.value);
+  const ini=document.getElementById('fg-inicio')?.value||'';
+  const fim=document.getElementById('fg-fim')?.value||'';
+  const g=(ini&&fim&&fim>=ini)?_diasCorridos(ini,fim):0;
   const c=fnum(document.getElementById('fg-comprados')?.value);
   const fa=fnum(document.getElementById('fg-faltas')?.value);
+  const gl=document.getElementById('fg-gozados-lbl'); if(gl) gl.textContent=g;
   const el=document.getElementById('fg-novo'); if(el) el.textContent=(saldo-g-c-fa)+' dias';
 }
 // Tela ao ENTRAR em Férias: mostra o saldo, pede dias gozados (tirados) e
@@ -724,30 +731,39 @@ function abrirFeriasGozoModal(c, saldoAtual){
   return new Promise(resolve=>{
     document.getElementById('modal-fer-gozo')?.remove();
     const h=new Date();
-    const mesesOpts=MESES_FER.map((m,i)=>'<option value="'+m+'" '+(i===h.getMonth()?'selected':'')+'>'+m+'</option>').join('');
+    const iniIso=c.ferInicio||_isoLocal(h);
+    const fimIso=c.ferFim||'';
     const html='<div class="modal-overlay open" id="modal-fer-gozo" data-dynamic="1">'
       +'<div class="modal" style="max-width:480px"><div class="modal-title">Férias — '+(c.nome||'')+'</div>'
-      +'<div class="modal-sub">Saldo atual: <strong>'+saldoAtual+' dias</strong>. Informe os dias tirados (gozados) e comprados (abono).</div>'
+      +'<div class="modal-sub">Saldo atual: <strong>'+saldoAtual+' dias</strong>. Informe o <strong>período</strong> (início e término); os dias gozados são calculados em dias corridos.</div>'
       +'<div class="form-grid cols2" style="margin-top:10px">'
-        +'<div class="fg"><label>Dias gozados (tirados)</label><input type="number" id="fg-gozados" value="0" min="0" max="60" oninput="_fgUpd('+saldoAtual+')"></div>'
-        +'<div class="fg"><label>Dias comprados (abono)</label><input type="number" id="fg-comprados" value="0" min="0" max="30" oninput="_fgUpd('+saldoAtual+')"></div>'
+        +'<div class="fg"><label>Início das férias</label><input type="date" id="fg-inicio" value="'+iniIso+'" oninput="_fgUpd('+saldoAtual+')"></div>'
+        +'<div class="fg"><label>Término (volta no dia seguinte)</label><input type="date" id="fg-fim" value="'+fimIso+'" oninput="_fgUpd('+saldoAtual+')"></div>'
+        +'<div class="fg"><label>Dias comprados (abono)</label><input type="number" id="fg-comprados" value="'+(fnum(c.ferDiasComprados)||0)+'" min="0" max="30" oninput="_fgUpd('+saldoAtual+')"></div>'
         +'<div class="fg"><label>Dias de faltas (a descontar)</label><input type="number" id="fg-faltas" value="0" min="0" max="60" oninput="_fgUpd('+saldoAtual+')"></div>'
-        +'<div class="fg"><label>Mês do gozo</label><select id="fg-mes">'+mesesOpts+'</select></div>'
-        +'<div class="fg"><label>Ano</label><input type="number" id="fg-ano" value="'+h.getFullYear()+'" min="2020" max="2100"></div>'
       +'</div>'
-      +'<p class="text-sm" style="margin-top:10px">Novo saldo: <strong id="fg-novo">'+saldoAtual+' dias</strong> — os dias comprados também entram na mobilidade.</p>'
+      +'<p class="text-sm" style="margin-top:10px">Dias gozados (corridos): <strong id="fg-gozados-lbl">0</strong> &middot; Novo saldo: <strong id="fg-novo">'+saldoAtual+' dias</strong>.</p>'
       +'<div class="modal-footer"><button class="btn btn-ghost" id="fg-cancel">Cancelar</button><button class="btn btn-primary" id="fg-ok">Confirmar</button></div>'
       +'</div></div>';
     document.body.insertAdjacentHTML('beforeend',html);
+    setTimeout(()=>_fgUpd(saldoAtual),0);
     const close=v=>{document.getElementById('modal-fer-gozo')?.remove();resolve(v);};
     document.getElementById('fg-cancel').onclick=()=>close(null);
-    document.getElementById('fg-ok').onclick=()=>close({
-      gozados:Math.max(0,fnum(document.getElementById('fg-gozados')?.value)),
-      comprados:Math.max(0,fnum(document.getElementById('fg-comprados')?.value)),
-      faltas:Math.max(0,fnum(document.getElementById('fg-faltas')?.value)),
-      mes:document.getElementById('fg-mes')?.value||MESES_FER[h.getMonth()],
-      ano:fnum(document.getElementById('fg-ano')?.value)||h.getFullYear()
-    });
+    document.getElementById('fg-ok').onclick=()=>{
+      const inicio=document.getElementById('fg-inicio')?.value||'';
+      const fim=document.getElementById('fg-fim')?.value||'';
+      if(!inicio||!fim){ toast('Informe início e término das férias.','error'); return; }
+      if(fim<inicio){ toast('O término não pode ser antes do início.','error'); return; }
+      const d=_dataLocal(inicio);
+      close({
+        inicio, fim,
+        gozados:_diasCorridos(inicio,fim),
+        comprados:Math.max(0,fnum(document.getElementById('fg-comprados')?.value)),
+        faltas:Math.max(0,fnum(document.getElementById('fg-faltas')?.value)),
+        mes:d?MESES_FER[d.getMonth()]:MESES_FER[h.getMonth()],
+        ano:d?d.getFullYear():h.getFullYear()
+      });
+    };
   });
 }
 
@@ -776,16 +792,19 @@ async function salvarColabModal(){
     const saldoAtual=(dados.ferSaldo!=null?dados.ferSaldo:(colaboradores[idx].ferSaldo!=null?colaboradores[idx].ferSaldo:0));
     const r=await abrirFeriasGozoModal(dados, saldoAtual);
     if(r===null) return; // cancelou: não salva
+    dados.ferInicio=r.inicio;   // período oficial das férias
+    dados.ferFim=r.fim;
+    dados.ferMes=dados.ferMes||r.mes;
     dados.ferDiasComprados=r.comprados;
     dados.ferSaldo=saldoAtual - r.gozados - r.comprados - r.faltas;
-    if(r.gozados>0 || r.comprados>0 || r.faltas>0){
-      const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
-      log.push({mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, faltas:r.faltas, em:new Date().toISOString()});
-      dados.feriasLog=log;
-    }
+    const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
+    log.push({tipo:'entrada', inicio:r.inicio, fim:r.fim, mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, faltas:r.faltas, em:new Date().toISOString()});
+    dados.feriasLog=log;
   } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
-    // Saiu de férias: zera os dias comprados para não vazar na mobilidade.
+    // Saiu de férias: zera comprados e limpa o período.
     dados.ferDiasComprados=0;
+    dados.ferInicio='';
+    dados.ferFim='';
   }
 
   // Ao ENTRAR em afastamento: abre tela para marcar quais benefícios ele
@@ -2240,19 +2259,13 @@ function calcBen(c, dr, du){
     };
   }
 
-  // Ferias / Ferias Coletiva: recebe a CESTA (valor fixo mensal) normalmente.
-  // VR/Café = 0 (não trabalhou). Mobilidade só dos dias COMPRADOS (abono).
-  if(grp==='ferias'){
-    const comprados=Math.max(0,fnum(c.ferDiasComprados));
-    let comb=0, vt=0;
-    if(comprados>0){
-      if(eleg.mobilidade!==false && mob==='combustivel' && fnum(c.comb)>0) comb=calcMob(fnum(c.comb),comprados,du);
-      if(elegVT && mob==='vt') vt=calcVT(c,comprados);
-    }
-    return {vr:0,cafe:0,comb,vt,cesta:cestaVal};
-  }
+  // Férias: NÃO é mais caso especial aqui. Os dias de férias que caem na
+  // competência entram no campo "férias" do Passo 5 (automático, via
+  // feriasLancamento) e reduzem os dias úteis líquidos (dr). Cada benefício
+  // segue a sua regra sobre dr: VR/VT/combustível reduzem; café/cesta (fixos)
+  // seguem cheios. Cai no cálculo normal abaixo.
 
-  // Trabalhando: cálculo normal
+  // Trabalhando (e Férias, proporcional via dr): cálculo normal
   return {vr:vVR,cafe:vCafe,comb:vComb,vt:vVT,cesta:cestaVal};
 }
 
@@ -2276,7 +2289,23 @@ function getLanDU(mat, defaultDU){
 function getLanDR(mat, defaultDU){
   const du=getLanDU(mat,defaultDU);
   const l=lancamento[mat]||{};
-  return Math.max(0,du-fnum(l.faltas)-fnum(l.ferias)+fnum(l.extras));
+  return Math.max(0,du-fnum(l.faltas)-feriasLancamento(mat,du)+fnum(l.extras));
+}
+// Dias de ferias do Passo 5: valor MANUAL se o usuario informou (l.ferias definido);
+// senao, calculado automaticamente do periodo de ferias que cai na competencia.
+function feriasLancamento(mat, du){
+  const l=lancamento[mat]||{};
+  if(l.ferias!==undefined && l.ferias!==null && l.ferias!=='') return fnum(l.ferias);
+  const c=colsApuracao().find(x=>x.mat===mat);
+  return c?feriasDiasUteisAuto(c, lanComp, du):0;
+}
+// Dias uteis de ferias na competencia (auto). Sem datas, mas status Ferias = mes inteiro
+// (preserva o comportamento antigo de nao pagar VR cheio a quem esta de ferias).
+function feriasDiasUteisAuto(c, comp, du){
+  if(!c || c.elegibilidade?.ferias===false) return 0;
+  if(c.ferInicio && c.ferFim) return feriasDiasUteisNaComp(c, comp);
+  if(c.status==='Ferias'||c.status==='Férias') return fnum(du);
+  return 0;
 }
 
 // ============================================================
@@ -2668,68 +2697,77 @@ function importarBaseApuracao(id){
 }
 
 function verificarColabsEmFerias(){
-  const emFerias=colsApuracao().filter(c=>c.status==='Ferias'||c.status==='F\u00E9rias');
-  if(emFerias.length===0) return;
-
-  // Mostrar banner de alerta no topo do lancamento
   const area=document.getElementById('ferias-alert-area');
   if(!area) return;
+  const hoje=new Date();
+  const base=colsApuracao();
+  const pendentes=base.filter(c=>feriasSituacao(c,hoje)==='retorno_pendente');
+  const emFerias=base.filter(c=>feriasSituacao(c,hoje)==='em_ferias');
+  if(!pendentes.length && !emFerias.length){ area.innerHTML=''; return; }
 
-  area.innerHTML=`
-    <div style="background:#FEF3C7;border:1.5px solid #FDE68A;border-radius:var(--radius);
-      padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-      <div>
-        <div style="font-weight:700;font-size:14px;color:#92400E;margin-bottom:6px">
-          Atencao: ${emFerias.length} colaborador${emFerias.length>1?'es':''}  em ferias nesta competencia
-        </div>
-        <div style="font-size:12px;color:#92400E;margin-bottom:10px">
-          Deseja retornar algum deles para Ativo?
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">
-          ${emFerias.map((c,i)=>`
-            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;\n              background:rgba(255,255,255,.6);padding:6px 10px;border-radius:6px">
-              <input type="checkbox" id="fer-retorno-${i}" data-id="${c._id}"
-                style="accent-color:var(--blue);width:15px;height:15px">
-              <strong>${c.nome}</strong>
-              <span style="color:var(--text2);font-size:11px">${c.mat||''} | ${c.depto||''}</span>
-              ${c.ferFim?'<span style="font-size:11px;color:var(--text2)">Prev. retorno: '+c.ferFim+'</span>':''}
-            </label>`).join('')}
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="btn btn-primary btn-sm" onclick="retornarColabsFerias()">
-            Marcar selecionados como Ativo
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ferias-alert-area').innerHTML=''">
-            Ignorar por agora
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick="selecionarTodosRetorno(true)">Selecionar todos</button>
-          <button class="btn btn-ghost btn-sm" onclick="selecionarTodosRetorno(false)">Desmarcar todos</button>
-        </div>
-      </div>
-    </div>`;
+  let html='<div style="background:#FEF3C7;border:1.5px solid #FDE68A;border-radius:var(--radius);padding:14px 18px;margin-bottom:14px">';
+
+  if(pendentes.length){
+    html+=`<div style="font-weight:700;font-size:14px;color:#92400E;margin-bottom:4px">Retorno pendente: ${pendentes.length} colaborador${pendentes.length>1?'es':''} j\u00E1 deveria${pendentes.length>1?'m':''} ter voltado</div>`
+      +`<div style="font-size:12px;color:#92400E;margin-bottom:10px">A data de t\u00E9rmino j\u00E1 passou. Confirme quem tirou as f\u00E9rias (volta a Trabalhando) ou marque quem <strong>n\u00E3o</strong> tirou (cancela o per\u00EDodo).</div>`
+      +'<div style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto">'
+      +pendentes.map((c,i)=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;background:rgba(255,255,255,.6);padding:6px 10px;border-radius:6px">
+          <input type="checkbox" id="fer-retorno-${i}" data-id="${c._id}" checked style="accent-color:var(--blue);width:15px;height:15px">
+          <strong>${c.nome}</strong>
+          <span style="color:var(--text2);font-size:11px">${c.mat||''} | ${c.depto||''}</span>
+          ${c.ferInicio&&c.ferFim?'<span style="font-size:11px;color:var(--text2)">'+_ddmm(_dataLocal(c.ferInicio))+'\u2192'+_ddmm(_dataLocal(c.ferFim))+'</span>':''}
+        </label>`).join('')
+      +'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+        +'<button class="btn btn-primary btn-sm" onclick="retornarColabsFerias(false)">Confirmar retorno (tiraram)</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="retornarColabsFerias(true)">N\u00E3o tiraram (cancelar f\u00E9rias)</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="selecionarTodosRetorno(true)">Todos</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="selecionarTodosRetorno(false)">Nenhum</button>'
+      +'</div>';
+  }
+
+  if(emFerias.length){
+    html+=`<div style="font-size:12px;color:#92400E;margin-top:${pendentes.length?'14px':'0'};padding-top:${pendentes.length?'10px':'0'};${pendentes.length?'border-top:1px solid #FDE68A;':''}">`
+      +`<strong>Em f\u00E9rias agora (${emFerias.length}):</strong> `
+      +emFerias.map(c=>`${c.nome}${c.ferFim?' (at\u00E9 '+_ddmm(_dataLocal(c.ferFim))+')':''}`).join(' &middot; ')
+      +'</div>';
+  }
+
+  html+='</div>';
+  area.innerHTML=html;
 }
 
 function selecionarTodosRetorno(sel){
   document.querySelectorAll('[id^="fer-retorno-"]').forEach(cb=>cb.checked=sel);
 }
 
-async function retornarColabsFerias(){
+// naoTirou=false: confirmou que tirou -> volta a Trabalhando, fecha o per\u00EDodo (mant\u00E9m o log).
+// naoTirou=true: n\u00E3o tirou -> cancela as f\u00E9rias, restaura o saldo abatido e limpa o per\u00EDodo.
+async function retornarColabsFerias(naoTirou){
   const checks=document.querySelectorAll('[id^="fer-retorno-"]:checked');
   if(checks.length===0){toast('Nenhum colaborador selecionado','error');return;}
-
   const b=window._writeBatch(window._db);
   let n=0;
   checks.forEach(cb=>{
-    const id=cb.dataset.id;
-    const c=colaboradores.find(x=>x._id===id);
+    const c=colaboradores.find(x=>x._id===cb.dataset.id);
     if(!c) return;
-    c.status='Ativo';
-    b.set(window._doc('colaboradores',id),c);
+    c.status='Trabalhando';
+    const log=Array.isArray(c.feriasLog)?c.feriasLog.slice():[];
+    if(naoTirou){
+      const ult=[...log].reverse().find(l=>l.tipo==='entrada');
+      if(ult) c.ferSaldo=fnum(c.ferSaldo)+fnum(ult.gozados)+fnum(ult.comprados)+fnum(ult.faltas);
+      log.push({tipo:'cancelado', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+    } else {
+      log.push({tipo:'retorno', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+    }
+    c.feriasLog=log;
+    c.ferInicio=''; c.ferFim=''; c.ferDiasComprados=0;
+    b.set(window._doc('colaboradores',c._id),c);
     n++;
   });
   await b.commit();
-  toast(n+' colaborador'+( n>1?'es retornaram':' retornou')+' de ferias!','success');
-  document.getElementById('ferias-alert-area').innerHTML='';
+  toast(n+' colaborador'+(n>1?'es':'')+(naoTirou?' \u2014 f\u00E9rias canceladas':' de volta ao trabalho')+'.','success');
+  const area=document.getElementById('ferias-alert-area'); if(area) area.innerHTML='';
   renderLancamento();
 }
 
@@ -2837,7 +2875,8 @@ function renderLancamento(){
     const l=lancamento[c.mat]||{};
     const locked=!!c.diasFixos;
     const du2=getLanDU(c.mat,du);
-    const fat=fnum(l.faltas),fev=fnum(l.ferias),ext=fnum(l.extras);
+    const fat=fnum(l.faltas),fev=feriasLancamento(c.mat,du2),ext=fnum(l.extras);
+    const ferAuto=(l.ferias===undefined||l.ferias===null||l.ferias==='');
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
     const total=vr+cafe+comb+vt+cesta;
@@ -2849,7 +2888,7 @@ function renderLancamento(){
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${c.nome}">${c.nome}</td>
       <td>${duCell}</td>
       <td><input type="number" value="${fat}" min="0" max="31" class="input-falta" onchange="setLan('${c.mat}','faltas',this.value)"></td>
-      <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)"></td>
+      <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)" title="${ferAuto?'Preenchido automaticamente pelos dias úteis de férias na competência. Edite para sobrescrever.':'Valor informado manualmente. Apague para voltar ao automático.'}" style="${ferAuto&&fev>0?'background:#EFF6FF':''}"></td>
       <td><input type="number" value="${ext}" min="0" max="31" class="input-extras" onchange="setLan('${c.mat}','extras',this.value)" title="Dias extras"></td>
       <td class="dias-reais">${dr}</td>
       <td class="total-cell">${vr>0?brl(vr):'\u2014'}</td>
@@ -2866,7 +2905,11 @@ function renderLancamento(){
 
 async function setLan(mat,campo,val){
   if(!lancamento[mat]) lancamento[mat]={};
-  lancamento[mat][campo]=fnum(val);
+  if(campo==='ferias' && (val===''||val===null||val===undefined)){
+    delete lancamento[mat].ferias;   // campo vazio: volta ao cálculo automático
+  } else {
+    lancamento[mat][campo]=fnum(val);
+  }
   try{ await fsSetLan(mat,lancamento[mat]); }catch(e){}
   renderLancamento();
 }
@@ -2948,7 +2991,7 @@ async function fecharCompetencia(){
       const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
       const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
       tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
-      return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:fnum(lancamento[c.mat]?.ferias),extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
+      return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:feriasLancamento(c.mat,du2),extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
     });
     novoTotal=tVR+tCafe+tCesta+tComb+tVT; novoCount=ativos.length;
     payload={competencia:comp,beneficio:'todos',fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:novoTotal},detalhes};
@@ -3985,6 +4028,9 @@ async function importarFeriasData(event){
         if(r[iFim])  c.ferFim   =new Date(r[iFim]).toISOString().split('T')[0];
         if(r[iVenc]) c.ferVenc  =new Date(r[iVenc]).toISOString().split('T')[0];
         if(r[iDias]) c.ferDias  =fnum(r[iDias]);
+        // Alinha o status ao período: se hoje está dentro das férias e a pessoa
+        // está trabalhando, marca Férias (reflete no Controle de Férias e no cálculo).
+        if(c.ferInicio && c.ferFim && feriasSituacao(c,new Date())==='em_ferias' && statusGrupo(c.status)==='trabalhando'){ c.status='Ferias'; }
         b.set(window._doc('colaboradores',c._id),c); ok++;
       }catch(err){}
     }
@@ -4241,7 +4287,17 @@ async function initApp(user){
   }
   Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadBasesSalvas()]).then(()=>{
     switchModule('base');
+    checarRetornosFeriasBoot();
   });
+}
+
+// Ao abrir o sistema: avisa se há colaboradores cujo término de férias já passou.
+function checarRetornosFeriasBoot(){
+  try{
+    const hoje=new Date();
+    const pend=(colaboradores||[]).filter(c=>feriasSituacao(c,hoje)==='retorno_pendente');
+    if(pend.length) toast(pend.length+' colaborador'+(pend.length>1?'es com retorno de férias pendente':' com retorno de férias pendente')+' — confira no Lançamento de Benefícios.','info',7000);
+  }catch(e){}
 }
 
 function waitFirebase(cb){ if(window._firebaseReady)cb(); else window.addEventListener('firebaseReady',cb,{once:true}); }
@@ -5104,6 +5160,37 @@ function _mesesEntre(de, ate){
   let m=(ate.getFullYear()-de.getFullYear())*12 + (ate.getMonth()-de.getMonth());
   if(ate.getDate() < de.getDate()) m-=1;
   return m;
+}
+// Dias CORRIDOS (calendario) entre inicio e fim (ISO), inclusive.
+function _diasCorridos(iniIso, fimIso){
+  const a=_dataLocal(iniIso), b=_dataLocal(fimIso);
+  if(!a||!b) return 0;
+  return Math.max(0, Math.round((b-a)/86400000)+1);
+}
+// Dias UTEIS (seg-sex) do periodo de ferias [ferInicio,ferFim] que caem no mes
+// da competencia comp (MM/AAAA). Nao considera feriados (nao ha calendario).
+function feriasDiasUteisNaComp(c, comp){
+  const m=String(comp||'').match(/^(\d{2})\/(\d{4})$/); if(!m) return 0;
+  const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim); if(!ini||!fim) return 0;
+  const mes=+m[1]-1, ano=+m[2];
+  const mIni=new Date(ano,mes,1), mFim=new Date(ano,mes+1,0);
+  const a=ini>mIni?ini:mIni, b=fim<mFim?fim:mFim;
+  if(a>b) return 0;
+  let dias=0; const d=new Date(a);
+  while(d<=b){ const wd=d.getDay(); if(wd!==0&&wd!==6) dias++; d.setDate(d.getDate()+1); }
+  return dias;
+}
+// Situacao das ferias em relacao a hoje: 'em_ferias' | 'retorno_pendente' | null.
+function feriasSituacao(c, hoje){
+  const ref=hoje||new Date(); const h=new Date(ref.getFullYear(),ref.getMonth(),ref.getDate());
+  const emFerias=c.status==='Ferias'||c.status==='Férias';
+  const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim);
+  if(ini&&fim){
+    if(h>=ini && h<=fim) return 'em_ferias';
+    if(emFerias && h>fim) return 'retorno_pendente';
+  }
+  if(emFerias && (!ini||!fim)) return 'em_ferias';
+  return null;
 }
 // Data do agendamento de ferias: 1o dia do mes agendado, no ano calculado.
 function agendamentoDate(c){
@@ -7181,6 +7268,12 @@ async function processarAtualizacao(event){
     const ehDefinitivo=c=>_statusKey(c.status)==='AFASTADO DEFINITIVO';
     const afastadosDef=colaboradores.filter(c=>c.mat && ehDefinitivo(c));
 
+    // Em férias (por data): o relatório mensal NÃO reverte — o ciclo de férias é
+    // governado pelas datas e pelo fluxo de retorno (Controle de Férias).
+    const hojeAtu=new Date();
+    const emFeriasLock=c=>{ const s=feriasSituacao(c,hojeAtu); return s==='em_ferias'||s==='retorno_pendente'; };
+    const feriasLista=colaboradores.filter(c=>c.mat && !ehDefinitivo(c) && emFeriasLock(c));
+
     const novos=[], demitidos=[], mudancas=[];
     let iguais=0;
 
@@ -7189,6 +7282,7 @@ async function processarAtualizacao(event){
       const c=baseMap[s.mat];
       if(!c){ novos.push(s); return; }
       if(ehDefinitivo(c)) return;                 // travado: ignora o que o relatório indicar
+      if(emFeriasLock(c)) return;                 // em férias: governado por datas, não pelo relatório
       if(c.status!==s.status){
         mudancas.push({colab:c, novoStatus:s.status, statusAnterior:c.status});
       } else {
@@ -7201,16 +7295,17 @@ async function processarAtualizacao(event){
       if(!seniorMap[c.mat]) demitidos.push(c);
     });
 
-    atuPendente={novos,demitidos,mudancas,iguais,afastadosDef};
-    renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef);
+    atuPendente={novos,demitidos,mudancas,iguais,afastadosDef,feriasLista};
+    renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLista);
     event.target.value='';
   };
   reader.readAsBinaryString(file);
 }
 
-function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef){
+function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLista){
   const prev=document.getElementById('atu-preview'); if(!prev) return;
   afastadosDef=afastadosDef||[];
+  feriasLista=feriasLista||[];
 
   let html=`
     <div class="stats-grid" style="margin-bottom:16px">
@@ -7231,6 +7326,23 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef){
           <td><code>${c.mat||'—'}</code></td>
           <td>${c.nome}</td>
           <td class="text-sm text-muted">${c.depto||'—'}</td>
+          <td>${statusBadge(c.status)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  // Em férias (por data) — apartados: o relatório não altera; o retorno é pelo Controle de Férias.
+  if(feriasLista.length>0){
+    html+=`<div class="card" style="margin-bottom:12px;border-left:3px solid var(--blue)">
+      <div class="card-title" style="color:var(--blue)">Em férias — mantidos (${feriasLista.length})</div>
+      <div class="alert alert-info" style="margin-bottom:8px">Estão de férias pelo período informado. O relatório da Senior <strong>não</strong> altera o status deles — o retorno é confirmado pelo Controle de Férias (ou no aviso de retorno pendente).</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Matricula</th><th>Nome</th><th>Período</th><th>Status</th></tr></thead>
+        <tbody>${feriasLista.map(c=>`<tr>
+          <td><code>${c.mat||'—'}</code></td>
+          <td>${c.nome}</td>
+          <td class="text-sm text-muted">${c.ferInicio&&c.ferFim?_ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim)):'—'}</td>
           <td>${statusBadge(c.status)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
