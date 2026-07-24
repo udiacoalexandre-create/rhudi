@@ -7337,16 +7337,34 @@ async function aplicarAtualizacao(){
 
   await b.commit();
 
+  // Grava um snapshot da base atualizada nos Históricos (basesSalvas), para que a
+  // apuração de Benefícios importe SEMPRE a versão mais recente e fique o log da atualização.
+  let versaoMsg='';
+  const houveMudanca = (nMud+nNov+nDem) > 0;
+  if(houveMudanca){
+    const mes=String(document.getElementById('atu-mes')?.value||'').padStart(2,'0');
+    const ano=String(document.getElementById('atu-ano')?.value||'');
+    const comp=(mes && ano)?(mes+'/'+ano):'';
+    if(comp){
+      const ok=await salvarBaseComp(comp,true);
+      versaoMsg = ok
+        ? `<br>Nova versão salva nos <strong>Históricos</strong> (competência ${comp}) — os Benefícios já importam esta base.`
+        : `<br><span style="color:var(--red)">Atenção: a base foi atualizada, mas não consegui salvar a versão nos Históricos.</span>`;
+    } else {
+      versaoMsg = `<br><span style="color:var(--red)">Atenção: selecione mês e ano da competência para gerar a versão nos Históricos.</span>`;
+    }
+  }
+
   prev.innerHTML=`<div class="alert alert-success">
     Atualizacao concluida!<br>
     <strong>${nMud}</strong> status atualizados &middot;
     <strong>${nNov}</strong> novos incluidos &middot;
     <strong>${nDem}</strong> marcados como Demitido<br>
-    Base atual: <strong>${colaboradores.length}</strong> colaboradores
+    Base atual: <strong>${colaboradores.length}</strong> colaboradores${versaoMsg}
   </div>`;
 
   setSS('${colaboradores.length} colaboradores','ok');
-  toast('Base atualizada!','success');
+  toast(houveMudanca?'Base atualizada e versão salva nos Históricos!':'Base atualizada!','success');
 }
 
 // ── Funções auxiliares do wizard MEI e Passo 6 ──────────────────
