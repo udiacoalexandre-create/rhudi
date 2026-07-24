@@ -8577,14 +8577,13 @@ function wizFerRetRow(c){
   const saldo=(c.ferSaldo!=null?c.ferSaldo:0); const mes=c.ferMes||'—';
   const anoProx = c.ferMes ? anoAgendadoColab(c) : '';
   const temPeriodo = !!(c.ferInicio && c.ferFim);
-  const camposDias = temPeriodo
-    ? '<div class="wiz-field"><label>Período (gozado)</label><div class="wiz-val">'+_ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim))+' ('+_diasCorridos(c.ferInicio,c.ferFim)+'d)</div></div>'
-    : '<div class="wiz-field"><label>Dias gozados</label><input type="number" id="ret-g-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasGozados!=null?c.ferDiasGozados:'')+'"></div>'
-      +'<div class="wiz-field"><label>Dias comprados</label><input type="number" id="ret-c-'+c._id+'" class="wiz-num" min="0" value="'+(c.ferDiasComprados!=null?c.ferDiasComprados:'')+'"></div>';
+  const resumoGozo = temPeriodo
+    ? _ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim))+' ('+_diasCorridos(c.ferInicio,c.ferFim)+'d gozados)'
+    : ((c.ferDiasGozados||0)+'d gozados'+(c.ferDiasComprados?' · '+c.ferDiasComprados+'d comprados':''));
   return '<div id="ret-row-'+c._id+'" class="wiz-row">'
     +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
     +'<div class="wiz-fields">'
-      +camposDias
+      +'<div class="wiz-field"><label>'+(temPeriodo?'Período gozado':'Gozo')+'</label><div class="wiz-val">'+resumoGozo+'</div></div>'
       +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
       +'<div class="wiz-field"><label>Próximo agendamento</label><select id="ret-r-'+c._id+'" class="wiz-sel">'
         +'<option value="mesmo">'+mes+(anoProx&&anoProx!=='—'?'/'+anoProx:'')+' (mesmo mês)</option>'
@@ -8597,16 +8596,11 @@ async function wizFerConfirmarRetorno(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const temPeriodo=!!(c.ferInicio && c.ferFim);
   const de=(c.ferSaldo!=null?c.ferSaldo:0);
-  let g, comp;
-  if(temPeriodo){
-    // Saldo já foi abatido na ENTRADA; aqui só confirma o retorno.
-    g=_diasCorridos(c.ferInicio,c.ferFim); comp=fnum(c.ferDiasComprados);
-  } else {
-    // Legado (entrou sem período): abate o saldo no retorno.
-    g=Math.max(0,fnum(document.getElementById('ret-g-'+id)?.value));
-    comp=Math.max(0,fnum(document.getElementById('ret-c-'+id)?.value));
-    c.ferSaldo=de-g-comp; c.ferDiasGozados=g; c.ferDiasComprados=comp;
-  }
+  const g = temPeriodo ? _diasCorridos(c.ferInicio,c.ferFim) : fnum(c.ferDiasGozados);
+  const comp = fnum(c.ferDiasComprados);
+  // Período: saldo já foi abatido na ENTRADA (não reabate). Legado (sem período):
+  // abate agora com os dias já registrados na entrada.
+  if(!temPeriodo){ c.ferSaldo=de-g-comp; }
   const r=document.getElementById('ret-r-'+id)?.value||'mesmo';
   if(r!=='mesmo') c.ferMes=r;
   c.status='Trabalhando';
