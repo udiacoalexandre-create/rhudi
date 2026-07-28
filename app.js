@@ -4314,13 +4314,62 @@ function entrarBeneficios(){
   });
 }
 
-// Ao abrir o sistema: avisa se há colaboradores cujo término de férias já passou.
+// Ao abrir o sistema: se há colaboradores com o retorno de férias vencido,
+// abre um MODAL pedindo para confirmar se tiraram as férias (→ Trabalhando).
 function checarRetornosFeriasBoot(){
   try{
     const hoje=new Date();
     const pend=(colaboradores||[]).filter(c=>feriasSituacao(c,hoje)==='retorno_pendente');
-    if(pend.length) toast(pend.length+' colaborador'+(pend.length>1?'es com retorno de férias pendente':' com retorno de férias pendente')+' — confira no Lançamento de Benefícios.','info',7000);
+    if(pend.length) abrirModalRetornosFerias(pend);
   }catch(e){}
+}
+
+function abrirModalRetornosFerias(pend){
+  document.getElementById('modal-retornos')?.remove();
+  const rows=pend.map((c,i)=>'<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">'
+    +'<input type="checkbox" id="mr-'+i+'" data-id="'+c._id+'" checked style="width:16px;height:16px;accent-color:var(--brand)">'
+    +'<span style="flex:1;min-width:0"><strong>'+c.nome+'</strong> <span class="text-xs text-muted">'+(c.mat||'')+(c.depto?' · '+c.depto:'')+'</span>'
+    +(c.ferInicio&&c.ferFim?'<br><span class="text-xs" style="color:var(--text2)">Férias: '+_ddmm(_dataLocal(c.ferInicio))+' → '+_ddmm(_dataLocal(c.ferFim))+' (retorno vencido)</span>':'')
+    +'</span></label>').join('');
+  const html='<div class="modal-overlay open" id="modal-retornos" data-dynamic="1">'
+    +'<div class="modal" style="max-width:560px">'
+    +'<div class="modal-title"><i class="ti ti-umbrella"></i> Retorno de férias vencido</div>'
+    +'<div class="modal-sub">'+pend.length+' colaborador'+(pend.length>1?'es já deveriam ter voltado':' já deveria ter voltado')+' de férias. Confirme quem <strong>tirou</strong> as férias (volta a Trabalhando) ou marque quem <strong>não</strong> tirou (cancela o período e devolve o saldo).</div>'
+    +'<div style="max-height:50vh;overflow:auto;margin:12px 0">'+rows+'</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="mrSelTodos(true)">Todos</button><button class="btn btn-ghost btn-sm" onclick="mrSelTodos(false)">Nenhum</button></div>'
+    +'<div class="modal-footer" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
+    +'<button class="btn btn-ghost" onclick="document.getElementById(\'modal-retornos\').remove()">Depois</button>'
+    +'<span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="confirmarRetornosModal(true)">Não tiraram</button>'
+    +'<button class="btn btn-primary" onclick="confirmarRetornosModal(false)"><i class="ti ti-check"></i> Confirmar retorno</button></span>'
+    +'</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function mrSelTodos(v){ document.querySelectorAll('#modal-retornos [id^="mr-"]').forEach(cb=>cb.checked=v); }
+async function confirmarRetornosModal(naoTirou){
+  const checks=document.querySelectorAll('#modal-retornos [id^="mr-"]:checked');
+  if(!checks.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
+  const b=window._writeBatch(window._db); let n=0;
+  checks.forEach(cb=>{
+    const c=colaboradores.find(x=>x._id===cb.dataset.id); if(!c) return;
+    c.status='Trabalhando';
+    const log=Array.isArray(c.feriasLog)?c.feriasLog.slice():[];
+    if(naoTirou){
+      const ult=[...log].reverse().find(l=>l.tipo==='entrada');
+      if(ult) c.ferSaldo=fnum(c.ferSaldo)+fnum(ult.gozados)+fnum(ult.comprados)+fnum(ult.faltas);
+      log.push({tipo:'cancelado', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+    } else {
+      log.push({tipo:'retorno', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+    }
+    c.feriasLog=log; c.ferInicio=''; c.ferFim=''; c.ferDiasComprados=0;
+    b.set(window._doc('colaboradores',c._id),c); n++;
+  });
+  try{
+    await b.commit();
+    toast(n+' colaborador'+(n>1?'es':'')+(naoTirou?' — férias canceladas':' de volta ao trabalho')+'.','success');
+    document.getElementById('modal-retornos')?.remove();
+    if(currentPage==='base-lista' && typeof renderColabList==='function') renderColabList();
+    if(currentPage==='ben-lancamento' && typeof renderLancamento==='function') renderLancamento();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 function waitFirebase(cb){ if(window._firebaseReady)cb(); else window.addEventListener('firebaseReady',cb,{once:true}); }
