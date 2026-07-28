@@ -696,6 +696,7 @@ function abrirDemissaoBeneficiosModal(c){
       {k:'cafe',  l:'Café da Manhã',            ok:e.cafe!==false && fnum(c.cafe)>0},
       {k:'comb',  l:'Combustível (Mobilidade)', ok:e.mobilidade!==false && mob==='combustivel'},
       {k:'vt',    l:'Vale Transporte',          ok:elegVT && mob==='vt'},
+      {k:'premio',l:'Prêmio Assiduidade',       ok:e.premio!==false},
     ].filter(x=>x.ok);
     const hoje=new Date();
     const compDef=/^\d{2}\/\d{4}$/.test(lanComp)?lanComp:(String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear());
@@ -6381,23 +6382,34 @@ function parsearApuracaoTexto(texto, prevEl){
 }
 
 
+// Demitido que mantém um benefício por X meses (aviso prévio/acordo), dentro da
+// janela definida na demissão. Espelha a regra do calcBen (grupo nao_recebe).
+function demMantemBenef(c, benef, comp){
+  if(!c || !_statusKey(c.status).includes('DEMIT')) return false;
+  if(!Array.isArray(c.demBen) || !c.demBen.includes(benef)) return false;
+  if(!(fnum(c.demMeses)>0) || !c.demCompBase) return false;
+  const el=_mesesEntreComp(c.demCompBase, comp);
+  return el!=null && el>=0 && el<fnum(c.demMeses);
+}
+
 function montarTabelaPremio(){
   // Cruzar apontamentos com base de colaboradores
   // Todos da base ativa + afastados são incluídos
-  // Incluir apenas quem participa do premio (excluir Demitido e N/A)
-  // Debug: contar quem tem premio=false
+  // Incluir quem participa do premio (exceto Demitido/N/A), MAIS os demitidos
+  // que mantêm o prêmio por X meses (definido na demissão).
+  const _pComp = premioState.competencia;
   const semPremio = colaboradores.filter(c=>c.elegibilidade?.premio===false);
-  console.log('Colaboradores sem premio:', semPremio.length, semPremio.map(c=>c.nome));
   const base = colaboradores.filter(c=>
     c.status!=='Inativo' &&
-    !STATUS_NAO_RECEBE.includes(c.status) &&
+    (!STATUS_NAO_RECEBE.includes(c.status) || demMantemBenef(c,'premio',_pComp)) &&
     c.elegibilidade?.premio!==false
   );
   console.log('Base para premio:', base.length);
 
   const tabela = base.map(c=>{
-    // Normalizar status legado
-    const statusNorm = c.status==='Ativo'?'Trabalhando':c.status;
+    // Normalizar status legado. Demitido que mantém o prêmio (janela da demissão)
+    // é tratado como Trabalhando para a apuração desta competência.
+    const statusNorm = (c.status==='Ativo' || demMantemBenef(c,'premio',premioState.competencia)) ? 'Trabalhando' : c.status;
     // Buscar apontamentos pelo número da matrícula
     const mat = c.mat||'';
     // Formato da matrícula na base: "10000990" ou "1000.0990"
