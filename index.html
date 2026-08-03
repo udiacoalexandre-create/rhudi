@@ -482,6 +482,46 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .bl-page .ds-zone .stat__value { grid-area: value; align-self: end; font-size: 15px; line-height: 1.1; }
 .bl-page .ds-zone .stat__label { grid-area: label; align-self: start; font-size: 10px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* ── Lançamento Mensal: topo compacto ──────────────────────────────
+   Título e abas dividem a mesma faixa; o card do passo se abre em duas
+   colunas (aproveita o vazio da direita); indicadores e filtros em uma
+   linha baixa. Sobra tela para a tabela. */
+.ds .lan-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.ds .lan-top .page-header { margin: 0; }
+.ds .lan-top .lan-tabs { margin: 0; flex: 0 1 auto; max-width: 100%; }
+.ds .lan-top .page-subtitle { font-size: 12px; }
+
+/* Card do passo em duas colunas: enunciado à esquerda, ação à direita */
+.ds .lan-step--split { display: flex; align-items: center; gap: 8px 20px; flex-wrap: wrap; padding: 10px 14px; }
+.ds .lan-step--split .lan-step__head { margin: 0; flex: 1 1 300px; align-items: center; }
+.ds .lan-step--split > .lan-split-side { flex: 2 1 420px; min-width: 0; }
+
+/* Ações do passo alinhadas à direita, na mesma linha do enunciado */
+.ds .lan-step--split .lan-navbtns { margin: 0; justify-content: flex-end; }
+.ds .lan-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.ds .lan-actions__l { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; }
+.ds .lan-actions select { padding: 6px 9px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-family: 'Inter', sans-serif; font-size: 12px; background: var(--surface2); color: var(--text); }
+.ds .lan-actions__sep { width: 1px; align-self: stretch; min-height: 22px; background: var(--border); margin: 0 2px; }
+
+/* Faixa da base importada (passo 1), em linha */
+.ds .lan-base-row { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; justify-content: flex-end; }
+.ds .lan-base-row .lan-base-facts { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; font-size: 12px; color: var(--text2); }
+.ds .lan-base-row .lan-base-facts strong { color: var(--text); font-weight: 600; }
+.ds .lan-base-ok { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--green); background: var(--green-light); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
+
+/* Indicadores de benefício em uma linha só */
+.ds .lan-kpis { display: flex; gap: 6px; flex-wrap: wrap; }
+.ds .lan-kpi { flex: 1 1 120px; min-width: 108px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius-sm); padding: 4px 9px; }
+.ds .lan-kpi__l { font-size: 9.5px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ds .lan-kpi__v { font-size: 14px; font-weight: 700; line-height: 1.2; display: flex; align-items: baseline; gap: 5px; }
+.ds .lan-kpi__n { font-size: 10px; font-weight: 500; color: var(--text3); }
+.ds .lan-kpi--total { background: var(--success-bg); border-left-width: 3px; }
+
+/* Barra de filtros baixa: sem rótulos (os botões já se nomeiam) */
+.ds .filter-bar--slim { padding: 7px 9px; margin-bottom: 8px; gap: 6px; align-items: center; }
+.ds .filter-bar--slim .filter-group { flex-direction: row; align-items: center; }
+.ds .filter-bar--slim .filter-group input { min-width: 180px; width: 100%; }
+
 /* BADGES */
 .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .badge-green { background: var(--green-light); color: var(--green); }

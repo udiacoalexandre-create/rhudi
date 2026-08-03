@@ -2347,11 +2347,13 @@ function pgBenLancamento(){
   const semBase='<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Nenhuma base importada. Volte ao <strong>Passo 1</strong> para importar. <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="lanIrPasso(1)">Ir ao Passo 1</button></div>';
   const temBase=!!baseApuracao;
 
-  const filtros='<div class="filter-bar" style="align-items:flex-end;margin-bottom:12px">'
-    +'<div class="filter-group" style="flex:1"><label>Buscar</label><input type="text" id="lan-q" placeholder="Nome ou matrícula..." oninput="renderLancamento()"></div>'
-    +'<div class="filter-group"><label>Empresa</label>'+msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:_empresaLabel(e.cod)+' ('+e.qtd+')'})),'renderLancamento')+'</div>'
-    +'<div class="filter-group"><label>Departamento</label>'+msDropdown('ldep','Departamento',deptos.map(d=>({value:d,label:d})),'renderLancamento')+'</div>'
-    +'<div class="filter-group"><label>Benefício</label>'+msDropdown('lben','Benefício',[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'cesta',label:'Cesta'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'}],'renderLancamento')+'</div>'
+  // Barra de filtros baixa: os botoes de multi-selecao ja mostram o proprio nome,
+  // entao os rotulos acima viram altura desperdicada.
+  const filtros='<div class="filter-bar filter-bar--slim">'
+    +'<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="lan-q" placeholder="Buscar nome ou matrícula..." aria-label="Buscar" oninput="renderLancamento()"></div>'
+    +'<div class="filter-group">'+msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:_empresaLabel(e.cod)+' ('+e.qtd+')'})),'renderLancamento')+'</div>'
+    +'<div class="filter-group">'+msDropdown('ldep','Departamento',deptos.map(d=>({value:d,label:d})),'renderLancamento')+'</div>'
+    +'<div class="filter-group">'+msDropdown('lben','Benefício',[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'cesta',label:'Cesta'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'}],'renderLancamento')+'</div>'
     +'<button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()" title="Limpar filtros">Limpar</button>'
     +'<button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>'
     +'</div>';
@@ -2388,53 +2390,57 @@ function pgBenLancamento(){
 
   let corpo='';
   if(lanStep===1){
-    corpo='<div class="lan-step">'
-      +head(1,'Importar e conferir a base','A última base salva é importada automaticamente. Confira a <strong>versão</strong> e a <strong>data</strong>, e siga para a apuração — ou recarregue outra versão.')
-      +'<div id="lan-base-info"></div>'
+    // Passo 1 em duas colunas: enunciado a esquerda, base + acoes a direita.
+    corpo='<div class="lan-step lan-step--split">'
+      +head(1,'Importar e conferir a base','Confira a <strong>versão</strong> e a <strong>data</strong> antes de avançar.')
+      +'<div class="lan-split-side" id="lan-base-info"></div>'
       +'</div>'
-      +(temBase?('<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros):'');
+      +(temBase?('<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros):'');
   } else if(lanStep===2){
-    corpo='<div class="lan-step">'
-      +head(2,'Competência e dias úteis','Defina o mês/ano e os dias úteis e aplique à tabela importada (exceto jornadas travadas no cadastro).')
-      +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'
-        +'<div class="fg"><label>Mês/Ano</label><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:120px" value="'+lanComp+'" onchange="onLanCompChange(this.value)"></div>'
-        +'<div class="fg"><label>Dias úteis do mês</label><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:100px" onchange="setLanDU(this.value);renderLancamento()"></div>'
+    corpo='<div class="lan-step lan-step--split">'
+      +head(2,'Competência e dias úteis','Aplica à tabela importada, exceto jornadas travadas no cadastro.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<span class="lan-actions__l">Mês/Ano</span><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:104px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" value="'+lanComp+'" onchange="onLanCompChange(this.value)">'
+        +'<span class="lan-actions__l">Dias úteis</span><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:70px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" onchange="setLanDU(this.value);renderLancamento()">'
         +'<button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>'
-      +'</div>'
-      +nav(1,3)+'</div>';
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(3)">Próximo <i class="ti ti-arrow-right"></i></button>'
+      +'</div></div>';
   } else if(lanStep===3){
-    corpo='<div class="lan-step">'
-      +head(3,'Faltas e dias extras (manual)','Preencha, na tabela abaixo, as <strong>faltas</strong> e os <strong>dias extras</strong> de cada colaborador. Faltas e férias descontam; extras somam. As <strong>férias</strong> vêm automáticas do período cadastrado na Base.')
-      +nav(2,4)+'</div>'
-      +'<div id="lan-resumo" style="margin-bottom:12px"></div>'+filtros;
+    corpo='<div class="lan-step lan-step--split">'
+      +head(3,'Faltas e dias extras (manual)','Preencha na tabela: faltas e férias descontam, extras somam. As <strong>férias</strong> vêm automáticas da Base.')
+      +'<div class="lan-split-side">'+nav(2,4)+'</div></div>'
+      +'<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros;
   } else {
-    corpo='<div class="lan-step">'
-      +head(4,'Conferir, fechar e exportar','Confira o benefício na tabela, feche a competência e gere os arquivos de exportação.')
-      +'<div class="lan-sub"><div class="lan-sub__t">4.1 · Escolha o benefício</div>'
-        +'<div class="lan-sub__d">Escolha o benefício que deseja executar — a tabela abaixo mostra só ele, com os totais.</div>'
-        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;max-width:300px">'
+    // Os tres sub-passos (benefício / fechar / exportar) viram uma faixa em linha.
+    corpo='<div class="lan-step lan-step--split">'
+      +head(4,'Conferir, fechar e exportar','Escolha o benefício, confira na tabela abaixo, feche a competência e gere os arquivos.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(3)" title="Voltar ao passo 3"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +'<span class="lan-actions__sep"></span>'
+        +'<label class="lan-actions__l" for="lan-fechar-ben">Benefício</label>'
+        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" title="A tabela abaixo mostra só este benefício, com os totais" style="max-width:220px">'
         +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
-        +'</select></div>'
-      +'<div class="lan-sub"><div class="lan-sub__t">4.2 · Fechar competência</div>'
-        +'<div class="lan-sub__d">Feche a competência para salvar o histórico no sistema.</div>'
-        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()"><i class="ti ti-lock"></i> Fechar competência</button></div>'
-      +'<div class="lan-sub"><div class="lan-sub__t">4.3 · Exportar arquivos</div>'
-        +'<div class="lan-sub__d">Gere os arquivos de exportação para o sistema de pagamento (VT → Via Nova; demais → Caju) e para a Senior.</div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()"><i class="ti ti-download"></i> Exportar (pagamento)</button>'
-        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()"><i class="ti ti-download"></i> Exportar Senior</button></div></div>'
-      +'<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="lanIrPasso(3)"><i class="ti ti-arrow-left"></i> Voltar</button><span></span></div>'
-      +'</div>'
-      +'<div id="lan-resumo" style="margin-bottom:12px"></div>';
+        +'</select>'
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()" title="Salva o histórico da competência no sistema"><i class="ti ti-lock"></i> Fechar competência</button>'
+        +'<button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()" title="VT → Via Nova; demais → Caju"><i class="ti ti-download"></i> Pagamento</button>'
+        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()" title="Arquivo de exportação para a Senior"><i class="ti ti-download"></i> Senior</button>'
+      +'</div></div>'
+      +'<div id="lan-resumo" style="margin-bottom:8px"></div>';
   }
 
   return `
    <div class="bl-page">
     <div style="flex:0 0 auto">
-      <div class="page-header" style="margin-bottom:10px">
-        <h2 class="page-title">Lançamento Mensal</h2>
-        <p class="page-subtitle">Siga os passos para apurar e fechar os benefícios do mês.</p>
+      <div class="lan-top">
+        <div class="page-header">
+          <h2 class="page-title">Lançamento Mensal</h2>
+          <p class="page-subtitle">Apure e feche os benefícios do mês.</p>
+        </div>
+        ${tabs}
       </div>
-      ${tabs}
       ${corpo}
     </div>
     ${(temBase && (lanStep===1||lanStep===3||lanStep===4))?tabela:''}
@@ -2613,18 +2619,23 @@ function renderBaseApuracaoInfo(){
     const n=baseApuracao.totalColaboradores||(baseApuracao.colaboradores||[]).length;
     const latest=basesSalvasList[0];
     const desatualizada = latest && latest._id!==baseApuracao._id && String(latest.salvoEm||'')>String(baseApuracao.salvoEm||'');
-    el.innerHTML='<div class="alert alert-success" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin-bottom:12px">'
-      +'<span><i class="ti ti-database-import"></i> <strong>Base importada automaticamente</strong></span>'
-      +'<span>Versão: <strong>'+baseApuracao.competencia+'</strong></span>'
-      +'<span>Data da versão: <strong>'+dt+'</strong></span>'
-      +'<span>'+n+' colaboradores</span></div>'
-      +(desatualizada?'<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Existe uma versão mais recente da base ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+'). '
-        +'<button class="btn btn-warning btn-sm" style="margin-left:8px" onclick="importarBaseApuracao(\''+latest._id+'\')">Usar a mais recente</button></div>':'')
-      +'<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="abrirImportarBase()"><i class="ti ti-refresh"></i> Recarregar nova base</button>'
-      +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(2)">Confirmar e avançar <i class="ti ti-arrow-right"></i></button></div>';
+    // Faixa em linha: selo + versao/data/qtd + acoes, tudo na mesma altura do enunciado.
+    el.innerHTML='<div class="lan-base-row">'
+      +'<span class="lan-base-ok"><i class="ti ti-database-import"></i> Base importada</span>'
+      +'<div class="lan-base-facts">'
+        +'<span>Versão <strong>'+baseApuracao.competencia+'</strong></span>'
+        +'<span>'+dt+'</span>'
+        +'<span><strong>'+n+'</strong> colaboradores</span>'
+      +'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+        +'<button class="btn btn-ghost btn-sm" onclick="abrirImportarBase()" title="Recarregar outra versão da base"><i class="ti ti-refresh"></i> Trocar base</button>'
+        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(2)">Confirmar e avançar <i class="ti ti-arrow-right"></i></button>'
+      +'</div></div>'
+      +(desatualizada?'<div class="alert alert-warning" style="margin:8px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px"><span><i class="ti ti-alert-triangle"></i> Existe uma versão mais recente ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+').</span>'
+        +'<button class="btn btn-warning btn-sm" onclick="importarBaseApuracao(\''+latest._id+'\')">Usar a mais recente</button></div>':'');
   } else {
-    el.innerHTML='<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Nenhuma base salva encontrada. Salve uma versão em <strong>Base de Colaboradores → Históricos</strong>.'
-      +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="abrirImportarBase()">Importar base</button></div>';
+    el.innerHTML='<div class="alert alert-warning" style="margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px"><span><i class="ti ti-alert-triangle"></i> Nenhuma base salva encontrada. Salve uma versão em <strong>Base de Colaboradores → Históricos</strong>.</span>'
+      +'<button class="btn btn-primary btn-sm" onclick="abrirImportarBase()">Importar base</button></div>';
   }
 }
 
@@ -2831,18 +2842,19 @@ function renderLancamento(){
   }
   const resumo=document.getElementById('lan-resumo');
   if(resumo){
-    const item=(label,n,tot,cor)=>`<div style="flex:1;min-width:135px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:var(--radius);padding:9px 12px">
-      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;font-weight:700;letter-spacing:.3px">${label}</div>
-      <div style="font-size:15px;font-weight:700;color:${cor}">${brl(tot)}</div>
-      <div style="font-size:11px;color:var(--text3)">${n} colaborador${n!==1?'es':''}</div>
+    // Indicadores numa linha so: rotulo em cima, valor embaixo com a qtd de
+    // colaboradores ao lado. Ocupa a largura toda e sobra tela para a tabela.
+    const item=(label,n,tot,cor,extra)=>`<div class="lan-kpi${extra||''}" style="border-left-color:${cor}" title="${label}: ${n} colaborador${n!==1?'es':''}">
+      <div class="lan-kpi__l">${label}</div>
+      <div class="lan-kpi__v" style="color:${cor}">${brl(tot)}<span class="lan-kpi__n">${n}</span></div>
     </div>`;
-    resumo.innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap">'
+    resumo.innerHTML='<div class="lan-kpis">'
       +item('Vale Refeição',nVR,tVR,'var(--orange)')
       +item('Café da Manhã',nCafe,tCafe,'var(--yellow)')
       +item('Cesta Básica',nCesta,tCesta,'var(--green)')
       +item('Combustível',nComb,tComb,'var(--orange)')
       +item('Vale Transporte',nVT,tVT,'var(--blue)')
-      +item('Total Geral',sTot.size,tVR+tCafe+tCesta+tComb+tVT,'var(--green)')
+      +item('Total Geral',sTot.size,tVR+tCafe+tCesta+tComb+tVT,'var(--green)',' lan-kpi--total')
       +'</div>';
   }
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
@@ -3057,7 +3069,8 @@ function _grupoExport(d){ return d.filtro==='PART' ? 'PART' : _empDe(d.mat); }
 function atualizarBotoesExport(){
   const benef=document.getElementById('lan-fechar-ben')?.value||'';
   const b=document.getElementById('lan-btn-export3');
-  if(b) b.innerHTML = (benef==='vt') ? '&#11015; 3 · Via Nova' : '&#11015; 3 · Caju';
+  // Rotulo curto com o destino real do arquivo (a numeracao antiga "3 ·" saiu).
+  if(b) b.innerHTML = '<i class="ti ti-download"></i> ' + ((benef==='vt') ? 'Via Nova' : 'Caju');
 }
 
 // Exporta o pedido do beneficio selecionado: VT vai para o Via Nova
