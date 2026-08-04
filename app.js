@@ -6309,6 +6309,27 @@ function processarApuracaoPremio(event){
           const pageText = content.items.map(item=>item.str).join(' ');
           textoCompleto += pageText + '\n';
         }
+
+        // PDF sem camada de texto: acontece quando o relatorio foi impresso por
+        // "Microsoft Print to PDF" (ou similar) desenhando as letras como
+        // vetor/imagem. Nao ha o que extrair — avisar a causa, nao o formato.
+        if(textoCompleto.replace(/\s/g,'').length < 20){
+          let produtor='';
+          try{ const md=await pdf.getMetadata(); produtor=(md&&md.info&&(md.info.Producer||md.info.Creator))||''; }catch(_){}
+          prev.innerHTML='<div class="alert alert-warning" style="font-size:14px"><i class="ti ti-alert-triangle"></i> '
+            +'Este PDF <strong>não tem texto</strong> — as '+pdf.numPages+' página(s) são só desenho (as letras não são caracteres, são traços). '
+            +'Não existe nada para ler nele'+(produtor?', e ele foi gerado por <strong>'+String(produtor).replace(/</g,'&lt;')+'</strong>':'')+'.</div>'
+            +'<div class="card" style="margin-top:10px"><div class="card-title">Como resolver</div>'
+            +'<div style="font-size:13px;line-height:1.8">'
+            +'<div>1. No Senior, <strong>exporte</strong> o relatório HRAP001.APU em <strong>Excel</strong> (.xlsx) ou PDF — esta tela aceita os dois.</div>'
+            +'<div>2. Evite <strong>Imprimir → Microsoft Print to PDF</strong>: esse caminho transforma o texto em desenho.</div>'
+            +'<div>3. Se só houver a opção de imprimir, desmarque no diálogo de impressão a opção de <strong>imprimir como imagem</strong>.</div>'
+            +'</div>'
+            +'<div class="text-xs text-muted" style="margin-top:8px">Teste rápido: abra o PDF e tente selecionar um nome com o mouse. Se não der para selecionar, o arquivo não serve para importação.</div></div>';
+          toast('O PDF não tem texto — veja as orientações na tela.','error');
+          event.target.value='';
+          return;
+        }
       } else {
         // Excel
         const wb = XLSX.read(e.target.result,{type:'binary'});
@@ -6401,7 +6422,10 @@ function parsearApuracaoTexto(texto, prevEl){
     // Extrair nome: texto entre a matricula e o primeiro codigo conhecido
     const reNome = new RegExp('^' + mat.replace('.', '\\.') + '\\s+(.+?)(?=\\s+(?:014|015|020|064|101|103|107|108)\\s)');
     const mNome = bloco.match(reNome);
-    const nome = mNome ? mNome[1].trim() : bloco.substring(mat.length).split(/\d{3}\s/)[0].trim();
+    // O relatorio imprime "Total Colaborador:" entre o nome e os codigos; ele
+    // vinha colado no nome lido.
+    const nome = (mNome ? mNome[1].trim() : bloco.substring(mat.length).split(/\d{3}\s/)[0].trim())
+      .replace(/\s*Total\s+Colaborador:?\s*$/i,'').trim();
 
     if(!nome || nome.length < 2) return;
 
