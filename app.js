@@ -6331,6 +6331,41 @@ function processarApuracaoPremio(event){
 }
 
 
+// Diagnostico da leitura: mostra o texto que saiu do PDF e sonda quais formatos
+// de matricula/tempo existem nele. Sem isso a falha de import fica sem pista.
+function _apuDiag(texto, titulo){
+  const sondas=[
+    ['Matr\u00edcula 0000.0000 (esperado)', /\d{4}\.\d{4}/g],
+    ['Matr\u00edcula quebrada "0000 . 0000"', /\d{4}\s+\.\s*\d{4}|\d{4}\s*\.\s+\d{4}/g],
+    ['8 d\u00edgitos seguidos 00000000',      /\b\d{8}\b/g],
+    ['0000-0000 (h\u00edfen)',                /\b\d{4}-\d{4}\b/g],
+    ['0000/0000 (barra)',                /\b\d{4}\/\d{4}\b/g],
+    ['Outros N.N com ponto',             /\b\d{2,6}\.\d{2,6}\b/g],
+    ['C\u00f3digos 014/015/101/103...',       /\b(?:014|015|020|064|101|103|107|108)\b/g],
+    ['Tempo 000:00 (esperado)',          /\b\d{3}:\d{2}\b/g],
+    ['Tempo 0:00 ou 00:00',              /(?<!\d)\d{1,2}:\d{2}\b/g],
+  ];
+  const linhas=sondas.map(s=>{
+    let n=0; try{ n=(texto.match(s[1])||[]).length; }catch(e){ n=-1; }
+    const ex=(()=>{ try{ const mm=texto.match(s[1]); return mm&&mm.length?' \u2014 ex.: '+mm.slice(0,3).map(x=>String(x).trim()).join(', '):''; }catch(e){ return ''; } })();
+    return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;padding:2px 0;border-bottom:1px dashed var(--border)">'
+      +'<span>'+s[0]+ex+'</span><strong style="color:'+(n>0?'var(--green)':'var(--text3)')+'">'+(n<0?'\u2014':n)+'</strong></div>';
+  }).join('');
+  const amostra=texto.substring(0,1200).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return '<div class="card" style="margin-top:10px"><div class="card-title" style="color:var(--red)">'+(titulo||'Diagn\u00f3stico da leitura')+'</div>'
+    +'<div class="text-xs text-muted" style="margin-bottom:6px">'+texto.length.toLocaleString('pt-BR')+' caracteres extra\u00eddos. Formatos encontrados no texto:</div>'
+    +linhas
+    +'<div class="text-xs text-muted" style="margin:10px 0 4px">Primeiros 1.200 caracteres extra\u00eddos:</div>'
+    +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:220px;white-space:pre-wrap">'+amostra+'</pre>'
+    +'<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="_apuCopiarDiag(this)"><i class="ti ti-copy"></i> Copiar diagn\u00f3stico</button>'
+    +'</div>';
+}
+function _apuCopiarDiag(btn){
+  const card=btn.closest('.card'); if(!card) return;
+  const txt=card.innerText.replace(/\n{3,}/g,'\n\n');
+  navigator.clipboard.writeText(txt).then(()=>toast('Diagn\u00f3stico copiado.','success')).catch(()=>toast('N\u00e3o foi poss\u00edvel copiar.','error'));
+}
+
 function parsearApuracaoTexto(texto, prevEl){
   // Normalizar espacos
   texto = texto.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
@@ -6350,7 +6385,9 @@ function parsearApuracaoTexto(texto, prevEl){
   console.log('Matriculas encontradas:', posicoes.length);
 
   if(posicoes.length === 0){
-    prevEl.innerHTML='<div class="alert alert-warning">PDF lido mas nenhuma matricula encontrada (formato XXXX.XXXX).</div>';
+    prevEl.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O arquivo foi lido, mas nenhuma matrícula no formato <strong>0000.0000</strong> foi encontrada. '
+      +'Veja abaixo o que saiu do arquivo — o quadro mostra quais formatos existem no texto.</div>'
+      +_apuDiag(texto,'Diagnóstico da leitura — nenhuma matrícula encontrada');
     return;
   }
 
@@ -6397,19 +6434,46 @@ function parsearApuracaoTexto(texto, prevEl){
   }
 
   if(apontamentos.length === 0){
-    const amostra = texto.substring(0,600).replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    prevEl.innerHTML='<div class="alert alert-warning">Nao foi possivel identificar colaboradores.</div>'
-      +'<div class="card"><div class="card-title" style="color:var(--red)">Texto extraido (debug):</div>'
-      +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:200px;white-space:pre-wrap">'+amostra+'</pre></div>';
+    prevEl.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Encontrei <strong>'+posicoes.length+'</strong> matrícula(s) no arquivo, '
+      +'mas não consegui ler o nome de nenhuma delas — então nada foi importado.</div>'
+      +_apuDiag(texto,'Diagnóstico da leitura — matrículas achadas, nomes não');
     return;
   }
 
   premioState.apontamentos = apontamentos;
   montarTabelaPremio();
 
-  prevEl.innerHTML='<div class="alert alert-success" style="font-size:14px"><i class="ti ti-circle-check"></i> Apuração importada com sucesso — <strong>'+apontamentos.length+'</strong> colaboradores lidos e cruzados com a base ('+premioState.tabela.length+' na tabela).'
-    +'<div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)">Ir para a análise (Passo 4) <i class="ti ti-arrow-right"></i></button></div></div>';
-  toast(apontamentos.length+' colaboradores lidos.','success');
+  // Ler o arquivo nao é o mesmo que casar com a base: reportar os dois numeros.
+  const casados = premioState.apontCasados||0;
+  const semBase = premioState.apontSemBase||[];
+  const btnIr = '<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)">Ir para a análise (Passo 4) <i class="ti ti-arrow-right"></i></button>';
+
+  if(casados === 0){
+    // Leu o arquivo mas nenhuma matricula bateu com a base: mostrar as duas
+    // listas lado a lado, que é o que revela a divergencia de formato.
+    const doArq = apontamentos.slice(0,5).map(a=>a.mat+' ('+a.matNum+')').join(', ');
+    const daBase = (colaboradores||[]).slice(0,5).map(c=>c.mat||'—').join(', ');
+    prevEl.innerHTML='<div class="alert alert-warning" style="font-size:14px"><i class="ti ti-alert-triangle"></i> Li <strong>'+apontamentos.length+'</strong> colaboradores do arquivo, '
+      +'mas <strong>nenhuma</strong> matrícula bateu com a base — por isso a apuração ficaria toda zerada.</div>'
+      +'<div class="card" style="margin-top:10px"><div class="card-title">Comparação das matrículas</div>'
+      +'<div style="font-size:12px;line-height:1.7"><div>No arquivo: <code>'+doArq+'</code></div>'
+      +'<div>Na base: <code>'+daBase+'</code></div></div>'
+      +'<div class="text-xs text-muted" style="margin-top:8px">O cruzamento aceita <code>0000.0000</code> e <code>00000000</code>. Se os formatos acima forem diferentes disso, é aí que está o problema.</div></div>'
+      +_apuDiag(texto,'Diagnóstico da leitura');
+    toast('Nenhuma matrícula do arquivo bateu com a base.','error');
+    return;
+  }
+
+  const avisoSemBase = semBase.length
+    ? '<div style="margin-top:8px;font-size:12px"><i class="ti ti-info-circle"></i> <strong>'+semBase.length+'</strong> do arquivo não foram encontrados na base '
+      + '(matrícula divergente, fora da base ou demitido sem janela de prêmio): <code style="font-size:11px">'
+      + semBase.slice(0,8).map(a=>a.mat).join(', ') + (semBase.length>8?', …':'') + '</code></div>'
+    : '';
+  prevEl.innerHTML='<div class="alert alert-success" style="font-size:14px"><i class="ti ti-circle-check"></i> Apuração importada — <strong>'+apontamentos.length+'</strong> colaboradores lidos do arquivo, '
+    +'<strong>'+casados+'</strong> cruzados com a base ('+premioState.tabela.length+' linhas na tabela).'
+    +avisoSemBase
+    +'<div style="margin-top:8px">'+btnIr+'</div></div>';
+  toast(casados+' de '+apontamentos.length+' colaboradores cruzados com a base.','success');
 }
 
 
@@ -6437,6 +6501,10 @@ function montarTabelaPremio(){
   );
   console.log('Base para premio:', base.length);
 
+  // Guarda quais apontamentos do arquivo casaram com alguem da base, para o
+  // import poder avisar quando o cruzamento falha (matricula fora do padrao).
+  const _casados = new Set();
+
   const tabela = base.map(c=>{
     // Normalizar status legado. Demitido que mantém o prêmio (janela da demissão)
     // é tratado como Trabalhando para a apuração desta competência.
@@ -6449,6 +6517,7 @@ function montarTabelaPremio(){
         a.mat===mat.substring(0,4)+'.'+mat.substring(4) ||
         a.matNum===mat.replace('.','');
     });
+    if(apont) _casados.add(apont);
 
     // Situação para o prêmio — baseada no status do colaborador
     // elegibilidade.premio===true explícito sobrescreve regra de filtro SOC/PART
@@ -6499,6 +6568,11 @@ function montarTabelaPremio(){
   });
 
   premioState.tabela = tabela;
+  // Apontamentos do arquivo que nao acharam ninguem na base (matricula divergente,
+  // colaborador fora da base ou demitido sem janela de premio).
+  premioState.apontSemBase = (premioState.apontamentos||[]).filter(a=>!_casados.has(a));
+  premioState.apontCasados = _casados.size;
+  console.log('Apontamentos casados com a base:', _casados.size, '| sem base:', premioState.apontSemBase.length);
 }
 
 // ── Renderizar tabela de análise (Passo 4 e 5) ──────────────────
