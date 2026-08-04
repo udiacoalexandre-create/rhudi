@@ -517,10 +517,19 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .ds .lan-kpi__n { font-size: 10px; font-weight: 500; color: var(--text3); }
 .ds .lan-kpi--total { background: var(--success-bg); border-left-width: 3px; }
 
+/* Indicadores em linha, do lado da ação — usados no Prêmio Assiduidade */
+.ds .stats-inline { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds .stats-inline .stat { padding: 4px 9px; gap: 7px; flex: 0 1 auto; }
+.ds .stats-inline .stat__chip { width: 26px; height: 26px; font-size: 14px; }
+.ds .stats-inline .stat__value { font-size: 16px; }
+.ds .stats-inline .stat__label { font-size: 11px; }
+.ds .lan-step--split .stats-inline { justify-content: flex-end; }
+
 /* Barra de filtros baixa: sem rótulos (os botões já se nomeiam) */
 .ds .filter-bar--slim { padding: 7px 9px; margin-bottom: 8px; gap: 6px; align-items: center; }
 .ds .filter-bar--slim .filter-group { flex-direction: row; align-items: center; }
 .ds .filter-bar--slim .filter-group input { min-width: 180px; width: 100%; }
+.ds .filter-bar--slim .filter-group select { padding: 6px 9px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); font-family: 'Inter', sans-serif; font-size: 12px; background: var(--surface2); color: var(--text); }
 
 /* BADGES */
 .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
