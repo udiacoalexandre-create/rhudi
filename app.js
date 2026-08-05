@@ -3270,7 +3270,14 @@ function pgBenExportarCaju(){
     </div>`;
 }
 
-function fmtValCaju(v){ return (parseFloat(v)||0).toFixed(2); }
+// Valor para o CSV do Caju. O arquivo e separado por ';' e o Caju le em pt-BR:
+// o PONTO e entendido como separador de milhar, entao "226.00" era importado
+// como 22.600 (100x). Valor inteiro sai sem separador nenhum (226) — formato do
+// arquivo que o Caju ja aceitou antes; fracao sai com virgula (226,50).
+function fmtValCaju(v){
+  const n=Math.round((parseFloat(v)||0)*100)/100;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.',',');
+}
 
 function getCajuAtivos(empSel){
   let f=colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status));
@@ -6747,7 +6754,7 @@ function exportarPremioCaju(){
   sim.forEach(r=>{
     const cpf=(r.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
     const val=_premioValorDe(r);
-    linhas.push([cpf,r.mat||'',val.toFixed(2),'0','0','0','0','0','0','0','0','0','0'].join(';'));
+    linhas.push([cpf,r.mat||'',fmtValCaju(val),'0','0','0','0','0','0','0','0','0','0'].join(';'));
   });
   const blob=new Blob([linhas.join(NL2)],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
@@ -9282,7 +9289,7 @@ function exportarCajuHistorico(idx){
   sim.forEach(r=>{
     const cpf=(r.cpf||'').replace(/[^0-9]/g,'').padStart(11,'0');
     const val=(r.valorPago!=null&&r.valorPago!=='')?fnum(r.valorPago):padrao;
-    linhas.push([cpf,r.mat||'',val.toFixed(2),'0','0','0','0','0','0','0','0','0','0'].join(';'));
+    linhas.push([cpf,r.mat||'',fmtValCaju(val),'0','0','0','0','0','0','0','0','0','0'].join(';'));
   });
   const blob=new Blob([linhas.join(NL2)],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
