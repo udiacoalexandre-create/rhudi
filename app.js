@@ -1007,7 +1007,8 @@ function afterRender(id){
   if(id==='usuarios') renderUsuarios();
   if(id==='contab-processo') afterRenderContabProcesso();
   if(id==='contab-historico') loadContabHistorico().then(renderContabHistorico);
-  if(id==='contab-esquema') loadEsquemaContabil(true).then(renderEsquemaLista);
+  if(id==='contab-esquema') Promise.all([loadEsquemaContabil(true),loadContabDePara(true)])
+    .then(()=>{ renderEsquemaLista(); renderDeParaLista(); });
   if(id==='teste-senior') {} // sem afterRender especifico
 }
 
@@ -9959,7 +9960,10 @@ function pgContabEsquema(){
         <option value="">Todos os eventos</option><option value="com">Com lançamento</option><option value="sem">Sem lançamento</option>
       </select></div>
     </div>
-    <div id="ec-lista"></div>`;
+    <div id="ec-lista"></div>
+    <div class="section-label" style="margin-top:18px">De/para de eventos (folha → esquema)</div>
+    <div class="text-xs text-muted" style="margin-bottom:6px">Quando o código do evento na folha é diferente do código no esquema, o de/para liga os dois. As contas usadas são sempre as do evento do esquema.</div>
+    <div id="dp-tabela"></div>`;
 }
 
 function renderEsquemaLista(){
@@ -10145,20 +10149,24 @@ function _lcGerar(dados, sigla, mm, aaaa){
   const semMap={};
   const usados=new Set();
   let totalDr=0, totalCr=0, pares=0, ccsForaDoPadrao=[];
+  const viaDePara={};   // codigos que so casaram por causa do de/para
 
   dados.linhas.forEach(l=>{
     if(!/^CC[\d.]+$/i.test(l.cc)) ccsForaDoPadrao.push(l.cc);
     l.celulas.forEach(cel=>{
       const v=Number(cel.valor);
       if(!isFinite(v)||v===0) return;
-      const ev=esquemaContabil[cel.cod];
+      // O codigo da folha pode responder por outro codigo no esquema.
+      const codEsq=_dpResolve(cel.cod);
+      const ev=esquemaContabil[codEsq];
+      if(codEsq!==cel.cod && ev) viaDePara[cel.cod]={para:codEsq,descricao:cel.desc||''};
       if(!ev){
         const d=semMap[cel.cod]||(semMap[cel.cod]={codigo:cel.cod,descricao:cel.desc||'',soma:0,ccs:[]});
         d.soma+=v; d.ccs.push({cc:l.cc,valor:v});
         return;
       }
       if(ev.semLancamento) return;
-      usados.add(cel.cod);
+      usados.add(codEsq);
       linhas.push([sigla,desc,ev.contaDebito,l.cc,_lcCampoValor(v),'0'].join(','));
       linhas.push([sigla,desc,ev.contaCredito,l.cc,'0',_lcCampoValor(v)].join(','));
       totalDr+=v; totalCr+=v; pares++;
@@ -10166,7 +10174,7 @@ function _lcGerar(dados, sigla, mm, aaaa){
   });
 
   return {
-    linhas, semMap, pares,
+    linhas, semMap, pares, viaDePara,
     nCC:dados.linhas.length,
     nEventos:usados.size,
     totalDr, totalCr,
@@ -10291,7 +10299,7 @@ function pgContabProcesso(){
 }
 
 function afterRenderContabProcesso(){
-  Promise.all([loadEsquemaContabil(),loadEsquemaMeta()]).finally(()=>renderContabWizard());
+  Promise.all([loadEsquemaContabil(),loadEsquemaMeta(),loadContabDePara()]).finally(()=>renderContabWizard());
 }
 
 function contabIrPasso(n){
@@ -10552,7 +10560,7 @@ function renderContabResultados(erros){
 
 // ── Passo 4: gerar os CSVs a partir do que foi processado ─────────
 async function contabGerarCsvs(){
-  await loadEsquemaContabil();
+  await Promise.all([loadEsquemaContabil(),loadContabDePara()]);
   const saida=document.getElementById('lc-saida');
   if(!Object.keys(esquemaContabil).length){
     if(saida) saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O esquema contábil está vazio. '
@@ -10669,12 +10677,18 @@ function renderLcResultados(erros){
       +Object.values(r.semMap).map(s=>'<tr><td><code>'+s.codigo+'</code></td><td>'+(s.descricao||'—')+'</td>'
         +'<td style="text-align:right;font-weight:600">'+brl(s.soma)+'</td>'
         +'<td class="text-xs">'+s.ccs.map(c=>c.cc).join(', ')+'</td>'
-        +'<td style="text-align:center"><button class="btn btn-primary btn-sm" onclick="abrirEventoEsquema(\''+s.codigo+'\',\''+String(s.descricao||'').replace(/'/g,'')+'\')"><i class="ti ti-plus"></i> Adicionar ao esquema</button></td></tr>').join('')
+        +'<td style="text-align:center;white-space:nowrap">'
+        +'<button class="btn btn-primary btn-sm" onclick="abrirDeParaEvento(\''+s.codigo+'\',\''+String(s.descricao||'').replace(/'/g,'')+'\')"><i class="ti ti-arrows-exchange"></i> Apontar para evento existente</button> '
+        +'<button class="btn btn-ghost btn-sm" onclick="abrirEventoEsquema(\''+s.codigo+'\',\''+String(s.descricao||'').replace(/'/g,'')+'\')"><i class="ti ti-plus"></i> Cadastrar novo</button>'
+        +'</td></tr>').join('')
       +'</tbody></table></div>'):'';
     const avisoCC=r.ccsForaDoPadrao.length?('<div class="alert alert-warning" style="margin-top:8px;font-size:12px"><i class="ti ti-alert-triangle"></i> '
       +r.ccsForaDoPadrao.length+' centro(s) de custo sem o padrão <code>CCx.x.x</code> — o campo User1_ID sai com esse texto: <code>'
       +r.ccsForaDoPadrao.slice(0,6).join('</code>, <code>')+'</code></div>'):'';
 
+    const nDp=Object.keys(r.viaDePara||{}).length;
+    const dpBloco=nDp?('<div class="text-xs text-muted" style="margin-top:8px"><i class="ti ti-arrows-exchange"></i> Resolvido por de/para: '
+      +Object.entries(r.viaDePara).map(([de,x])=>'<code>'+de+'</code> → <code>'+x.para+'</code>').join(' · ')+'</div>'):'';
     return '<div class="card" style="margin-bottom:8px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
       +'<div><div style="font-weight:700;color:var(--brand)">'+r.sigla+' <span class="text-xs text-muted" style="font-weight:400">'+(r.empresaNome||'')+'</span></div>'
@@ -10687,7 +10701,7 @@ function renderLcResultados(erros){
         +'<button class="btn btn-primary btn-sm" onclick="lcBaixar('+i+')"><i class="ti ti-download"></i> Baixar CSV</button>'
         +'<button class="btn btn-ghost btn-sm" onclick="lcPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
       +'</div></div>'
-      +avisoCC+semBloco+'<div id="lc-prev-'+i+'"></div></div>';
+      +avisoCC+dpBloco+semBloco+'<div id="lc-prev-'+i+'"></div></div>';
   }).join('');
 
   saida.innerHTML=
@@ -10700,4 +10714,118 @@ function renderLcResultados(erros){
       +'<button class="btn btn-ghost btn-sm" onclick="lcCopiarRelatorio()"><i class="ti ti-copy"></i> Copiar relatório</button>'
       +'</div></div>'
     +cards;
+}
+
+// ============================================================
+// CONTABILIZAÇÃO: DE/PARA DE EVENTOS (folha -> esquema contábil)
+// ============================================================
+// O código do evento na folha nem sempre é o mesmo do esquema contábil
+// (ex.: 218 "Diferença de Férias" na folha = 559 no esquema). O de/para
+// resolve isso sem duplicar evento no esquema e sem inventar conta: ele só
+// aponta um código para outro que JÁ existe no esquema.
+// Mora em config/contabDeParaEventos — coleção já liberada nas regras.
+
+let contabDePara={};   // {codFolha:{para, descFolha, em, por}}
+
+async function loadContabDePara(force){
+  if(Object.keys(contabDePara).length && !force) return contabDePara;
+  try{
+    const snap=await window._getDocs(window._col('config'));
+    snap.forEach(d=>{ if(d.id==='contabDeParaEventos') contabDePara=Object.assign({},(d.data()||{}).mapa||{}); });
+  }catch(e){ console.error('de/para de eventos:',e); }
+  return contabDePara;
+}
+async function _dpGravar(){
+  await fsSet('config','contabDeParaEventos',{mapa:contabDePara,
+    atualizadoEm:new Date().toISOString(),
+    atualizadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+}
+// Código do esquema que responde por um código da folha.
+function _dpResolve(cod){ const d=contabDePara[cod]; return (d&&d.para)||cod; }
+
+function _dpNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+
+// Eventos do esquema com descrição igual (ou parecida) à do evento da folha.
+function _dpSugestoes(descFolha){
+  const alvo=_dpNorm(descFolha);
+  if(!alvo) return [];
+  const iguais=[], parecidos=[];
+  Object.values(esquemaContabil).forEach(ev=>{
+    const d=_dpNorm(ev.descricao);
+    if(!d) return;
+    if(d===alvo) iguais.push(ev);
+    else if(d.includes(alvo)||alvo.includes(d)) parecidos.push(ev);
+  });
+  const ord=(a,b)=>(parseInt(a.codigo,10)||0)-(parseInt(b.codigo,10)||0);
+  return iguais.sort(ord).concat(parecidos.sort(ord)).slice(0,12);
+}
+
+// ── Modal: apontar um evento da folha para um do esquema ──────────
+function abrirDeParaEvento(codFolha, descFolha){
+  document.getElementById('modal-dp')?.remove();
+  const sug=_dpSugestoes(descFolha);
+  const esc=s=>String(s||'').replace(/"/g,'&quot;').replace(/'/g,'');
+  const linha=ev=>'<div class="incl-row" onclick="salvarDeParaEvento(\''+esc(codFolha)+'\',\''+esc(ev.codigo)+'\',\''+esc(descFolha)+'\')" '
+    +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
+    +'data-busca="'+esc((ev.codigo+' '+ev.descricao).toLowerCase())+'">'
+    +'<div><div style="font-weight:600"><code>'+ev.codigo+'</code> · '+(ev.descricao||'—')+'</div>'
+    +'<div class="text-xs text-muted">'+(ev.semLancamento?'sem lançamento contábil':'D '+ev.contaDebito+' · C '+ev.contaCredito)+'</div></div>'
+    +'<span class="btn btn-ghost btn-sm"><i class="ti ti-arrow-right"></i></span></div>';
+  const todos=Object.values(esquemaContabil).sort((a,b)=>(parseInt(a.codigo,10)||0)-(parseInt(b.codigo,10)||0));
+  const html='<div class="modal-overlay ds open" id="modal-dp" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:640px"><div class="modal-title">De/para do evento '+codFolha+'</div>'
+    +'<div class="modal-sub">A folha traz <strong>'+codFolha+' · '+(descFolha||'—')+'</strong>. Escolha o evento do esquema que responde por ele — as contas usadas serão as desse evento.</div>'
+    +(sug.length?'<div style="margin-top:12px"><div class="section-label">Sugestões pela descrição</div>'+sug.map(linha).join('')+'</div>':'')
+    +'<div style="margin-top:12px"><div class="section-label">Todos os eventos do esquema</div>'
+    +'<input type="text" id="dp-q" placeholder="Buscar código ou descrição..." oninput="filtrarDePara()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;margin:6px 0">'
+    +'<div id="dp-lista" style="max-height:38vh;overflow:auto">'+todos.map(linha).join('')+'</div></div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-dp\').remove()">Cancelar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function filtrarDePara(){
+  const q=(document.getElementById('dp-q')?.value||'').toLowerCase();
+  document.querySelectorAll('#dp-lista .incl-row').forEach(r=>{ r.style.display=(!q||(r.dataset.busca||'').includes(q))?'':'none'; });
+}
+async function salvarDeParaEvento(codFolha,codEsquema,descFolha){
+  if(!esquemaContabil[codEsquema]){ toast('Evento '+codEsquema+' não está no esquema.','error'); return; }
+  contabDePara[codFolha]={para:codEsquema,descFolha:descFolha||'',
+    em:new Date().toISOString(),por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''};
+  try{
+    await _dpGravar();
+    document.getElementById('modal-dp')?.remove();
+    toast('De/para salvo: folha '+codFolha+' → esquema '+codEsquema+'.','success');
+    if(currentPage==='contab-esquema') renderDeParaLista();
+    if(currentPage==='contab-processo' && contabStep===4) contabGerarCsvs();
+  }catch(e){ toast('Erro ao salvar o de/para: '+e.message,'error'); }
+}
+async function removerDeParaEvento(codFolha){
+  if(!confirm('Remover o de/para do evento '+codFolha+'?')) return;
+  delete contabDePara[codFolha];
+  try{
+    await _dpGravar();
+    renderDeParaLista();
+    toast('De/para removido.','error');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+function renderDeParaLista(){
+  const el=document.getElementById('dp-tabela'); if(!el) return;
+  const cods=Object.keys(contabDePara).sort((a,b)=>(parseInt(a,10)||0)-(parseInt(b,10)||0));
+  if(!cods.length){
+    el.innerHTML='<div class="text-xs text-muted" style="padding:8px 0">Nenhum de/para cadastrado. Ele é criado no passo 4, quando um evento da folha não existe no esquema mas corresponde a um que existe.</div>';
+    return;
+  }
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+    +'<th>Código na folha</th><th>Evento na folha</th><th>Vira o código</th><th>Evento no esquema</th><th>Contas</th><th style="text-align:center">Ação</th>'
+    +'</tr></thead><tbody>'
+    +cods.map(c=>{
+      const d=contabDePara[c], ev=esquemaContabil[d.para];
+      return '<tr><td><code>'+c+'</code></td><td>'+(d.descFolha||'—')+'</td>'
+        +'<td><code>'+d.para+'</code></td>'
+        +'<td>'+(ev?(ev.descricao||'—'):'<span class="badge badge--danger">não existe mais no esquema</span>')+'</td>'
+        +'<td class="text-xs">'+(ev?(ev.semLancamento?'sem lançamento':'D '+ev.contaDebito+'<br>C '+ev.contaCredito):'—')+'</td>'
+        +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="removerDeParaEvento(\''+String(c).replace(/'/g,'')+'\')"><i class="ti ti-trash"></i></button></td></tr>';
+    }).join('')
+    +'</tbody></table></div>';
 }
