@@ -10725,7 +10725,17 @@ function renderLcResultados(erros){
 // aponta um código para outro que JÁ existe no esquema.
 // Mora em config/contabDeParaEventos — coleção já liberada nas regras.
 
-let contabDePara={};   // {codFolha:{para, descFolha, em, por}}
+let contabDePara={};   // {codFolha:{para, descFolha, em, por}} — o que foi cadastrado
+
+// De/para já confirmado com a contabilidade e que vale por padrão, sem
+// depender de cadastro: a folha emite 218 "Diferença de Férias" e o esquema
+// tem o mesmo evento no código 559. Um cadastro para o mesmo código
+// sobrescreve o padrão (inclusive para desligá-lo, com para:'').
+const CONTAB_DEPARA_PADRAO={
+  '218':{para:'559',descFolha:'Diferença de Férias'}
+};
+// Mapa que vale de verdade: padrão + o que foi cadastrado por cima.
+function _dpEfetivo(){ return Object.assign({},CONTAB_DEPARA_PADRAO,contabDePara); }
 
 async function loadContabDePara(force){
   if(Object.keys(contabDePara).length && !force) return contabDePara;
@@ -10741,7 +10751,7 @@ async function _dpGravar(){
     atualizadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
 }
 // Código do esquema que responde por um código da folha.
-function _dpResolve(cod){ const d=contabDePara[cod]; return (d&&d.para)||cod; }
+function _dpResolve(cod){ const d=_dpEfetivo()[cod]; return (d&&d.para)||cod; }
 
 function _dpNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
 
@@ -10793,39 +10803,66 @@ async function salvarDeParaEvento(codFolha,codEsquema,descFolha){
     em:new Date().toISOString(),por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''};
   try{
     await _dpGravar();
+    // Confere no servidor: gravar e nao persistir foi exatamente o que
+    // aconteceu antes, e passava despercebido.
+    contabDePara={}; await loadContabDePara(true);
+    if(!(contabDePara[codFolha]&&contabDePara[codFolha].para===codEsquema))
+      throw new Error('a gravação não persistiu — confira a permissão da coleção config.');
     document.getElementById('modal-dp')?.remove();
     toast('De/para salvo: folha '+codFolha+' → esquema '+codEsquema+'.','success');
     if(currentPage==='contab-esquema') renderDeParaLista();
     if(currentPage==='contab-processo' && contabStep===4) contabGerarCsvs();
-  }catch(e){ toast('Erro ao salvar o de/para: '+e.message,'error'); }
+  }catch(e){
+    console.error('de/para',e);
+    toast('Erro ao salvar o de/para: '+e.message,'error');
+  }
 }
 async function removerDeParaEvento(codFolha){
-  if(!confirm('Remover o de/para do evento '+codFolha+'?')) return;
-  delete contabDePara[codFolha];
+  const ehPadrao=!!CONTAB_DEPARA_PADRAO[codFolha];
+  if(!confirm(ehPadrao
+      ? 'Desligar o de/para padrão do evento '+codFolha+'?\n\nEle volta a aparecer como evento sem mapeamento.'
+      : 'Remover o de/para do evento '+codFolha+'?')) return;
+  // Padrao nao se apaga: grava-se um cadastro vazio por cima para desligar.
+  if(ehPadrao) contabDePara[codFolha]={para:'',descFolha:CONTAB_DEPARA_PADRAO[codFolha].descFolha||'',
+    em:new Date().toISOString(),por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''};
+  else delete contabDePara[codFolha];
   try{
     await _dpGravar();
     renderDeParaLista();
-    toast('De/para removido.','error');
-  }catch(e){ toast('Erro: '+e.message,'error'); }
+    if(currentPage==='contab-processo' && contabStep===4) contabGerarCsvs();
+    toast(ehPadrao?'De/para padrão desligado.':'De/para removido.','error');
+  }catch(e){ console.error('de/para',e); toast('Erro: '+e.message,'error'); }
 }
 
 function renderDeParaLista(){
   const el=document.getElementById('dp-tabela'); if(!el) return;
-  const cods=Object.keys(contabDePara).sort((a,b)=>(parseInt(a,10)||0)-(parseInt(b,10)||0));
+  const efetivo=_dpEfetivo();
+  const cods=Object.keys(efetivo).sort((a,b)=>(parseInt(a,10)||0)-(parseInt(b,10)||0));
   if(!cods.length){
-    el.innerHTML='<div class="text-xs text-muted" style="padding:8px 0">Nenhum de/para cadastrado. Ele é criado no passo 4, quando um evento da folha não existe no esquema mas corresponde a um que existe.</div>';
+    el.innerHTML='<div class="text-xs text-muted" style="padding:8px 0">Nenhum de/para. Ele é criado no passo 4, quando um evento da folha não existe no esquema mas corresponde a um que existe.</div>';
     return;
   }
   el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
-    +'<th>Código na folha</th><th>Evento na folha</th><th>Vira o código</th><th>Evento no esquema</th><th>Contas</th><th style="text-align:center">Ação</th>'
+    +'<th>Código na folha</th><th>Evento na folha</th><th>Vira o código</th><th>Evento no esquema</th><th>Contas</th><th>Origem</th><th style="text-align:center">Ação</th>'
     +'</tr></thead><tbody>'
     +cods.map(c=>{
-      const d=contabDePara[c], ev=esquemaContabil[d.para];
+      const d=efetivo[c], ev=d.para?esquemaContabil[d.para]:null;
+      const ehPadrao=!!CONTAB_DEPARA_PADRAO[c], sobrescrito=!!contabDePara[c];
+      const desligado=!d.para;
+      const origem = desligado ? '<span class="badge badge--neutral">desligado</span>'
+        : ehPadrao && !sobrescrito ? '<span class="badge badge--accent">padrão do sistema</span>'
+        : ehPadrao ? '<span class="badge badge--warning">padrão alterado</span>'
+        : '<span class="badge badge--success">cadastrado</span>';
       return '<tr><td><code>'+c+'</code></td><td>'+(d.descFolha||'—')+'</td>'
-        +'<td><code>'+d.para+'</code></td>'
-        +'<td>'+(ev?(ev.descricao||'—'):'<span class="badge badge--danger">não existe mais no esquema</span>')+'</td>'
+        +'<td>'+(desligado?'—':'<code>'+d.para+'</code>')+'</td>'
+        +'<td>'+(desligado?'<span class="text-xs text-muted">volta a ficar sem mapeamento</span>'
+                :(ev?(ev.descricao||'—'):'<span class="badge badge--danger">não existe no esquema</span>'))+'</td>'
         +'<td class="text-xs">'+(ev?(ev.semLancamento?'sem lançamento':'D '+ev.contaDebito+'<br>C '+ev.contaCredito):'—')+'</td>'
-        +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="removerDeParaEvento(\''+String(c).replace(/'/g,'')+'\')"><i class="ti ti-trash"></i></button></td></tr>';
+        +'<td>'+origem+'</td>'
+        +'<td style="text-align:center">'+(desligado
+            ? '<button class="btn btn-ghost btn-sm" onclick="abrirDeParaEvento(\''+String(c).replace(/'/g,'')+'\',\''+String(d.descFolha||'').replace(/'/g,'')+'\')"><i class="ti ti-plug"></i> Religar</button>'
+            : '<button class="btn btn-ghost btn-sm" onclick="removerDeParaEvento(\''+String(c).replace(/'/g,'')+'\')"><i class="ti ti-trash"></i></button>')
+        +'</td></tr>';
     }).join('')
     +'</tbody></table></div>';
 }
