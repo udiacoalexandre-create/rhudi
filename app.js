@@ -9583,7 +9583,7 @@ function _cbBorda(){ const t={style:'thin',color:{argb:CB_COR.borda}}; return {t
 function _cbFill(cor){ return {type:'pattern',pattern:'solid',fgColor:{argb:cor}}; }
 function _cbColLetter(n){ let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
 
-async function _cbGerarXlsx(res){
+async function _cbGerarBuffer(res){
   const wb=new ExcelJS.Workbook();
   const ws=wb.addWorksheet('CC x Eventos');
   const nEv=res.eventos.length;
@@ -9679,8 +9679,11 @@ async function _cbGerarXlsx(res){
   ws.getColumn(colTotal).width=16;
   ws.views=[{state:'frozen',xSplit:1,ySplit:4}];
 
-  const buf=await wb.xlsx.writeBuffer();
-  return new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  return await wb.xlsx.writeBuffer();   // ArrayBuffer
+}
+const CB_MIME_XLSX='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+async function _cbGerarXlsx(res){
+  return new Blob([await _cbGerarBuffer(res)],{type:CB_MIME_XLSX});
 }
 
 function _cbNomeArquivo(res){
@@ -9702,8 +9705,8 @@ function _cbBaixarBlob(blob,nome){
 async function contabBaixar(i){
   const res=contabResultados[i]; if(!res) return;
   try{
-    if(!res._blob) res._blob=await _cbGerarXlsx(res);
-    _cbBaixarBlob(res._blob,_cbNomeArquivo(res));
+    if(!res._buf) res._buf=await _cbGerarBuffer(res);
+    _cbBaixarBlob(new Blob([res._buf],{type:CB_MIME_XLSX}),_cbNomeArquivo(res));
     toast('Planilha de '+res.empresa.name+' baixada.','success');
   }catch(e){ toast('Erro ao gerar a planilha: '+e.message,'error'); }
 }
@@ -9711,17 +9714,33 @@ async function contabBaixar(i){
 async function contabBaixarTodos(){
   if(!contabResultados.length) return;
   try{
-    toast('Gerando o zip...','info');
+    toast('Gerando o zip com '+contabResultados.length+' planilhas...','info');
     const zip=new JSZip();
+    // JSZip recebe o ArrayBuffer direto: passar Blob nem sempre e aceito e o
+    // erro derrubava o zip inteiro. Nome repetido sobrescreveria a entrada
+    // anterior, entao e desambiguado.
+    const usados=new Set();
     for(const res of contabResultados){
-      if(!res._blob) res._blob=await _cbGerarXlsx(res);
-      zip.file(_cbNomeArquivo(res), res._blob);
+      if(!res._buf) res._buf=await _cbGerarBuffer(res);
+      let nome=_cbNomeArquivo(res);
+      if(usados.has(nome)){
+        const base=nome.replace(/\.xlsx$/i,'');
+        let n=2; while(usados.has(base+'_'+n+'.xlsx')) n++;
+        nome=base+'_'+n+'.xlsx';
+      }
+      usados.add(nome);
+      zip.file(nome,res._buf);
     }
-    const blob=await zip.generateAsync({type:'blob'});
+    const n=Object.keys(zip.files).length;
+    if(n!==contabResultados.length) throw new Error('o zip ficou com '+n+' de '+contabResultados.length+' planilhas.');
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
     const comp=(contabResultados[0].periodo.ini||'').split('/').slice(1).join('-')||'periodo';
     _cbBaixarBlob(blob,'FOLHA_CCUSTO_'+comp+'_CCxEventos.zip');
-    toast(contabResultados.length+' planilhas no zip.','success');
-  }catch(e){ toast('Erro ao gerar o zip: '+e.message,'error'); }
+    toast(n+' planilhas no zip.','success');
+  }catch(e){
+    console.error('zip CC x Eventos',e);
+    toast('Erro ao gerar o zip: '+e.message+' — baixe uma empresa por vez.','error');
+  }
 }
 
 // ── UI da aba Contabilização ──────────────────────────────────────
