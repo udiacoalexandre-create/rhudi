@@ -10104,7 +10104,21 @@ function fmtBR(n){
 // Zero sai como 0 sem aspas; o resto entre aspas porque tem virgula decimal.
 function _lcCampoValor(n){ return n===0 ? '0' : '"'+fmtBR(n)+'"'; }
 
+// Grafia exata que o ERP espera no AD_Org_ID[Name]: a importacao e
+// case-sensitive, entao a sigla em caixa alta nao serve para estas empresas.
+const LC_SIGLA_ERP={
+  'FRANCIS':'Francis',
+  'GSILVA':'G.SILVA',
+  'MZOLLI':'Mzolli',
+  'UDBENS':'Udbens',
+  'UDIACO':'Carapicuiba'
+};
+
 function _lcResolveSigla(filename){
+  return LC_SIGLA_ERP[_lcSiglaBruta(filename)] || _lcSiglaBruta(filename);
+}
+// Sigla "crua" (caixa alta) deduzida do nome do arquivo, antes da grafia do ERP.
+function _lcSiglaBruta(filename){
   const nome=_lcSemAcento(filename);
   // Padrao 2: Folha_Pagamento_MM-AAAA_EMPRESA_...
   if(/^Folha_Pagamento_/i.test(nome)){
