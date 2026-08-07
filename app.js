@@ -36,7 +36,7 @@ function normalizarStatus(s){
 }
 
 // Status sem acento/caixa, para comparacoes tolerantes a variacoes de escrita.
-function _statusKey(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim(); }
+function _statusKey(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim(); }
 // Classifica o status em um grupo de regra de beneficio, tolerante a variantes
 // (ex.: "Acidente de Trabalho" vs "Acidente Trabalho", com/sem acento).
 function statusGrupo(s){
@@ -897,6 +897,8 @@ const MODULES = {
   ]},
   contabil:{pages:[
     {id:'contab-ccxev',icon:'<i class="ti ti-table"></i>',label:'CC x Eventos'},
+    {id:'contab-lancamentos',icon:'<i class="ti ti-file-dollar"></i>',label:'Lançamentos contábeis'},
+    {id:'contab-esquema',icon:'<i class="ti ti-list-details"></i>',label:'Esquema contábil'},
     {id:'contab-historico',icon:'<i class="ti ti-history"></i>',label:'Histórico'},
   ]},
   dashboard:{pages:[
@@ -973,6 +975,7 @@ function renderPage(id){
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
     'premio-dash':pgPremioDashboard,'premio-historico':pgPremioHistorico,
     'contab-ccxev':pgContabCCxEventos,'contab-historico':pgContabHistorico,
+    'contab-lancamentos':pgContabLancamentos,'contab-esquema':pgContabEsquema,
   };
   if(id==='usuarios' && !podeGerenciarUsuarios()) return '<div class="empty-state"><div class="empty-icon"></div><p>Acesso restrito.</p></div>';
   const fn=pages[id];
@@ -1005,6 +1008,8 @@ function afterRender(id){
   if(id==='usuarios') renderUsuarios();
   if(id==='contab-ccxev') afterRenderContab();
   if(id==='contab-historico') loadContabHistorico().then(renderContabHistorico);
+  if(id==='contab-lancamentos') afterRenderLancamentos();
+  if(id==='contab-esquema') loadEsquemaContabil(true).then(renderEsquemaLista);
   if(id==='teste-senior') {} // sem afterRender especifico
 }
 
@@ -4503,7 +4508,7 @@ document.addEventListener('change', function(e){
 // ════════════════════════════════════════════════════════════════
 let novosPendentes=[];
 
-const _normH=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+const _normH=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
 
 // Localiza a aba e a linha de cabeçalho (a que tem "matricula" e "nome").
 function _acharAbaNovos(wb){
@@ -9915,4 +9920,596 @@ function renderContabHistorico(){
         +'<td class="text-xs text-muted">'+(h.usuario||'')+'</td></tr>';
     }).join('')
     +'</tbody></table></div>';
+}
+
+// ============================================================
+// CONTABILIZAÇÃO: ESQUEMA CONTÁBIL (Firestore) + LANÇAMENTOS (CSV Adempiere)
+// ============================================================
+// O esquema mapeia cada evento da folha as suas contas de debito e credito.
+// Fica no Firestore para que evento novo (ex.: 218 Diferenca de Ferias) seja
+// resolvido pela tela, sem mexer no codigo. Um upload avulso tem precedencia
+// so na execucao em que for usado.
+
+let esquemaContabil = {};        // {codigo: {codigo,descricao,contaDebito,descDebito,contaCredito,descCredito,semLancamento}}
+let esquemaCarregado = false;
+let lcResultados = [];           // relatorio por arquivo processado
+
+const SEM_LANC_TXT = 'sem lançamento contábil';
+
+// Normaliza o codigo do evento: o xlsx as vezes traz numero (257.0 -> "257").
+function _ecNormCod(v){
+  if(v==null) return '';
+  let s=String(v).trim();
+  if(/^\d+\.0+$/.test(s)) s=s.replace(/\.0+$/,'');
+  return s;
+}
+function _ecSemLanc(txt){
+  return String(txt||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .includes(SEM_LANC_TXT.normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+}
+
+async function loadEsquemaContabil(force){
+  if(esquemaCarregado && !force) return esquemaContabil;
+  try{
+    const snap=await window._getDocs(window._col('esquemaContabil'));
+    const m={};
+    snap.forEach(d=>{ const x=Object.assign({},d.data()); m[_ecNormCod(x.codigo||d.id)]=x; });
+    esquemaContabil=m; esquemaCarregado=true;
+  }catch(e){ console.error('Esquema contábil:',e); }
+  return esquemaContabil;
+}
+
+// ── Importador do EsquemaContabil_*.xlsx ──────────────────────────
+function _ecAcha(cab, ...nomes){
+  const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  for(let i=0;i<cab.length;i++){
+    const c=norm(cab[i]);
+    if(nomes.some(n=>c===norm(n))) return i;
+  }
+  for(let i=0;i<cab.length;i++){
+    const c=norm(cab[i]);
+    if(nomes.some(n=>c.includes(norm(n)))) return i;
+  }
+  return -1;
+}
+
+async function importarEsquemaXlsx(event){
+  const file=event.target.files[0]; if(!file) return;
+  const el=document.getElementById('ec-status');
+  if(el) el.innerHTML='<div class="alert alert-info">Lendo o esquema...</div>';
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+    // Aba "Esquema Contábil" (com ou sem acento); se nao achar, usa a primeira.
+    const nomeAba=wb.SheetNames.find(n=>String(n).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes('esquema')) || wb.SheetNames[0];
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[nomeAba],{header:1,raw:true,defval:null});
+    if(!rows.length) throw new Error('Planilha vazia.');
+
+    // Acha a linha de cabecalho (a que tem "Código" e "Conta a Débito")
+    let iCab=-1;
+    for(let i=0;i<Math.min(rows.length,20);i++){
+      const r=(rows[i]||[]).map(x=>String(x||''));
+      if(_ecAcha(r,'Código','Codigo')>=0 && _ecAcha(r,'Conta a Débito','Conta a Debito')>=0){ iCab=i; break; }
+    }
+    if(iCab<0) throw new Error('Não achei o cabeçalho (Código / Conta a Débito) na aba "'+nomeAba+'".');
+    const cab=rows[iCab];
+    const cCod=_ecAcha(cab,'Código','Codigo');
+    const cDesc=_ecAcha(cab,'Descrição do Evento','Descricao do Evento','Descrição','Descricao');
+    const cCD=_ecAcha(cab,'Conta a Débito','Conta a Debito');
+    const cDD=_ecAcha(cab,'Descrição Débito','Descricao Debito');
+    const cCC=_ecAcha(cab,'Conta a Crédito','Conta a Credito');
+    const cDC=_ecAcha(cab,'Descrição Crédito','Descricao Credito');
+
+    const itens=[];
+    for(let i=iCab+1;i<rows.length;i++){
+      const r=rows[i]||[];
+      const cod=_ecNormCod(r[cCod]);
+      if(!cod || !/^\d+$/.test(cod)) continue;
+      const contaD=String(r[cCD]==null?'':r[cCD]).trim();
+      const contaC=String(r[cCC]==null?'':r[cCC]).trim();
+      const sem=_ecSemLanc(contaD)||_ecSemLanc(contaC);
+      itens.push({
+        codigo:cod,
+        descricao:String((cDesc>=0?r[cDesc]:'')||'').trim(),
+        contaDebito: sem?'':contaD, descDebito:String((cDD>=0?r[cDD]:'')||'').trim(),
+        contaCredito:sem?'':contaC, descCredito:String((cDC>=0?r[cDC]:'')||'').trim(),
+        semLancamento:sem
+      });
+    }
+    if(!itens.length) throw new Error('Nenhum evento lido do arquivo.');
+
+    if(!confirm('Importar '+itens.length+' evento(s) para o esquema contábil?\n\nOs códigos já existentes serão atualizados; os demais são mantidos.')){
+      if(el) el.innerHTML=''; event.target.value=''; return;
+    }
+    let n=0;
+    for(const it of itens){ await fsSet('esquemaContabil',it.codigo,it); n++; }
+    await loadEsquemaContabil(true);
+    renderEsquemaLista();
+    if(el) el.innerHTML='<div class="alert alert-success"><i class="ti ti-circle-check"></i> '+n+' evento(s) importado(s) da aba "'+nomeAba+'".</div>';
+    toast(n+' eventos no esquema.','success');
+  }catch(e){
+    if(el) el.innerHTML='<div class="alert alert-warning">Erro ao importar: '+e.message+'</div>';
+    console.error(e);
+  }
+  event.target.value='';
+}
+
+// ── Tela do esquema contábil ──────────────────────────────────────
+function pgContabEsquema(){
+  return `
+    <div class="lan-top">
+      <div class="page-header">
+        <h2 class="page-title">Esquema contábil</h2>
+        <p class="page-subtitle">Contas de débito e crédito de cada evento da folha. É daqui que saem os lançamentos.</p>
+      </div>
+    </div>
+    <div class="lan-step lan-step--split">
+      <div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-list-details"></i></span><div>
+        <div class="lan-step__t">Eventos mapeados</div>
+        <div class="lan-step__d">Evento sem mapeamento é ignorado na geração e aparece no relatório — nunca recebe conta inventada.</div>
+      </div></div>
+      <div class="lan-split-side lan-actions">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ec-file').click()"><i class="ti ti-file-import"></i> Importar .xlsx</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirEventoEsquema()"><i class="ti ti-plus"></i> Novo evento</button>
+      </div>
+    </div>
+    <input type="file" id="ec-file" accept=".xlsx,.xls" style="display:none" onchange="importarEsquemaXlsx(event)">
+    <div id="ec-status"></div>
+    <div class="filter-bar filter-bar--slim">
+      <div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="ec-q" placeholder="Buscar código, descrição ou conta..." aria-label="Buscar" oninput="renderEsquemaLista()"></div>
+      <div class="filter-group"><select id="ec-tipo" aria-label="Tipo" onchange="renderEsquemaLista()">
+        <option value="">Todos os eventos</option><option value="com">Com lançamento</option><option value="sem">Sem lançamento</option>
+      </select></div>
+    </div>
+    <div id="ec-lista"></div>`;
+}
+
+function renderEsquemaLista(){
+  const el=document.getElementById('ec-lista'); if(!el) return;
+  const q=(document.getElementById('ec-q')?.value||'').toLowerCase().trim();
+  const tipo=document.getElementById('ec-tipo')?.value||'';
+  let itens=Object.values(esquemaContabil);
+  if(tipo==='com') itens=itens.filter(x=>!x.semLancamento);
+  if(tipo==='sem') itens=itens.filter(x=>x.semLancamento);
+  if(q) itens=itens.filter(x=>[x.codigo,x.descricao,x.contaDebito,x.contaCredito,x.descDebito,x.descCredito]
+    .some(v=>String(v||'').toLowerCase().includes(q)));
+  itens.sort((a,b)=>(parseInt(a.codigo,10)||0)-(parseInt(b.codigo,10)||0));
+
+  if(!Object.keys(esquemaContabil).length){
+    el.innerHTML='<div class="empty-state"><div class="empty-icon">📘</div><p>Esquema vazio. Importe o <strong>EsquemaContabil_*.xlsx</strong> para começar.</p></div>';
+    return;
+  }
+  if(!itens.length){ el.innerHTML='<div class="empty-state"><p>Nenhum evento com esse filtro.</p></div>'; return; }
+  el.innerHTML='<div class="text-xs text-muted" style="margin-bottom:6px">'+itens.length+' de '+Object.keys(esquemaContabil).length+' eventos</div>'
+    +'<div class="tbl-wrap" style="max-height:calc(100vh - 330px)"><table class="tbl"><thead><tr>'
+    +'<th>Código</th><th>Evento</th><th>Conta a débito</th><th>Conta a crédito</th><th style="text-align:center">Ação</th>'
+    +'</tr></thead><tbody>'
+    +itens.map(x=>{
+      const cod=String(x.codigo).replace(/'/g,'');
+      if(x.semLancamento){
+        return '<tr><td><code>'+x.codigo+'</code></td><td>'+(x.descricao||'—')+'</td>'
+          +'<td colspan="2"><span class="badge badge--neutral">Sem lançamento contábil</span></td>'
+          +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirEventoEsquema(\''+cod+'\')"><i class="ti ti-edit"></i></button> '
+          +'<button class="btn btn-ghost btn-sm" onclick="excluirEventoEsquema(\''+cod+'\')"><i class="ti ti-trash"></i></button></td></tr>';
+      }
+      return '<tr><td><code>'+x.codigo+'</code></td><td>'+(x.descricao||'—')+'</td>'
+        +'<td><code style="font-size:11px">'+(x.contaDebito||'—')+'</code><div class="text-xs text-muted">'+(x.descDebito||'')+'</div></td>'
+        +'<td><code style="font-size:11px">'+(x.contaCredito||'—')+'</code><div class="text-xs text-muted">'+(x.descCredito||'')+'</div></td>'
+        +'<td style="text-align:center;white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="abrirEventoEsquema(\''+cod+'\')"><i class="ti ti-edit"></i></button> '
+        +'<button class="btn btn-ghost btn-sm" onclick="excluirEventoEsquema(\''+cod+'\')"><i class="ti ti-trash"></i></button></td></tr>';
+    }).join('')
+    +'</tbody></table></div>';
+}
+
+// Abre o editor. Com prefill (codigo/descricao) serve de atalho para o evento
+// que apareceu na folha e nao esta no esquema.
+function abrirEventoEsquema(cod, preDesc){
+  const x=(cod&&esquemaContabil[cod])||{codigo:cod||'',descricao:preDesc||'',contaDebito:'',descDebito:'',contaCredito:'',descCredito:'',semLancamento:false};
+  const editando=!!(cod&&esquemaContabil[cod]);
+  document.getElementById('modal-ec')?.remove();
+  const esc=s=>String(s||'').replace(/"/g,'&quot;');
+  const html='<div class="modal-overlay ds open" id="modal-ec" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:620px"><div class="modal-title">'+(editando?'Editar evento '+x.codigo:'Novo evento no esquema')+'</div>'
+    +'<div class="modal-sub">O código é o mesmo que aparece no cabeçalho da planilha CC x Eventos.</div>'
+    +'<div class="form-grid cols2" style="margin-top:12px">'
+      +'<div class="fg"><label>Código</label><input type="text" id="ec-cod" value="'+esc(x.codigo)+'"'+(editando?' readonly':'')+'></div>'
+      +'<div class="fg"><label>Descrição do evento</label><input type="text" id="ec-desc" value="'+esc(x.descricao)+'"></div>'
+      +'<div class="fg full"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="ec-sem" '+(x.semLancamento?'checked':'')+' onchange="_ecToggleSem()"> Este evento não gera lançamento contábil</label></div>'
+      +'<div class="fg"><label>Conta a débito</label><input type="text" id="ec-cd" value="'+esc(x.contaDebito)+'" placeholder="4.1.1.10.01.001"></div>'
+      +'<div class="fg"><label>Descrição do débito</label><input type="text" id="ec-dd" value="'+esc(x.descDebito)+'"></div>'
+      +'<div class="fg"><label>Conta a crédito</label><input type="text" id="ec-cc" value="'+esc(x.contaCredito)+'" placeholder="2.1.1.30.01.001"></div>'
+      +'<div class="fg"><label>Descrição do crédito</label><input type="text" id="ec-dc" value="'+esc(x.descCredito)+'"></div>'
+    +'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-ec\').remove()">Cancelar</button>'
+    +'<button class="btn btn-primary" onclick="salvarEventoEsquema()">Salvar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+  _ecToggleSem();
+}
+function _ecToggleSem(){
+  const sem=document.getElementById('ec-sem')?.checked;
+  ['ec-cd','ec-dd','ec-cc','ec-dc'].forEach(id=>{ const e=document.getElementById(id); if(e){ e.disabled=!!sem; e.style.opacity=sem?.5:1; } });
+}
+async function salvarEventoEsquema(){
+  const cod=_ecNormCod(document.getElementById('ec-cod')?.value);
+  if(!/^\d+$/.test(cod)){ toast('Código inválido — use só números.','error'); return; }
+  const sem=!!document.getElementById('ec-sem')?.checked;
+  const item={
+    codigo:cod,
+    descricao:(document.getElementById('ec-desc')?.value||'').trim(),
+    contaDebito: sem?'':(document.getElementById('ec-cd')?.value||'').trim(),
+    descDebito:  sem?'':(document.getElementById('ec-dd')?.value||'').trim(),
+    contaCredito:sem?'':(document.getElementById('ec-cc')?.value||'').trim(),
+    descCredito: sem?'':(document.getElementById('ec-dc')?.value||'').trim(),
+    semLancamento:sem
+  };
+  if(!sem && (!item.contaDebito||!item.contaCredito)){ toast('Informe as duas contas (débito e crédito).','error'); return; }
+  try{
+    await fsSet('esquemaContabil',cod,item);
+    esquemaContabil[cod]=item;
+    document.getElementById('modal-ec')?.remove();
+    if(currentPage==='contab-esquema') renderEsquemaLista();
+    if(currentPage==='contab-lancamentos' && lcResultados.length) toast('Evento '+cod+' salvo. Gere os lançamentos de novo para aplicá-lo.','success');
+    else toast('Evento '+cod+' salvo.','success');
+  }catch(e){ toast('Erro ao salvar: '+e.message,'error'); }
+}
+async function excluirEventoEsquema(cod){
+  if(!confirm('Remover o evento '+cod+' do esquema contábil?')) return;
+  try{
+    await fsDel('esquemaContabil',cod);
+    delete esquemaContabil[cod];
+    renderEsquemaLista();
+    toast('Evento '+cod+' removido.','error');
+  }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ── Lançamentos contábeis (CSV para o Adempiere/iDempiere) ────────
+const LC_MESES={'01':'JANEIRO','02':'FEVEREIRO','03':'MARCO','04':'ABRIL','05':'MAIO','06':'JUNHO',
+                '07':'JULHO','08':'AGOSTO','09':'SETEMBRO','10':'OUTUBRO','11':'NOVEMBRO','12':'DEZEMBRO'};
+const LC_ABREV={'01':'JAN','02':'FEV','03':'MAR','04':'ABR','05':'MAI','06':'JUN',
+                '07':'JUL','08':'AGO','09':'SET','10':'OUT','11':'NOV','12':'DEZ'};
+const LC_CSV_HEADER='AD_Org_ID[Name],Description,Account_ID[Value],User1_ID[value],AmtSourceDr,AmtSourceCr';
+
+// Siglas cujo "primeiro token" do nome do arquivo nao serve. A chave e
+// comparada SEM acento, porque a planilha gerada aqui preserva acento
+// (UDIAÇO_...) e a do processo antigo nao (UDIAC_O...).
+const LC_SIGLAS={
+  'PRESTADORA_DE_SERVICOS_EMPRESARIAIS_G':'GSILVA',
+  'UDIAC_O':'UDIACO',
+  'UDIACO':'UDIACO',
+  'CR_PRESTADORA':'CR',
+  'AGS_PRESTADORA':'AGS',
+  'FRANCIS_BF_PREST':'FRANCIS',
+  'MJP_PREST':'MJP',
+  'MLS_PRESTADORA':'MLS',
+  'MZOLLI_PREST':'MZOLLI',
+  'SHW_PRESTADORA':'SHW',
+  'SNPL_PRESTADORA':'SNPL',
+  'TREVIZ_PRESTADORA':'TREVIZ',
+  'UDBENS_ADMINISTRACAO':'UDBENS',
+  'RESENDE':'RESENDE'
+};
+
+function _lcSemAcento(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+
+// Formatador pt-BR deterministico (nao usa toLocaleString, que varia por ambiente).
+function fmtBR(n){
+  const s=Math.abs(n).toFixed(2);
+  const [int,dec]=s.split('.');
+  const intG=int.replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  return (n<0?'-':'')+intG+','+dec;
+}
+// Zero sai como 0 sem aspas; o resto entre aspas porque tem virgula decimal.
+function _lcCampoValor(n){ return n===0 ? '0' : '"'+fmtBR(n)+'"'; }
+
+function _lcResolveSigla(filename){
+  const nome=_lcSemAcento(filename);
+  // Padrao 2: Folha_Pagamento_MM-AAAA_EMPRESA_...
+  if(/^Folha_Pagamento_/i.test(nome)){
+    const depois=nome.split(/_\d{2}-\d{4}_/)[1]||'';
+    return (depois.split('_')[0]||'').toUpperCase();
+  }
+  // Padrao 1: FOLHA_CCUSTO_EMPRESA_MM-AAAA_...
+  const corpo=nome.replace(/^FOLHA_CCUSTO_/i,'').split(/_\d{2}-\d{4}/)[0];
+  const corpoU=corpo.toUpperCase();
+  for(const pref in LC_SIGLAS){ if(corpoU.startsWith(pref)) return LC_SIGLAS[pref]; }
+  return (corpo.split('_')[0]||'').toUpperCase();
+}
+
+function _lcMesAno(filename){
+  const m=String(filename||'').match(/_(\d{2})-(\d{4})_/);
+  return m?{mm:m[1],aaaa:m[2]}:null;
+}
+
+// Estrutura comum consumida pelo gerador, venha de upload ou da aba CC x Eventos.
+// dados = { empresaNome, linhas:[{cc, celulas:[{cod,desc,valor}]}] }
+function _lcGerar(dados, sigla, mm, aaaa){
+  const desc='Folha '+LC_MESES[mm]+' '+aaaa;
+  const linhas=[LC_CSV_HEADER];
+  const semMap={};
+  const usados=new Set();
+  let totalDr=0, totalCr=0, pares=0, ccsForaDoPadrao=[];
+
+  dados.linhas.forEach(l=>{
+    if(!/^CC[\d.]+$/i.test(l.cc)) ccsForaDoPadrao.push(l.cc);
+    l.celulas.forEach(cel=>{
+      const v=Number(cel.valor);
+      if(!isFinite(v)||v===0) return;
+      const ev=esquemaContabil[cel.cod];
+      if(!ev){
+        const d=semMap[cel.cod]||(semMap[cel.cod]={codigo:cel.cod,descricao:cel.desc||'',soma:0,ccs:[]});
+        d.soma+=v; d.ccs.push({cc:l.cc,valor:v});
+        return;
+      }
+      if(ev.semLancamento) return;
+      usados.add(cel.cod);
+      linhas.push([sigla,desc,ev.contaDebito,l.cc,_lcCampoValor(v),'0'].join(','));
+      linhas.push([sigla,desc,ev.contaCredito,l.cc,'0',_lcCampoValor(v)].join(','));
+      totalDr+=v; totalCr+=v; pares++;
+    });
+  });
+
+  return {
+    linhas, semMap, pares,
+    nCC:dados.linhas.length,
+    nEventos:usados.size,
+    totalDr, totalCr,
+    balanceado:Math.abs(totalDr-totalCr)<0.005,
+    descricao:desc,
+    ccsForaDoPadrao:[...new Set(ccsForaDoPadrao)]
+  };
+}
+
+// Le um ..._CCxEventos.xlsx (SheetJS) para a estrutura comum.
+function _lcLerCCxEventos(rows){
+  const empresaNome=String((rows[1]&&rows[1][0])||'').replace(/^Empresa:\s*/i,'').trim();
+  const cab=rows[3]||[];
+  const colCod={};
+  for(let c=1;c<cab.length;c++){
+    const h=cab[c];
+    if(h==null) continue;
+    const partes=String(h).split('\n');
+    const tok=String(partes[0]).trim();
+    if(/^\d+$/.test(tok)) colCod[c]={cod:tok,desc:(partes[1]||'').trim()};
+  }
+  const linhas=[];
+  for(let r=4;r<rows.length;r++){
+    const a=(rows[r]||[])[0];
+    if(a==null||String(a).trim()==='') continue;
+    if(String(a).trim().toUpperCase().startsWith('TOTAL GERAL')) continue;
+    const cc=String(a).trim().split(/\s+/)[0];
+    const celulas=[];
+    for(const c in colCod){
+      const v=(rows[r]||[])[c];
+      if(v==null||v==='') continue;
+      celulas.push({cod:colCod[c].cod,desc:colCod[c].desc,valor:Number(v)});
+    }
+    linhas.push({cc,celulas});
+  }
+  return {empresaNome,linhas};
+}
+
+// Converte um resultado da aba CC x Eventos (em memoria) para a estrutura comum.
+function _lcDeResultadoContab(res){
+  return {
+    empresaNome:res.empresa.name,
+    linhas:res.ccs.map(cc=>({
+      cc:String(cc.nome).trim().split(/\s+/)[0],
+      celulas:res.eventos.map(k=>{
+        const [cod,desc]=k.split('|');
+        return {cod,desc,valor:cc.eventos.get(k)||0};
+      }).filter(x=>x.valor!==0)
+    }))
+  };
+}
+
+function _lcNomeSaida(sigla,mm,aaaa){ return sigla+'_'+LC_ABREV[mm]+aaaa+'_lancamentos.csv'; }
+
+// UTF-8 sem BOM, quebra \n — igual aos 24 arquivos ja validados no Adempiere.
+function _lcBlob(linhas){
+  return new Blob([linhas.join('\n')+'\n'],{type:'text/csv;charset=utf-8'});
+}
+
+// ── Tela dos lançamentos contábeis ────────────────────────────────
+function pgContabLancamentos(){
+  const daAba=contabResultados.length;
+  return `
+    <div class="lan-top">
+      <div class="page-header">
+        <h2 class="page-title">Lançamentos contábeis</h2>
+        <p class="page-subtitle">Gera o CSV de partidas dobradas para importar no Adempiere, a partir das planilhas CC x Eventos.</p>
+      </div>
+    </div>
+    <div class="lan-step lan-step--split">
+      <div class="lan-step__head"><span class="lan-step__num">1</span><div>
+        <div class="lan-step__t">Escolher a origem</div>
+        <div class="lan-step__d">Use o que acabou de ser processado na aba CC x Eventos, ou envie planilhas <strong>..._CCxEventos.xlsx</strong> já prontas.</div>
+      </div></div>
+      <div class="lan-split-side lan-actions">
+        ${daAba?'<button class="btn btn-success btn-sm" onclick="lcGerarDaAba()"><i class="ti ti-bolt"></i> Usar as '+daAba+' do CC x Eventos</button>':''}
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('lc-file').click()"><i class="ti ti-file-upload"></i> Enviar planilhas</button>
+        <button class="btn btn-ghost btn-sm" onclick="lcLimpar()"><i class="ti ti-eraser"></i> Limpar</button>
+      </div>
+    </div>
+    <input type="file" id="lc-file" accept=".xlsx,.xls" multiple style="display:none" onchange="lcProcessarArquivos(event)">
+    <div class="upload-zone" id="lc-drop" onclick="document.getElementById('lc-file').click()">
+      <div style="font-size:26px;margin-bottom:6px"><i class="ti ti-file-dollar"></i></div>
+      <div class="upload-text">Arraste as planilhas ..._CCxEventos.xlsx ou clique para escolher</div>
+      <div class="upload-sub">O esquema contábil do sistema é usado para mapear as contas de cada evento.</div>
+    </div>
+    <div id="lc-saida" style="margin-top:14px"></div>`;
+}
+
+function afterRenderLancamentos(){
+  loadEsquemaContabil().then(()=>{
+    const el=document.getElementById('lc-saida');
+    if(el && !Object.keys(esquemaContabil).length && !lcResultados.length){
+      el.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O <strong>esquema contábil está vazio</strong>. '
+        +'Sem ele nenhum lançamento pode ser gerado (evento sem mapeamento nunca recebe conta inventada). '
+        +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="showPage(\'contab-esquema\')">Ir ao esquema contábil</button></div>';
+    }
+  });
+  const dz=document.getElementById('lc-drop');
+  if(dz){
+    ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='var(--blue)';}));
+    ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='';}));
+    dz.addEventListener('drop',e=>{
+      const fs=[...(e.dataTransfer?.files||[])];
+      if(fs.length) lcProcessarArquivos({target:{files:fs,value:''}});
+    });
+  }
+  if(lcResultados.length) renderLcResultados();
+}
+
+function lcLimpar(){
+  lcResultados=[];
+  const el=document.getElementById('lc-saida'); if(el) el.innerHTML='';
+}
+
+async function lcGerarDaAba(){
+  await loadEsquemaContabil();
+  if(!_lcChecaEsquema()) return;
+  lcResultados=[];
+  contabResultados.forEach(res=>{
+    const nomeArq=_cbNomeArquivo(res);
+    const ma=_lcMesAno(nomeArq) || _lcMesAnoDoPeriodo(res.periodo);
+    if(!ma){ toast('Não consegui identificar mês/ano de '+res.empresa.name,'error'); return; }
+    const sigla=_lcResolveSigla(nomeArq);
+    const g=_lcGerar(_lcDeResultadoContab(res),sigla,ma.mm,ma.aaaa);
+    lcResultados.push(Object.assign(g,{sigla,mm:ma.mm,aaaa:ma.aaaa,arquivo:nomeArq,
+      empresaNome:res.empresa.name,saida:_lcNomeSaida(sigla,ma.mm,ma.aaaa)}));
+  });
+  renderLcResultados();
+}
+function _lcMesAnoDoPeriodo(p){
+  const m=String(p&&p.ini||'').match(/^\d{2}\/(\d{2})\/(\d{4})$/);
+  return m?{mm:m[1],aaaa:m[2]}:null;
+}
+function _lcChecaEsquema(){
+  if(Object.keys(esquemaContabil).length) return true;
+  const el=document.getElementById('lc-saida');
+  if(el) el.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O esquema contábil está vazio — importe-o primeiro. '
+    +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="showPage(\'contab-esquema\')">Ir ao esquema contábil</button></div>';
+  return false;
+}
+
+async function lcProcessarArquivos(event){
+  const files=[...(event.target.files||[])];
+  event.target.value='';
+  if(!files.length) return;
+  await loadEsquemaContabil();
+  if(!_lcChecaEsquema()) return;
+  const saida=document.getElementById('lc-saida');
+  saida.innerHTML='<div class="alert alert-info"><i class="ti ti-loader"></i> Gerando lançamentos de '+files.length+' arquivo(s)...</div>';
+  lcResultados=[];
+  const erros=[];
+  for(const f of files){
+    try{
+      const ma=_lcMesAno(f.name);
+      if(!ma) throw new Error('não achei _MM-AAAA_ no nome do arquivo.');
+      const buf=await f.arrayBuffer();
+      const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
+      const dados=_lcLerCCxEventos(rows);
+      if(!dados.linhas.length) throw new Error('nenhum centro de custo lido (a planilha é mesmo CC x Eventos?).');
+      const sigla=_lcResolveSigla(f.name);
+      const g=_lcGerar(dados,sigla,ma.mm,ma.aaaa);
+      lcResultados.push(Object.assign(g,{sigla,mm:ma.mm,aaaa:ma.aaaa,arquivo:f.name,
+        empresaNome:dados.empresaNome,saida:_lcNomeSaida(sigla,ma.mm,ma.aaaa)}));
+    }catch(e){ erros.push(f.name+': '+e.message); console.error('Lançamentos',f.name,e); }
+  }
+  renderLcResultados(erros);
+}
+
+function renderLcResultados(erros){
+  const saida=document.getElementById('lc-saida'); if(!saida) return;
+  if(!lcResultados.length){
+    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nada gerado.'
+      +((erros&&erros.length)?'<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div>':'')+'</div>';
+    return;
+  }
+  const desbal=lcResultados.filter(r=>!r.balanceado);
+  const comSemMap=lcResultados.filter(r=>Object.keys(r.semMap).length);
+
+  const cards=lcResultados.map((r,i)=>{
+    const nSem=Object.keys(r.semMap).length;
+    const badgeBal=r.balanceado
+      ? '<span class="badge badge--success"><i class="ti ti-scale"></i> Balanceado</span>'
+      : '<span class="badge badge--danger"><i class="ti ti-alert-triangle"></i> Desbalanceado</span>';
+    const semBloco=nSem?(
+      '<div class="alert alert-warning" style="margin-top:10px;font-size:12px"><strong><i class="ti ti-alert-triangle"></i> '+nSem+' evento(s) sem mapeamento</strong> — omitidos do CSV (em débito e crédito, então o arquivo continua balanceado).'
+      +'<table class="tbl" style="margin-top:8px;background:var(--surface)"><thead><tr><th>Código</th><th>Evento</th><th style="text-align:right">Soma</th><th>CCs afetados</th><th style="text-align:center">Ação</th></tr></thead><tbody>'
+      +Object.values(r.semMap).map(s=>'<tr><td><code>'+s.codigo+'</code></td><td>'+(s.descricao||'—')+'</td>'
+        +'<td style="text-align:right;font-weight:600">'+brl(s.soma)+'</td>'
+        +'<td class="text-xs">'+s.ccs.map(c=>c.cc).join(', ')+'</td>'
+        +'<td style="text-align:center"><button class="btn btn-primary btn-sm" onclick="abrirEventoEsquema(\''+s.codigo+'\',\''+String(s.descricao||'').replace(/'/g,'')+'\')"><i class="ti ti-plus"></i> Adicionar ao esquema</button></td></tr>').join('')
+      +'</tbody></table></div>'):'';
+    const avisoCC=r.ccsForaDoPadrao.length?('<div class="alert alert-warning" style="margin-top:8px;font-size:12px"><i class="ti ti-alert-triangle"></i> '
+      +r.ccsForaDoPadrao.length+' centro(s) de custo sem o padrão <code>CCx.x.x</code> — o campo User1_ID sai com esse texto: <code>'
+      +r.ccsForaDoPadrao.slice(0,6).join('</code>, <code>')+'</code></div>'):'';
+
+    return '<div class="card" style="margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<div><div style="font-weight:700;color:var(--brand)">'+r.sigla+' <span class="text-xs text-muted" style="font-weight:400">'+(r.empresaNome||'')+'</span></div>'
+      +'<div class="text-xs text-muted">'+r.descricao+' · '+r.nCC+' CCs · '+r.nEventos+' eventos · '+(r.linhas.length-1)+' linhas ('+r.pares+' pares Dr/Cr)</div>'
+      +'<div class="text-xs text-muted"><code>'+r.saida+'</code></div></div>'
+      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+        +'<div style="text-align:right"><div class="text-xs text-muted">Total Dr / Cr</div><div style="font-size:14px;font-weight:700">'+brl(r.totalDr)+'</div></div>'
+        +badgeBal
+        +(nSem?'<span class="badge badge--warning">'+nSem+' sem mapa</span>':'')
+        +'<button class="btn btn-primary btn-sm" onclick="lcBaixar('+i+')"><i class="ti ti-download"></i> Baixar CSV</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="lcPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
+      +'</div></div>'
+      +avisoCC+semBloco+'<div id="lc-prev-'+i+'"></div></div>';
+  }).join('');
+
+  saida.innerHTML=
+    ((erros&&erros.length)?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> Arquivo(s) com problema:<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div></div>':'')
+    +(desbal.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+desbal.length+' arquivo(s) desbalanceado(s)</strong> — débito diferente de crédito. Isso não deveria acontecer; não importe antes de conferir.</div>':'')
+    +'<div class="lan-step lan-step--split"><div class="lan-step__head"><span class="lan-step__num">2</span><div>'
+      +'<div class="lan-step__t">'+lcResultados.length+' arquivo(s) gerado(s)</div>'
+      +'<div class="lan-step__d">'+(comSemMap.length?comSemMap.length+' com evento sem mapeamento — veja os avisos amarelos.':'Todos os eventos foram mapeados.')+'</div></div></div>'
+      +'<div class="lan-split-side lan-actions">'
+      +(lcResultados.length>1?'<button class="btn btn-success btn-sm" onclick="lcBaixarTodos()"><i class="ti ti-file-zip"></i> Baixar todos (zip)</button>':'')
+      +'<button class="btn btn-ghost btn-sm" onclick="lcCopiarRelatorio()"><i class="ti ti-copy"></i> Copiar relatório</button>'
+      +'</div></div>'
+    +cards;
+}
+
+function lcPrevia(i){
+  const r=lcResultados[i]; if(!r) return;
+  const el=document.getElementById('lc-prev-'+i); if(!el) return;
+  if(el.innerHTML){ el.innerHTML=''; return; }
+  const amostra=r.linhas.slice(0,11).join('\n');
+  el.innerHTML='<div class="text-xs text-muted" style="margin:10px 0 4px">Primeiras linhas do CSV (de '+(r.linhas.length-1)+' lançamentos):</div>'
+    +'<pre style="font-size:11px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:240px">'
+    +amostra.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>';
+}
+
+function lcBaixar(i){
+  const r=lcResultados[i]; if(!r) return;
+  _cbBaixarBlob(_lcBlob(r.linhas), r.saida);
+  toast(r.saida+' baixado.','success');
+}
+async function lcBaixarTodos(){
+  try{
+    const zip=new JSZip();
+    lcResultados.forEach(r=>zip.file(r.saida,r.linhas.join('\n')+'\n'));
+    const blob=await zip.generateAsync({type:'blob'});
+    const r0=lcResultados[0];
+    _cbBaixarBlob(blob,'lancamentos_'+LC_ABREV[r0.mm]+r0.aaaa+'.zip');
+    toast(lcResultados.length+' CSVs no zip.','success');
+  }catch(e){ toast('Erro ao gerar o zip: '+e.message,'error'); }
+}
+function lcCopiarRelatorio(){
+  const txt=lcResultados.map(r=>{
+    const sem=Object.values(r.semMap).map(s=>'    - '+s.codigo+' '+s.descricao+': '+brl(s.soma)+' ('+s.ccs.map(c=>c.cc).join(', ')+')').join('\n');
+    return [r.sigla+' — '+(r.empresaNome||''),
+      '  '+r.descricao,
+      '  CCs: '+r.nCC+' | eventos: '+r.nEventos+' | linhas: '+(r.linhas.length-1)+' ('+r.pares+' pares)',
+      '  Total Dr: '+brl(r.totalDr)+' | Total Cr: '+brl(r.totalCr)+' | '+(r.balanceado?'BALANCEADO':'DESBALANCEADO'),
+      '  Arquivo: '+r.saida,
+      (sem?'  Eventos sem mapeamento:\n'+sem:'  Sem eventos pendentes de mapeamento')].join('\n');
+  }).join('\n\n');
+  navigator.clipboard.writeText(txt).then(()=>toast('Relatório copiado.','success')).catch(()=>toast('Não foi possível copiar.','error'));
 }

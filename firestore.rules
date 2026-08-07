@@ -63,6 +63,8 @@ service cloud.firestore {
 
     // Contabilização: log de processamento do FPRF002.OPE (só metadados).
     match /contabilizacao_historico/{id} { allow read, write: if isAuthorized() && !isUM989(); }
+    // Contabilização: esquema contábil (evento -> contas de débito/crédito).
+    match /esquemaContabil/{id} { allow read, write: if isAuthorized() && !isUM989(); }
 
     // ── Treinamentos ──────────────────────────────────────────
     // Login único: leitura e escrita apenas por usuários autorizados,
