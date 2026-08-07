@@ -895,6 +895,10 @@ const MODULES = {
     {id:'premio-historico',icon:'<i class="ti ti-history"></i>',label:'Histórico'},
     {id:'premio-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
   ]},
+  contabil:{pages:[
+    {id:'contab-ccxev',icon:'<i class="ti ti-table"></i>',label:'CC x Eventos'},
+    {id:'contab-historico',icon:'<i class="ti ti-history"></i>',label:'Histórico'},
+  ]},
   dashboard:{pages:[
     {id:'dash-main',icon:'<i class="ti ti-layout-dashboard"></i>',label:'Dashboard Geral'},
     {id:'teste-senior',icon:'<i class="ti ti-plug"></i>',label:'Teste Senior API'},
@@ -917,7 +921,7 @@ function pagesVisiveis(mod){
 // Esconde os módulos que o papel UM989 não pode ver (mostra só Férias).
 function aplicarVisibModulos(){
   const so=ehUM989();
-  ['base','beneficios','folha','premio','dashboard'].forEach(m=>{
+  ['base','beneficios','folha','premio','contabil','dashboard'].forEach(m=>{
     const t=document.getElementById('tab-'+m); if(t) t.style.display=so?'none':'';
   });
   // Configurações: engrenagem no cabeçalho, exclusiva do master
@@ -968,6 +972,7 @@ function renderPage(id){
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
     'premio-dash':pgPremioDashboard,'premio-historico':pgPremioHistorico,
+    'contab-ccxev':pgContabCCxEventos,'contab-historico':pgContabHistorico,
   };
   if(id==='usuarios' && !podeGerenciarUsuarios()) return '<div class="empty-state"><div class="empty-icon"></div><p>Acesso restrito.</p></div>';
   const fn=pages[id];
@@ -998,6 +1003,8 @@ function afterRender(id){
   if(id==='premio-dash') afterRenderPremioDash();
   if(id==='premio-historico') renderPremioHistorico();
   if(id==='usuarios') renderUsuarios();
+  if(id==='contab-ccxev') afterRenderContab();
+  if(id==='contab-historico') loadContabHistorico().then(renderContabHistorico);
   if(id==='teste-senior') {} // sem afterRender especifico
 }
 
@@ -9339,3 +9346,573 @@ async function confirmarExcluirHistorico(){
 }
 // wrappers usados nos botões
 function excluirPremioHist(id,label){ abrirExcluirHistorico('historico',id,label,'premio'); }
+
+// ============================================================
+// CONTABILIZAÇÃO: FPRF002.OPE -> CC x EVENTOS (uma planilha por empresa)
+// ============================================================
+// O .xlsx do FPRF002.OPE e lido "na unha" (JSZip + DOMParser) porque as strings
+// vem como inlineStr e a estrutura e de relatorio impresso, nao de tabela.
+// A saida usa ExcelJS (cor/merge/painel congelado).
+
+let contabResultados = [];      // [{empresa, periodo, ccs, eventos, totalGeral, agregado, status, arquivo, blob}]
+let contabHistList   = [];
+
+const CONTAB_NS_IGNORE = new Set(['provento','desconto','outros','vantagem','proventos','descontos']);
+const CONTAB_TERM = new Set(['totais','colaboradores','situação','situacao',
+                             'resumo dos eventos','resumo dos valores totais da empresa']);
+
+function _cbColLetters(ref){ return (ref||'').replace(/[0-9]/g,''); }
+
+function _cbParseBRFloat(s){
+  if(s==null) return 0;
+  s=String(s).trim();
+  if(s==='') return 0;
+  const br=s.replace(/\./g,'').replace(',','.');
+  const n=parseFloat(br);
+  if(!isNaN(n)) return n;
+  const n2=parseFloat(s);
+  return isNaN(n2)?0:n2;
+}
+
+function _cbExcelDate(serial){
+  const n=parseInt(parseFloat(serial),10);
+  if(isNaN(n)) return String(serial||'');
+  const d=new Date(Date.UTC(1899,11,30)+n*86400000);
+  const dd=String(d.getUTCDate()).padStart(2,'0');
+  const mm=String(d.getUTCMonth()+1).padStart(2,'0');
+  return dd+'/'+mm+'/'+d.getUTCFullYear();
+}
+
+// Le o .xlsx e devolve {rows:{n:{COL:valor}}, maxRow}
+async function _cbLerPlanilha(file){
+  const zip = await JSZip.loadAsync(file);
+  // O gerador do relatorio as vezes grava o caminho com barra invertida.
+  let entry = zip.file('xl/sheet1.xml') || zip.file('xl\\sheet1.xml');
+  if(!entry){
+    const cand = Object.keys(zip.files).find(n=>/sheet1\.xml$/i.test(n.replace(/\\/g,'/')));
+    if(cand) entry = zip.file(cand);
+  }
+  if(!entry) throw new Error('Não encontrei a planilha (xl/sheet1.xml) dentro do arquivo.');
+  const xml = await entry.async('string');
+  const doc = new DOMParser().parseFromString(xml,'text/xml');
+  if(doc.getElementsByTagName('parsererror').length) throw new Error('XML da planilha inválido.');
+
+  const rows={}; let maxRow=0;
+  const rowEls=doc.getElementsByTagName('row');
+  for(let i=0;i<rowEls.length;i++){
+    const rowEl=rowEls[i];
+    const rn=parseInt(rowEl.getAttribute('r'),10);
+    if(isNaN(rn)) continue;
+    const d={};
+    const cs=rowEl.getElementsByTagName('c');
+    for(let j=0;j<cs.length;j++){
+      const c=cs[j];
+      const col=_cbColLetters(c.getAttribute('r'));
+      const t=c.getElementsByTagName('t')[0];   // inlineStr
+      const v=c.getElementsByTagName('v')[0];   // numerico
+      d[col]=(t?t.textContent:(v?v.textContent:''))||'';
+    }
+    rows[rn]=d;
+    if(rn>maxRow) maxRow=rn;
+  }
+  return {rows,maxRow};
+}
+
+// Cabecalho de pagina de verdade: codigo de 4 digitos SEGUIDO de "Relação de Cálculo".
+// ARMADILHA A: muito evento tem codigo de 4 digitos (1600 Pro-Labore, 2000 INSS).
+function _cbIsPageHeader(rows,r){
+  const a=(rows[r]?.A||'').trim();
+  return /^\d{4}$/.test(a) && (rows[r+1]?.A||'').trim()==='Relação de Cálculo';
+}
+
+// Fronteira de empresa = "Resumo dos Valores Totais da Empresa" (NAO o cabecalho).
+function _cbSegmentos(rows,maxRow){
+  const bounds=[];
+  for(let r=1;r<=maxRow;r++)
+    if((rows[r]?.A||'').trim()==='Resumo dos Valores Totais da Empresa') bounds.push(r);
+  const segs=[]; let start=1;
+  for(const b of bounds){ segs.push([start,b]); start=b+1; }
+  if(!segs.length) segs.push([1,maxRow]);   // arquivo de empresa unica sem a linha de resumo
+  return segs;
+}
+
+function _cbEmpresaDe(rows,seg){
+  for(let r=seg[0];r<=seg[1];r++){
+    const a=(rows[r]?.A||'').trim();
+    if(/^\d{4}$/.test(a) && (rows[r+1]?.A||'').trim()==='Relação de Cálculo')
+      return {code:a, name:(rows[r]?.B||'').trim()};
+  }
+  return null;
+}
+
+function _cbPeriodoDe(rows,seg){
+  for(let r=seg[0];r<=seg[1];r++)
+    if((rows[r]?.A||'').trim()==='Período:')
+      return {ini:_cbExcelDate(rows[r].B), fim:_cbExcelDate(rows[r].D)};
+  return {ini:'',fim:''};
+}
+
+// Maquina de estados que extrai os eventos de cada centro de custo.
+function _cbParseCCs(rows,seg){
+  const ccs=[];
+  let cur=null, data=null;
+  for(let r=seg[0];r<=seg[1];r++){
+    const d=rows[r]||{};
+    const a=(d.A||'').trim(), b=(d.B||'').trim(), al=a.toLowerCase();
+
+    if(a==='C.Custo:'){
+      if(cur!==null) ccs.push({nome:cur,eventos:data});
+      // ARMADILHA B/E: "Total da Empresa" e totalizador, nao centro de custo.
+      if(b.toLowerCase().startsWith('total')){ cur=null; data=null; }
+      else { cur=b; data=new Map(); }
+      continue;
+    }
+    if(CONTAB_TERM.has(al)){
+      if(cur!==null){ ccs.push({nome:cur,eventos:data}); cur=null; data=null; }
+      continue;
+    }
+    if(cur===null) continue;
+
+    // ARMADILHA D: rodape e cabecalho cortam o CC no meio da pagina — pular sem encerrar.
+    if(a.startsWith('FPRF002')) continue;
+    if(_cbIsPageHeader(rows,r)) continue;
+    if(a==='Relação de Cálculo' || a==='Período:' || a==='Cod.') continue;
+    if(b==='Descrição') continue;
+
+    // lado esquerdo (A/B/E)
+    if(a && !CONTAB_NS_IGNORE.has(a.toLowerCase()) && b && !CONTAB_NS_IGNORE.has(b.toLowerCase())){
+      const k=a+'|'+b;
+      data.set(k,(data.get(k)||0)+_cbParseBRFloat(d.E));
+    }
+    // lado direito (N/O/Q)
+    const nc=(d.N||'').trim(), no=(d.O||'').trim();
+    if(nc && !CONTAB_NS_IGNORE.has(nc.toLowerCase()) && no && !CONTAB_NS_IGNORE.has(no.toLowerCase())){
+      const k=nc+'|'+no;
+      data.set(k,(data.get(k)||0)+_cbParseBRFloat(d.Q));
+    }
+  }
+  if(cur!==null) ccs.push({nome:cur,eventos:data});
+  return ccs;
+}
+
+// Bloco agregado da empresa: "C.Custo: Total da Empresa" seguido de "Cod."
+// (o seguido de "Totais" e o resumo Proventos/Descontos, nao serve para conferir).
+function _cbSomaBlocoAgregado(rows,seg){
+  let ini=-1;
+  for(let r=seg[0];r<=seg[1];r++){
+    const d=rows[r]||{};
+    if((d.A||'').trim()==='C.Custo:' && (d.B||'').trim().toLowerCase().startsWith('total')
+       && (rows[r+1]?.A||'').trim()==='Cod.'){ ini=r; break; }
+  }
+  if(ini<0) return null;
+  let s=0;
+  for(let r=ini+1;r<=seg[1];r++){
+    const d=rows[r]||{};
+    const a=(d.A||'').trim(), b=(d.B||'').trim(), al=a.toLowerCase();
+    if(CONTAB_TERM.has(al) || a==='C.Custo:') break;
+    if(a.startsWith('FPRF002')) continue;
+    if(_cbIsPageHeader(rows,r)) continue;
+    if(a==='Relação de Cálculo' || a==='Período:' || a==='Cod.' || b==='Descrição') continue;
+    if(a && !CONTAB_NS_IGNORE.has(a.toLowerCase()) && b && !CONTAB_NS_IGNORE.has(b.toLowerCase())) s+=_cbParseBRFloat(d.E);
+    const nc=(d.N||'').trim(), no=(d.O||'').trim();
+    if(nc && !CONTAB_NS_IGNORE.has(nc.toLowerCase()) && no && !CONTAB_NS_IGNORE.has(no.toLowerCase())) s+=_cbParseBRFloat(d.Q);
+  }
+  return s;
+}
+
+// Eventos unicos ordenados por codigo numerico (nao-numericos no fim).
+function _cbEventosOrdenados(ccs){
+  const set=new Set();
+  ccs.forEach(cc=>cc.eventos.forEach((_,k)=>set.add(k)));
+  return [...set].sort((x,y)=>{
+    const cx=x.split('|')[0], cy=y.split('|')[0];
+    const nx=parseInt(cx,10), ny=parseInt(cy,10);
+    const vx=isNaN(nx), vy=isNaN(ny);
+    if(vx&&vy) return cx.localeCompare(cy);
+    if(vx) return 1;
+    if(vy) return -1;
+    if(nx!==ny) return nx-ny;
+    return x.localeCompare(y);
+  });
+}
+
+function _cbSafeName(name){
+  return String(name||'')
+    .replace(/[^\p{L}\p{N}\s-]/gu,'')
+    .trim()
+    .replace(/\s+/g,'_')
+    .slice(0,40);
+}
+
+// Processa um arquivo e devolve um resultado por empresa.
+async function _cbProcessarArquivo(file){
+  const {rows,maxRow} = await _cbLerPlanilha(file);
+  const segs=_cbSegmentos(rows,maxRow);
+  const out=[];
+  for(const seg of segs){
+    const emp=_cbEmpresaDe(rows,seg);
+    if(!emp) continue;                                  // sobra/rodape sem empresa
+    const ccs=_cbParseCCs(rows,seg).filter(cc=>cc.eventos && cc.eventos.size);
+    if(!ccs.length) continue;
+    const eventos=_cbEventosOrdenados(ccs);
+    let totalGeral=0;
+    ccs.forEach(cc=>cc.eventos.forEach(v=>{ totalGeral+=v; }));
+    const agregado=_cbSomaBlocoAgregado(rows,seg);
+    const dif = agregado==null ? null : (totalGeral-agregado);
+    out.push({
+      empresa:emp, periodo:_cbPeriodoDe(rows,seg), ccs, eventos, totalGeral,
+      agregado, dif, status: agregado==null ? 'SEM_AGREGADO' : (Math.abs(dif)<0.01?'OK':'DIVERGENTE'),
+      arquivoOrigem:file.name, multi:segs.length>1
+    });
+  }
+  if(!out.length) throw new Error('Nenhuma empresa reconhecida no arquivo — confira se é mesmo o FPRF002.OPE.');
+  return out;
+}
+
+// ── Geração da planilha (ExcelJS) ─────────────────────────────────
+const CB_COR = {
+  faixa:'FFDCE6F1', cabec:'FF2E75B6', total:'FFBDD7EE',
+  impar:'FFF2F2F2', par:'FFFFFFFF', borda:'FFB8CCE4', texto:'FF1F4E79'
+};
+function _cbBorda(){ const t={style:'thin',color:{argb:CB_COR.borda}}; return {top:t,left:t,right:t,bottom:t}; }
+function _cbFill(cor){ return {type:'pattern',pattern:'solid',fgColor:{argb:cor}}; }
+function _cbColLetter(n){ let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+
+async function _cbGerarXlsx(res){
+  const wb=new ExcelJS.Workbook();
+  const ws=wb.addWorksheet('CC x Eventos');
+  const nEv=res.eventos.length;
+  const ncols=1+nEv+1;                       // CC + eventos + TOTAL
+  const colTotal=ncols;
+  const ultimaEv=_cbColLetter(ncols-1);
+
+  // Linha 1 — titulo
+  ws.mergeCells(1,1,1,ncols);
+  const t1=ws.getCell(1,1);
+  t1.value='Folha de Pagamento — Consolidado CC x Eventos';
+  t1.alignment={horizontal:'center',vertical:'middle'};
+  t1.font={name:'Arial',size:12,bold:true,color:{argb:CB_COR.texto}};
+  for(let c=1;c<=ncols;c++) ws.getCell(1,c).fill=_cbFill(CB_COR.faixa);
+
+  // Linha 2 — empresa (esquerda) / periodo (direita)
+  const meio=Math.max(1,Math.floor(ncols/2));
+  ws.mergeCells(2,1,2,meio);
+  ws.mergeCells(2,meio+1,2,ncols);
+  const c2a=ws.getCell(2,1), c2b=ws.getCell(2,meio+1);
+  c2a.value='Empresa: '+res.empresa.name;
+  c2a.alignment={horizontal:'left',vertical:'middle'};
+  c2b.value='Período: '+res.periodo.ini+' a '+res.periodo.fim;
+  c2b.alignment={horizontal:'right',vertical:'middle'};
+  [c2a,c2b].forEach(c=>{ c.font={name:'Arial',size:10,bold:true,color:{argb:CB_COR.texto}}; });
+  for(let c=1;c<=ncols;c++) ws.getCell(2,c).fill=_cbFill(CB_COR.faixa);
+
+  // Linha 3 — espacador
+  for(let c=1;c<=ncols;c++) ws.getCell(3,c).fill=_cbFill(CB_COR.faixa);
+
+  // Linha 4 — cabecalho
+  const hr=ws.getRow(4); hr.height=42;
+  const hCC=ws.getCell(4,1);
+  hCC.value='Centro de Custo';
+  res.eventos.forEach((k,i)=>{
+    const [cod,desc]=k.split('|');
+    ws.getCell(4,2+i).value=cod+'\n'+desc;
+  });
+  ws.getCell(4,colTotal).value='TOTAL';
+  for(let c=1;c<=ncols;c++){
+    const cell=ws.getCell(4,c);
+    cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+    cell.border=_cbBorda();
+    if(c===colTotal){ cell.fill=_cbFill(CB_COR.total); cell.font={name:'Arial',size:9,bold:true,color:{argb:CB_COR.texto}}; }
+    else { cell.fill=_cbFill(CB_COR.cabec); cell.font={name:'Arial',size:9,bold:true,color:{argb:'FFFFFFFF'}}; }
+  }
+
+  // Linhas 5+ — um CC por linha
+  const primeira=5;
+  res.ccs.forEach((cc,i)=>{
+    const r=primeira+i;
+    const fundo=(i%2===0)?CB_COR.par:CB_COR.impar;
+    const cCC=ws.getCell(r,1);
+    cCC.value=cc.nome;
+    cCC.font={name:'Arial',size:9,bold:true};
+    cCC.alignment={vertical:'middle'};
+    res.eventos.forEach((k,j)=>{
+      const v=cc.eventos.get(k)||0;
+      const cell=ws.getCell(r,2+j);
+      cell.value = v===0 ? null : v;          // vazio quando zero
+      cell.numFmt='#,##0.00';
+      cell.font={name:'Arial',size:9};
+    });
+    const cT=ws.getCell(r,colTotal);
+    cT.value={formula:'SUM(B'+r+':'+ultimaEv+r+')'};
+    cT.numFmt='#,##0.00';
+    cT.font={name:'Arial',size:9,bold:true,color:{argb:CB_COR.texto}};
+    for(let c=1;c<=ncols;c++){
+      const cell=ws.getCell(r,c);
+      cell.border=_cbBorda();
+      cell.fill=_cbFill(c===colTotal?CB_COR.total:fundo);
+    }
+  });
+
+  // Ultima linha — TOTAL GERAL
+  const rT=primeira+res.ccs.length;
+  const ultDados=rT-1;
+  ws.getCell(rT,1).value='TOTAL GERAL';
+  for(let c=2;c<=ncols;c++){
+    const L=_cbColLetter(c);
+    ws.getCell(rT,c).value={formula:'SUM('+L+primeira+':'+L+ultDados+')'};
+    ws.getCell(rT,c).numFmt='#,##0.00';
+  }
+  for(let c=1;c<=ncols;c++){
+    const cell=ws.getCell(rT,c);
+    cell.fill=_cbFill(CB_COR.total);
+    cell.border=_cbBorda();
+    cell.font={name:'Arial',size:9,bold:true,color:{argb:CB_COR.texto}};
+  }
+
+  ws.getColumn(1).width=30;
+  for(let c=2;c<=ncols-1;c++) ws.getColumn(c).width=13;
+  ws.getColumn(colTotal).width=16;
+  ws.views=[{state:'frozen',xSplit:1,ySplit:4}];
+
+  const buf=await wb.xlsx.writeBuffer();
+  return new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+function _cbNomeArquivo(res){
+  if(!res.multi){
+    const base=String(res.arquivoOrigem||'planilha').replace(/\.[^.]+$/,'');
+    return base+'_CCxEventos.xlsx';
+  }
+  const mmAAAA=(res.periodo.ini||'').split('/').slice(1).join('-') || 'SEM-PERIODO';
+  return 'FOLHA_CCUSTO_'+_cbSafeName(res.empresa.name)+'_'+mmAAAA+'_CCxEventos.xlsx';
+}
+
+function _cbBaixarBlob(blob,nome){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=nome; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function contabBaixar(i){
+  const res=contabResultados[i]; if(!res) return;
+  try{
+    if(!res._blob) res._blob=await _cbGerarXlsx(res);
+    _cbBaixarBlob(res._blob,_cbNomeArquivo(res));
+    toast('Planilha de '+res.empresa.name+' baixada.','success');
+  }catch(e){ toast('Erro ao gerar a planilha: '+e.message,'error'); }
+}
+
+async function contabBaixarTodos(){
+  if(!contabResultados.length) return;
+  try{
+    toast('Gerando o zip...','info');
+    const zip=new JSZip();
+    for(const res of contabResultados){
+      if(!res._blob) res._blob=await _cbGerarXlsx(res);
+      zip.file(_cbNomeArquivo(res), res._blob);
+    }
+    const blob=await zip.generateAsync({type:'blob'});
+    const comp=(contabResultados[0].periodo.ini||'').split('/').slice(1).join('-')||'periodo';
+    _cbBaixarBlob(blob,'FOLHA_CCUSTO_'+comp+'_CCxEventos.zip');
+    toast(contabResultados.length+' planilhas no zip.','success');
+  }catch(e){ toast('Erro ao gerar o zip: '+e.message,'error'); }
+}
+
+// ── UI da aba Contabilização ──────────────────────────────────────
+function pgContabCCxEventos(){
+  return `
+    <div class="lan-top">
+      <div class="page-header">
+        <h2 class="page-title">Contabilização — CC x Eventos</h2>
+        <p class="page-subtitle">Converte o relatório FPRF002.OPE numa planilha por empresa, com os totais por evento.</p>
+      </div>
+    </div>
+    <div class="lan-step lan-step--split">
+      <div class="lan-step__head"><span class="lan-step__num">1</span><div>
+        <div class="lan-step__t">Enviar o relatório da folha</div>
+        <div class="lan-step__d">Aceita vários <strong>.xlsx</strong> de uma vez. O sistema separa as empresas sozinho.</div>
+      </div></div>
+      <div class="lan-split-side lan-actions">
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('contab-file').click()"><i class="ti ti-file-upload"></i> Selecionar arquivos</button>
+        <button class="btn btn-ghost btn-sm" onclick="contabLimpar()"><i class="ti ti-eraser"></i> Limpar</button>
+      </div>
+    </div>
+    <input type="file" id="contab-file" accept=".xlsx" multiple style="display:none" onchange="contabProcessar(event)">
+    <div class="upload-zone" id="contab-drop" onclick="document.getElementById('contab-file').click()">
+      <div style="font-size:26px;margin-bottom:6px"><i class="ti ti-table-import"></i></div>
+      <div class="upload-text">Arraste aqui o FPRF002.OPE (.xlsx) ou clique para escolher</div>
+      <div class="upload-sub">Relatório sintético por centro de custo. PDF não serve — é preciso o .xlsx.</div>
+    </div>
+    <div id="contab-saida" style="margin-top:14px"></div>`;
+}
+
+function afterRenderContab(){
+  const dz=document.getElementById('contab-drop');
+  if(dz){
+    ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='var(--blue)';}));
+    ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='';}));
+    dz.addEventListener('drop',e=>{
+      const fs=[...(e.dataTransfer?.files||[])];
+      if(fs.length) contabProcessar({target:{files:fs,value:''}});
+    });
+  }
+  if(contabResultados.length) renderContabResultados();
+}
+
+function contabLimpar(){
+  contabResultados=[];
+  const el=document.getElementById('contab-saida'); if(el) el.innerHTML='';
+  toast('Limpo.','info');
+}
+
+async function contabProcessar(event){
+  const files=[...(event.target.files||[])];
+  if(!files.length) return;
+  const saida=document.getElementById('contab-saida');
+
+  const pdfs=files.filter(f=>/\.pdf$/i.test(f.name));
+  if(pdfs.length){
+    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> '
+      +'<strong>PDF não serve para este processo.</strong> O PDF não tem estrutura de célula, então os valores não podem ser extraídos com segurança. '
+      +'Gere o FPRF002.OPE em <strong>.xlsx</strong> no Senior e envie de novo.</div>';
+    event.target.value='';
+    return;
+  }
+  if(!window.JSZip || !window.ExcelJS){
+    saida.innerHTML='<div class="alert alert-warning">As bibliotecas de planilha não carregaram. Recarregue a página (Cmd+Shift+R) e tente de novo.</div>';
+    event.target.value='';
+    return;
+  }
+
+  saida.innerHTML='<div class="alert alert-info"><i class="ti ti-loader"></i> Processando '+files.length+' arquivo(s)...</div>';
+  contabResultados=[];
+  const erros=[];
+  for(const f of files){
+    try{
+      const res=await _cbProcessarArquivo(f);
+      contabResultados.push(...res);
+    }catch(e){
+      erros.push(f.name+': '+e.message);
+      console.error('Contabilização',f.name,e);
+    }
+  }
+  event.target.value='';
+
+  if(!contabResultados.length){
+    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nada foi processado.'
+      +(erros.length?'<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div>':'')+'</div>';
+    return;
+  }
+  renderContabResultados(erros);
+  registrarContabHistorico().catch(e=>console.warn('Histórico de contabilização:',e));
+}
+
+function renderContabResultados(erros){
+  const saida=document.getElementById('contab-saida'); if(!saida) return;
+  const div=contabResultados.filter(r=>r.status==='DIVERGENTE');
+  const totalTudo=contabResultados.reduce((s,r)=>s+r.totalGeral,0);
+
+  const cards=contabResultados.map((r,i)=>{
+    const badge = r.status==='OK'
+      ? '<span class="badge badge--success"><i class="ti ti-circle-check"></i> Confere</span>'
+      : r.status==='DIVERGENTE'
+        ? '<span class="badge badge--danger" title="Diferença de '+brl(r.dif)+' contra o bloco agregado do relatório"><i class="ti ti-alert-triangle"></i> Divergente ('+brl(r.dif)+')</span>'
+        : '<span class="badge badge--neutral" title="O relatório não trouxe o bloco agregado para conferir">Sem conferência</span>';
+    return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<div><div style="font-weight:700;color:var(--brand)">'+r.empresa.code+' · '+r.empresa.name+'</div>'
+      +'<div class="text-xs text-muted">'+r.periodo.ini+' a '+r.periodo.fim+' · '+r.ccs.length+' centros de custo · '+r.eventos.length+' eventos</div></div>'
+      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+        +'<div style="text-align:right"><div class="text-xs text-muted">Total geral</div><div style="font-size:15px;font-weight:700">'+brl(r.totalGeral)+'</div></div>'
+        +badge
+        +'<button class="btn btn-primary btn-sm" onclick="contabBaixar('+i+')"><i class="ti ti-download"></i> Baixar</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="contabPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
+      +'</div></div><div id="contab-prev-'+i+'"></div></div>';
+  }).join('');
+
+  saida.innerHTML=
+    (erros&&erros.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> Arquivo(s) com problema:<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div></div>':'')
+    +(div.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+div.length+'</strong> empresa(s) com divergência entre o total calculado e o bloco agregado do próprio relatório. O download continua liberado, mas confira antes de usar.</div>':'')
+    +'<div class="lan-step lan-step--split"><div class="lan-step__head"><span class="lan-step__num">2</span><div>'
+      +'<div class="lan-step__t">'+contabResultados.length+' empresa(s) processada(s)</div>'
+      +'<div class="lan-step__d">Total somado de todas: <strong>'+brl(totalTudo)+'</strong></div></div></div>'
+      +'<div class="lan-split-side lan-actions">'
+      +(contabResultados.length>1?'<button class="btn btn-success btn-sm" onclick="contabBaixarTodos()"><i class="ti ti-file-zip"></i> Baixar todas (zip)</button>':'')
+      +'</div></div>'
+    +cards;
+}
+
+function contabPrevia(i){
+  const res=contabResultados[i]; if(!res) return;
+  const el=document.getElementById('contab-prev-'+i); if(!el) return;
+  if(el.innerHTML){ el.innerHTML=''; return; }
+  const evs=res.eventos;
+  const cab=evs.map(k=>{const[c,d]=k.split('|');return '<th title="'+d.replace(/"/g,'')+'" style="text-align:right">'+c+'</th>';}).join('');
+  const linhas=res.ccs.map(cc=>{
+    let tot=0; cc.eventos.forEach(v=>tot+=v);
+    return '<tr><td style="font-weight:600;white-space:nowrap">'+cc.nome+'</td>'
+      +evs.map(k=>{const v=cc.eventos.get(k)||0; return '<td style="text-align:right">'+(v?brl(v):'')+'</td>';}).join('')
+      +'<td style="text-align:right;font-weight:700">'+brl(tot)+'</td></tr>';
+  }).join('');
+  el.innerHTML='<div class="text-xs text-muted" style="margin:10px 0 4px">Prévia — os códigos no cabeçalho têm a descrição no tooltip.</div>'
+    +'<div class="tbl-wrap" style="max-height:340px"><table class="tbl"><thead><tr><th>Centro de Custo</th>'+cab+'<th style="text-align:right">TOTAL</th></tr></thead>'
+    +'<tbody>'+linhas+'</tbody></table></div>';
+}
+
+// ── Histórico de processamento (só metadados, sem o binário) ──────
+async function registrarContabHistorico(){
+  for(const r of contabResultados){
+    const id=(r.periodo.ini||'').replace(/\//g,'-')+'__'+r.empresa.code+'__'+Date.now();
+    await fsSet('contabilizacao_historico',id,{
+      periodoIni:r.periodo.ini, periodoFim:r.periodo.fim,
+      empresaCodigo:r.empresa.code, empresaNome:r.empresa.name,
+      qtdCCs:r.ccs.length, qtdEventos:r.eventos.length,
+      totalGeral:r.totalGeral, agregado:r.agregado, diferenca:r.dif,
+      statusReconciliacao:r.status, arquivoNome:r.arquivoOrigem,
+      processadoEm:new Date().toISOString(),
+      usuario:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''
+    });
+  }
+}
+
+async function loadContabHistorico(){
+  try{
+    const snap=await window._getDocs(window._col('contabilizacao_historico'));
+    contabHistList=[]; snap.forEach(d=>contabHistList.push(Object.assign({_id:d.id},d.data())));
+    contabHistList.sort((a,b)=>String(b.processadoEm||'').localeCompare(String(a.processadoEm||'')));
+  }catch(e){ console.error('Histórico de contabilização:',e); }
+  return contabHistList;
+}
+
+function pgContabHistorico(){
+  return `
+    <div class="page-header">
+      <h2 class="page-title">Contabilização — Histórico</h2>
+      <p class="page-subtitle">Arquivos já processados, com o total e o resultado da conferência.</p>
+    </div>
+    <div id="contab-hist"></div>`;
+}
+
+function renderContabHistorico(){
+  const el=document.getElementById('contab-hist'); if(!el) return;
+  if(!contabHistList.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📄</div><p>Nada processado ainda.</p></div>'; return; }
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+    +'<th>Período</th><th>Empresa</th><th style="text-align:right">CCs</th><th style="text-align:right">Eventos</th>'
+    +'<th style="text-align:right">Total geral</th><th style="text-align:center">Conferência</th><th>Arquivo</th><th>Processado em</th><th>Por</th>'
+    +'</tr></thead><tbody>'
+    +contabHistList.map(h=>{
+      const badge=h.statusReconciliacao==='OK'?'<span class="badge badge--success">Confere</span>'
+        :h.statusReconciliacao==='DIVERGENTE'?'<span class="badge badge--danger">Divergente</span>'
+        :'<span class="badge badge--neutral">—</span>';
+      const dt=h.processadoEm?new Date(h.processadoEm).toLocaleString('pt-BR'):'';
+      return '<tr><td class="text-sm">'+(h.periodoIni||'')+' a '+(h.periodoFim||'')+'</td>'
+        +'<td><div style="font-weight:600">'+(h.empresaNome||'')+'</div><div class="text-xs text-muted">'+(h.empresaCodigo||'')+'</div></td>'
+        +'<td style="text-align:right">'+(h.qtdCCs||0)+'</td><td style="text-align:right">'+(h.qtdEventos||0)+'</td>'
+        +'<td style="text-align:right;font-weight:600">'+brl(h.totalGeral||0)+'</td>'
+        +'<td style="text-align:center">'+badge+'</td>'
+        +'<td class="text-xs text-muted">'+(h.arquivoNome||'')+'</td>'
+        +'<td class="text-xs text-muted">'+dt+'</td>'
+        +'<td class="text-xs text-muted">'+(h.usuario||'')+'</td></tr>';
+    }).join('')
+    +'</tbody></table></div>';
+}

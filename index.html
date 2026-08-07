@@ -45,6 +45,11 @@
   window.dispatchEvent(new Event('firebaseReady'));
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Contabilização: JSZip lê o .xlsx de entrada (é um ZIP) e monta o zip de saída;
+     ExcelJS escreve as planilhas com cor/merge/painel congelado (o SheetJS acima
+     não estiliza). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 
 <style>
@@ -782,6 +787,9 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
     </button>
     <button class="mod-tab" id="tab-folha" onclick="switchModule('folha')">
       <span class="mod-icon"><i class="ti ti-cash"></i></span> Folha de Pagamento
+    </button>
+    <button class="mod-tab" id="tab-contabil" onclick="switchModule('contabil')">
+      <span class="mod-icon"><i class="ti ti-calculator"></i></span> Contabilização
     </button>
     <button class="mod-tab" id="tab-dashboard" onclick="switchModule('dashboard')">
       <span class="mod-icon"><i class="ti ti-chart-bar"></i></span> Dashboard

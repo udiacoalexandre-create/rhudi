@@ -61,6 +61,9 @@ service cloud.firestore {
     // Log de exclusões (justificativas de quem excluiu do histórico).
     match /logsExclusao/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
 
+    // Contabilização: log de processamento do FPRF002.OPE (só metadados).
+    match /contabilizacao_historico/{id} { allow read, write: if isAuthorized() && !isUM989(); }
+
     // ── Treinamentos ──────────────────────────────────────────
     // Login único: leitura e escrita apenas por usuários autorizados,
     // EXCETO o papel UM989 (que só acessa Férias UM989).
