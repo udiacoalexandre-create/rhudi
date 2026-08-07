@@ -30,11 +30,13 @@ jobs:
             exit 0
           fi
           exit $code
-      - name: (best-effort) Publicar regras do Firestore
-        continue-on-error: true
+      # Sem "|| true" nem continue-on-error: mascarar a falha aqui deixou as
+      # regras paradas em 20/07/2026 enquanto o deploy aparecia como verde, e
+      # coleção nova ficava barrada ("Missing or insufficient permissions").
+      - name: Publicar regras do Firestore
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
-          npx -y firebase-tools@latest deploy --only firestore:rules --project udiaco-beneficios || true
+          npx -y firebase-tools@latest deploy --only firestore:rules --project udiaco-beneficios
