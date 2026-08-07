@@ -896,8 +896,7 @@ const MODULES = {
     {id:'premio-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
   ]},
   contabil:{pages:[
-    {id:'contab-ccxev',icon:'<i class="ti ti-table"></i>',label:'CC x Eventos'},
-    {id:'contab-lancamentos',icon:'<i class="ti ti-file-dollar"></i>',label:'Lançamentos contábeis'},
+    {id:'contab-processo',icon:'<i class="ti ti-list-numbers"></i>',label:'Fechamento contábil'},
     {id:'contab-esquema',icon:'<i class="ti ti-list-details"></i>',label:'Esquema contábil'},
     {id:'contab-historico',icon:'<i class="ti ti-history"></i>',label:'Histórico'},
   ]},
@@ -974,8 +973,8 @@ function renderPage(id){
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
     'premio-dash':pgPremioDashboard,'premio-historico':pgPremioHistorico,
-    'contab-ccxev':pgContabCCxEventos,'contab-historico':pgContabHistorico,
-    'contab-lancamentos':pgContabLancamentos,'contab-esquema':pgContabEsquema,
+    'contab-processo':pgContabProcesso,'contab-historico':pgContabHistorico,
+    'contab-esquema':pgContabEsquema,
   };
   if(id==='usuarios' && !podeGerenciarUsuarios()) return '<div class="empty-state"><div class="empty-icon"></div><p>Acesso restrito.</p></div>';
   const fn=pages[id];
@@ -1006,9 +1005,8 @@ function afterRender(id){
   if(id==='premio-dash') afterRenderPremioDash();
   if(id==='premio-historico') renderPremioHistorico();
   if(id==='usuarios') renderUsuarios();
-  if(id==='contab-ccxev') afterRenderContab();
+  if(id==='contab-processo') afterRenderContabProcesso();
   if(id==='contab-historico') loadContabHistorico().then(renderContabHistorico);
-  if(id==='contab-lancamentos') afterRenderLancamentos();
   if(id==='contab-esquema') loadEsquemaContabil(true).then(renderEsquemaLista);
   if(id==='teste-senior') {} // sem afterRender especifico
 }
@@ -9743,162 +9741,6 @@ async function contabBaixarTodos(){
   }
 }
 
-// ── UI da aba Contabilização ──────────────────────────────────────
-function pgContabCCxEventos(){
-  return `
-    <div class="lan-top">
-      <div class="page-header">
-        <h2 class="page-title">Contabilização — CC x Eventos</h2>
-        <p class="page-subtitle">Converte o relatório FPRF002.OPE numa planilha por empresa, com os totais por evento.</p>
-      </div>
-    </div>
-    <div class="lan-step lan-step--split">
-      <div class="lan-step__head"><span class="lan-step__num">1</span><div>
-        <div class="lan-step__t">Enviar o relatório da folha</div>
-        <div class="lan-step__d">Aceita vários <strong>.xlsx</strong> de uma vez. O sistema separa as empresas sozinho.</div>
-      </div></div>
-      <div class="lan-split-side lan-actions">
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('contab-file').click()"><i class="ti ti-file-upload"></i> Selecionar arquivos</button>
-        <button class="btn btn-ghost btn-sm" onclick="contabLimpar()"><i class="ti ti-eraser"></i> Limpar</button>
-      </div>
-    </div>
-    <input type="file" id="contab-file" accept=".xlsx" multiple style="display:none" onchange="contabProcessar(event)">
-    <div class="upload-zone" id="contab-drop" onclick="document.getElementById('contab-file').click()">
-      <div style="font-size:26px;margin-bottom:6px"><i class="ti ti-table-import"></i></div>
-      <div class="upload-text">Arraste aqui o FPRF002.OPE (.xlsx) ou clique para escolher</div>
-      <div class="upload-sub">Relatório sintético por centro de custo. PDF não serve — é preciso o .xlsx.</div>
-    </div>
-    <div id="contab-saida" style="margin-top:14px"></div>`;
-}
-
-function afterRenderContab(){
-  const dz=document.getElementById('contab-drop');
-  if(dz){
-    ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='var(--blue)';}));
-    ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='';}));
-    dz.addEventListener('drop',e=>{
-      const fs=[...(e.dataTransfer?.files||[])];
-      if(fs.length) contabProcessar({target:{files:fs,value:''}});
-    });
-  }
-  if(contabResultados.length) renderContabResultados();
-}
-
-function contabLimpar(){
-  contabResultados=[];
-  const el=document.getElementById('contab-saida'); if(el) el.innerHTML='';
-  toast('Limpo.','info');
-}
-
-async function contabProcessar(event){
-  const files=[...(event.target.files||[])];
-  if(!files.length) return;
-  const saida=document.getElementById('contab-saida');
-
-  const pdfs=files.filter(f=>/\.pdf$/i.test(f.name));
-  if(pdfs.length){
-    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> '
-      +'<strong>PDF não serve para este processo.</strong> O PDF não tem estrutura de célula, então os valores não podem ser extraídos com segurança. '
-      +'Gere o FPRF002.OPE em <strong>.xlsx</strong> no Senior e envie de novo.</div>';
-    event.target.value='';
-    return;
-  }
-  if(!window.JSZip || !window.ExcelJS){
-    saida.innerHTML='<div class="alert alert-warning">As bibliotecas de planilha não carregaram. Recarregue a página (Cmd+Shift+R) e tente de novo.</div>';
-    event.target.value='';
-    return;
-  }
-
-  saida.innerHTML='<div class="alert alert-info"><i class="ti ti-loader"></i> Processando '+files.length+' arquivo(s)...</div>';
-  contabResultados=[];
-  const erros=[];
-  for(const f of files){
-    try{
-      const res=await _cbProcessarArquivo(f);
-      contabResultados.push(...res);
-    }catch(e){
-      erros.push(f.name+': '+e.message);
-      console.error('Contabilização',f.name,e);
-    }
-  }
-  event.target.value='';
-
-  if(!contabResultados.length){
-    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nada foi processado.'
-      +(erros.length?'<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div>':'')+'</div>';
-    return;
-  }
-  renderContabResultados(erros);
-  registrarContabHistorico().catch(e=>console.warn('Histórico de contabilização:',e));
-}
-
-function renderContabResultados(erros){
-  const saida=document.getElementById('contab-saida'); if(!saida) return;
-  const div=contabResultados.filter(r=>r.status==='DIVERGENTE');
-  const totalTudo=contabResultados.reduce((s,r)=>s+r.totalGeral,0);
-
-  const cards=contabResultados.map((r,i)=>{
-    const badge = r.status==='OK'
-      ? '<span class="badge badge--success"><i class="ti ti-circle-check"></i> Confere</span>'
-      : r.status==='DIVERGENTE'
-        ? '<span class="badge badge--danger" title="Diferença de '+brl(r.dif)+' contra o bloco agregado do relatório"><i class="ti ti-alert-triangle"></i> Divergente ('+brl(r.dif)+')</span>'
-        : '<span class="badge badge--neutral" title="O relatório não trouxe o bloco agregado para conferir">Sem conferência</span>';
-    return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
-      +'<div><div style="font-weight:700;color:var(--brand)">'+r.empresa.code+' · '+r.empresa.name+'</div>'
-      +'<div class="text-xs text-muted">'+r.periodo.ini+' a '+r.periodo.fim+' · '+r.ccs.length+' centros de custo · '+r.eventos.length+' eventos</div></div>'
-      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
-        +'<div style="text-align:right"><div class="text-xs text-muted">Total geral</div><div style="font-size:15px;font-weight:700">'+brl(r.totalGeral)+'</div></div>'
-        +badge
-        +'<button class="btn btn-primary btn-sm" onclick="contabBaixar('+i+')"><i class="ti ti-download"></i> Baixar</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="contabPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
-      +'</div></div><div id="contab-prev-'+i+'"></div></div>';
-  }).join('');
-
-  saida.innerHTML=
-    (erros&&erros.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> Arquivo(s) com problema:<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div></div>':'')
-    +(div.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+div.length+'</strong> empresa(s) com divergência entre o total calculado e o bloco agregado do próprio relatório. O download continua liberado, mas confira antes de usar.</div>':'')
-    +'<div class="lan-step lan-step--split"><div class="lan-step__head"><span class="lan-step__num">2</span><div>'
-      +'<div class="lan-step__t">'+contabResultados.length+' empresa(s) processada(s)</div>'
-      +'<div class="lan-step__d">Total somado de todas: <strong>'+brl(totalTudo)+'</strong></div></div></div>'
-      +'<div class="lan-split-side lan-actions">'
-      +(contabResultados.length>1?'<button class="btn btn-success btn-sm" onclick="contabBaixarTodos()"><i class="ti ti-file-zip"></i> Baixar todas (zip)</button>':'')
-      +'</div></div>'
-    +cards;
-}
-
-function contabPrevia(i){
-  const res=contabResultados[i]; if(!res) return;
-  const el=document.getElementById('contab-prev-'+i); if(!el) return;
-  if(el.innerHTML){ el.innerHTML=''; return; }
-  const evs=res.eventos;
-  const cab=evs.map(k=>{const[c,d]=k.split('|');return '<th title="'+d.replace(/"/g,'')+'" style="text-align:right">'+c+'</th>';}).join('');
-  const linhas=res.ccs.map(cc=>{
-    let tot=0; cc.eventos.forEach(v=>tot+=v);
-    return '<tr><td style="font-weight:600;white-space:nowrap">'+cc.nome+'</td>'
-      +evs.map(k=>{const v=cc.eventos.get(k)||0; return '<td style="text-align:right">'+(v?brl(v):'')+'</td>';}).join('')
-      +'<td style="text-align:right;font-weight:700">'+brl(tot)+'</td></tr>';
-  }).join('');
-  el.innerHTML='<div class="text-xs text-muted" style="margin:10px 0 4px">Prévia — os códigos no cabeçalho têm a descrição no tooltip.</div>'
-    +'<div class="tbl-wrap" style="max-height:340px"><table class="tbl"><thead><tr><th>Centro de Custo</th>'+cab+'<th style="text-align:right">TOTAL</th></tr></thead>'
-    +'<tbody>'+linhas+'</tbody></table></div>';
-}
-
-// ── Histórico de processamento (só metadados, sem o binário) ──────
-async function registrarContabHistorico(){
-  for(const r of contabResultados){
-    const id=(r.periodo.ini||'').replace(/\//g,'-')+'__'+r.empresa.code+'__'+Date.now();
-    await fsSet('contabilizacao_historico',id,{
-      periodoIni:r.periodo.ini, periodoFim:r.periodo.fim,
-      empresaCodigo:r.empresa.code, empresaNome:r.empresa.name,
-      qtdCCs:r.ccs.length, qtdEventos:r.eventos.length,
-      totalGeral:r.totalGeral, agregado:r.agregado, diferenca:r.dif,
-      statusReconciliacao:r.status, arquivoNome:r.arquivoOrigem,
-      processadoEm:new Date().toISOString(),
-      usuario:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''
-    });
-  }
-}
-
 async function loadContabHistorico(){
   try{
     const snap=await window._getDocs(window._col('contabilizacao_historico'));
@@ -9919,26 +9761,60 @@ function pgContabHistorico(){
 
 function renderContabHistorico(){
   const el=document.getElementById('contab-hist'); if(!el) return;
-  if(!contabHistList.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📄</div><p>Nada processado ainda.</p></div>'; return; }
-  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
-    +'<th>Período</th><th>Empresa</th><th style="text-align:right">CCs</th><th style="text-align:right">Eventos</th>'
-    +'<th style="text-align:right">Total geral</th><th style="text-align:center">Conferência</th><th>Arquivo</th><th>Processado em</th><th>Por</th>'
-    +'</tr></thead><tbody>'
-    +contabHistList.map(h=>{
-      const badge=h.statusReconciliacao==='OK'?'<span class="badge badge--success">Confere</span>'
-        :h.statusReconciliacao==='DIVERGENTE'?'<span class="badge badge--danger">Divergente</span>'
-        :'<span class="badge badge--neutral">—</span>';
-      const dt=h.processadoEm?new Date(h.processadoEm).toLocaleString('pt-BR'):'';
-      return '<tr><td class="text-sm">'+(h.periodoIni||'')+' a '+(h.periodoFim||'')+'</td>'
-        +'<td><div style="font-weight:600">'+(h.empresaNome||'')+'</div><div class="text-xs text-muted">'+(h.empresaCodigo||'')+'</div></td>'
-        +'<td style="text-align:right">'+(h.qtdCCs||0)+'</td><td style="text-align:right">'+(h.qtdEventos||0)+'</td>'
-        +'<td style="text-align:right;font-weight:600">'+brl(h.totalGeral||0)+'</td>'
-        +'<td style="text-align:center">'+badge+'</td>'
-        +'<td class="text-xs text-muted">'+(h.arquivoNome||'')+'</td>'
-        +'<td class="text-xs text-muted">'+dt+'</td>'
-        +'<td class="text-xs text-muted">'+(h.usuario||'')+'</td></tr>';
-    }).join('')
-    +'</tbody></table></div>';
+  if(!contabHistList.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📄</div><p>Nenhuma competência salva ainda. Feche uma em <strong>Fechamento contábil</strong> (passo 5).</p></div>'; return; }
+  // Agrupa por competencia: o fechamento e de um mes, com N empresas.
+  const porComp={};
+  contabHistList.forEach(h=>{ const k=h.competencia||((h.periodoIni||'').split('/').slice(1).join('/'))||'—'; (porComp[k]=porComp[k]||[]).push(h); });
+  const comps=Object.keys(porComp).sort((a,b)=>{
+    const pa=String(a).split('/'), pb=String(b).split('/');
+    return (pb[1]||'').localeCompare(pa[1]||'') || (pb[0]||'').localeCompare(pa[0]||'');
+  });
+  el.innerHTML=comps.map(comp=>{
+    const itens=porComp[comp].slice().sort((a,b)=>String(a.empresaCodigo||'').localeCompare(String(b.empresaCodigo||'')));
+    const totalPlan=itens.reduce((s,h)=>s+(h.totalGeral||0),0);
+    const totalLanc=itens.reduce((s,h)=>s+(h.totalLancado||0),0);
+    const linhas=itens.reduce((s,h)=>s+(h.linhasCsv||0),0);
+    const divs=itens.filter(h=>h.statusReconciliacao&&h.statusReconciliacao!=='OK').length;
+    const desb=itens.filter(h=>h.balanceado===false).length;
+    const semMap=itens.reduce((s,h)=>s+((h.semMapeamento||[]).length),0);
+    const quando=itens[0]&&itens[0].processadoEm?new Date(itens[0].processadoEm).toLocaleString('pt-BR'):'';
+    return '<div class="card" style="margin-bottom:10px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+        +'<div><div style="font-weight:700;font-size:15px;color:var(--brand)">Competência '+comp+'</div>'
+        +'<div class="text-xs text-muted">'+itens.length+' empresa(s) · '+linhas+' linhas de lançamento · salvo em '+quando+(itens[0]&&itens[0].usuario?' por '+itens[0].usuario:'')+'</div></div>'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          +(divs?'<span class="badge badge--danger">'+divs+' com reconciliação divergente</span>':'<span class="badge badge--success">Reconciliação OK</span>')
+          +(desb?'<span class="badge badge--danger">'+desb+' desbalanceado(s)</span>':'')
+          +(semMap?'<span class="badge badge--warning">'+semMap+' sem mapeamento</span>':'')
+          +'<div style="text-align:right"><div class="text-xs text-muted">Total lançado</div><div style="font-weight:700">'+brl(totalLanc)+'</div></div>'
+        +'</div></div>'
+      +'<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+        +'<th>Empresa</th><th>Sigla</th><th style="text-align:right">CCs</th><th style="text-align:right">Eventos</th>'
+        +'<th style="text-align:right">Total da folha</th><th style="text-align:right">Total lançado</th>'
+        +'<th style="text-align:center">Reconc.</th><th style="text-align:center">CSV</th><th>Arquivo</th>'
+        +'</tr></thead><tbody>'
+      +itens.map(h=>{
+        const bR=h.statusReconciliacao==='OK'?'<span class="badge badge--success">OK</span>'
+          :h.statusReconciliacao==='DIVERGENTE'?'<span class="badge badge--danger">'+brl(h.diferenca||0)+'</span>'
+          :'<span class="badge badge--neutral">—</span>';
+        const bB=h.balanceado===true?'<span class="badge badge--success">Balanceado</span>'
+          :h.balanceado===false?'<span class="badge badge--danger">Desbalanceado</span>'
+          :'<span class="badge badge--neutral">—</span>';
+        const sm=(h.semMapeamento||[]);
+        return '<tr><td><div style="font-weight:600">'+(h.empresaNome||'')+'</div>'
+          +(sm.length?'<div class="text-xs" style="color:var(--yellow)">sem mapa: '+sm.map(x=>x.codigo+' ('+brl(x.soma)+')').join(', ')+'</div>':'')
+          +'</td><td class="text-sm">'+(h.sigla||h.empresaCodigo||'')+'</td>'
+          +'<td style="text-align:right">'+(h.qtdCCs||0)+'</td><td style="text-align:right">'+(h.qtdEventos||0)+'</td>'
+          +'<td style="text-align:right">'+brl(h.totalGeral||0)+'</td>'
+          +'<td style="text-align:right;font-weight:600">'+brl(h.totalLancado||0)+'</td>'
+          +'<td style="text-align:center">'+bR+'</td><td style="text-align:center">'+bB+'</td>'
+          +'<td class="text-xs text-muted">'+(h.arquivoCsv||'')+'</td></tr>';
+      }).join('')
+      +'</tbody></table></div>'
+      +'<div class="text-xs text-muted" style="margin-top:6px">Total das folhas: '+brl(totalPlan)+' · total lançado: '+brl(totalLanc)
+      +(Math.abs(totalPlan-totalLanc)>0.005?' (diferença de '+brl(totalPlan-totalLanc)+', dos eventos sem mapeamento)':'')+'</div>'
+      +'</div>';
+  }).join('');
 }
 
 // ============================================================
@@ -10043,9 +9919,12 @@ async function importarEsquemaXlsx(event){
     let n=0;
     for(const it of itens){ await fsSet('esquemaContabil',it.codigo,it); n++; }
     await loadEsquemaContabil(true);
-    renderEsquemaLista();
+    await salvarEsquemaMeta(file.name,n,itens.filter(i=>i.semLancamento).length);
+    if(currentPage==='contab-esquema') renderEsquemaLista();
     if(el) el.innerHTML='<div class="alert alert-success"><i class="ti ti-circle-check"></i> '+n+' evento(s) importado(s) da aba "'+nomeAba+'".</div>';
     toast(n+' eventos no esquema.','success');
+    // Veio do passo 3 do assistente: o esquema novo passa a valer e segue.
+    if(currentPage==='contab-processo'){ contabEsqOrigem='upload'; lcResultados=[]; contabIrPasso(4); }
   }catch(e){
     if(el) el.innerHTML='<div class="alert alert-warning">Erro ao importar: '+e.message+'</div>';
     console.error(e);
@@ -10168,7 +10047,11 @@ async function salvarEventoEsquema(){
     esquemaContabil[cod]=item;
     document.getElementById('modal-ec')?.remove();
     if(currentPage==='contab-esquema') renderEsquemaLista();
-    if(currentPage==='contab-lancamentos' && lcResultados.length) toast('Evento '+cod+' salvo. Gere os lançamentos de novo para aplicá-lo.','success');
+    // No assistente, o evento recém-mapeado só entra se os CSVs forem refeitos.
+    if(currentPage==='contab-processo' && contabStep===4 && lcResultados.length){
+      toast('Evento '+cod+' salvo — gerando os CSVs de novo.','success');
+      contabGerarCsvs();
+    }
     else toast('Evento '+cod+' salvo.','success');
   }catch(e){ toast('Erro ao salvar: '+e.message,'error'); }
 }
@@ -10329,172 +10212,6 @@ function _lcBlob(linhas){
   return new Blob([linhas.join('\n')+'\n'],{type:'text/csv;charset=utf-8'});
 }
 
-// ── Tela dos lançamentos contábeis ────────────────────────────────
-function pgContabLancamentos(){
-  const daAba=contabResultados.length;
-  return `
-    <div class="lan-top">
-      <div class="page-header">
-        <h2 class="page-title">Lançamentos contábeis</h2>
-        <p class="page-subtitle">Gera o CSV de partidas dobradas para importar no Adempiere, a partir das planilhas CC x Eventos.</p>
-      </div>
-    </div>
-    <div class="lan-step lan-step--split">
-      <div class="lan-step__head"><span class="lan-step__num">1</span><div>
-        <div class="lan-step__t">Escolher a origem</div>
-        <div class="lan-step__d">Use o que acabou de ser processado na aba CC x Eventos, ou envie planilhas <strong>..._CCxEventos.xlsx</strong> já prontas.</div>
-      </div></div>
-      <div class="lan-split-side lan-actions">
-        ${daAba?'<button class="btn btn-success btn-sm" onclick="lcGerarDaAba()"><i class="ti ti-bolt"></i> Usar as '+daAba+' do CC x Eventos</button>':''}
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('lc-file').click()"><i class="ti ti-file-upload"></i> Enviar planilhas</button>
-        <button class="btn btn-ghost btn-sm" onclick="lcLimpar()"><i class="ti ti-eraser"></i> Limpar</button>
-      </div>
-    </div>
-    <input type="file" id="lc-file" accept=".xlsx,.xls" multiple style="display:none" onchange="lcProcessarArquivos(event)">
-    <div class="upload-zone" id="lc-drop" onclick="document.getElementById('lc-file').click()">
-      <div style="font-size:26px;margin-bottom:6px"><i class="ti ti-file-dollar"></i></div>
-      <div class="upload-text">Arraste as planilhas ..._CCxEventos.xlsx ou clique para escolher</div>
-      <div class="upload-sub">O esquema contábil do sistema é usado para mapear as contas de cada evento.</div>
-    </div>
-    <div id="lc-saida" style="margin-top:14px"></div>`;
-}
-
-function afterRenderLancamentos(){
-  loadEsquemaContabil().then(()=>{
-    const el=document.getElementById('lc-saida');
-    if(el && !Object.keys(esquemaContabil).length && !lcResultados.length){
-      el.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O <strong>esquema contábil está vazio</strong>. '
-        +'Sem ele nenhum lançamento pode ser gerado (evento sem mapeamento nunca recebe conta inventada). '
-        +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="showPage(\'contab-esquema\')">Ir ao esquema contábil</button></div>';
-    }
-  });
-  const dz=document.getElementById('lc-drop');
-  if(dz){
-    ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='var(--blue)';}));
-    ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='';}));
-    dz.addEventListener('drop',e=>{
-      const fs=[...(e.dataTransfer?.files||[])];
-      if(fs.length) lcProcessarArquivos({target:{files:fs,value:''}});
-    });
-  }
-  if(lcResultados.length) renderLcResultados();
-}
-
-function lcLimpar(){
-  lcResultados=[];
-  const el=document.getElementById('lc-saida'); if(el) el.innerHTML='';
-}
-
-async function lcGerarDaAba(){
-  await loadEsquemaContabil();
-  if(!_lcChecaEsquema()) return;
-  lcResultados=[];
-  contabResultados.forEach(res=>{
-    const nomeArq=_cbNomeArquivo(res);
-    const ma=_lcMesAno(nomeArq) || _lcMesAnoDoPeriodo(res.periodo);
-    if(!ma){ toast('Não consegui identificar mês/ano de '+res.empresa.name,'error'); return; }
-    const sigla=_lcResolveSigla(nomeArq);
-    const g=_lcGerar(_lcDeResultadoContab(res),sigla,ma.mm,ma.aaaa);
-    lcResultados.push(Object.assign(g,{sigla,mm:ma.mm,aaaa:ma.aaaa,arquivo:nomeArq,
-      empresaNome:res.empresa.name,saida:_lcNomeSaida(sigla,ma.mm,ma.aaaa)}));
-  });
-  renderLcResultados();
-}
-function _lcMesAnoDoPeriodo(p){
-  const m=String(p&&p.ini||'').match(/^\d{2}\/(\d{2})\/(\d{4})$/);
-  return m?{mm:m[1],aaaa:m[2]}:null;
-}
-function _lcChecaEsquema(){
-  if(Object.keys(esquemaContabil).length) return true;
-  const el=document.getElementById('lc-saida');
-  if(el) el.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O esquema contábil está vazio — importe-o primeiro. '
-    +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="showPage(\'contab-esquema\')">Ir ao esquema contábil</button></div>';
-  return false;
-}
-
-async function lcProcessarArquivos(event){
-  const files=[...(event.target.files||[])];
-  event.target.value='';
-  if(!files.length) return;
-  await loadEsquemaContabil();
-  if(!_lcChecaEsquema()) return;
-  const saida=document.getElementById('lc-saida');
-  saida.innerHTML='<div class="alert alert-info"><i class="ti ti-loader"></i> Gerando lançamentos de '+files.length+' arquivo(s)...</div>';
-  lcResultados=[];
-  const erros=[];
-  for(const f of files){
-    try{
-      const ma=_lcMesAno(f.name);
-      if(!ma) throw new Error('não achei _MM-AAAA_ no nome do arquivo.');
-      const buf=await f.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
-      const dados=_lcLerCCxEventos(rows);
-      if(!dados.linhas.length) throw new Error('nenhum centro de custo lido (a planilha é mesmo CC x Eventos?).');
-      const sigla=_lcResolveSigla(f.name);
-      const g=_lcGerar(dados,sigla,ma.mm,ma.aaaa);
-      lcResultados.push(Object.assign(g,{sigla,mm:ma.mm,aaaa:ma.aaaa,arquivo:f.name,
-        empresaNome:dados.empresaNome,saida:_lcNomeSaida(sigla,ma.mm,ma.aaaa)}));
-    }catch(e){ erros.push(f.name+': '+e.message); console.error('Lançamentos',f.name,e); }
-  }
-  renderLcResultados(erros);
-}
-
-function renderLcResultados(erros){
-  const saida=document.getElementById('lc-saida'); if(!saida) return;
-  if(!lcResultados.length){
-    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nada gerado.'
-      +((erros&&erros.length)?'<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div>':'')+'</div>';
-    return;
-  }
-  const desbal=lcResultados.filter(r=>!r.balanceado);
-  const comSemMap=lcResultados.filter(r=>Object.keys(r.semMap).length);
-
-  const cards=lcResultados.map((r,i)=>{
-    const nSem=Object.keys(r.semMap).length;
-    const badgeBal=r.balanceado
-      ? '<span class="badge badge--success"><i class="ti ti-scale"></i> Balanceado</span>'
-      : '<span class="badge badge--danger"><i class="ti ti-alert-triangle"></i> Desbalanceado</span>';
-    const semBloco=nSem?(
-      '<div class="alert alert-warning" style="margin-top:10px;font-size:12px"><strong><i class="ti ti-alert-triangle"></i> '+nSem+' evento(s) sem mapeamento</strong> — omitidos do CSV (em débito e crédito, então o arquivo continua balanceado).'
-      +'<table class="tbl" style="margin-top:8px;background:var(--surface)"><thead><tr><th>Código</th><th>Evento</th><th style="text-align:right">Soma</th><th>CCs afetados</th><th style="text-align:center">Ação</th></tr></thead><tbody>'
-      +Object.values(r.semMap).map(s=>'<tr><td><code>'+s.codigo+'</code></td><td>'+(s.descricao||'—')+'</td>'
-        +'<td style="text-align:right;font-weight:600">'+brl(s.soma)+'</td>'
-        +'<td class="text-xs">'+s.ccs.map(c=>c.cc).join(', ')+'</td>'
-        +'<td style="text-align:center"><button class="btn btn-primary btn-sm" onclick="abrirEventoEsquema(\''+s.codigo+'\',\''+String(s.descricao||'').replace(/'/g,'')+'\')"><i class="ti ti-plus"></i> Adicionar ao esquema</button></td></tr>').join('')
-      +'</tbody></table></div>'):'';
-    const avisoCC=r.ccsForaDoPadrao.length?('<div class="alert alert-warning" style="margin-top:8px;font-size:12px"><i class="ti ti-alert-triangle"></i> '
-      +r.ccsForaDoPadrao.length+' centro(s) de custo sem o padrão <code>CCx.x.x</code> — o campo User1_ID sai com esse texto: <code>'
-      +r.ccsForaDoPadrao.slice(0,6).join('</code>, <code>')+'</code></div>'):'';
-
-    return '<div class="card" style="margin-bottom:8px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
-      +'<div><div style="font-weight:700;color:var(--brand)">'+r.sigla+' <span class="text-xs text-muted" style="font-weight:400">'+(r.empresaNome||'')+'</span></div>'
-      +'<div class="text-xs text-muted">'+r.descricao+' · '+r.nCC+' CCs · '+r.nEventos+' eventos · '+(r.linhas.length-1)+' linhas ('+r.pares+' pares Dr/Cr)</div>'
-      +'<div class="text-xs text-muted"><code>'+r.saida+'</code></div></div>'
-      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
-        +'<div style="text-align:right"><div class="text-xs text-muted">Total Dr / Cr</div><div style="font-size:14px;font-weight:700">'+brl(r.totalDr)+'</div></div>'
-        +badgeBal
-        +(nSem?'<span class="badge badge--warning">'+nSem+' sem mapa</span>':'')
-        +'<button class="btn btn-primary btn-sm" onclick="lcBaixar('+i+')"><i class="ti ti-download"></i> Baixar CSV</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="lcPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
-      +'</div></div>'
-      +avisoCC+semBloco+'<div id="lc-prev-'+i+'"></div></div>';
-  }).join('');
-
-  saida.innerHTML=
-    ((erros&&erros.length)?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> Arquivo(s) com problema:<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div></div>':'')
-    +(desbal.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+desbal.length+' arquivo(s) desbalanceado(s)</strong> — débito diferente de crédito. Isso não deveria acontecer; não importe antes de conferir.</div>':'')
-    +'<div class="lan-step lan-step--split"><div class="lan-step__head"><span class="lan-step__num">2</span><div>'
-      +'<div class="lan-step__t">'+lcResultados.length+' arquivo(s) gerado(s)</div>'
-      +'<div class="lan-step__d">'+(comSemMap.length?comSemMap.length+' com evento sem mapeamento — veja os avisos amarelos.':'Todos os eventos foram mapeados.')+'</div></div></div>'
-      +'<div class="lan-split-side lan-actions">'
-      +(lcResultados.length>1?'<button class="btn btn-success btn-sm" onclick="lcBaixarTodos()"><i class="ti ti-file-zip"></i> Baixar todos (zip)</button>':'')
-      +'<button class="btn btn-ghost btn-sm" onclick="lcCopiarRelatorio()"><i class="ti ti-copy"></i> Copiar relatório</button>'
-      +'</div></div>'
-    +cards;
-}
-
 function lcPrevia(i){
   const r=lcResultados[i]; if(!r) return;
   const el=document.getElementById('lc-prev-'+i); if(!el) return;
@@ -10531,4 +10248,442 @@ function lcCopiarRelatorio(){
       (sem?'  Eventos sem mapeamento:\n'+sem:'  Sem eventos pendentes de mapeamento')].join('\n');
   }).join('\n\n');
   navigator.clipboard.writeText(txt).then(()=>toast('Relatório copiado.','success')).catch(()=>toast('Não foi possível copiar.','error'));
+}
+
+// ============================================================
+// CONTABILIZAÇÃO: ASSISTENTE DE FECHAMENTO (5 passos)
+// ============================================================
+// 1 competência · 2 planilhas CC x Eventos · 3 esquema contábil ·
+// 4 CSVs de lançamento · 5 salvar a competência no histórico.
+
+let contabStep=1;
+let contabComp={mm:'',aaaa:''};
+let contabEsqOrigem='';        // '' | 'atual' | 'upload'
+let contabSalvo=false;
+let contabEsqMeta=null;        // {arquivo, importadoEm, importadoPor, qtd}
+
+function contabCompLabel(){ return contabComp.mm?(contabComp.mm+'/'+contabComp.aaaa):''; }
+
+function pgContabProcesso(){
+  return `
+    <div class="lan-top">
+      <div class="page-header">
+        <h2 class="page-title">Fechamento contábil</h2>
+        <p class="page-subtitle">Da planilha da folha até os CSVs do Adempiere, em cinco passos.</p>
+      </div>
+      <div id="contab-tabs"></div>
+    </div>
+    <div id="contab-wizard"></div>`;
+}
+
+function afterRenderContabProcesso(){
+  Promise.all([loadEsquemaContabil(),loadEsquemaMeta()]).finally(()=>renderContabWizard());
+}
+
+function contabIrPasso(n){
+  if(n>=2 && !contabComp.mm){ toast('Escolha a competência primeiro.','error'); return; }
+  if(n>=3 && !contabResultados.length){ toast('Importe a planilha da folha no passo 2.','error'); return; }
+  if(n>=4 && !contabEsqOrigem){ toast('Confirme o esquema contábil no passo 3.','error'); return; }
+  if(n>=5 && !lcResultados.length){ toast('Gere os CSVs no passo 4.','error'); return; }
+  contabStep=n; renderContabWizard();
+}
+
+function renderContabWizard(){
+  const alvo=document.getElementById('contab-wizard'); if(!alvo) return;
+  const passos=[
+    {n:1,label:'Competência'},
+    {n:2,label:'Planilha da folha'},
+    {n:3,label:'Esquema contábil'},
+    {n:4,label:'CSVs de lançamento'},
+    {n:5,label:'Salvar'},
+  ];
+  const tabs='<div class="lan-tabs">'+passos.map(p=>{
+    const cls=p.n===contabStep?' lan-tab--active':(p.n<contabStep?' lan-tab--done':'');
+    return '<button class="lan-tab'+cls+'" onclick="contabIrPasso('+p.n+')"><span class="lan-tab__n">'+(p.n<contabStep?'✓':p.n)+'</span> '+p.label+'</button>';
+  }).join('')+'</div>';
+  const tabsEl=document.getElementById('contab-tabs');
+  if(tabsEl) tabsEl.innerHTML=tabs;
+
+  const head=(n,t,d)=>'<div class="lan-step__head"><span class="lan-step__num">'+n+'</span><div><div class="lan-step__t">'+t+'</div><div class="lan-step__d">'+d+'</div></div></div>';
+  let c='';
+
+  if(contabStep===1){
+    const hoje=new Date();
+    const mesRef=contabComp.mm||String(hoje.getMonth()+1).padStart(2,'0');
+    const anoRef=contabComp.aaaa||String(hoje.getFullYear());
+    const meses=[['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],['05','Maio'],['06','Junho'],
+                 ['07','Julho'],['08','Agosto'],['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro']];
+    const anos=[]; for(let a=hoje.getFullYear()-2;a<=hoje.getFullYear()+1;a++) anos.push(String(a));
+    const selSt='padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px';
+    c='<div class="lan-step lan-step--split">'
+      +head(1,'Competência a fechar','O mês e o ano valem para as planilhas, para os CSVs e para o registro no histórico.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<span class="lan-actions__l">Mês</span><select id="cb-mes" style="'+selSt+';min-width:120px">'
+          +meses.map(m=>'<option value="'+m[0]+'"'+(m[0]===mesRef?' selected':'')+'>'+m[1]+'</option>').join('')+'</select>'
+        +'<span class="lan-actions__l">Ano</span><select id="cb-ano" style="'+selSt+'">'
+          +anos.map(a=>'<option value="'+a+'"'+(a===anoRef?' selected':'')+'>'+a+'</option>').join('')+'</select>'
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-primary btn-sm" onclick="contabDefinirComp()">Confirmar e avançar <i class="ti ti-arrow-right"></i></button>'
+      +'</div></div>'
+      +(contabComp.mm?'<div class="alert alert-info" style="font-size:13px"><i class="ti ti-info-circle"></i> Competência atual do processo: <strong>'+contabCompLabel()+'</strong>. Trocar aqui recomeça o fechamento.</div>':'');
+
+  } else if(contabStep===2){
+    c='<div class="lan-step lan-step--split">'
+      +head(2,'Planilha da folha ('+contabCompLabel()+')','Envie o relatório sintético por centro de custo (.xlsx). O sistema separa as empresas e monta o CC x Eventos.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'contab-file\').click()"><i class="ti ti-file-upload"></i> Selecionar arquivos</button>'
+        +(contabResultados.length?'<button class="btn btn-ghost btn-sm" onclick="contabLimpar()"><i class="ti ti-eraser"></i> Limpar</button>':'')
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-ghost btn-sm" onclick="contabIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +(contabResultados.length?'<button class="btn btn-primary btn-sm" onclick="contabIrPasso(3)">Próximo <i class="ti ti-arrow-right"></i></button>':'')
+      +'</div></div>'
+      +'<input type="file" id="contab-file" accept=".xlsx" multiple style="display:none" onchange="contabProcessar(event)">'
+      +(contabResultados.length?'':'<div class="upload-zone" id="contab-drop" onclick="document.getElementById(\'contab-file\').click()">'
+        +'<div style="font-size:26px;margin-bottom:6px"><i class="ti ti-table-import"></i></div>'
+        +'<div class="upload-text">Arraste a planilha da folha (.xlsx) ou clique para escolher</div>'
+        +'<div class="upload-sub">Relatório FPRF002.OPE. PDF não serve — é preciso o .xlsx.</div></div>')
+      +'<div id="contab-saida" style="margin-top:14px"></div>';
+
+  } else if(contabStep===3){
+    const n=Object.keys(esquemaContabil).length;
+    const meta=contabEsqMeta;
+    const quando=meta&&meta.importadoEm?new Date(meta.importadoEm).toLocaleString('pt-BR'):null;
+    c='<div class="lan-step lan-step--split">'
+      +head(3,'Esquema contábil','O esquema já salvo é o padrão. Siga com ele ou substitua por uma versão nova.')
+      +'<div class="lan-split-side lan-actions">'
+        +(n?'<button class="btn btn-success btn-sm" onclick="contabUsarEsquemaAtual()"><i class="ti ti-check"></i> Seguir com o atual ('+n+' eventos)</button>':'')
+        +'<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'ec-file-wiz\').click()"><i class="ti ti-file-import"></i> Atualizar por upload</button>'
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-ghost btn-sm" onclick="contabIrPasso(2)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+      +'</div></div>'
+      +'<input type="file" id="ec-file-wiz" accept=".xlsx,.xls" style="display:none" onchange="importarEsquemaXlsx(event)">'
+      +(n
+        ? '<div class="card"><div class="card-title">Esquema em uso</div>'
+          +'<div style="font-size:13px;line-height:1.8"><div><strong>'+n+'</strong> eventos mapeados'
+          +(meta&&meta.qtdSemLancamento!=null?' · <strong>'+meta.qtdSemLancamento+'</strong> marcados como sem lançamento':'')+'</div>'
+          +(meta&&meta.arquivo?'<div>Origem: <code>'+meta.arquivo+'</code></div>':'')
+          +(quando?'<div class="text-xs text-muted">Importado em '+quando+(meta.importadoPor?' por '+meta.importadoPor:'')+'</div>':'')
+          +'</div><div class="text-xs text-muted" style="margin-top:8px">Evento que não estiver aqui é omitido do CSV (em débito e crédito) e aparece no relatório do passo 4 — nunca recebe conta inventada.</div></div>'
+        : '<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nenhum esquema salvo ainda. Importe o <strong>EsquemaContabil_*.xlsx</strong> para continuar.</div>')
+      +'<div id="ec-status" style="margin-top:10px"></div>';
+
+  } else if(contabStep===4){
+    c='<div class="lan-step lan-step--split">'
+      +head(4,'CSVs de lançamento ('+contabCompLabel()+')','Dois lançamentos por evento — débito e crédito — no formato do Adempiere.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<button class="btn btn-primary btn-sm" onclick="contabGerarCsvs()"><i class="ti ti-bolt"></i> '+(lcResultados.length?'Gerar de novo':'Gerar lançamentos')+'</button>'
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-ghost btn-sm" onclick="contabIrPasso(3)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +(lcResultados.length?'<button class="btn btn-primary btn-sm" onclick="contabIrPasso(5)">Próximo <i class="ti ti-arrow-right"></i></button>':'')
+      +'</div></div>'
+      +'<div id="lc-saida"></div>';
+
+  } else {
+    const totalCsv=lcResultados.reduce((s,r)=>s+r.totalDr,0);
+    const totalPlan=contabResultados.reduce((s,r)=>s+r.totalGeral,0);
+    const semMap=lcResultados.reduce((s,r)=>s+Object.keys(r.semMap).length,0);
+    const desbal=lcResultados.filter(r=>!r.balanceado).length;
+    const reconcRuim=contabResultados.filter(r=>r.status!=='OK').length;
+    c='<div class="lan-step lan-step--split">'
+      +head(5,'Salvar a competência '+contabCompLabel(),'Registra o fechamento no histórico. Os arquivos não são guardados — só os números.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<button class="btn btn-ghost btn-sm" onclick="contabIrPasso(4)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +(contabSalvo
+          ? '<span class="lan-base-ok"><i class="ti ti-lock-check"></i> '+contabCompLabel()+' salva</span>'
+            +'<button class="btn btn-ghost btn-sm" onclick="showPage(\'contab-historico\')"><i class="ti ti-history"></i> Ver histórico</button>'
+            +'<button class="btn btn-primary btn-sm" onclick="contabNovaCompetencia()"><i class="ti ti-refresh"></i> Nova competência</button>'
+          : '<button class="btn btn-success btn-sm" onclick="contabSalvarCompetencia()"><i class="ti ti-device-floppy"></i> Salvar competência</button>')
+      +'</div></div>'
+      +'<div class="stats-inline" style="margin-bottom:10px">'
+        +_dsStat('building','accent',contabResultados.length,'Empresas')
+        +_dsStat('table','success',contabResultados.length?contabResultados.reduce((s,r)=>s+r.ccs.length,0):0,'Centros de custo')
+        +_dsStat('file-dollar','success',lcResultados.reduce((s,r)=>s+(r.linhas.length-1),0),'Linhas de lançamento')
+        +_dsStatAccent('cash',brl(totalCsv),'Total lançado')
+      +'</div>'
+      +'<div class="card"><div class="card-title">Conferência antes de salvar</div><div style="font-size:13px;line-height:1.9">'
+        +'<div>'+(reconcRuim?'<span class="badge badge--danger">'+reconcRuim+' empresa(s) com reconciliação divergente</span>':'<span class="badge badge--success">Reconciliação OK nas '+contabResultados.length+' empresas</span>')+'</div>'
+        +'<div>'+(desbal?'<span class="badge badge--danger">'+desbal+' CSV(s) desbalanceado(s)</span>':'<span class="badge badge--success">Todos os CSVs balanceados</span>')+'</div>'
+        +'<div>'+(semMap?'<span class="badge badge--warning">'+semMap+' evento(s) sem mapeamento, omitidos dos CSVs</span>':'<span class="badge badge--success">Todos os eventos mapeados</span>')+'</div>'
+        +'<div class="text-xs text-muted" style="margin-top:6px">Total das planilhas: <strong>'+brl(totalPlan)+'</strong> · total lançado nos CSVs: <strong>'+brl(totalCsv)+'</strong>'
+        +(Math.abs(totalPlan-totalCsv)>0.005?' — a diferença de '+brl(totalPlan-totalCsv)+' é dos eventos sem mapeamento.':'')+'</div>'
+      +'</div></div>'
+      +'<div id="contab-salvo"></div>';
+  }
+  alvo.innerHTML=c;
+
+  // religa o que depende do DOM recém-criado
+  if(contabStep===2){
+    const dz=document.getElementById('contab-drop');
+    if(dz){
+      ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='var(--blue)';}));
+      ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.style.borderColor='';}));
+      dz.addEventListener('drop',e=>{ const fs=[...(e.dataTransfer?.files||[])]; if(fs.length) contabProcessar({target:{files:fs,value:''}}); });
+    }
+    if(contabResultados.length) renderContabResultados();
+  }
+  if(contabStep===4){
+    if(lcResultados.length) renderLcResultados();
+    else contabGerarCsvs();
+  }
+}
+
+function contabDefinirComp(){
+  const mm=document.getElementById('cb-mes')?.value||'';
+  const aaaa=document.getElementById('cb-ano')?.value||'';
+  if(!mm||!aaaa){ toast('Escolha mês e ano.','error'); return; }
+  const mudou = contabComp.mm && (contabComp.mm!==mm||contabComp.aaaa!==aaaa);
+  if(mudou && (contabResultados.length||lcResultados.length)
+     && !confirm('Trocar a competência de '+contabCompLabel()+' para '+mm+'/'+aaaa+' descarta o que já foi processado. Continuar?')) return;
+  if(mudou){ contabResultados=[]; lcResultados=[]; contabSalvo=false; contabEsqOrigem=''; }
+  contabComp={mm,aaaa};
+  contabIrPasso(2);
+}
+
+function contabNovaCompetencia(){
+  contabResultados=[]; lcResultados=[]; contabSalvo=false; contabEsqOrigem=''; contabComp={mm:'',aaaa:''};
+  contabStep=1; renderContabWizard();
+}
+
+function contabUsarEsquemaAtual(){
+  if(!Object.keys(esquemaContabil).length){ toast('O esquema está vazio — importe um arquivo.','error'); return; }
+  contabEsqOrigem='atual';
+  contabIrPasso(4);
+}
+
+// ── Passo 2: processar a planilha da folha ────────────────────────
+function contabLimpar(){
+  contabResultados=[]; lcResultados=[]; contabSalvo=false;
+  renderContabWizard();
+}
+
+async function contabProcessar(event){
+  const files=[...(event.target.files||[])];
+  event.target.value='';
+  if(!files.length) return;
+  const saida=document.getElementById('contab-saida');
+
+  const pdfs=files.filter(f=>/\.pdf$/i.test(f.name));
+  if(pdfs.length){
+    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> '
+      +'<strong>PDF não serve para este processo.</strong> O PDF não tem estrutura de célula, então os valores não podem ser extraídos com segurança. '
+      +'Gere o relatório em <strong>.xlsx</strong> no Senior e envie de novo.</div>';
+    return;
+  }
+  if(!window.JSZip || !window.ExcelJS){
+    saida.innerHTML='<div class="alert alert-warning">As bibliotecas de planilha não carregaram. Recarregue a página (Cmd+Shift+R) e tente de novo.</div>';
+    return;
+  }
+
+  saida.innerHTML='<div class="alert alert-info"><i class="ti ti-loader"></i> Processando '+files.length+' arquivo(s)...</div>';
+  contabResultados=[]; lcResultados=[]; contabSalvo=false;
+  const erros=[];
+  for(const f of files){
+    try{ contabResultados.push(...await _cbProcessarArquivo(f)); }
+    catch(e){ erros.push(f.name+': '+e.message); console.error('Contabilização',f.name,e); }
+  }
+  renderContabWizard();
+  if(erros.length) renderContabResultados(erros); else renderContabResultados();
+}
+
+// A competencia escolhida no passo 1 manda; se o periodo do relatorio nao
+// encostar nela, e sinal de arquivo trocado.
+function _contabPeriodoBate(res){
+  const meses=[res.periodo.ini,res.periodo.fim].map(d=>{
+    const m=String(d||'').match(/^\d{2}\/(\d{2})\/(\d{4})$/);
+    return m?m[1]+'/'+m[2]:'';
+  });
+  return meses.includes(contabCompLabel());
+}
+
+function renderContabResultados(erros){
+  const saida=document.getElementById('contab-saida'); if(!saida) return;
+  if(!contabResultados.length){
+    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nada foi processado.'
+      +((erros&&erros.length)?'<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div>':'')+'</div>';
+    return;
+  }
+  const div=contabResultados.filter(r=>r.status==='DIVERGENTE');
+  const foraComp=contabResultados.filter(r=>!_contabPeriodoBate(r));
+  const totalTudo=contabResultados.reduce((s,r)=>s+r.totalGeral,0);
+
+  const cards=contabResultados.map((r,i)=>{
+    const badge = r.status==='OK'
+      ? '<span class="badge badge--success"><i class="ti ti-circle-check"></i> Confere</span>'
+      : r.status==='DIVERGENTE'
+        ? '<span class="badge badge--danger" title="Diferença de '+brl(r.dif)+' contra o bloco agregado do relatório"><i class="ti ti-alert-triangle"></i> Divergente ('+brl(r.dif)+')</span>'
+        : '<span class="badge badge--neutral" title="O relatório não trouxe o bloco agregado para conferir">Sem conferência</span>';
+    return '<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<div><div style="font-weight:700;color:var(--brand)">'+r.empresa.code+' · '+r.empresa.name+'</div>'
+      +'<div class="text-xs text-muted">'+r.periodo.ini+' a '+r.periodo.fim+' · '+r.ccs.length+' centros de custo · '+r.eventos.length+' eventos</div></div>'
+      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+        +'<div style="text-align:right"><div class="text-xs text-muted">Total geral</div><div style="font-size:15px;font-weight:700">'+brl(r.totalGeral)+'</div></div>'
+        +badge
+        +'<button class="btn btn-primary btn-sm" onclick="contabBaixar('+i+')"><i class="ti ti-download"></i> Baixar</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="contabPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
+      +'</div></div><div id="contab-prev-'+i+'"></div></div>';
+  }).join('');
+
+  saida.innerHTML=
+    ((erros&&erros.length)?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> Arquivo(s) com problema:<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div></div>':'')
+    +(foraComp.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+foraComp.length+' empresa(s) com período fora de '+contabCompLabel()+'</strong> — confira se é o arquivo certo. Ex.: '+foraComp[0].empresa.name+' vem de '+foraComp[0].periodo.ini+' a '+foraComp[0].periodo.fim+'.</div>':'')
+    +(div.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+div.length+' empresa(s) com divergência</strong> entre o total calculado e o bloco agregado do próprio relatório. Confira antes de seguir.</div>':'')
+    +'<div class="lan-step lan-step--split"><div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-check"></i></span><div>'
+      +'<div class="lan-step__t">'+contabResultados.length+' empresa(s) processada(s)</div>'
+      +'<div class="lan-step__d">Total somado de todas: <strong>'+brl(totalTudo)+'</strong></div></div></div>'
+      +'<div class="lan-split-side lan-actions">'
+      +(contabResultados.length>1?'<button class="btn btn-success btn-sm" onclick="contabBaixarTodos()"><i class="ti ti-file-zip"></i> Baixar todas (zip)</button>':'')
+      +'</div></div>'
+    +cards;
+}
+
+// ── Passo 4: gerar os CSVs a partir do que foi processado ─────────
+async function contabGerarCsvs(){
+  await loadEsquemaContabil();
+  const saida=document.getElementById('lc-saida');
+  if(!Object.keys(esquemaContabil).length){
+    if(saida) saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> O esquema contábil está vazio. '
+      +'<button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="contabIrPasso(3)">Voltar ao passo 3</button></div>';
+    return;
+  }
+  lcResultados=[];
+  contabResultados.forEach(res=>{
+    const nomeArq=_cbNomeArquivo(res);
+    const sigla=_lcResolveSigla(nomeArq);
+    // mm/aaaa vem da competencia escolhida no passo 1, nao do nome do arquivo.
+    const g=_lcGerar(_lcDeResultadoContab(res),sigla,contabComp.mm,contabComp.aaaa);
+    lcResultados.push(Object.assign(g,{sigla,mm:contabComp.mm,aaaa:contabComp.aaaa,arquivo:nomeArq,
+      empresaNome:res.empresa.name,empresaCodigo:res.empresa.code,
+      saida:_lcNomeSaida(sigla,contabComp.mm,contabComp.aaaa)}));
+  });
+  contabSalvo=false;
+  renderLcResultados();
+}
+
+// ── Passo 5: salvar a competência no histórico ────────────────────
+async function contabSalvarCompetencia(){
+  if(!lcResultados.length){ toast('Gere os CSVs antes de salvar.','error'); return; }
+  if(contabSalvo){ toast('Esta competência já foi salva.','info'); return; }
+  const alvo=document.getElementById('contab-salvo');
+  if(!confirm('Salvar o fechamento de '+contabCompLabel()+' no histórico?\n\n'
+    +contabResultados.length+' empresa(s) · '+lcResultados.reduce((s,r)=>s+(r.linhas.length-1),0)+' linhas de lançamento.')) return;
+  if(alvo) alvo.innerHTML='<div class="alert alert-info"><i class="ti ti-loader"></i> Salvando...</div>';
+  try{
+    const quando=new Date().toISOString();
+    const quem=(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'';
+    for(const r of contabResultados){
+      const csv=lcResultados.find(l=>l.empresaCodigo===r.empresa.code);
+      const id=contabComp.aaaa+'-'+contabComp.mm+'__'+r.empresa.code;
+      await fsSet('contabilizacao_historico',id,{
+        competencia:contabCompLabel(),
+        periodoIni:r.periodo.ini, periodoFim:r.periodo.fim,
+        empresaCodigo:r.empresa.code, empresaNome:r.empresa.name,
+        sigla:csv?csv.sigla:'',
+        qtdCCs:r.ccs.length, qtdEventos:r.eventos.length,
+        totalGeral:r.totalGeral, agregado:r.agregado, diferenca:r.dif,
+        statusReconciliacao:r.status,
+        linhasCsv:csv?(csv.linhas.length-1):0,
+        totalLancado:csv?csv.totalDr:0,
+        balanceado:csv?csv.balanceado:null,
+        semMapeamento:csv?Object.values(csv.semMap).map(s=>({codigo:s.codigo,descricao:s.descricao,soma:s.soma})):[],
+        arquivoCsv:csv?csv.saida:'',
+        arquivoOrigem:r.arquivoOrigem,
+        processadoEm:quando, usuario:quem
+      });
+    }
+    contabSalvo=true;
+    await loadContabHistorico();
+    renderContabWizard();
+    toast('Competência '+contabCompLabel()+' salva no histórico.','success');
+  }catch(e){
+    if(alvo) alvo.innerHTML='<div class="alert alert-warning">Erro ao salvar: '+e.message+'</div>';
+    toast('Erro ao salvar: '+e.message,'error');
+  }
+}
+
+// ── Metadados do esquema (qual arquivo, quando, por quem) ─────────
+async function loadEsquemaMeta(){
+  try{
+    const snap=await window._getDocs(window._col('config'));
+    snap.forEach(d=>{ if(d.id==='esquemaContabilMeta') contabEsqMeta=d.data(); });
+  }catch(e){ console.warn('meta do esquema:',e); }
+  return contabEsqMeta;
+}
+async function salvarEsquemaMeta(arquivo,qtd,qtdSem){
+  contabEsqMeta={arquivo,qtd,qtdSemLancamento:qtdSem,
+    importadoEm:new Date().toISOString(),
+    importadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''};
+  try{ await fsSet('config','esquemaContabilMeta',contabEsqMeta); }catch(e){ console.warn('meta do esquema:',e); }
+}
+
+// ── Prévia da planilha CC x Eventos (passo 2) ─────────────────────
+function contabPrevia(i){
+  const res=contabResultados[i]; if(!res) return;
+  const el=document.getElementById('contab-prev-'+i); if(!el) return;
+  if(el.innerHTML){ el.innerHTML=''; return; }
+  const evs=res.eventos;
+  const cab=evs.map(k=>{const[c,d]=k.split('|');return '<th title="'+String(d).replace(/"/g,'')+'" style="text-align:right">'+c+'</th>';}).join('');
+  const linhas=res.ccs.map(cc=>{
+    let tot=0; cc.eventos.forEach(v=>tot+=v);
+    return '<tr><td style="font-weight:600;white-space:nowrap">'+cc.nome+'</td>'
+      +evs.map(k=>{const v=cc.eventos.get(k)||0; return '<td style="text-align:right">'+(v?brl(v):'')+'</td>';}).join('')
+      +'<td style="text-align:right;font-weight:700">'+brl(tot)+'</td></tr>';
+  }).join('');
+  el.innerHTML='<div class="text-xs text-muted" style="margin:10px 0 4px">Prévia — passe o mouse no código para ver a descrição do evento.</div>'
+    +'<div class="tbl-wrap" style="max-height:340px"><table class="tbl"><thead><tr><th>Centro de Custo</th>'+cab+'<th style="text-align:right">TOTAL</th></tr></thead>'
+    +'<tbody>'+linhas+'</tbody></table></div>';
+}
+
+// ── Relatório dos CSVs (passo 4) ──────────────────────────────────
+function renderLcResultados(erros){
+  const saida=document.getElementById('lc-saida'); if(!saida) return;
+  if(!lcResultados.length){
+    saida.innerHTML='<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Nada gerado.'
+      +((erros&&erros.length)?'<div style="margin-top:6px;font-size:12px">'+erros.map(x=>'• '+x).join('<br>')+'</div>':'')+'</div>';
+    return;
+  }
+  const desbal=lcResultados.filter(r=>!r.balanceado);
+  const comSemMap=lcResultados.filter(r=>Object.keys(r.semMap).length);
+
+  const cards=lcResultados.map((r,i)=>{
+    const nSem=Object.keys(r.semMap).length;
+    const badgeBal=r.balanceado
+      ? '<span class="badge badge--success"><i class="ti ti-scale"></i> Balanceado</span>'
+      : '<span class="badge badge--danger"><i class="ti ti-alert-triangle"></i> Desbalanceado</span>';
+    const semBloco=nSem?(
+      '<div class="alert alert-warning" style="margin-top:10px;font-size:12px"><strong><i class="ti ti-alert-triangle"></i> '+nSem+' evento(s) sem mapeamento</strong> — omitidos do CSV em débito e crédito, então o arquivo continua balanceado.'
+      +'<table class="tbl" style="margin-top:8px;background:var(--surface)"><thead><tr><th>Código</th><th>Evento</th><th style="text-align:right">Soma</th><th>CCs afetados</th><th style="text-align:center">Ação</th></tr></thead><tbody>'
+      +Object.values(r.semMap).map(s=>'<tr><td><code>'+s.codigo+'</code></td><td>'+(s.descricao||'—')+'</td>'
+        +'<td style="text-align:right;font-weight:600">'+brl(s.soma)+'</td>'
+        +'<td class="text-xs">'+s.ccs.map(c=>c.cc).join(', ')+'</td>'
+        +'<td style="text-align:center"><button class="btn btn-primary btn-sm" onclick="abrirEventoEsquema(\''+s.codigo+'\',\''+String(s.descricao||'').replace(/'/g,'')+'\')"><i class="ti ti-plus"></i> Adicionar ao esquema</button></td></tr>').join('')
+      +'</tbody></table></div>'):'';
+    const avisoCC=r.ccsForaDoPadrao.length?('<div class="alert alert-warning" style="margin-top:8px;font-size:12px"><i class="ti ti-alert-triangle"></i> '
+      +r.ccsForaDoPadrao.length+' centro(s) de custo sem o padrão <code>CCx.x.x</code> — o campo User1_ID sai com esse texto: <code>'
+      +r.ccsForaDoPadrao.slice(0,6).join('</code>, <code>')+'</code></div>'):'';
+
+    return '<div class="card" style="margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<div><div style="font-weight:700;color:var(--brand)">'+r.sigla+' <span class="text-xs text-muted" style="font-weight:400">'+(r.empresaNome||'')+'</span></div>'
+      +'<div class="text-xs text-muted">'+r.descricao+' · '+r.nCC+' CCs · '+r.nEventos+' eventos · '+(r.linhas.length-1)+' linhas ('+r.pares+' pares Dr/Cr)</div>'
+      +'<div class="text-xs text-muted"><code>'+r.saida+'</code></div></div>'
+      +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+        +'<div style="text-align:right"><div class="text-xs text-muted">Total Dr / Cr</div><div style="font-size:14px;font-weight:700">'+brl(r.totalDr)+'</div></div>'
+        +badgeBal
+        +(nSem?'<span class="badge badge--warning">'+nSem+' sem mapa</span>':'')
+        +'<button class="btn btn-primary btn-sm" onclick="lcBaixar('+i+')"><i class="ti ti-download"></i> Baixar CSV</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="lcPrevia('+i+')"><i class="ti ti-eye"></i> Prévia</button>'
+      +'</div></div>'
+      +avisoCC+semBloco+'<div id="lc-prev-'+i+'"></div></div>';
+  }).join('');
+
+  saida.innerHTML=
+    (desbal.length?'<div class="alert alert-warning" style="margin-bottom:10px"><i class="ti ti-alert-triangle"></i> <strong>'+desbal.length+' arquivo(s) desbalanceado(s)</strong> — débito diferente de crédito. Não importe antes de conferir.</div>':'')
+    +'<div class="lan-step lan-step--split"><div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-check"></i></span><div>'
+      +'<div class="lan-step__t">'+lcResultados.length+' CSV(s) gerado(s)</div>'
+      +'<div class="lan-step__d">'+(comSemMap.length?comSemMap.length+' com evento sem mapeamento — veja os avisos amarelos.':'Todos os eventos foram mapeados.')+'</div></div></div>'
+      +'<div class="lan-split-side lan-actions">'
+      +(lcResultados.length>1?'<button class="btn btn-success btn-sm" onclick="lcBaixarTodos()"><i class="ti ti-file-zip"></i> Baixar todos (zip)</button>':'')
+      +'<button class="btn btn-ghost btn-sm" onclick="lcCopiarRelatorio()"><i class="ti ti-copy"></i> Copiar relatório</button>'
+      +'</div></div>'
+    +cards;
 }
