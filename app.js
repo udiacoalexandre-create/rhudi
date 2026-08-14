@@ -4578,7 +4578,11 @@ function processarNovos(event){
             iL1=col('vt linha 1'), iL1v=col('vt l1','valor'), iL1g=col('vt l1','viagens'),
             iL2=col('vt linha 2'), iL2v=col('vt l2','valor'), iL2g=col('vt l2','viagens'),
             iL3=col('vt linha 3'), iL3v=col('vt l3','valor'), iL3g=col('vt l3','viagens'),
-            iFCLT=col('folha clt'), iFMEI=col('folha mei'), iPrem=col('premio'), iFerEl=col('elegivel');
+            iFCLT=col('folha clt'), iFMEI=col('folha mei'), iPrem=col('premio'), iFerEl=col('elegivel'),
+            // Campos que existiam no formulário individual e o lote ignorava.
+            iDiasFix=col('dias','fixos'), iFerAno=col('ferias','ano'), iFerSaldo=col('ferias','saldo'),
+            iFerIni=col('ferias','inicio'), iFerFim=col('ferias','fim'),
+            iL4=col('vt linha 4'), iL4v=col('vt l4','valor'), iL4g=col('vt l4','viagens');
 
       // Sim/Não com valor padrão quando em branco
       const flag=(r,idx,def)=>{ if(idx<0) return def; const v=_normH(r[idx]); if(v==='') return def; if(v.startsWith('sim')||v==='s') return true; if(v.startsWith('nao')||v==='n') return false; return def; };
@@ -4634,18 +4638,24 @@ function processarNovos(event){
           funcao:String(get(r,iFunc)||'').trim().toUpperCase(),
           depto:String(get(r,iDepto)||'').trim(),
           status:normalizarStatus(String(get(r,iStatus)||'Trabalhando').trim())||'Trabalhando',
-          filtro, diasFixos:null,
+          filtro,
+          // Jornada travada: em branco = usa os dias úteis do mês.
+          diasFixos:(()=>{ const v=fnum(get(r,iDiasFix)); return v>0?v:null; })(),
           ferVenc:_resolveVencInput(String(get(r,iVenc)||''),''),
           ferMes:(()=>{ const m=String(get(r,iAgen)||'').trim(); return MESES_FER.includes(m)?m:''; })(),
-          ferSaldo:null,
+          ferAno:(()=>{ const m=String(get(r,iAgen)||'').trim(); if(!MESES_FER.includes(m)) return '';
+                        const a=fnum(get(r,iFerAno)); return a>0?a:''; })(),
+          ferInicio:_dataParaISO(get(r,iFerIni)),
+          ferFim:_dataParaISO(get(r,iFerFim)),
+          ferSaldo:(()=>{ const v=get(r,iFerSaldo); return (v!==''&&v!=null)?fnum(v):null; })(),
           mobilidade:mob, elegibilidade:eleg,
           vr:   eleg.vr?fnum(get(r,iVRv)):0,
           cafe: eleg.cafe?fnum(get(r,iCafev)):0,
           cesta:eleg.cesta?fnum(get(r,iCestav)):0,
           comb: (eleg.mobilidade&&mob==='combustivel')?fnum(get(r,iComb)):0,
         };
-        // Linhas de VT (até 3 na planilha; 4ª fica zerada)
-        const linhas=[[iL1,iL1v,iL1g],[iL2,iL2v,iL2g],[iL3,iL3v,iL3g]];
+        // Linhas de VT: as 4 do cadastro
+        const linhas=[[iL1,iL1v,iL1g],[iL2,iL2v,iL2g],[iL3,iL3v,iL3g],[iL4,iL4v,iL4g]];
         for(let n=1;n<=4;n++){
           const src=linhas[n-1];
           const l=(eleg.vt&&src)?_vtDoTexto(get(r,src[0])):null;
@@ -10890,12 +10900,14 @@ function renderDeParaLista(){
 // uma coluna aqui quebra a importação — os dois lados andam juntos.
 const MODELO_NOVOS_COLS=[
   'Matrícula','Nome','CPF','Admissão','Cargo','Função','Departamento','Status','Tipo (Filtro)',
-  'Vencimento férias','Agendamento férias',
+  'Dias fixos (travar jornada)',
+  'Vencimento férias','Agendamento férias','Férias ano','Férias saldo','Férias inicio','Férias fim',
   'VR?','VR valor','Café?','Café valor','Cesta?','Cesta valor',
   'Mobilidade?','Tipo Mobilidade','Combustível valor',
   'Transporte?','VT Linha 1','VT L1 valor','VT L1 viagens',
   'VT Linha 2','VT L2 valor','VT L2 viagens',
   'VT Linha 3','VT L3 valor','VT L3 viagens',
+  'VT Linha 4','VT L4 valor','VT L4 viagens',
   'Folha CLT','Folha MEI','Prêmio Assiduidade','Férias elegível'
 ];
 
@@ -10910,8 +10922,13 @@ const MODELO_NOVOS_AJUDA=[
   ['Departamento','Recomendado','Texto, igual ao usado na base','Fica vazio.'],
   ['Status','Não','Trabalhando, Férias, Afastado, Demitido','Trabalhando.'],
   ['Tipo (Filtro)','Não','OK, DUP, MEI, SOC, TER, DIR, PART','OK. Valor não reconhecido também vira OK.'],
+  ['Dias fixos (travar jornada)','Não','Número de 1 a 31','Vazio — o colaborador usa os dias úteis do mês. Preenchido, a jornada fica travada e o "Aplicar a todos" do Lançamento não mexe nele.'],
   ['Vencimento férias','Não','Só dia/mês, no formato dd/mm (ex.: 05/03)','Fica vazio. Com ano, é ignorado.'],
-  ['Agendamento férias','Não','Mês por extenso: '+MESES_FER.join(', '),'Fica vazio.'],
+  ['Agendamento férias','Não','Mês por extenso: '+MESES_FER.join(', '),'Fica vazio. Escreva exatamente como está nesta lista.'],
+  ['Férias ano','Não','Ano do agendamento (ex.: '+(new Date().getFullYear())+')','Fica vazio. Só é gravado se o Agendamento estiver preenchido.'],
+  ['Férias saldo','Não','Dias a tirar; aceita negativo (férias antecipadas)','Fica vazio.'],
+  ['Férias inicio','Não','dd/mm/aaaa — início do período atual de férias','Fica vazio.'],
+  ['Férias fim','Não','dd/mm/aaaa — término. Preenchido, define que o colaborador está de férias e reflete nos benefícios da competência.','Fica vazio.'],
   ['VR?','Não','Sim ou Não','Não — não recebe VR.'],
   ['VR valor','Só se VR? = Sim','Valor por dia','Zero.'],
   ['Café?','Não','Sim ou Não','Não.'],
@@ -10922,9 +10939,9 @@ const MODELO_NOVOS_AJUDA=[
   ['Tipo Mobilidade','Só se Mobilidade? = Sim','Combustível, Carro empresa ou Perto (mora perto)','Combustível.'],
   ['Combustível valor','Só se Tipo Mobilidade = Combustível','Valor mensal','Zero.'],
   ['Transporte?','Não','Sim ou Não','Não. Se Sim, desliga a mobilidade automaticamente.'],
-  ['VT Linha 1 / 2 / 3','Só se Transporte? = Sim','O texto EXATO da linha, ou só o código. Veja a aba "Linhas de VT".','A linha fica vazia e não gera valor.'],
-  ['VT L1/L2/L3 valor','Só se a linha estiver preenchida','Valor da tarifa','Zero.'],
-  ['VT L1/L2/L3 viagens','Só se a linha estiver preenchida','Número de viagens por dia','Zero.'],
+  ['VT Linha 1 a 4','Só se Transporte? = Sim','O texto EXATO da linha, ou só o código. Veja a aba "Linhas de VT". São até 4 linhas por colaborador.','A linha fica vazia e não gera valor.'],
+  ['VT L1..L4 valor','Só se a linha estiver preenchida','Valor da tarifa','Zero.'],
+  ['VT L1..L4 viagens','Só se a linha estiver preenchida','Número de viagens por dia','Zero.'],
   ['Folha CLT','Não','Sim ou Não','SIM.'],
   ['Folha MEI','Não','Sim ou Não','Não.'],
   ['Prêmio Assiduidade','Não','Sim ou Não','SIM.'],
@@ -10937,29 +10954,36 @@ function gerarModeloNovos(){
     const vazio=(n)=>Array(n).fill('');
 
     // Exemplo 1 — CLT com VT em uma linha
+    const anoAtual=new Date().getFullYear();
     const ex1=['10001234','EXEMPLO COM VT','123.456.789-00','15/01/2026','AJUDANTE','AJUDANTE DE PRODUCAO','Produção','Trabalhando','OK',
-      '05/03',MESES_FER[2],   // exato como o importador espera (MESES_FER usa "Marco", sem cedilha)
+      '',                     // dias fixos vazio = usa os dias úteis do mês
+      '05/03',MESES_FER[2],anoAtual,30,'','',   // MESES_FER usa "Marco", sem cedilha
       'Sim',35,'Sim',15,'Sim',200,
       'Não','',0,
       'Sim',linhaVT,8.60,2,
       '','','',
       '','','',
+      '','','',
       'Sim','Não','Sim','Sim'];
     // Exemplo 2 — mobilidade por combustível (sem VT)
     const ex2=['10001235','EXEMPLO COM COMBUSTIVEL','234.567.890-11','03/06/2026','MOTORISTA','MOTORISTA','Motoristas','Trabalhando','OK',
-      '','',
+      21,                     // jornada travada em 21 dias
+      '','','','','','',
       'Sim',35,'Não','','Sim',200,
       'Sim','Combustível',295,
       'Não','','','',
       '','','',
       '','','',
+      '','','',
       'Sim','Não','Sim','Sim'];
     // Exemplo 3 — particular: sem matrícula (usa o CPF) e só cesta
     const ex3=['','EXEMPLO PARTICULAR','987.654.321-00','01/02/2026','','SERVICOS GERAIS','Produção','Trabalhando','PART',
-      '','',
+      '',
+      '','','','','','',
       'Não','','Não','','Sim',200,
       'Não','',0,
       'Não','','','',
+      '','','',
       '','','',
       '','','',
       'Não','Não','Não','Não'];
