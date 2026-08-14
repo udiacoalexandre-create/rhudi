@@ -4468,8 +4468,19 @@ function pgBaseImport(){
       <div id="import-preview" style="margin-top:14px"></div>
     </div>
     <div class="card">
-      <div class="card-title">Modelo de planilha para Carga Completa</div>
-      <button class="btn btn-success btn-sm" onclick="gerarModeloCarga()">Baixar modelo</button>
+      <div class="card-title">Modelos de planilha</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:2px">Novos Colaboradores (modelo RH)</div>
+          <div class="text-xs text-muted" style="margin-bottom:8px">Todas as colunas do cadastro: benefícios, linhas de VT e férias. Vem com instruções e as linhas de VT cadastradas.</div>
+          <button class="btn btn-success btn-sm" onclick="gerarModeloNovos()"><i class="ti ti-download"></i> Baixar modelo</button>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:2px">Carga Completa</div>
+          <div class="text-xs text-muted" style="margin-bottom:8px">Planilha enxuta para reconciliação total da base.</div>
+          <button class="btn btn-ghost btn-sm" onclick="gerarModeloCarga()"><i class="ti ti-download"></i> Baixar modelo</button>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -8544,7 +8555,11 @@ function wizContratacoesHTML(){
   if(m==='lote'){
     return '<button class="btn btn-ghost btn-sm" onclick="wizContModo(\'menu\')"><i class="ti ti-arrow-left"></i> Voltar</button>'
       + wizPanel('<i class="ti ti-file-spreadsheet"></i> Importar planilha modelo','',
-          '<p class="wiz-note">Suba a planilha <strong>modelo-novos-colaboradores</strong> preenchida. O sistema cria só os novos (ignora quem já existe).</p>'
+          '<p class="wiz-note">Suba a planilha modelo preenchida. O sistema cria só os novos (ignora quem já existe).</p>'
+          +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'
+            +'<button class="btn btn-success btn-sm" onclick="gerarModeloNovos()"><i class="ti ti-download"></i> Baixar modelo em branco</button>'
+            +'<span class="wiz-item__sub">Traz as colunas certas, exemplos preenchidos, instruções e as linhas de VT cadastradas.</span>'
+          +'</div>'
           +'<div class="wiz-upload" onclick="document.getElementById(\'import-file\').click()">'
             +'<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="processarNovos(event)">'
             +'<div style="font-size:26px;color:var(--brand);margin-bottom:6px"><i class="ti ti-upload"></i></div>'
@@ -10865,4 +10880,125 @@ function renderDeParaLista(){
         +'</td></tr>';
     }).join('')
     +'</tbody></table></div>';
+}
+
+// ============================================================
+// MODELO DE PLANILHA: NOVOS COLABORADORES
+// ============================================================
+// Os cabeçalhos aqui são casados por _acharAbaNovos/processarNovos com
+// col('matricula'), col('vr','?'), col('vt l1','valor') etc. Mudar o texto de
+// uma coluna aqui quebra a importação — os dois lados andam juntos.
+const MODELO_NOVOS_COLS=[
+  'Matrícula','Nome','CPF','Admissão','Cargo','Função','Departamento','Status','Tipo (Filtro)',
+  'Vencimento férias','Agendamento férias',
+  'VR?','VR valor','Café?','Café valor','Cesta?','Cesta valor',
+  'Mobilidade?','Tipo Mobilidade','Combustível valor',
+  'Transporte?','VT Linha 1','VT L1 valor','VT L1 viagens',
+  'VT Linha 2','VT L2 valor','VT L2 viagens',
+  'VT Linha 3','VT L3 valor','VT L3 viagens',
+  'Folha CLT','Folha MEI','Prêmio Assiduidade','Férias elegível'
+];
+
+// Como cada coluna é lida, o que aceita e o que vale se ficar em branco.
+const MODELO_NOVOS_AJUDA=[
+  ['Matrícula','Sim (exceto PART)','Texto/número, como no Senior','Erro — a linha é recusada. Em PART, o CPF é usado como matrícula.'],
+  ['Nome','Sim','Texto','Erro — a linha é recusada. É gravado em MAIÚSCULAS.'],
+  ['CPF','Recomendado','Com ou sem pontuação','Fica vazio. É o segundo critério para detectar quem já existe.'],
+  ['Admissão','Recomendado','dd/mm/aaaa ou data do Excel','Fica vazia.'],
+  ['Cargo','Não','Texto','Fica vazio. Gravado em MAIÚSCULAS.'],
+  ['Função','Não','Texto','Fica vazia. Gravada em MAIÚSCULAS.'],
+  ['Departamento','Recomendado','Texto, igual ao usado na base','Fica vazio.'],
+  ['Status','Não','Trabalhando, Férias, Afastado, Demitido','Trabalhando.'],
+  ['Tipo (Filtro)','Não','OK, DUP, MEI, SOC, TER, DIR, PART','OK. Valor não reconhecido também vira OK.'],
+  ['Vencimento férias','Não','Só dia/mês, no formato dd/mm (ex.: 05/03)','Fica vazio. Com ano, é ignorado.'],
+  ['Agendamento férias','Não','Mês por extenso: '+MESES_FER.join(', '),'Fica vazio.'],
+  ['VR?','Não','Sim ou Não','Não — não recebe VR.'],
+  ['VR valor','Só se VR? = Sim','Valor por dia','Zero.'],
+  ['Café?','Não','Sim ou Não','Não.'],
+  ['Café valor','Só se Café? = Sim','Valor por dia','Zero.'],
+  ['Cesta?','Não','Sim ou Não','SIM — em branco o colaborador recebe cesta.'],
+  ['Cesta valor','Só se Cesta? = Sim','Valor mensal','Zero (o sistema usa o valor padrão da configuração).'],
+  ['Mobilidade?','Não','Sim ou Não','Não. Mobilidade e Transporte são exclusivos: se Transporte? = Sim, a mobilidade é desligada.'],
+  ['Tipo Mobilidade','Só se Mobilidade? = Sim','Combustível, Carro empresa ou Perto (mora perto)','Combustível.'],
+  ['Combustível valor','Só se Tipo Mobilidade = Combustível','Valor mensal','Zero.'],
+  ['Transporte?','Não','Sim ou Não','Não. Se Sim, desliga a mobilidade automaticamente.'],
+  ['VT Linha 1 / 2 / 3','Só se Transporte? = Sim','O texto EXATO da linha, ou só o código. Veja a aba "Linhas de VT".','A linha fica vazia e não gera valor.'],
+  ['VT L1/L2/L3 valor','Só se a linha estiver preenchida','Valor da tarifa','Zero.'],
+  ['VT L1/L2/L3 viagens','Só se a linha estiver preenchida','Número de viagens por dia','Zero.'],
+  ['Folha CLT','Não','Sim ou Não','SIM.'],
+  ['Folha MEI','Não','Sim ou Não','Não.'],
+  ['Prêmio Assiduidade','Não','Sim ou Não','SIM.'],
+  ['Férias elegível','Não','Sim ou Não','SIM.']
+];
+
+function gerarModeloNovos(){
+  try{
+    const linhaVT=(VT_LINHAS.find(l=>l.cod)||{nome:''}).nome;
+    const vazio=(n)=>Array(n).fill('');
+
+    // Exemplo 1 — CLT com VT em uma linha
+    const ex1=['10001234','EXEMPLO COM VT','123.456.789-00','15/01/2026','AJUDANTE','AJUDANTE DE PRODUCAO','Produção','Trabalhando','OK',
+      '05/03',MESES_FER[2],   // exato como o importador espera (MESES_FER usa "Marco", sem cedilha)
+      'Sim',35,'Sim',15,'Sim',200,
+      'Não','',0,
+      'Sim',linhaVT,8.60,2,
+      '','','',
+      '','','',
+      'Sim','Não','Sim','Sim'];
+    // Exemplo 2 — mobilidade por combustível (sem VT)
+    const ex2=['10001235','EXEMPLO COM COMBUSTIVEL','234.567.890-11','03/06/2026','MOTORISTA','MOTORISTA','Motoristas','Trabalhando','OK',
+      '','',
+      'Sim',35,'Não','','Sim',200,
+      'Sim','Combustível',295,
+      'Não','','','',
+      '','','',
+      '','','',
+      'Sim','Não','Sim','Sim'];
+    // Exemplo 3 — particular: sem matrícula (usa o CPF) e só cesta
+    const ex3=['','EXEMPLO PARTICULAR','987.654.321-00','01/02/2026','','SERVICOS GERAIS','Produção','Trabalhando','PART',
+      '','',
+      'Não','','Não','','Sim',200,
+      'Não','',0,
+      'Não','','','',
+      '','','',
+      '','','',
+      'Não','Não','Não','Não'];
+
+    const wb=XLSX.utils.book_new();
+
+    // Aba 1 — a que o sistema lê
+    const ws=XLSX.utils.aoa_to_sheet([MODELO_NOVOS_COLS,ex1,ex2,ex3]);
+    ws['!cols']=MODELO_NOVOS_COLS.map(c=>({wch:Math.max(12,Math.min(38,c.length+4))}));
+    XLSX.utils.book_append_sheet(wb,ws,'Novos Colaboradores');
+
+    // Aba 2 — instruções por coluna
+    const wsA=XLSX.utils.aoa_to_sheet([
+      ['Como preencher — Novos Colaboradores'],
+      ['Preencha a aba "Novos Colaboradores". As três linhas de exemplo devem ser apagadas antes de importar.'],
+      ['O sistema cria apenas quem ainda não existe: quem tiver a mesma matrícula ou o mesmo CPF da base é ignorado, não duplicado.'],
+      ['Não renomeie, não reordene e não apague colunas — o sistema encontra cada campo pelo texto do cabeçalho.'],
+      [],
+      ['Coluna','Obrigatório','O que aceita','Se ficar em branco'],
+      ...MODELO_NOVOS_AJUDA
+    ]);
+    wsA['!cols']=[{wch:26},{wch:26},{wch:52},{wch:64}];
+    XLSX.utils.book_append_sheet(wb,wsA,'Instruções');
+
+    // Aba 3 — linhas de VT disponíveis (o texto tem que casar)
+    const wsVT=XLSX.utils.aoa_to_sheet([
+      ['Linhas de VT cadastradas no sistema'],
+      ['Copie o texto da coluna "Nome completo" para as colunas VT Linha 1/2/3. Só o código também funciona.'],
+      [],
+      ['Código','Nome completo','Tipo'],
+      ...VT_LINHAS.filter(l=>l.cod).map(l=>[l.cod,l.nome,l.tipo||''])
+    ]);
+    wsVT['!cols']=[{wch:12},{wch:62},{wch:10}];
+    XLSX.utils.book_append_sheet(wb,wsVT,'Linhas de VT');
+
+    XLSX.writeFile(wb,'Modelo_Novos_Colaboradores.xlsx');
+    toast('Modelo baixado — preencha a aba "Novos Colaboradores".','success');
+  }catch(e){
+    console.error('modelo novos',e);
+    toast('Erro ao gerar o modelo: '+e.message,'error');
+  }
 }
