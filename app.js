@@ -10948,79 +10948,123 @@ const MODELO_NOVOS_AJUDA=[
   ['Férias elegível','Não','Sim ou Não','SIM.']
 ];
 
-function gerarModeloNovos(){
+// Gerado com ExcelJS (nao com SheetJS) porque so ele escreve validacao de
+// dados — as listas suspensas de linha de onibus, Sim/Nao, status etc.
+async function gerarModeloNovos(){
+  if(!window.ExcelJS){
+    toast('A biblioteca de planilha não carregou. Recarregue a página (Cmd+Shift+R) e tente de novo.','error');
+    return;
+  }
   try{
-    const linhaVT=(VT_LINHAS.find(l=>l.cod)||{nome:''}).nome;
-    const vazio=(n)=>Array(n).fill('');
-
-    // Exemplo 1 — CLT com VT em uma linha
+    const COLS=MODELO_NOVOS_COLS;
+    const idx=nome=>COLS.indexOf(nome)+1;                 // 1-based, p/ ExcelJS
+    const linhasVT=VT_LINHAS.filter(l=>l.cod);
+    const linhaVT=(linhasVT[0]||{nome:''}).nome;
     const anoAtual=new Date().getFullYear();
+    const ULT=500;                                        // até onde vale a validação
+
+    const wb=new ExcelJS.Workbook();
+
+    // A faixa é montada antes: a validação referencia a aba por nome, então a
+    // aba de VT pode ser criada depois — e a de cadastro fica sendo a primeira
+    // que o Excel abre.
+    const FAIXA_VT="'Linhas de VT'!$B$5:$B$"+(4+linhasVT.length);
+
+    // ── aba 1: a que o sistema lê ──
+    const ws=wb.addWorksheet('Novos Colaboradores');
+    ws.addRow(COLS);
     const ex1=['10001234','EXEMPLO COM VT','123.456.789-00','15/01/2026','AJUDANTE','AJUDANTE DE PRODUCAO','Produção','Trabalhando','OK',
-      '',                     // dias fixos vazio = usa os dias úteis do mês
-      '05/03',MESES_FER[2],anoAtual,30,'','',   // MESES_FER usa "Marco", sem cedilha
+      '', '05/03',MESES_FER[2],anoAtual,30,'','',
       'Sim',35,'Sim',15,'Sim',200,
       'Não','',0,
-      'Sim',linhaVT,8.60,2,
-      '','','',
-      '','','',
-      '','','',
+      'Sim',linhaVT,8.60,2, '','','', '','','', '','','',
       'Sim','Não','Sim','Sim'];
-    // Exemplo 2 — mobilidade por combustível (sem VT)
     const ex2=['10001235','EXEMPLO COM COMBUSTIVEL','234.567.890-11','03/06/2026','MOTORISTA','MOTORISTA','Motoristas','Trabalhando','OK',
-      21,                     // jornada travada em 21 dias
-      '','','','','','',
+      21, '','','','','','',
       'Sim',35,'Não','','Sim',200,
       'Sim','Combustível',295,
-      'Não','','','',
-      '','','',
-      '','','',
-      '','','',
+      'Não','','','', '','','', '','','', '','','',
       'Sim','Não','Sim','Sim'];
-    // Exemplo 3 — particular: sem matrícula (usa o CPF) e só cesta
     const ex3=['','EXEMPLO PARTICULAR','987.654.321-00','01/02/2026','','SERVICOS GERAIS','Produção','Trabalhando','PART',
-      '',
-      '','','','','','',
+      '', '','','','','','',
       'Não','','Não','','Sim',200,
       'Não','',0,
-      'Não','','','',
-      '','','',
-      '','','',
-      '','','',
+      'Não','','','', '','','', '','','', '','','',
       'Não','Não','Não','Não'];
+    [ex1,ex2,ex3].forEach(r=>ws.addRow(r));
 
-    const wb=XLSX.utils.book_new();
+    // cabeçalho destacado e painel congelado
+    const hr=ws.getRow(1);
+    hr.font={bold:true,color:{argb:'FFFFFFFF'}};
+    hr.height=30;
+    hr.eachCell(c=>{ c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF2E75B6'}};
+                     c.alignment={vertical:'middle',wrapText:true}; });
+    ws.views=[{state:'frozen',xSplit:2,ySplit:1}];
+    ws.columns=COLS.map(c=>({width:Math.max(12,Math.min(40,c.length+4))}));
 
-    // Aba 1 — a que o sistema lê
-    const ws=XLSX.utils.aoa_to_sheet([MODELO_NOVOS_COLS,ex1,ex2,ex3]);
-    ws['!cols']=MODELO_NOVOS_COLS.map(c=>({wch:Math.max(12,Math.min(38,c.length+4))}));
-    XLSX.utils.book_append_sheet(wb,ws,'Novos Colaboradores');
+    // ── listas suspensas ──
+    const lista=(nomeCol,opcoes,extra)=>{
+      const c=idx(nomeCol); if(c<1) return;
+      const L=ws.getColumn(c).letter;
+      for(let r=2;r<=ULT;r++){
+        ws.getCell(L+r).dataValidation=Object.assign({
+          type:'list', allowBlank:true, formulae:[opcoes], showErrorMessage:true,
+          errorStyle:'stop', errorTitle:'Valor inválido',
+          error:'Escolha uma das opções da lista.'
+        },extra||{});
+      }
+    };
+    const SIM_NAO='"Sim,Não"';
+    ['VR?','Café?','Cesta?','Mobilidade?','Transporte?','Folha CLT','Folha MEI','Prêmio Assiduidade','Férias elegível']
+      .forEach(n=>lista(n,SIM_NAO));
+    lista('Status','"Trabalhando,Férias,Afastado,Demitido"');
+    lista('Tipo (Filtro)','"OK,DUP,MEI,SOC,TER,DIR,PART"');
+    lista('Tipo Mobilidade','"Combustível,Carro empresa,Perto (mora perto)"');
+    lista('Agendamento férias','"'+MESES_FER.join(',')+'"');
+    lista('Férias ano','"'+[anoAtual,anoAtual+1,anoAtual+2,anoAtual+3].join(',')+'"');
+    // as 4 linhas de VT apontam para a aba de referência
+    ['VT Linha 1','VT Linha 2','VT Linha 3','VT Linha 4'].forEach(n=>lista(n,FAIXA_VT));
 
-    // Aba 2 — instruções por coluna
-    const wsA=XLSX.utils.aoa_to_sheet([
-      ['Como preencher — Novos Colaboradores'],
-      ['Preencha a aba "Novos Colaboradores". As três linhas de exemplo devem ser apagadas antes de importar.'],
-      ['O sistema cria apenas quem ainda não existe: quem tiver a mesma matrícula ou o mesmo CPF da base é ignorado, não duplicado.'],
-      ['Não renomeie, não reordene e não apague colunas — o sistema encontra cada campo pelo texto do cabeçalho.'],
-      [],
-      ['Coluna','Obrigatório','O que aceita','Se ficar em branco'],
-      ...MODELO_NOVOS_AJUDA
-    ]);
-    wsA['!cols']=[{wch:26},{wch:26},{wch:52},{wch:64}];
-    XLSX.utils.book_append_sheet(wb,wsA,'Instruções');
+    // dias fixos: inteiro de 1 a 31
+    (()=>{
+      const c=idx('Dias fixos (travar jornada)'); if(c<1) return;
+      const L=ws.getColumn(c).letter;
+      for(let r=2;r<=ULT;r++){
+        ws.getCell(L+r).dataValidation={type:'whole',operator:'between',formulae:[1,31],
+          allowBlank:true,showErrorMessage:true,errorStyle:'stop',errorTitle:'Dias fixos',
+          error:'Informe um número de 1 a 31, ou deixe vazio para usar os dias úteis do mês.'};
+      }
+    })();
 
-    // Aba 3 — linhas de VT disponíveis (o texto tem que casar)
-    const wsVT=XLSX.utils.aoa_to_sheet([
-      ['Linhas de VT cadastradas no sistema'],
-      ['Copie o texto da coluna "Nome completo" para as colunas VT Linha 1/2/3. Só o código também funciona.'],
-      [],
-      ['Código','Nome completo','Tipo'],
-      ...VT_LINHAS.filter(l=>l.cod).map(l=>[l.cod,l.nome,l.tipo||''])
-    ]);
-    wsVT['!cols']=[{wch:12},{wch:62},{wch:10}];
-    XLSX.utils.book_append_sheet(wb,wsVT,'Linhas de VT');
+    // ── aba 2: linhas de VT (origem das listas suspensas) ──
+    const wsVT=wb.addWorksheet('Linhas de VT');
+    wsVT.addRow(['Linhas de VT cadastradas no sistema']);
+    wsVT.addRow(['A coluna B alimenta as listas suspensas de VT Linha 1 a 4 na aba de cadastro.']);
+    wsVT.addRow([]);
+    wsVT.addRow(['Código','Nome completo','Tipo']);
+    linhasVT.forEach(l=>wsVT.addRow([l.cod,l.nome,l.tipo||'']));
+    wsVT.getRow(1).font={bold:true,size:12};
+    wsVT.getRow(4).font={bold:true};
+    wsVT.columns=[{width:12},{width:62},{width:10}];
 
-    XLSX.writeFile(wb,'Modelo_Novos_Colaboradores.xlsx');
-    toast('Modelo baixado — preencha a aba "Novos Colaboradores".','success');
+    // ── aba 3: instruções ──
+    const wsA=wb.addWorksheet('Instruções');
+    wsA.addRow(['Como preencher — Novos Colaboradores']);
+    wsA.addRow(['Preencha a aba "Novos Colaboradores". As três linhas de exemplo devem ser apagadas antes de importar.']);
+    wsA.addRow(['O sistema cria apenas quem ainda não existe: quem tiver a mesma matrícula ou o mesmo CPF da base é ignorado, não duplicado.']);
+    wsA.addRow(['As colunas com lista suspensa já trazem as opções válidas. Não renomeie, não reordene e não apague colunas — o sistema encontra cada campo pelo texto do cabeçalho.']);
+    wsA.addRow([]);
+    wsA.addRow(['Coluna','Obrigatório','O que aceita','Se ficar em branco']);
+    MODELO_NOVOS_AJUDA.forEach(r=>wsA.addRow(r));
+    wsA.getRow(1).font={bold:true,size:12};
+    wsA.getRow(6).font={bold:true};
+    wsA.columns=[{width:30},{width:26},{width:56},{width:64}];
+    wsA.getColumn(3).alignment={wrapText:true,vertical:'top'};
+    wsA.getColumn(4).alignment={wrapText:true,vertical:'top'};
+
+    const buf=await wb.xlsx.writeBuffer();
+    _cbBaixarBlob(new Blob([buf],{type:CB_MIME_XLSX}),'Modelo_Novos_Colaboradores.xlsx');
+    toast('Modelo baixado — as colunas de lista já trazem as opções.','success');
   }catch(e){
     console.error('modelo novos',e);
     toast('Erro ao gerar o modelo: '+e.message,'error');
