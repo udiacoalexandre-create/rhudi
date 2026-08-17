@@ -986,7 +986,7 @@ function afterRender(id){
   if(id==='base-lista') renderColabList();
   if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
   if(id==='ben-lancamento'){ popularLanFiltros(); lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); }); }
-  if(id==='base-versoes') loadBasesSalvas().then(renderBasesSalvas);
+  if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
   if(id==='fer-radar') renderFerRadar();
@@ -2551,13 +2551,59 @@ function popularLanFiltros(){
 // ============================================================
 // BASES SALVAS POR COMPETENCIA (log versionado) + IMPORT p/ apuracao
 // ============================================================
-async function loadBasesSalvas(){
+// Índice leve das versões da base, em config/basesSalvasIndex: só os metadados
+// (competência, data, quem salvou, quantidade). O array de colaboradores de cada
+// versão só é buscado quando a versão é realmente importada para a apuração.
+const BS_INDEX_DOC='basesSalvasIndex';
+// Agregados que o Dashboard da Base mostra por competência. Ficam no índice
+// para o dashboard não precisar dos snapshots inteiros.
+function _bsAgregados(cols){
+  const cs=(cols||[]).filter(c=>{const k=_statusKey(c.status);return !k.includes('DEMIT')&&k!=='N/A'&&k!=='NA'&&k!=='INATIVO';});
+  let trab=0,fer=0,afa=0;
+  cs.forEach(c=>{ const g=statusGrupo(c.status);
+    if(g==='trabalhando')trab++; else if(g==='ferias')fer++; else if(g==='so_cesta')afa++; });
+  return {ativos:cs.length,trab,fer,afa};
+}
+function _bsMeta(id,d){
+  const ag=Array.isArray(d.colaboradores)?_bsAgregados(d.colaboradores)
+            :{ativos:d.ativos,trab:d.trab,fer:d.fer,afa:d.afa};
+  return {_id:id, competencia:d.competencia||'', salvoEm:d.salvoEm||'',
+          salvoPor:d.salvoPor||'',
+          totalColaboradores:d.totalColaboradores||(Array.isArray(d.colaboradores)?d.colaboradores.length:0),
+          ativos:ag.ativos||0, trab:ag.trab||0, fer:ag.fer||0, afa:ag.afa||0};
+}
+function _bsOrdenar(){ basesSalvasList.sort((a,b)=>String(b.salvoEm||'').localeCompare(String(a.salvoEm||''))); }
+async function _bsGravarIndice(){
+  try{ await fsSet('config',BS_INDEX_DOC,{versoes:basesSalvasList,atualizadoEm:new Date().toISOString()}); }
+  catch(e){ console.error('índice de basesSalvas:',e); }
+}
+// Reconstrói o índice lendo a coleção inteira. Só roda quando o índice ainda
+// não existe (primeira vez) ou quando pedido explicitamente.
+async function reconstruirIndiceBases(){
+  const snap=await window._getDocs(window._col('basesSalvas'));
+  basesSalvasList=[]; snap.forEach(d=>basesSalvasList.push(_bsMeta(d.id,d.data()||{})));
+  _bsOrdenar();
+  await _bsGravarIndice();
+  return basesSalvasList;
+}
+async function loadBasesSalvas(force){
+  if(basesSalvasList.length && !force) return basesSalvasList;
   try{
-    const snap=await window._getDocs(window._col('basesSalvas'));
-    basesSalvasList=[]; snap.forEach(d=>basesSalvasList.push(Object.assign({_id:d.id},d.data())));
-    basesSalvasList.sort((a,b)=>String(b.salvoEm||'').localeCompare(String(a.salvoEm||'')));
+    const snap=await window._getDoc(window._doc('config',BS_INDEX_DOC));
+    if(snap.exists()){
+      const arr=(snap.data()||{}).versoes;
+      if(Array.isArray(arr)){ basesSalvasList=arr.slice(); _bsOrdenar(); return basesSalvasList; }
+    }
+    // Sem índice ainda: monta uma vez a partir da coleção e grava.
+    await reconstruirIndiceBases();
   }catch(e){ console.error('Erro basesSalvas:',e); }
   return basesSalvasList;
+}
+// Busca o snapshot completo de uma versão (o array de colaboradores).
+async function carregarBaseCompleta(id){
+  const snap=await window._getDoc(window._doc('basesSalvas',id));
+  if(!snap.exists()) return null;
+  return Object.assign({_id:id},snap.data());
 }
 
 // Grava uma versao da base em 'basesSalvas' para a competencia MM/AAAA.
@@ -2574,7 +2620,12 @@ async function salvarBaseComp(comp, silent){
   };
   try{
     await fsSet('basesSalvas',id,payload);
+    // Índice incremental: nunca reler os snapshots inteiros só para listar.
     await loadBasesSalvas();
+    basesSalvasList=basesSalvasList.filter(x=>x._id!==id);
+    basesSalvasList.push(_bsMeta(id,payload));
+    _bsOrdenar();
+    await _bsGravarIndice();
     if(currentPage==='base-versoes') renderBasesSalvas();
     if(!silent) toast('Base de '+comp+' salva ('+colaboradores.length+' colaboradores).','success');
     return true;
@@ -2656,8 +2707,15 @@ async function lanAutoImportBase(){
   if(baseApuracao) return false;
   if(!basesSalvasList.length){ try{ await loadBasesSalvas(); }catch(e){} }
   const latest=basesSalvasList[0];
-  if(latest){ baseApuracao=latest; setLanComp(latest.competencia); try{ await loadLancamento(); }catch(e){} return true; }
-  return false;
+  if(!latest) return false;
+  try{
+    const completa=await carregarBaseCompleta(latest._id);   // só um snapshot, não as 89
+    if(!completa) return false;
+    baseApuracao=completa;
+    setLanComp(completa.competencia);
+    try{ await loadLancamento(); }catch(e){}
+    return true;
+  }catch(e){ console.error('auto-import da base:',e); return false; }
 }
 
 async function abrirImportarBase(){
@@ -2682,17 +2740,23 @@ async function abrirImportarBase(){
   document.body.insertAdjacentHTML('beforeend',html);
 }
 
-function importarBaseApuracao(id){
+async function importarBaseApuracao(id){
   const b=basesSalvasList.find(x=>x._id===id); if(!b){ toast('Versão não encontrada.','error'); return; }
   const latestId=basesSalvasList[0]?._id;
   if(id!==latestId){
     const dt=b.salvoEm?new Date(b.salvoEm).toLocaleString('pt-BR'):'';
     if(!confirm('Esta NÃO é a versão mais recente salva.\n\nSeguir mesmo assim com a base de '+b.competencia+' ('+dt+')?')) return;
   }
-  baseApuracao=b;
-  setLanComp(b.competencia);
+  // O array de colaboradores não vem no índice: é buscado só agora.
+  toast('Carregando a base de '+b.competencia+'...','info');
+  let completa;
+  try{ completa=await carregarBaseCompleta(id); }
+  catch(e){ toast('Erro ao carregar a base: '+e.message,'error'); return; }
+  if(!completa){ toast('Versão não encontrada no banco.','error'); return; }
+  baseApuracao=completa;
+  setLanComp(completa.competencia);
   document.getElementById('modal-importar-base')?.remove();
-  toast('Base importada: '+b.competencia+' ('+(b.totalColaboradores||(b.colaboradores||[]).length)+' colaboradores).','success');
+  toast('Base importada: '+completa.competencia+' ('+(completa.totalColaboradores||(completa.colaboradores||[]).length)+' colaboradores).','success');
   // Carrega o lancamento DESSA competencia (começa limpo se for nova) e re-renderiza.
   loadLancamento().then(()=>{ if(currentPage==='ben-lancamento') showPage('ben-lancamento'); });
 }
@@ -4227,7 +4291,11 @@ async function loadLancamento(){
   const pref=String(lanComp||'').replace('/','_')+'__';
   if(!lanComp) return;
   try{
-    const snap=await window._getDocs(window._col('lancamento'));
+    // Antes: baixava a coleção inteira (1.601 docs) e filtrava no cliente.
+    // Agora: só os IDs que começam com "MM_AAAA__".
+    const snap = window._getDocsPrefixo
+      ? await window._getDocsPrefixo('lancamento',pref)
+      : await window._getDocs(window._col('lancamento'));
     snap.forEach(d=>{ if(d.id.indexOf(pref)===0) lancamento[d.id.slice(pref.length)]=d.data(); });
   }catch(e){ console.error('Erro lancamento:',e); }
 }
@@ -4339,7 +4407,10 @@ function entrarBeneficios(){
     const hoje=new Date();
     setLanComp(String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear());
   }
-  Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadBasesSalvas()]).then(()=>{
+  // basesSalvas fica FORA daqui: cada versão guarda uma cópia completa da base
+  // (~850 KB), então baixar as 89 no login custava ~74 MB para a tela inicial,
+  // que não usa nenhuma. Passou a ser carregado sob demanda, e por índice.
+  Promise.all([loadColaboradores(),loadLancamento(),loadConfig()]).then(()=>{
     window.__benefLoaded=true;
     switchModule('base');
     checarRetornosFeriasBoot();
@@ -9208,10 +9279,13 @@ function renderBaseDashboardBody(initFiltro){
   if(initFiltro || !dashBaseAte || comps.indexOf(dashBaseAte)<0) dashBaseAte=comps[comps.length-1];
   const kDe=_dashCompKey(dashBaseDe), kAte=_dashCompKey(dashBaseAte);
   const sel=comps.filter(c=>_dashCompKey(c)>=Math.min(kDe,kAte) && _dashCompKey(c)<=Math.max(kDe,kAte));
+  // Vem do índice (config/basesSalvasIndex). Só recalcula do array se a versão
+  // for antiga e ainda não tiver os agregados gravados.
   const stat=b=>{
-    const cs=(b.colaboradores||[]).filter(c=>{const k=_statusKey(c.status);return !k.includes('DEMIT')&&k!=='N/A'&&k!=='NA'&&k!=='INATIVO';});
-    let trab=0,fer=0,afa=0; cs.forEach(c=>{const g=statusGrupo(c.status); if(g==='trabalhando')trab++; else if(g==='ferias')fer++; else if(g==='so_cesta')afa++;});
-    return {total:cs.length,trab,fer,afa};
+    if(!b) return {total:0,trab:0,fer:0,afa:0};
+    if(b.ativos!=null) return {total:b.ativos,trab:b.trab||0,fer:b.fer||0,afa:b.afa||0};
+    const ag=_bsAgregados(b.colaboradores);
+    return {total:ag.ativos,trab:ag.trab,fer:ag.fer,afa:ag.afa};
   };
   const ult=stat(porComp[sel[sel.length-1]]);
   const kpis='<div class="stat-grid">'
@@ -9370,7 +9444,10 @@ async function confirmarExcluirHistorico(){
   }catch(e){ toast('Erro ao excluir: '+e.message,'error'); return; }
   closeModal('modal-excluir'); _exclState=null;
   if(refreshKey==='historico') renderHistorico();
-  else if(refreshKey==='base') loadBasesSalvas().then(()=>{ if(typeof renderBasesSalvas==='function') renderBasesSalvas(); });
+  else if(refreshKey==='base'){
+    basesSalvasList=basesSalvasList.filter(x=>x._id!==id);
+    _bsGravarIndice().then(()=>{ if(typeof renderBasesSalvas==='function') renderBasesSalvas(); });
+  }
   else if(refreshKey==='premio') renderPremioHistorico();
 }
 // wrappers usados nos botões
