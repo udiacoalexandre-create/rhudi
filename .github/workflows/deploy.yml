@@ -10,9 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2      # precisa do commit anterior para saber o que mudou
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - name: Deploy para o Firebase Hosting
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -30,13 +33,43 @@ jobs:
             exit 0
           fi
           exit $code
-      # Sem "|| true" nem continue-on-error: mascarar a falha aqui deixou as
-      # regras paradas em 20/07/2026 enquanto o deploy aparecia como verde, e
-      # coleção nova ficava barrada ("Missing or insufficient permissions").
+
+      # As regras mudam raramente. Antes este passo rodava sempre e, como a
+      # service account do CI não tem permissão para publicá-las, todo push
+      # terminava vermelho — virou ruído de e-mail. Agora só roda quando o
+      # firestore.rules muda de verdade: aí a falha é informação, não ruído.
+      - name: Verificar se o firestore.rules mudou
+        id: regras
+        run: |
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            if git diff --name-only HEAD^ HEAD | grep -qx 'firestore.rules'; then
+              echo "mudou=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::firestore.rules mudou neste push — vou tentar publicar."
+            else
+              echo "mudou=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::firestore.rules não mudou — publicação de regras dispensada."
+            fi
+          else
+            echo "mudou=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publicar regras do Firestore
+        if: steps.regras.outputs.mudou == 'true'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$GOOGLE_APPLICATION_CREDENTIALS"
-          npx -y firebase-tools@latest deploy --only firestore:rules --project udiaco-beneficios
+          set +e
+          out=$(npx -y firebase-tools@latest deploy --only firestore:rules --project udiaco-beneficios 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -eq 0 ]; then exit 0; fi
+          echo "::error::As regras do Firestore NÃO foram publicadas. O site foi publicado normalmente."
+          echo "Como resolver, em ordem de preferência:"
+          echo "  1) Conceder à service account do secret FIREBASE_SERVICE_ACCOUNT o papel"
+          echo "     'Firebase Rules Admin' (roles/firebaserules.admin) no IAM do projeto."
+          echo "  2) Publicar manualmente: Firebase Console > Firestore > Regras, colando o"
+          echo "     conteudo de firestore.rules."
+          echo "ATENCAO: enquanto isso, coleção nova responde 'Missing or insufficient permissions'."
+          exit $code
