@@ -875,6 +875,9 @@ const MODULES = {
     {id:'base-atualizar',icon:'<i class="ti ti-refresh"></i>',label:'Atualizar Base',action:'abrirAtualizarBase()'},
     {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Históricos'},
     {id:'base-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
+    // Ferramenta de diagnóstico da integração: morava na aba Dashboard, que
+    // saiu. Fica aqui, visível só para o master.
+    {id:'teste-senior',icon:'<i class="ti ti-plug"></i>',label:'Teste Senior API',master:true},
   ]},
   beneficios:{pages:[
     {id:'ben-lancamento',icon:'<i class="ti ti-clipboard-list"></i>',label:'Lan\u00E7amento Mensal'},
@@ -900,10 +903,6 @@ const MODULES = {
     {id:'contab-esquema',icon:'<i class="ti ti-list-details"></i>',label:'Esquema contábil'},
     {id:'contab-historico',icon:'<i class="ti ti-history"></i>',label:'Histórico'},
   ]},
-  dashboard:{pages:[
-    {id:'dash-main',icon:'<i class="ti ti-layout-dashboard"></i>',label:'Dashboard Geral'},
-    {id:'teste-senior',icon:'<i class="ti ti-plug"></i>',label:'Teste Senior API'},
-  ]},
   config:{pages:[
     {id:'config-main',icon:'<i class="ti ti-settings"></i>',label:'Configurações'},
   ]}
@@ -922,7 +921,7 @@ function pagesVisiveis(mod){
 // Esconde os módulos que o papel UM989 não pode ver (mostra só Férias).
 function aplicarVisibModulos(){
   const so=ehUM989();
-  ['base','beneficios','folha','premio','contabil','dashboard'].forEach(m=>{
+  ['base','beneficios','folha','premio','contabil'].forEach(m=>{
     const t=document.getElementById('tab-'+m); if(t) t.style.display=so?'none':'';
   });
   // Configurações: engrenagem no cabeçalho, exclusiva do master
@@ -932,6 +931,9 @@ function aplicarVisibModulos(){
 function abrirConfig(){ if(!podeGerenciarUsuarios()) return; switchModule('config'); }
 
 function switchModule(mod){
+  // Se o módulo não existe mais (ou o papel não vê nenhuma página dele),
+  // cai para Base — evita tela branca.
+  if(!MODULES[mod] || !pagesVisiveis(mod).length) mod='base';
   currentModule=mod;
   document.querySelectorAll('.mod-tab').forEach(t=>t.classList.remove('active'));
   const tabEl=document.getElementById('tab-'+mod);
@@ -971,7 +973,7 @@ function renderPage(id){
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,'base-dash':pgBaseDashboard,'ben-dash':pgBenDashboard,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
-    'dash-main':pgDashMain,'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
+    'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
     'premio-dash':pgPremioDashboard,'premio-historico':pgPremioHistorico,
     'contab-processo':pgContabProcesso,'contab-historico':pgContabHistorico,
     'contab-esquema':pgContabEsquema,
@@ -1000,7 +1002,6 @@ function afterRender(id){
   }
   if(id==='fer-agendadas') renderFeriasAgendadas();
   if(id==='fer-um989') loadUM989().then(renderUM989);
-  if(id==='dash-main') renderDashMain();
   if(id==='premio-main') afterRenderPremio();
   if(id==='premio-dash') afterRenderPremioDash();
   if(id==='premio-historico') renderPremioHistorico();
@@ -4127,117 +4128,6 @@ function exportarFeriasExcel(){
   XLSX.utils.book_append_sheet(wb,ws,'Ferias');
   XLSX.writeFile(wb,'Controle_Ferias.xlsx');
   toast('\u2705 Excel exportado!','success');
-}
-
-// ============================================================
-// DASHBOARD GERAL
-// ============================================================
-function pgDashMain(){
-  return `
-    <div class="page-header"><h2> Dashboard Geral</h2><p>Vis\u00E3o consolidada de todos os m\u00F3dulos.</p></div>
-    <div id="dash-content"><div class="empty-state"><div class="empty-icon"></div><p>Carregando...</p></div></div>`;
-}
-
-function renderDashMain(){
-  const du=lanDU;
-  const hoje=new Date(); hoje.setHours(0,0,0,0);
-  const em30=new Date(hoje); em30.setDate(em30.getDate()+30);
-  const unicos=colaboradoresUnicos(); // dedup por pessoa (MEI/Sócio 1x)
-  const ehFerias=s=>s==='Ferias'||s==='Ferias Coletiva';
-  const trabalhando=unicos.filter(c=>c.status==='Trabalhando');
-  const emFerias=unicos.filter(c=>ehFerias(c.status));
-  const afastados=unicos.filter(c=>STATUS_SO_CESTA.includes(c.status));
-
-  // Somas em R$ sobre os registros que recebem; contagem por pessoa única
-  let tVR=0,tCafe=0,tCesta=0,tComb=0,tVT=0;
-  const pk=c=>(c.cpf||'').replace(/[^0-9]/g,'')||('nome:'+_normNome(c.nome));
-  const setVR=new Set(),setCafe=new Set(),setComb=new Set(),setVT=new Set();
-  colaboradores.filter(c=>!STATUS_NAO_RECEBE.includes(c.status)).forEach(c=>{
-    const dr=getLanDR(c.mat,du);
-    const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
-    tVR+=vr;tCafe+=cafe;tCesta=(tCesta||0)+cesta;tComb+=comb;tVT+=vt;
-    const k=pk(c);
-    if(vr>0)setVR.add(k); if(cafe>0)setCafe.add(k); if(comb>0)setComb.add(k); if([1,2,3,4].some(n=>fnum(c['vt'+n])>0))setVT.add(k);
-  });
-
-  // F\u00E9rias stats
-  let ferOk=0,ferAm=0,ferLar=0,ferVerm=0;
-  colaboradores.forEach(c=>{
-    if(!c.ferVenc) return;
-    const venc=new Date(c.ferVenc);
-    const meses=(hoje-venc)/(1000*60*60*24*30);
-    if(meses<0)ferOk++;
-    else if(meses<=10)ferAm++;
-    else if(meses<=12)ferLar++;
-    else ferVerm++;
-  });
-
-  const comp=lanComp||'\u2014';
-  const el=document.getElementById('dash-content');
-  if(!el) return;
-  el.innerHTML=`
-    <div class="dash-section">
-      <div class="dash-section-title"> Colaboradores</div>
-      <div class="stats-grid">
-        <div class="stat-card blue"><div class="stat-val">${unicos.length}</div><div class="stat-label">Total na Base</div></div>
-        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${trabalhando.length}</div><div class="stat-label">Trabalhando</div></div>
-        <div class="stat-card blue"><div class="stat-val" style="color:var(--blue)">${emFerias.length}</div><div class="stat-label">Em F\u00E9rias</div></div>
-        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${afastados.length}</div><div class="stat-label">Afastados</div></div>
-      </div>
-    </div>
-
-    <div class="dash-section">
-      <div class="dash-section-title"> Benef\u00EDcios \u2014 Compet\u00EAncia ${comp}</div>
-      <div class="stats-grid">
-        <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tVR)}</div><div class="stat-label">VR\uFE0F Vale Refei\u00E7\u00E3o</div><div class="stat-sub">${setVR.size} colaboradores</div></div>
-        <div class="stat-card yellow"><div class="stat-val" style="font-size:18px;color:var(--yellow)">${brl(tCafe)}</div><div class="stat-label">\u2615 Caf\u00E9 da Manh\u00E3</div><div class="stat-sub">${setCafe.size} colaboradores</div></div>
-        <div class="stat-card orange"><div class="stat-val" style="font-size:18px;color:var(--orange)">${brl(tComb)}</div><div class="stat-label">\u26FD Combust\u00EDvel</div><div class="stat-sub">${setComb.size} colaboradores</div></div>
-        <div class="stat-card blue"><div class="stat-val" style="font-size:18px;color:var(--blue)">${brl(tVT)}</div><div class="stat-label">VT Vale Transporte</div><div class="stat-sub">${setVT.size} colaboradores</div></div>
-        <div class="stat-card green" style="grid-column:1/-1"><div class="stat-val" style="font-size:24px;color:var(--green)">${brl(tVR+tCafe+tCesta+tComb+tVT)}</div><div class="stat-label">$ Total Geral de Benef\u00EDcios</div></div>
-      </div>
-    </div>
-
-    <div class="dash-section">
-      <div class="dash-section-title">Ferias\uFE0F Controle de F\u00E9rias</div>
-      <div class="stats-grid">
-        <div class="stat-card green"><div class="stat-val" style="color:var(--green)">${ferOk}</div><div class="stat-label">\u2705 F\u00E9rias OK</div></div>
-        <div class="stat-card yellow"><div class="stat-val" style="color:var(--yellow)">${ferAm}</div><div class="stat-label">\u26A0\uFE0F Vencida 1-10m</div></div>
-        <div class="stat-card orange"><div class="stat-val" style="color:var(--orange)">${ferLar}</div><div class="stat-label"> Vencida 11-12m</div></div>
-        <div class="stat-card red"><div class="stat-val" style="color:var(--red)">${ferVerm}</div><div class="stat-label"> Vencida +12m</div></div>
-      </div>
-    </div>
-
-    <div class="dash-section">
-      <div class="dash-section-title"> Por Empresa</div>
-      <div class="tbl-wrap">
-        <table class="tbl">
-          <thead><tr><th>Empresa</th><th>Total</th><th>Trabalhando</th><th>Afastados</th><th>Em F\u00E9rias</th><th>Total Benef\u00EDcios</th></tr></thead>
-          <tbody>
-            ${getEmpresaList().map(emp=>{
-              const fcAll=colaboradores.filter(c=>_empresaMatch(c,[emp.cod]));
-              const fc=unicos.filter(c=>_empresaMatch(c,[emp.cod]));
-              const fa=fc.filter(c=>c.status==='Trabalhando').length;
-              const fi=fc.filter(c=>STATUS_SO_CESTA.includes(c.status)).length;
-              const ff=fc.filter(c=>ehFerias(c.status)).length;
-              let tot=0;
-              fcAll.filter(c=>!STATUS_NAO_RECEBE.includes(c.status)).forEach(c=>{
-                const dr=getLanDR(c.mat,du);
-                const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,getLanDU(c.mat,du));
-                tot+=vr+cafe+comb+vt+cesta;
-              });
-              return `<tr>
-                <td><strong>${emp.cod}</strong></td>
-                <td>${fc.length}</td>
-                <td>${fa}</td>
-                <td>${fi}</td>
-                <td>${ff}</td>
-                <td class="mono" style="text-align:right;font-weight:600;color:var(--green)">${brl(tot)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
 }
 
 // ============================================================
