@@ -343,7 +343,7 @@ a{ color:var(--accent); text-decoration:none }
 .backdrop{ position:fixed; inset:0; background:rgba(15,23,42,.38); opacity:0; pointer-events:none;
         transition:opacity .2s; z-index:40 }
 .backdrop--on{ opacity:1; pointer-events:auto }
-.drawer{ position:fixed; top:0; right:0; bottom:0; width:min(640px,100%); background:var(--surface);
+.drawer{ position:fixed; top:0; right:0; bottom:0; width:min(720px,100%); background:var(--surface);
         box-shadow:-10px 0 40px rgba(15,23,42,.16); transform:translateX(100%);
         transition:transform .22s ease; z-index:50; display:flex; flex-direction:column }
 .drawer--on{ transform:translateX(0) }
@@ -361,11 +361,83 @@ a{ color:var(--accent); text-decoration:none }
 .tk-head:hover .tk-tit__edit{ opacity:1 }
 .tk-chips{ display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap; margin-top:var(--space-3) }
 .chip{ display:inline-flex; align-items:center; gap:7px; background:var(--surface-soft);
-        border:1px solid var(--border); border-radius:20px; padding:3px 11px 3px 4px; font-size:12px;
+        border:1px solid var(--border); border-radius:20px; padding:4px 11px 4px 4px; font-size:12.5px;
         color:var(--text-secondary); cursor:pointer }
-.chip:hover{ border-color:var(--border-strong) }
+.chip:hover{ border-color:var(--border-strong); background:var(--surface) }
 .chip--plain{ padding-left:11px }
 .chip b{ color:var(--text); font-weight:600 }
+.chip i.ti-chevron-down{ font-size:13px; opacity:.5 }
+/* Chip de status: a própria cor do status, e clicável para trocar */
+.chip--st{ color:#fff; font-weight:600; padding:4px 10px }
+.chip--st:hover{ filter:brightness(1.08) }
+.chip--st b{ color:#fff }
+.chip input[type=date]{ border:none; background:transparent; font-family:inherit; font-size:12.5px;
+        color:var(--text); outline:none; width:120px }
+
+/* ---------- POPOVER (trocar status / responsável) ---------- */
+.pop{ position:fixed; z-index:85; min-width:214px; max-height:60vh; overflow-y:auto; background:var(--surface);
+        border:1px solid var(--border); border-radius:12px; box-shadow:0 16px 44px rgba(15,23,42,.20);
+        padding:6px; display:none }
+.pop--on{ display:block }
+.pop button{ display:flex; align-items:center; gap:9px; width:100%; text-align:left; border:none;
+        background:none; font-family:inherit; font-size:13px; color:var(--text); padding:8px 9px;
+        border-radius:8px; cursor:pointer }
+.pop button:hover{ background:var(--surface-soft) }
+.pop button.pop--sel{ background:var(--accent-bg); font-weight:600 }
+.pop__ponto{ width:10px; height:10px; border-radius:50%; flex-shrink:0 }
+.pop__lab{ font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+        color:var(--text-muted); padding:6px 9px 3px }
+
+/* ---------- CONVERSA EM DESTAQUE (o coração do ticket) ---------- */
+.conv{ background:var(--page-bg); border-top:1px solid var(--border); padding:var(--space-5);
+        min-height:340px }
+.conv__tit{ display:flex; align-items:center; gap:9px; font-size:15px; font-weight:600; color:var(--text);
+        letter-spacing:-.01em; margin-bottom:var(--space-4) }
+.conv__tit i{ color:var(--accent) }
+.comp{ display:flex; gap:10px; align-items:flex-start; background:var(--surface); border:1px solid var(--border);
+        border-radius:14px; padding:var(--space-3); box-shadow:var(--shadow) }
+.comp:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg) }
+.comp__corpo{ flex:1; min-width:0; display:flex; flex-direction:column; gap:var(--space-2) }
+.comp textarea{ width:100%; min-height:62px; max-height:220px; resize:vertical; padding:8px 4px;
+        border:none; outline:none; font-family:inherit; font-size:14px; color:var(--text); background:transparent }
+.upd{ border:1px solid var(--border); border-radius:14px; margin-bottom:var(--space-3); overflow:hidden;
+        background:var(--surface); box-shadow:var(--shadow) }
+.upd--nova{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg) }
+.upd__head{ display:flex; align-items:center; gap:10px; padding:var(--space-3) var(--space-4) 6px }
+.upd__nome{ font-weight:600; color:var(--text); font-size:14px }
+.upd__hora{ font-size:12px; color:var(--text-muted) }
+.upd__corpo{ padding:0 var(--space-4) var(--space-4) 51px; font-size:14px; color:var(--text); line-height:1.55;
+        white-space:pre-wrap; word-break:break-word }
+/* Rodapé da atualização (curtir / responder) e a resposta aninhada */
+.upd__pe{ display:flex; align-items:center; gap:var(--space-4); padding:7px var(--space-4);
+        border-top:1px solid var(--border) }
+.upd__acao{ display:inline-flex; align-items:center; gap:6px; border:none; background:none;
+        font-family:inherit; font-size:12.5px; color:var(--text-secondary); cursor:pointer; padding:2px 0 }
+.upd__acao:hover{ color:var(--accent) }
+.upd__acao--on{ color:var(--accent); font-weight:600 }
+.upd__resp{ border-top:1px solid var(--border); background:var(--surface-soft);
+        padding:var(--space-3) var(--space-4); display:flex; flex-direction:column; gap:var(--space-3) }
+.resp{ display:flex; gap:9px; align-items:flex-start }
+.resp__meta{ font-size:11.5px; color:var(--text-muted) }
+.resp__meta b{ color:var(--text); font-size:12.5px }
+.resp__txt{ font-size:13.5px; color:var(--text); white-space:pre-wrap; word-break:break-word; margin-top:2px }
+.resp__campo{ width:100%; min-height:54px; resize:vertical; border:1px solid var(--border); border-radius:10px;
+        padding:9px 11px; font-family:inherit; font-size:13.5px; color:var(--text); background:var(--surface) }
+.resp__campo:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg) }
+/* Ícones do compositor: sem moldura, dentro da caixa, como na referência */
+.comp__ico{ width:31px; height:31px; border-radius:9px; border:none; background:none; color:var(--text-muted);
+        cursor:pointer; font-size:17px; display:inline-flex; align-items:center; justify-content:center }
+.comp__ico:hover{ background:var(--surface-soft); color:var(--accent) }
+/* Criar subtarefa direto na linha da tabela do projeto */
+.linha-add{ opacity:.4; width:21px; height:21px; margin-top:1px; border-radius:6px;
+        border:1px dashed var(--border-strong); background:var(--surface); color:var(--text-muted);
+        cursor:pointer; font-size:12px; display:inline-flex; align-items:center; justify-content:center;
+        flex-shrink:0; transition:opacity .12s }
+.tab tbody tr:hover .linha-add{ opacity:1; border-style:solid }
+.linha-add:hover{ border-color:var(--accent); color:var(--accent); border-style:solid }
+
+.sit__quem{ display:inline-flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--border);
+        border-radius:20px; padding:1px 9px 1px 2px; font-weight:600; color:var(--text); white-space:nowrap }
 
 .sec{ padding:var(--space-5); border-bottom:1px solid var(--border) }
 .sec__lab{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
@@ -375,8 +447,7 @@ a{ color:var(--accent); text-decoration:none }
 .sit__topo{ display:flex; align-items:center; gap:var(--space-3); padding:var(--space-3) var(--space-4);
         background:var(--surface-soft) }
 .sit__txt{ flex:1; min-width:0; font-size:13px; color:var(--text-secondary) }
-.sit__acoes{ display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:var(--space-2);
-        padding:var(--space-3) }
+.sit__acoes{ display:flex; flex-wrap:wrap; gap:var(--space-2); padding:var(--space-3) }
 .acao{ display:flex; align-items:center; gap:8px; padding:10px 12px; border:1px solid var(--border-strong);
         border-radius:var(--radius); background:var(--surface); font-size:13px; font-weight:500;
         color:var(--text); cursor:pointer; font-family:inherit; text-align:left }
@@ -388,12 +459,6 @@ a{ color:var(--accent); text-decoration:none }
 .marca-sys{ width:27px; height:27px; border-radius:50%; background:var(--surface-soft); color:var(--text-muted);
         display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0 }
 
-.campos{ display:grid; grid-template-columns:1fr 1fr; gap:var(--space-3) }
-.campo{ background:var(--surface-soft); border-radius:var(--radius); padding:var(--space-3) }
-.campo__label{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
-        color:var(--text-muted); margin-bottom:5px }
-.campo select,.campo input{ width:100%; border:1px solid var(--border); border-radius:var(--radius-sm);
-        background:var(--surface); height:33px; padding:0 8px; font-size:13px; color:var(--text); font-family:inherit }
 .mini-lista{ display:flex; flex-direction:column; gap:6px }
 .mini{ display:flex; align-items:center; gap:9px; padding:9px 11px; border:1px solid var(--border);
         border-left:4px solid var(--border-strong); border-radius:var(--radius); background:var(--surface);
@@ -402,12 +467,6 @@ a{ color:var(--accent); text-decoration:none }
 .mini__tit{ flex:1; min-width:0; color:var(--text) }
 
 /* ---------- CONVERSA ---------- */
-.compositor{ display:flex; flex-direction:column; gap:var(--space-2); background:var(--surface-soft);
-        border:1px solid var(--border); border-radius:12px; padding:var(--space-3) }
-.compositor textarea{ width:100%; min-height:66px; max-height:200px; resize:vertical; padding:var(--space-3);
-        border:1px solid var(--border); border-radius:var(--radius); font-family:inherit; font-size:13px;
-        color:var(--text); background:var(--surface) }
-.compositor textarea:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg) }
 .fila{ display:flex; flex-wrap:wrap; gap:6px }
 .anexo{ display:inline-flex; align-items:center; gap:6px; padding:4px 10px; background:var(--surface);
         border:1px solid var(--border); border-radius:20px; font-size:12px;
@@ -525,6 +584,7 @@ a{ color:var(--accent); text-decoration:none }
 <aside class="drawer" id="drawer" aria-label="Detalhe da tarefa"></aside>
 
 <!-- ================= MODAL ================= -->
+<div class="pop" id="pop"></div>
 <div class="modal" id="modal"><div class="modal__card" id="modal-card"></div></div>
 <div id="toast"></div>
 <input type="file" id="foto-input" accept="image/*" style="display:none">

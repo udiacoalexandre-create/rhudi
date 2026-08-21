@@ -96,6 +96,8 @@ let paraMarcar = [];        // pessoas marcadas na próxima mensagem
 let recolhidos = {};        // projetos recolhidos na tabela (só nesta sessão)
 let filtro = '';           // busca da barra de ferramentas
 let abaTicket = 'upd';     // aba do ticket: upd | arq | hist
+let respondendo = null;    // id da atualização que está com a caixa de resposta aberta
+let rascunhoResp = '';     // o que já foi digitado nessa caixa
 let soMinhas = false;      // filtro "só as minhas" na aba Projetos
 let expandidos = {};        // tarefas com as filhas abertas na tabela
 let unsubs = [];
@@ -273,10 +275,13 @@ function iniciar(){
     if(p.classList.contains('notif-painel--on') && !p.contains(e.target)) p.classList.remove('notif-painel--on');
     const m = $('menu-ticket');
     if(m && m.classList.contains('menu--on') && !m.contains(e.target)) m.classList.remove('menu--on');
+    const p2 = $('pop');
+    if(p2 && p2.classList.contains('pop--on') && !p2.contains(e.target)) fecharPop();
   });
   document.onkeydown = e => {
     if(e.key !== 'Escape') return;
-    if($('modal').classList.contains('modal--on')) fecharModal();
+    if($('pop').classList.contains('pop--on')) fecharPop();
+    else if($('modal').classList.contains('modal--on')) fecharModal();
     else if(tarefaAberta) fecharPainel();
     else $('notif-painel').classList.remove('notif-painel--on');
   };
@@ -458,14 +463,15 @@ async function notificar(paras, tipo, texto, t){
   }).catch(()=>{})));
 }
 // Mensagem no chat. tipo 'sistema' = registro automático do fluxo.
-async function postarMensagem(tarefaId, texto, tipo, anexos, mencoes){
+async function postarMensagem(tarefaId, texto, tipo, anexos, mencoes, respostaDe){
   const t = tarefaDe(tarefaId);
   const agora = new Date().toISOString();
   await criarDoc(COL_MSG, {
     tarefaId, projetoId: t ? t.projetoId : null,
     autor: usuario.email, autorNome: usuario.nome,
     texto: texto || '', tipo: tipo || 'msg',
-    anexos: anexos || [], mencoes: mencoes || [], criadoEm: agora
+    anexos: anexos || [], mencoes: mencoes || [],
+    respostaDe: respostaDe || null, curtidas: [], criadoEm: agora
   });
   const patch = { ultimaMsgEm: agora };
   patch['lidoPor.' + chaveEmail(usuario.email)] = agora;   // quem escreveu já leu
@@ -1093,7 +1099,13 @@ function linhaTabela(t, nivel, filhas, aberto){
       tickHTML(t) + ramo + chevron +
       '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div>' +
         (sub.length ? '<div class="demanda__sub">' + sub.join(' · ') + '</div>' : '') +
-      '</div></div></td>' +
+      '</div>' +
+      // Criar subtarefa dentro desta tarefa, sem sair da tabela do projeto.
+      ((nivel < 2 && t.tipo !== 'solicitacao')
+        ? '<button class="linha-add" title="Criar subtarefa dentro desta" ' +
+          'onclick="event.stopPropagation();modalNovaSubtarefa(\'' + t._id + '\')"><i class="ti ti-plus"></i></button>'
+        : '') +
+    '</div></td>' +
     '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
     stCelula(t) +
     celulaData(t, 'prazo') +
@@ -1149,6 +1161,7 @@ function abrirTarefa(id){
   lidoAoAbrir = (t0 && (t0.lidoPor || {})[chaveEmail(usuario.email)]) || '';
   tarefaAberta = id;
   abaTicket = 'upd';
+  respondendo = null; rascunhoResp = '';
   paraAnexar = []; paraMarcar = []; mensagens = [];
   try{ history.replaceState(null, '', '#t=' + id); }catch(e){}
   $('backdrop').classList.add('backdrop--on');
@@ -1195,6 +1208,7 @@ function renderPainel(){
   if(!t){ d.innerHTML = '<div class="sec">' + vazio('trash', 'Esta tarefa foi excluída') + '</div>'; return; }
 
   const rascunho = $('msg-texto') ? $('msg-texto').value : '';
+  if($('resp-campo')) rascunhoResp = $('resp-campo').value;
   const proj = projetoDe(t.projetoId);
   const pai = t.paiId ? tarefaDe(t.paiId) : null;
   const subs = subtarefasDe(t._id);
@@ -1202,7 +1216,10 @@ function renderPainel(){
   const podeExcluir = ehMaster() || t.criadoPor === usuario.email;
 
   d.innerHTML =
-  // ---------- 1. Cabeçalho ----------
+  // ---------- 1. Cabeçalho: contexto, título e os chips ----------
+  // Os quatro campos que importam (status, responsável, próxima ação e prazo
+  // final) vivem SÓ aqui, e se editam clicando no próprio chip — antes eles
+  // apareciam de novo num bloco "Detalhes", repetindo tudo.
   '<div class="tk-head">' +
     '<div class="row--between">' +
       '<div class="tk-ctx">' +
@@ -1217,7 +1234,8 @@ function renderPainel(){
           '<div class="menu" id="menu-ticket">' +
             '<button onclick="copiarLinkTarefa(\'' + t._id + '\')"><i class="ti ti-link"></i> Copiar link da tarefa</button>' +
             '<button onclick="modalRenomear(\'' + t._id + '\')"><i class="ti ti-pencil"></i> Renomear</button>' +
-            '<button onclick="modalDescricao(\'' + t._id + '\')"><i class="ti ti-align-left"></i> Editar descrição</button>' +
+            '<button onclick="modalDescricao(\'' + t._id + '\')"><i class="ti ti-align-left"></i> ' +
+              (t.descricao ? 'Editar descrição' : 'Adicionar descrição') + '</button>' +
             '<button onclick="modalNovaSubtarefa(\'' + t._id + '\')"><i class="ti ti-corner-down-right"></i> Nova subtarefa</button>' +
             (podeExcluir ? '<hr><button class="perigo" onclick="excluirTarefa(\'' + t._id + '\')">' +
               '<i class="ti ti-trash"></i> Excluir tarefa</button>' : '') +
@@ -1229,21 +1247,13 @@ function renderPainel(){
     '<div class="tk-tit">' + esc(t.titulo) +
       '<button class="icon-btn tk-tit__edit" title="Renomear" onclick="modalRenomear(\'' + t._id + '\')">' +
       '<i class="ti ti-pencil"></i></button></div>' +
-    '<div class="tk-chips">' +
-      stPill(t) +
-      '<span class="chip" onclick="focarCampo(\'c-resp\')">' + avatar(t.responsavel, 'avatar--sm') +
-        '<b>' + esc(primeiroNome(t.responsavel)) + '</b></span>' +
-      '<span class="chip chip--plain" onclick="focarCampo(\'c-prazo\')"><i class="ti ti-calendar-event"></i>' +
-        'próxima ação <b class="' + classeData(t.prazo, t, false) + '">' + esc(t.prazo ? prazoTexto(t.prazo) : 'definir') + '</b></span>' +
-      '<span class="chip chip--plain" onclick="focarCampo(\'c-final\')"><i class="ti ti-flag"></i>' +
-        'prazo final <b class="' + classeData(t.prazoFinal, t, true) + '">' +
-        esc(t.prazoFinal ? dataBR(t.prazoFinal) : 'definir') + '</b></span>' +
-    '</div>' +
+    '<div class="tk-chips">' + chipStatus(t) + chipPessoa(t) +
+      chipData(t, 'prazo') + chipData(t, 'final') + '</div>' +
   '</div>' +
 
   '<div class="drawer__body">' +
 
-  // ---------- 2. Situação ----------
+  // ---------- 2. Situação: com quem está e o que dá para fazer agora ----------
   '<div class="sec">' +
     '<div class="sec__lab">Situação</div>' +
     '<div class="sit" style="border-left-color:' + st(t).cor + '">' +
@@ -1252,7 +1262,7 @@ function renderPainel(){
           '<i class="ti ti-' + st(t).icone + '"></i></span>' +
         '<span class="sit__txt">' + fraseSituacao(t) + '</span>' +
       '</div>' +
-      '<div class="sit__acoes">' + acoesSituacao(t) + '</div>' +
+      acoesSituacao(t) +
     '</div>' +
     (planejadoDepoisDoDeadline(t) ? '<div class="banner banner--warning" style="margin-top:var(--space-3)">' +
       '<i class="ti ti-alert-triangle"></i><div>A próxima ação (' + esc(dataBR(t.prazo)) +
@@ -1260,67 +1270,126 @@ function renderPainel(){
     (deadlineEstourado(t) ? '<div class="banner banner--warning" style="margin-top:var(--space-3)">' +
       '<i class="ti ti-flag"></i><div>Prazo final venceu em ' + esc(dataBR(t.prazoFinal)) +
       ' (' + diasEntre(t.prazoFinal, hoje()) + ' dia(s) atrás).</div></div>' : '') +
+    (t.descricao ? '<div style="margin-top:var(--space-4);font-size:13px;white-space:pre-wrap;' +
+      'color:var(--text-secondary)"><span class="sec__lab">Descrição</span>' + esc(t.descricao) + '</div>' : '') +
   '</div>' +
 
-  // ---------- 3. Detalhes ----------
-  '<div class="sec">' +
-    '<div class="sec__lab">Detalhes</div>' +
-    '<div class="campos">' +
-      '<div class="campo"><div class="campo__label">Responsável</div>' +
-        '<select id="c-resp" onchange="mudarResponsavel(\'' + t._id + '\',this.value)">' +
-        opcoesPessoa(t.responsavel) + '</select></div>' +
-      '<div class="campo"><div class="campo__label">Status</div>' +
-        '<select onchange="mudarStatus(\'' + t._id + '\',this.value)">' + opcoesStatus(t.status) + '</select></div>' +
-      '<div class="campo"><div class="campo__label" title="Quando o responsável planeja mexer nisso">' +
-        'Próxima ação</div><input type="date" id="c-prazo" value="' + esc(t.prazo || '') +
-        '" onchange="mudarPrazo(\'' + t._id + '\',this.value)"></div>' +
-      '<div class="campo"><div class="campo__label" title="Deadline combinado com quem pediu">' +
-        'Prazo final</div><input type="date" id="c-final" value="' + esc(t.prazoFinal || '') +
-        '" onchange="mudarPrazoFinal(\'' + t._id + '\',this.value)"></div>' +
-    '</div>' +
-    '<div style="margin-top:var(--space-3)">' +
-      (t.descricao
-        ? '<div style="font-size:13px;white-space:pre-wrap;color:var(--text-secondary)">' + esc(t.descricao) + '</div>'
-        : '<span class="small muted">Sem descrição.</span>') +
-      ' <button class="btn" style="height:26px;font-size:12px;margin-left:6px" onclick="modalDescricao(\'' + t._id + '\')">' +
-        '<i class="ti ti-pencil"></i> ' + (t.descricao ? 'editar' : 'adicionar') + '</button>' +
-    '</div>' +
-    '<div class="small muted" style="margin-top:var(--space-3)">Criada por ' + esc(nomeDe(t.criadoPor)) +
-      ' em ' + esc(dataBR(t.criadoEm)) +
-      (t.concluidaEm ? ' · concluída em ' + esc(dataBR(t.concluidaEm)) : '') + '</div>' +
-  '</div>' +
-
-  // ---------- 4. Sublinhas ----------
-  '<div class="sec">' +
-    '<div class="row--between" style="margin-bottom:var(--space-3)">' +
-      '<span class="sec__lab" style="margin:0">Subtarefas' + (subs.length ? ' (' + subs.length + ')' : '') + '</span>' +
+  // ---------- 3. Sublinhas (curtas, para não empurrar a conversa) ----------
+  ((subs.length || peds.length) ?
+    '<div class="sec">' +
+      '<div class="row--between" style="margin-bottom:var(--space-3)">' +
+        '<span class="sec__lab" style="margin:0">Subtarefas e pedidos</span>' +
+        '<button class="btn" style="height:30px;font-size:12px" onclick="modalNovaSubtarefa(\'' + t._id + '\')">' +
+          '<i class="ti ti-plus"></i> Subtarefa</button>' +
+      '</div>' +
+      '<div class="mini-lista">' +
+        subs.sort(ordenarPorPrazo).map(miniLinha).join('') +
+        peds.sort(ordenarPorPrazo).map(miniLinha).join('') +
+      '</div>' +
+    '</div>'
+    : '<div class="sec" style="padding-top:0;border-bottom:1px solid var(--border)">' +
       '<button class="btn" style="height:30px;font-size:12px" onclick="modalNovaSubtarefa(\'' + t._id + '\')">' +
-        '<i class="ti ti-plus"></i> Subtarefa</button>' +
-    '</div>' +
-    (subs.length ? '<div class="mini-lista">' + subs.sort(ordenarPorPrazo).map(miniLinha).join('') + '</div>'
-                 : '<div class="small muted">Nenhuma subtarefa. Use para quebrar a demanda em passos.</div>') +
-    (peds.length ? '<div class="sec__lab" style="margin-top:var(--space-5)">Pedidos a outras pessoas (' + peds.length + ')</div>' +
-      '<div class="mini-lista">' + peds.sort(ordenarPorPrazo).map(miniLinha).join('') + '</div>' : '') +
-  '</div>' +
+        '<i class="ti ti-plus"></i> Criar subtarefa</button></div>') +
 
-  // ---------- 5. Atualizações / Arquivos / Histórico ----------
-  // Separar as três coisas foi o que mais organizou o ticket: a conversa fica
-  // só com o que as pessoas escreveram, os anexos ganham uma lista própria e
-  // as mudanças automáticas (status, prazo, responsável) vão para o histórico.
+  // ---------- 4. Atualizações: o coração do ticket ----------
   abasTicket() +
-  '<div class="sec" style="border-bottom:none">' + conteudoAbaTicket(t) + '</div>' +
+  '<div class="conv">' + conteudoAbaTicket(t) + '</div>' +
+
+  '<div class="sec" style="border-bottom:none;padding-top:var(--space-3)">' +
+    '<div class="small muted">Criada por ' + esc(nomeDe(t.criadoPor)) + ' em ' + esc(dataBR(t.criadoEm)) +
+    (t.concluidaEm ? ' · concluída em ' + esc(dataBR(t.concluidaEm)) : '') + '</div>' +
+  '</div>' +
 
   '</div>';
 
   const ta = $('msg-texto');
-  ta.value = rascunho;
-  ta.onkeydown = e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarMensagem(); };
+  if(ta){
+    ta.value = rascunho;
+    ta.onkeydown = e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarMensagem(); };
+  }
+  const rc = $('resp-campo');
+  if(rc){
+    rc.value = rascunhoResp;
+    rc.onkeydown = e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarResposta(respondendo); };
+  }
 }
-function atualizacoes(){ return mensagens.filter(m => m.tipo !== 'sistema'); }
+
+// ---------- Chips do cabeçalho (editáveis no lugar) ----------
+function chipStatus(t){
+  const s = st(t);
+  return '<span class="chip chip--st" style="background:' + s.cor + ';border-color:' + s.cor +
+    '" title="Clique para mudar a situação" onclick="popStatus(\'' + t._id + '\',event)">' +
+    esc(s.label) + ' <i class="ti ti-chevron-down"></i></span>';
+}
+function chipPessoa(t){
+  return '<span class="chip" title="Clique para trocar o responsável" onclick="popPessoa(\'' + t._id + '\',event)">' +
+    avatar(t.responsavel, 'avatar--sm') + '<b>' + esc(primeiroNome(t.responsavel)) + '</b>' +
+    '<i class="ti ti-chevron-down"></i></span>';
+}
+function chipData(t, campo){
+  const valor = campo === 'prazo' ? t.prazo : t.prazoFinal;
+  const cls = classeData(valor, t, campo !== 'prazo');
+  const rot = campo === 'prazo' ? 'próxima ação' : 'prazo final';
+  const ico = campo === 'prazo' ? 'calendar-event' : 'flag';
+  const txt = valor ? (campo === 'prazo' ? prazoTexto(valor) : dataBR(valor)) : 'definir';
+  return '<span class="chip chip--plain" title="Clique para ' +
+    (campo === 'prazo' ? 'reprogramar a próxima ação' : 'mudar o prazo final') + '" ' +
+    'onclick="editarChipData(\'' + t._id + '\',\'' + campo + '\',event)">' +
+    '<i class="ti ti-' + ico + '"></i>' + rot + ' <b class="' + cls + '">' + esc(txt) + '</b></span>';
+}
+function editarChipData(id, campo, ev){
+  ev.stopPropagation();
+  const el = ev.currentTarget;
+  const t = tarefaDe(id);
+  if(!t || el.querySelector('input')) return;
+  const valor = (campo === 'prazo' ? t.prazo : t.prazoFinal) || '';
+  const fn = campo === 'prazo' ? 'mudarPrazo' : 'mudarPrazoFinal';
+  el.innerHTML = '<input type="date" value="' + esc(valor) + '" onclick="event.stopPropagation()" ' +
+    'onchange="' + fn + '(\'' + id + '\',this.value)" onblur="renderPainel()">';
+  const inp = el.querySelector('input');
+  inp.focus();
+  try{ inp.showPicker(); }catch(e){}
+}
+
+// ---------- Popover ----------
+function abrirPop(ev, html){
+  const p = $('pop');
+  p.innerHTML = html;
+  p.classList.add('pop--on');
+  const r = ev.currentTarget.getBoundingClientRect();
+  p.style.top = Math.min(r.bottom + 6, window.innerHeight - 320) + 'px';
+  p.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 240)) + 'px';
+}
+function fecharPop(){
+  const p = $('pop');
+  if(p){ p.classList.remove('pop--on'); p.innerHTML = ''; }
+}
+function popStatus(id, ev){
+  ev.stopPropagation();
+  const t = tarefaDe(id);
+  if(!t) return;
+  abrirPop(ev, '<div class="pop__lab">Mover para</div>' + COLUNAS.map(k =>
+    '<button class="' + (t.status === k ? 'pop--sel' : '') + '" onclick="fecharPop();mudarStatus(\'' + id + '\',\'' + k + '\')">' +
+    '<span class="pop__ponto" style="background:' + STATUS[k].cor + '"></span>' + esc(STATUS[k].coluna) + '</button>').join(''));
+}
+function popPessoa(id, ev){
+  ev.stopPropagation();
+  const t = tarefaDe(id);
+  if(!t) return;
+  abrirPop(ev, '<div class="pop__lab">Responsável</div>' + usuarios.map(u =>
+    '<button class="' + (t.responsavel === u.email ? 'pop--sel' : '') + '" onclick="fecharPop();mudarResponsavel(\'' + id + '\',\'' + esc(u.email) + '\')">' +
+    avatar(u.email, 'avatar--sm') + esc(nomeDe(u.email)) + '</button>').join(''));
+}
+
+function atualizacoes(){ return mensagens.filter(m => m.tipo !== 'sistema' && !m.respostaDe); }
+function respostasDe(id){
+  return mensagens.filter(m => m.respostaDe === id)
+    .sort((a,b) => String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')));   // resposta é conversa: mais antiga primeiro
+}
 function eventosSistema(){ return mensagens.filter(m => m.tipo === 'sistema'); }
 function todosAnexos(){
   const fora = [];
-  atualizacoes().forEach(m => (m.anexos || []).forEach(a =>
+  mensagens.filter(m => m.tipo !== 'sistema').forEach(m => (m.anexos || []).forEach(a =>
     fora.push(Object.assign({}, a, { autor:m.autor, criadoEm:m.criadoEm }))));
   return fora;
 }
@@ -1362,43 +1431,113 @@ function conteudoAbaTicket(t){
   }
   // Aba padrão: as atualizações escritas por pessoas, mais nova no topo.
   const upds = atualizacoes();
-  return '<div class="compositor">' +
+  return '<div class="comp">' + avatar(usuario.email, 'avatar--sm') + '<div class="comp__corpo">' +
       (paraMarcar.length ? '<div class="fila">' + paraMarcar.map((e,i) =>
         '<span class="tag-pessoa" onclick="desmarcarPessoa(' + i + ')">@' + esc(primeiroNome(e)) +
         ' <i class="ti ti-x"></i></span>').join('') + '</div>' : '') +
       '<div class="fila" id="fila-anexos">' + filaAnexosHTML() + '</div>' +
-      '<textarea id="msg-texto" placeholder="Escreva uma atualização e marque quem precisa ver (Ctrl+Enter envia)"></textarea>' +
+      '<textarea id="msg-texto" placeholder="Escreva uma atualização e marque quem precisa ver com @ (Ctrl+Enter envia)"></textarea>' +
       '<div class="row">' +
-        '<button class="btn" title="Anexar arquivo pequeno" onclick="document.getElementById(\'arq-input\').click()">' +
-          '<i class="ti ti-paperclip"></i></button>' +
-        '<button class="btn" title="Anexar link do Drive" onclick="modalLink()"><i class="ti ti-link"></i></button>' +
-        '<button class="btn" title="Marcar alguém (ela recebe notificação)" onclick="modalMarcar()">' +
+        '<button class="comp__ico" title="Marcar alguém (ela recebe notificação)" onclick="modalMarcar()">' +
           '<i class="ti ti-at"></i></button>' +
+        '<button class="comp__ico" title="Anexar arquivo pequeno" onclick="document.getElementById(\'arq-input\').click()">' +
+          '<i class="ti ti-paperclip"></i></button>' +
+        '<button class="comp__ico" title="Anexar link do Drive" onclick="modalLink()"><i class="ti ti-link"></i></button>' +
         '<input type="file" id="arq-input" multiple style="display:none" onchange="anexarArquivos(this)">' +
         '<span class="spacer"></span>' +
         '<button class="btn btn--primary" onclick="enviarMensagem()"><i class="ti ti-send"></i> Enviar</button>' +
       '</div>' +
-    '</div>' +
+    '</div></div>' +
     (upds.length ? '<div style="margin-top:var(--space-4)">' + upds.map(cartaoUpd).join('') + '</div>'
       : '<div class="small muted" style="text-align:center;padding:var(--space-5)">' +
         'Nada escrito ainda. O que for registrado aqui fica com autor, data e anexos.</div>');
 }
 
-// Cartão de atualização, como na referência do ticket.
+// Cartão de atualização, como na referência: autor, hora, texto, e um rodapé
+// com Curtir e Responder. A resposta fica aninhada no próprio cartão — é ali
+// que a conversa acontece, sem perder de vista a que atualização ela responde.
 function cartaoUpd(m){
   const nova = m.autor !== usuario.email && String(m.criadoEm || '') > lidoAoAbrir;
+  const curtidas = m.curtidas || [];
+  const euCurti = curtidas.includes(usuario.email);
+  const resp = respostasDe(m._id);
   return '<div class="upd' + (nova ? ' upd--nova' : '') + '">' +
-    '<div class="upd__head">' + avatar(m.autor, 'avatar--sm') +
-      '<span class="upd__nome">' + esc(m.autor === usuario.email ? 'Você' : (m.autorNome || nomeDe(m.autor))) + '</span>' +
-      '<span class="upd__hora">' + esc(quando(m.criadoEm)) + '</span>' +
-      (m.mencoes && m.mencoes.length ? m.mencoes.map(e =>
-        '<span class="tag-pessoa" style="cursor:default">@' + esc(primeiroNome(e)) + '</span>').join('') : '') +
-    '</div>' +
+    cabecalhoUpd(m) +
     '<div class="upd__corpo">' + esc(m.texto) +
       ((m.anexos && m.anexos.length) ? '<div class="fila" style="margin-top:9px">' +
         m.anexos.map(anexoHTML).join('') + '</div>' : '') +
     '</div>' +
+    '<div class="upd__pe">' +
+      '<button class="upd__acao' + (euCurti ? ' upd__acao--on' : '') + '" onclick="curtir(\'' + m._id + '\')">' +
+        '<i class="ti ti-thumb-up"></i> Curtir' + (curtidas.length ? ' · ' + curtidas.length : '') + '</button>' +
+      '<button class="upd__acao" onclick="abrirResposta(\'' + m._id + '\')">' +
+        '<i class="ti ti-corner-up-left"></i> Responder' + (resp.length ? ' · ' + resp.length : '') + '</button>' +
+      (curtidas.length ? '<span class="spacer"></span><span class="small muted">' +
+        esc(curtidas.map(e => e === usuario.email ? 'você' : primeiroNome(e)).join(', ')) +
+        (curtidas.length > 1 ? ' curtiram' : ' curtiu') + '</span>' : '') +
+    '</div>' +
+    (resp.length ? '<div class="upd__resp">' + resp.map(r =>
+      '<div class="resp">' + avatar(r.autor, 'avatar--sm') +
+        '<div><div class="resp__meta"><b>' + esc(r.autor === usuario.email ? 'Você' : (r.autorNome || nomeDe(r.autor))) +
+          '</b> ' + esc(quando(r.criadoEm)) + '</div>' +
+          '<div class="resp__txt">' + esc(r.texto) + '</div></div>' +
+      '</div>').join('') + '</div>' : '') +
+    (respondendo === m._id
+      ? '<div class="upd__resp"><div class="resp">' + avatar(usuario.email, 'avatar--sm') +
+        '<div style="flex:1"><textarea class="resp__campo" id="resp-campo" ' +
+          'placeholder="Escreva uma resposta (Ctrl+Enter envia)"></textarea>' +
+        '<div class="row" style="margin-top:6px">' +
+          '<button class="btn btn--primary" style="height:30px;font-size:12px" onclick="enviarResposta(\'' + m._id + '\')">' +
+            '<i class="ti ti-send"></i> Responder</button>' +
+          '<button class="btn" style="height:30px;font-size:12px" onclick="fecharResposta()">Cancelar</button>' +
+        '</div></div></div></div>'
+      : '') +
   '</div>';
+}
+function cabecalhoUpd(m){
+  return '<div class="upd__head">' + avatar(m.autor, 'avatar--sm') +
+    '<span class="upd__nome">' + esc(m.autor === usuario.email ? 'Você' : (m.autorNome || nomeDe(m.autor))) + '</span>' +
+    '<span class="upd__hora">' + esc(quando(m.criadoEm)) + '</span>' +
+    ((m.mencoes && m.mencoes.length) ? m.mencoes.map(e =>
+      '<span class="tag-pessoa" style="cursor:default">@' + esc(primeiroNome(e)) + '</span>').join('') : '') +
+  '</div>';
+}
+function abrirResposta(id){
+  respondendo = (respondendo === id) ? null : id;
+  rascunhoResp = '';
+  renderPainel();
+  const c = $('resp-campo');
+  if(c){
+    c.focus();
+    c.onkeydown = e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarResposta(id); };
+  }
+}
+function fecharResposta(){ respondendo = null; rascunhoResp = ''; renderPainel(); }
+async function enviarResposta(id){
+  const c = $('resp-campo');
+  const texto = (c && c.value || '').trim();
+  if(!texto){ toast('Escreva a resposta.'); return; }
+  const mae = mensagens.find(m => m._id === id);
+  respondendo = null; rascunhoResp = '';
+  try{
+    const t = await postarMensagem(tarefaAberta, texto, 'msg', [], [], id);
+    if(t){
+      const alvos = envolvidos(t);
+      if(mae) alvos.push(mae.autor);
+      await notificar(alvos, 'mensagem', texto, t);
+    }
+  }catch(e){ toast('Não foi possível responder: ' + (e && e.code || e), 'erro'); }
+}
+// Curtir é o reconhecimento rápido: "vi e concordo", sem virar mensagem nova.
+async function curtir(id){
+  const m = mensagens.find(x => x._id === id);
+  if(!m) return;
+  const atuais = m.curtidas || [];
+  const novas = atuais.includes(usuario.email)
+    ? atuais.filter(e => e !== usuario.email)
+    : atuais.concat([usuario.email]);
+  try{ await window._updateDoc(window._doc(COL_MSG, id), { curtidas:novas }); }
+  catch(e){ toast('Erro: ' + (e && e.code || e), 'erro'); }
 }
 
 function alternarMenuTicket(ev){
@@ -1420,52 +1559,55 @@ function opcoesPessoa(sel){
   return usuarios.map(u => '<option value="' + esc(u.email) + '"' + (u.email === sel ? ' selected' : '') + '>' +
     esc(nomeDe(u.email)) + '</option>').join('');
 }
-function opcoesStatus(sel){
-  return Object.keys(STATUS).map(k => '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' +
-    STATUS[k].label + '</option>').join('');
-}
 
-// Frase única que explica o estado atual — o que antes ficava espalhado.
+// A situação responde duas coisas: COM QUEM a tarefa está agora, e o que dá
+// para fazer daqui. Trocar status à mão saiu daqui — isso é o chip do topo (ou
+// arrastar no kanban); aqui ficam só as viradas de verdade.
+function quemChip(email){
+  const eu = email === usuario.email;
+  return '<span class="sit__quem">' + avatar(email, 'avatar--sm') +
+    (eu ? 'você' : esc(primeiroNome(email))) + '</span>';
+}
 function fraseSituacao(t){
+  const com = quemChip(t.responsavel);
   const pedAbertos = abertas(pedidosDe(t._id));
   if(t.status === 'concluida')
-    return 'Concluída' + (t.concluidaEm ? ' em ' + esc(dataBR(t.concluidaEm)) : '') + '.';
+    return 'Finalizada' + (t.concluidaEm ? ' em ' + esc(dataBR(t.concluidaEm)) : '') + '. Estava com ' + com + '.';
   if(t.status === 'aguardando')
     return pedAbertos.length
-      ? 'Travada esperando <b>' + esc(pedAbertos.map(f => primeiroNome(f.responsavel)).join(', ')) + '</b>.'
-      : 'Aguardando algo de fora. Registre na conversa o que está esperando.';
-  if(t.status === 'futuro')
-    return 'Parada de propósito: ação futura' + (t.prazo ? ', prevista para <b>' + esc(prazoTexto(t.prazo)) + '</b>' : ' e sem data definida') + '.';
+      ? 'Parada com ' + com + ', esperando ' + pedAbertos.map(f => quemChip(f.responsavel)).join(' ') + '.'
+      : 'Parada com ' + com + ', esperando algo de fora.';
   if(t.status === 'checar')
-    return 'Voltou para <b>você</b> conferir e seguir.';
+    return 'Voltou respondida e está com ' + com + ', para conferir e seguir.';
   if(t.status === 'andamento')
-    return '<b>' + esc(primeiroNome(t.responsavel)) + '</b> está trabalhando nisso' +
-      (t.prazo ? ', com próxima ação em <b>' + esc(prazoTexto(t.prazo)) + '</b>' : '') + '.';
-  return 'Na fila de <b>' + esc(primeiroNome(t.responsavel)) + '</b>' +
-    (t.prazo ? ', próxima ação <b>' + esc(prazoTexto(t.prazo)) + '</b>' : ' (sem próxima ação definida)') + '.';
+    return 'Está com ' + com + ', em andamento' +
+      (t.prazo ? ' (próxima ação ' + esc(prazoTexto(t.prazo)) + ')' : '') + '.';
+  if(t.status === 'futuro')
+    return 'Parada de propósito com ' + com + ' — ação futura' +
+      (t.prazo ? ', prevista para ' + esc(prazoTexto(t.prazo)) : ' e sem data') + '.';
+  return 'Na fila de ' + com +
+    (t.prazo ? ', próxima ação ' + esc(prazoTexto(t.prazo)) : ' (sem próxima ação definida)') + '.';
 }
 function acoesSituacao(t){
   const id = t._id;
   const meu = t.responsavel === usuario.email;
-  if(t.status === 'concluida')
-    return '<button class="acao" onclick="reabrirTarefa(\'' + id + '\')"><i class="ti ti-rotate"></i> Reabrir</button>';
   const b = [];
-  if(t.tipo === 'solicitacao' && meu){
-    b.push('<button class="acao acao--ok" onclick="modalResponder(\'' + id + '\')">' +
-      '<i class="ti ti-corner-up-left"></i> Responder e devolver</button>');
+  if(t.status === 'concluida'){
+    b.push('<button class="acao" onclick="reabrirTarefa(\'' + id + '\')"><i class="ti ti-rotate"></i> Reabrir</button>');
+  }else{
+    // Pedido que é meu: encerra respondendo, e é a resposta que destrava quem pediu.
+    if(t.tipo === 'solicitacao' && meu)
+      b.push('<button class="acao acao--ok" onclick="modalResponder(\'' + id + '\')">' +
+        '<i class="ti ti-corner-up-left"></i> Responder e devolver</button>');
+    // Sempre disponível: virar um pedido para outra pessoa.
+    b.push('<button class="acao" onclick="modalSolicitar(\'' + id + '\')">' +
+      '<i class="ti ti-user-plus"></i> Preciso de alguém</button>');
+    // Concluir só aparece para quem está com a tarefa na mão.
+    if(meu && t.tipo !== 'solicitacao')
+      b.push('<button class="acao acao--ok" onclick="concluirTarefa(\'' + id + '\')">' +
+        '<i class="ti ti-check"></i> Concluir</button>');
   }
-  b.push('<button class="acao' + (t.status === 'andamento' ? ' acao--ativa' : '') +
-    '" onclick="mudarStatus(\'' + id + '\',\'andamento\')"><i class="ti ti-player-play"></i> Estou trabalhando</button>');
-  b.push('<button class="acao" onclick="modalSolicitar(\'' + id + '\')">' +
-    '<i class="ti ti-user-plus"></i> Preciso de alguém</button>');
-  b.push('<button class="acao' + (t.status === 'futuro' ? ' acao--ativa' : '') +
-    '" onclick="mudarStatus(\'' + id + '\',\'futuro\')"><i class="ti ti-clock-pause"></i> Ação futura</button>');
-  b.push('<button class="acao' + (t.status === 'aguardando' ? ' acao--ativa' : '') +
-    '" onclick="mudarStatus(\'' + id + '\',\'aguardando\')"><i class="ti ti-hourglass"></i> Aguardando algo</button>');
-  if(!(t.tipo === 'solicitacao' && meu))
-    b.push('<button class="acao acao--ok" onclick="concluirTarefa(\'' + id + '\')">' +
-      '<i class="ti ti-check"></i> Concluir</button>');
-  return b.join('');
+  return b.length ? '<div class="sit__acoes">' + b.join('') + '</div>' : '';
 }
 function miniLinha(t){
   return '<div class="mini" style="border-left-color:' + st(t).cor +
