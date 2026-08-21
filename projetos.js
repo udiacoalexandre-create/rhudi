@@ -283,6 +283,26 @@ function temNaoLida(t){
   const lido = (t.lidoPor || {})[chaveEmail(usuario.email)];
   return !lido || lido < t.ultimaMsgEm;
 }
+// Ordem manual dentro do grupo (frente ou sublinhas de uma demanda). Enquanto
+// ninguém arrastou nada, o grupo segue ordenado por prazo; no primeiro arraste
+// todo o grupo ganha número e passa a respeitar a ordem escolhida.
+function ordenarNaTabela(arr){
+  if(!arr.some(t => typeof t.ordem === 'number')) return arr.slice().sort(ordenarPorPrazo);
+  return arr.slice().sort((a, b) => {
+    const oa = typeof a.ordem === 'number' ? a.ordem : 1e9;
+    const ob = typeof b.ordem === 'number' ? b.ordem : 1e9;
+    return oa === ob ? ordenarPorPrazo(a, b) : oa - ob;
+  });
+}
+function ordenarProjetos(arr){
+  if(!arr.some(p => typeof p.ordem === 'number'))
+    return arr.slice().sort((a,b) => String(a.nome||'').localeCompare(String(b.nome||''), 'pt-BR'));
+  return arr.slice().sort((a, b) => {
+    const oa = typeof a.ordem === 'number' ? a.ordem : 1e9;
+    const ob = typeof b.ordem === 'number' ? b.ordem : 1e9;
+    return oa === ob ? String(a.nome||'').localeCompare(String(b.nome||''), 'pt-BR') : oa - ob;
+  });
+}
 function ordenarPorPrazo(a, b){
   const pa = a.prazo || '9999-99-99', pb = b.prazo || '9999-99-99';
   return pa === pb ? String(a.titulo||'').localeCompare(String(b.titulo||''), 'pt-BR') : (pa < pb ? -1 : 1);
@@ -434,7 +454,7 @@ function assinarDados(){
   unsubs.push(window._onSnapshot(window._col(COL_PROJ), snap => {
     projetos = [];
     snap.forEach(d => projetos.push(Object.assign({ _id:d.id }, d.data())));
-    projetos.sort((a,b) => String(a.nome||'').localeCompare(String(b.nome||''), 'pt-BR'));
+    projetos = ordenarProjetos(projetos);
     render();
   }, erroFirestore));
   unsubs.push(window._onSnapshot(window._col(COL_TAR), snap => {
@@ -1050,8 +1070,13 @@ function blocoProjeto(p){
   // Com filtro ligado, projeto sem nenhuma linha visível sai da tela.
   if(!temLinha && (filtro || soMinhas)) return '';
 
-  return '<section class="proj-bloco" id="proj-' + p._id + '">' +
+  return '<section class="proj-bloco" id="proj-' + p._id + '"' +
+      ' ondragover="sobreProjeto(event,this,\'' + p._id + '\')" ondragleave="saiuProjeto(this)"' +
+      ' ondrop="soltarNoProjeto(event,\'' + p._id + '\',this)">' +
     '<div class="proj-bloco__head">' +
+      '<span class="alca alca--proj" draggable="true" title="Arraste para mudar a ordem dos projetos" ' +
+        'ondragstart="arrastarProjeto(event,\'' + p._id + '\')" ondragend="fimProjeto()">' +
+        '<i class="ti ti-grip-vertical"></i></span>' +
       '<button class="proj-bloco__nome" onclick="alternarProjeto(\'' + p._id + '\')">' +
         '<i class="ti ti-chevron-' + (recolhido ? 'right' : 'down') + ' muted"></i>' + esc(p.nome) + '</button>' +
       (p.status === 'concluido' ? '<span class="badge badge--success">Concluído</span>' :
@@ -1104,7 +1129,9 @@ function linhasDaFrente(p, g){
   const nome = g.frente ? g.frente.nome : 'Geral';
   const emAberto = g.raizes.filter(t => t.status !== 'concluida').length;
   const podeEditar = ehMaster() || p.criadoPor === usuario.email || p.lider === usuario.email;
-  const cab = '<tr class="fr" onclick="alternarFrente(\'' + chave + '\')">' +
+  const cab = '<tr class="fr" onclick="alternarFrente(\'' + chave + '\')"' +
+    ' ondragover="sobreFrente(event,this)" ondragleave="this.classList.remove(\'fr-alvo\')"' +
+    ' ondrop="soltarNaFrente(event,\'' + p._id + '\',\'' + (g.frente ? g.frente.id : '') + '\',this)">' +
     '<td colspan="5"><div class="fr__linha">' +
       '<i class="ti ti-chevron-' + (fechada ? 'right' : 'down') + '" style="color:' + g.cor + '"></i>' +
       '<span class="fr__nome" style="color:' + g.cor + '">' + esc(nome) + '</span>' +
@@ -1119,11 +1146,163 @@ function linhasDaFrente(p, g){
         '<i class="ti ti-pencil"></i></button>' : '') +
     '</div></td></tr>';
   if(fechada) return cab;
-  const linhas = g.raizes.sort(ordenarPorPrazo).map(t => linhasComFilhas(t, 0)).join('');
+  const linhas = ordenarNaTabela(g.raizes).map(t => linhasComFilhas(t, 0)).join('');
   return cab + (linhas || '<tr class="fr-vazia"><td colspan="5">' +
     (g.frente ? 'Nenhuma demanda nesta frente ainda.' : 'Nenhuma demanda fora das frentes.') + '</td></tr>');
 }
 function alternarFrente(chave){ frentesFechadas[chave] = !frentesFechadas[chave]; render(); }
+
+// ============================================================
+// ORDEM MANUAL (arrastar para reordenar)
+// ============================================================
+// Arrasta-se pela alça (⠿), não pela linha inteira: a linha continua clicável
+// para abrir o ticket. Soltar na metade de cima entra antes; na de baixo,
+// depois. Ao soltar, o grupo inteiro é renumerado numa transação só — com
+// poucas linhas por grupo isso é mais simples e mais estável que ranking
+// fracionário.
+let linhaArrastada = null;
+function arrastarLinha(ev, id){
+  ev.stopPropagation();
+  linhaArrastada = id;
+  ultimoArrasteEm = Date.now();
+  try{
+    ev.dataTransfer.setData('text/plain', 'linha:' + id);
+    ev.dataTransfer.effectAllowed = 'move';
+    const tr = ev.currentTarget.closest('tr');
+    if(tr) ev.dataTransfer.setDragImage(tr, 24, 12);
+  }catch(e){}
+}
+function fimLinha(){
+  linhaArrastada = null;
+  ultimoArrasteEm = Date.now();
+  document.querySelectorAll('.alvo-cima,.alvo-baixo,.fr-alvo')
+    .forEach(el => el.classList.remove('alvo-cima','alvo-baixo','fr-alvo'));
+}
+function sobreLinha(ev, tr, id){
+  if(!linhaArrastada || linhaArrastada === id) return;
+  ev.preventDefault();
+  const r = tr.getBoundingClientRect();
+  const cima = (ev.clientY - r.top) < r.height / 2;
+  tr.classList.toggle('alvo-cima', cima);
+  tr.classList.toggle('alvo-baixo', !cima);
+}
+function saiuLinha(tr){ tr.classList.remove('alvo-cima','alvo-baixo'); }
+async function soltarNaLinha(ev, id, tr){
+  if(!linhaArrastada || linhaArrastada === id){ fimLinha(); return; }
+  ev.preventDefault(); ev.stopPropagation();
+  const r = tr.getBoundingClientRect();
+  const antes = (ev.clientY - r.top) < r.height / 2;
+  const arrastada = tarefaDe(linhaArrastada);
+  const destino = tarefaDe(id);
+  fimLinha();
+  if(!arrastada || !destino) return;
+  // Reordenar só faz sentido entre irmãs. Cair em outro nível/frente vira
+  // "passar para o grupo do destino", mantendo a posição escolhida.
+  const irmas = tarefas.filter(t =>
+    t.projetoId === destino.projetoId &&
+    (t.paiId || null) === (destino.paiId || null) &&
+    (t.frenteId || null) === (destino.frenteId || null));
+  const lista = ordenarNaTabela(irmas).filter(t => t._id !== arrastada._id);
+  const i = lista.findIndex(t => t._id === destino._id);
+  lista.splice(antes ? i : i + 1, 0, arrastada);
+  try{
+    const b = window._batch();
+    lista.forEach((t, k) => {
+      const patch = { ordem:k };
+      if(t._id === arrastada._id){
+        patch.projetoId = destino.projetoId;
+        patch.paiId = destino.paiId || null;
+        patch.frenteId = destino.frenteId || null;
+        if(arrastada.tipo !== 'solicitacao') patch.tipo = destino.paiId ? 'subtarefa' : 'tarefa';
+        patchDescendentes(b, arrastada._id,
+          { projetoId:destino.projetoId, frenteId:destino.frenteId || null });
+      }
+      b.update(window._doc(COL_TAR, t._id), patch);
+    });
+    await b.commit();
+    const mudouGrupo = (arrastada.paiId || null) !== (destino.paiId || null) ||
+                       (arrastada.frenteId || null) !== (destino.frenteId || null);
+    if(mudouGrupo){
+      const pai = destino.paiId ? tarefaDe(destino.paiId) : null;
+      await postarMensagem(arrastada._id, pai
+        ? 'Passou a ser sublinha de "' + pai.titulo + '".'
+        : 'Passou a ser demanda principal' +
+          (destino.frenteId ? ' da frente "' + nomeFrente(destino.projetoId, destino.frenteId) + '"' : '') + '.', 'sistema');
+    }
+  }catch(e){ toast('Não foi possível reordenar: ' + (e && e.code || e), 'erro'); }
+}
+// Soltar sobre o cabeçalho da frente = mandar a demanda para o fim daquela frente.
+function sobreFrente(ev, tr){
+  if(!linhaArrastada) return;
+  ev.preventDefault();
+  tr.classList.add('fr-alvo');
+}
+async function soltarNaFrente(ev, projetoId, frenteId, tr){
+  if(!linhaArrastada){ fimLinha(); return; }
+  ev.preventDefault(); ev.stopPropagation();
+  const id = linhaArrastada;
+  fimLinha();
+  const t = tarefaDe(id);
+  if(!t || t.projetoId !== projetoId) return;
+  try{
+    const b = window._batch();
+    b.update(window._doc(COL_TAR, id), { paiId:null, ordem:1e6, frenteId:frenteId || null,
+      tipo:t.tipo === 'solicitacao' ? 'solicitacao' : 'tarefa' });
+    patchDescendentes(b, id, { frenteId:frenteId || null });
+    await b.commit();
+  }catch(e){ toast('Erro ao mover: ' + (e && e.code || e), 'erro'); return; }
+  await postarMensagem(id, 'Movida para a frente "' + (frenteId ? nomeFrente(projetoId, frenteId) : 'Geral') + '".', 'sistema');
+}
+// Clique na linha (com a guarda do arraste, como nos cards do kanban).
+function cliqueLinha(id, ev){
+  if(Date.now() - ultimoArrasteEm < 300){ if(ev) ev.preventDefault(); return; }
+  abrirTarefa(id);
+}
+
+// ---------- Ordem dos projetos ----------
+let projArrastado = null;
+function arrastarProjeto(ev, id){
+  ev.stopPropagation();
+  projArrastado = id;
+  ultimoArrasteEm = Date.now();
+  try{
+    ev.dataTransfer.setData('text/plain', 'proj:' + id);
+    const bloco = ev.currentTarget.closest('.proj-bloco');
+    if(bloco) ev.dataTransfer.setDragImage(bloco, 30, 20);
+  }catch(e){}
+}
+function fimProjeto(){
+  projArrastado = null;
+  ultimoArrasteEm = Date.now();
+  document.querySelectorAll('.pj-cima,.pj-baixo').forEach(el => el.classList.remove('pj-cima','pj-baixo'));
+}
+function sobreProjeto(ev, el, id){
+  if(!projArrastado || projArrastado === id) return;
+  ev.preventDefault();
+  const r = el.getBoundingClientRect();
+  const cima = (ev.clientY - r.top) < r.height / 2;
+  el.classList.toggle('pj-cima', cima);
+  el.classList.toggle('pj-baixo', !cima);
+}
+function saiuProjeto(el){ el.classList.remove('pj-cima','pj-baixo'); }
+async function soltarNoProjeto(ev, id, el){
+  if(!projArrastado || projArrastado === id){ fimProjeto(); return; }
+  ev.preventDefault();
+  const r = el.getBoundingClientRect();
+  const antes = (ev.clientY - r.top) < r.height / 2;
+  const arrastado = projetoDe(projArrastado);
+  fimProjeto();
+  if(!arrastado) return;
+  const lista = ordenarProjetos(projetos).filter(p => p._id !== arrastado._id);
+  const i = lista.findIndex(p => p._id === id);
+  if(i < 0) return;
+  lista.splice(antes ? i : i + 1, 0, arrastado);
+  try{
+    const b = window._batch();
+    lista.forEach((p, k) => b.update(window._doc(COL_PROJ, p._id), { ordem:k }));
+    await b.commit();
+  }catch(e){ toast('Não foi possível reordenar: ' + (e && e.code || e), 'erro'); }
+}
 function popProjeto(id, ev){
   ev.stopPropagation();
   const p = projetoDe(id);
@@ -1136,6 +1315,8 @@ function popProjeto(id, ev){
   if(podeEditar){
     itens.push('<button onclick="fecharPop();modalNovoProjeto(\'' + id + '\')">' +
       '<i class="ti ti-pencil"></i> Editar projeto' + (p.driveUrl ? '' : ' (e vincular pasta)') + '</button>');
+    itens.push('<hr><button class="perigo" onclick="fecharPop();excluirProjeto(\'' + id + '\')">' +
+      '<i class="ti ti-trash"></i> Excluir projeto</button>');
   }
   if(!itens.length) itens.push('<div class="pop__lab">Sem ações disponíveis</div>');
   abrirPop(ev, itens.join(''));
@@ -1145,9 +1326,7 @@ function alternarFilhas(id, ev){ if(ev) ev.stopPropagation(); expandidos[id] = e
 
 // Uma linha + (recursivamente) as sublinhas dela.
 function linhasComFilhas(t, nivel){
-  const filhas = filhasDe(t._id)
-    .filter(f => visivel(f))
-    .sort((a,b) => (a.tipo === 'solicitacao' ? 1 : 0) - (b.tipo === 'solicitacao' ? 1 : 0) || ordenarPorPrazo(a,b));
+  const filhas = ordenarNaTabela(filhasDe(t._id).filter(f => visivel(f)));
   const aberto = expandidos[t._id] !== false;
   const nivelFilha = Math.min(nivel + 1, 2);   // o recuo para em 2 níveis
   return linhaTabela(t, nivel, filhas, aberto) +
@@ -1179,8 +1358,14 @@ function linhaTabela(t, nivel, filhas, aberto){
         'title="Próxima ação depois do prazo final"></i>' : '');
 
   return '<tr class="nivel-' + nivel + (concluida ? ' lin--concluida' : '') +
-      '" onclick="abrirTarefa(\'' + t._id + '\')">' +
+      '" onclick="cliqueLinha(\'' + t._id + '\',event)"' +
+      ' ondragover="sobreLinha(event,this,\'' + t._id + '\')"' +
+      ' ondragleave="saiuLinha(this)"' +
+      ' ondrop="soltarNaLinha(event,\'' + t._id + '\',this)">' +
     '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' +
+      '<span class="alca" draggable="true" title="Arraste para reordenar ou mover" ' +
+        'onclick="event.stopPropagation()" ondragstart="arrastarLinha(event,\'' + t._id + '\')" ' +
+        'ondragend="fimLinha()"><i class="ti ti-grip-vertical"></i></span>' +
       tickHTML(t) + ramo + chevron +
       '<span class="demanda__tit" title="' + esc(t.titulo) + '">' + esc(t.titulo) + '</span>' +
       marcas +
@@ -1340,7 +1525,7 @@ function renderPainel(){
       '<button class="icon-btn tk-tit__edit" title="Renomear" onclick="modalRenomear(\'' + t._id + '\')">' +
       '<i class="ti ti-pencil"></i></button></div>' +
     '<div class="tk-chips">' + chipStatus(t) + chipPessoa(t) +
-      chipData(t, 'prazo') + chipData(t, 'final') + chipFrente(t) + '</div>' +
+      chipData(t, 'prazo') + chipData(t, 'final') + chipFrente(t) + chipPai(t) + '</div>' +
   '</div>' +
 
   '<div class="drawer__body">' +
@@ -1429,6 +1614,56 @@ function chipFrente(t){
     '<span class="pop__ponto" style="background:' + cor + '"></span>' +
     '<b>' + esc(nome) + '</b> <i class="ti ti-chevron-down"></i></span>';
 }
+// "Dentro de": move a demanda para debaixo de outra (ou a promove a principal).
+// É o transferir de uma demanda para outra, por clique.
+function chipPai(t){
+  if(t.tipo === 'solicitacao') return '';          // pedido pertence a quem pediu
+  const pai = t.paiId ? tarefaDe(t.paiId) : null;
+  return '<span class="chip chip--plain" title="Transferir esta demanda para dentro de outra" ' +
+    'onclick="popPai(\'' + t._id + '\',event)"><i class="ti ti-corner-down-right"></i>' +
+    (pai ? 'dentro de <b>' + esc(recorta(pai.titulo, 24)) + '</b>' : 'demanda principal') +
+    ' <i class="ti ti-chevron-down"></i></span>';
+}
+function popPai(id, ev){
+  ev.stopPropagation();
+  const t = tarefaDe(id);
+  if(!t) return;
+  const proibidos = subarvore(id);               // não pode virar filha de si mesma
+  const candidatas = tarefas.filter(x => x.projetoId === t.projetoId &&
+    !proibidos.includes(x._id) && x.tipo !== 'solicitacao' && !x.paiId);
+  abrirPop(ev, '<div class="pop__lab">Transferir para dentro de</div>' +
+    '<button class="' + (!t.paiId ? 'pop--sel' : '') + '" onclick="fecharPop();mudarPai(\'' + id + '\',\'\')">' +
+      '<i class="ti ti-arrow-up-left"></i> Nenhuma — deixar como demanda principal</button>' +
+    (candidatas.length ? ordenarNaTabela(candidatas).map(x =>
+      '<button class="' + (t.paiId === x._id ? 'pop--sel' : '') +
+      '" onclick="fecharPop();mudarPai(\'' + id + '\',\'' + x._id + '\')">' +
+      '<span class="pop__ponto" style="background:' + st(x).cor + '"></span>' + esc(recorta(x.titulo, 34)) + '</button>').join('')
+      : '<div class="pop__lab">Nenhuma outra demanda neste projeto</div>'));
+}
+async function mudarPai(id, novoPai){
+  const t = tarefaDe(id);
+  if(!t || (t.paiId || '') === novoPai) return;
+  const pai = novoPai ? tarefaDe(novoPai) : null;
+  if(novoPai && !pai) return;
+  try{
+    const novaFrente = pai ? (pai.frenteId || null) : (t.frenteId || null);
+    const b = window._batch();
+    b.update(window._doc(COL_TAR, id), {
+      paiId: novoPai || null,
+      tipo: novoPai ? 'subtarefa' : 'tarefa',
+      frenteId: novaFrente,
+      ordem: 1e6,
+      atualizadoEm: new Date().toISOString()
+    });
+    patchDescendentes(b, id, { frenteId:novaFrente });
+    await b.commit();
+    await postarMensagem(id, pai
+      ? 'Transferida para dentro de "' + pai.titulo + '".'
+      : 'Passou a ser demanda principal.', 'sistema');
+    toast(pai ? 'Transferida para "' + recorta(pai.titulo, 30) + '".' : 'Agora é demanda principal.', 'ok');
+  }catch(e){ toast('Erro: ' + (e && e.code || e), 'erro'); }
+}
+
 function popFrente(id, ev){
   ev.stopPropagation();
   const t = tarefaDe(id);
@@ -1452,7 +1687,7 @@ async function mudarFrente(id, frenteId){
   try{
     const b = window._batch();
     b.update(window._doc(COL_TAR, id), { frenteId:frenteId || null, atualizadoEm:new Date().toISOString() });
-    filhasDe(id).forEach(f => b.update(window._doc(COL_TAR, f._id), { frenteId:frenteId || null }));
+    patchDescendentes(b, id, { frenteId:frenteId || null });
     await b.commit();
     await postarMensagem(id, 'Movida para a frente "' + nome + '".', 'sistema');
     toast('Movida para ' + nome + '.', 'ok');
@@ -1879,6 +2114,11 @@ async function reabrirTarefa(id){
 }
 // Exclui a demanda e tudo que pende dela (subtarefas, pedidos e as conversas),
 // porque travar e pedir para apagar uma a uma só empurrava o trabalho.
+// Ao mover uma demanda de grupo, as sublinhas vão com ela: pertencem ao mesmo
+// projeto e à mesma frente por definição.
+function patchDescendentes(b, id, patch){
+  subarvore(id).filter(x => x !== id).forEach(x => b.update(window._doc(COL_TAR, x), patch));
+}
 function subarvore(id, prof){
   const fora = [id];
   if((prof || 0) > 4) return fora;
@@ -1902,6 +2142,29 @@ async function excluirTarefa(id){
     await b.commit();
     if(tarefaAberta && ids.includes(tarefaAberta)) fecharPainel();
     toast(nFilhas ? 'Demanda e sublinhas excluídas.' : 'Demanda excluída.', 'ok');
+  }catch(e){ toast('Não foi possível excluir: ' + (e && e.code || e), 'erro'); }
+}
+
+// Excluir o projeto leva as demandas e as conversas. É a ação mais destrutiva
+// do sistema, então o aviso diz exatamente o tamanho do estrago.
+async function excluirProjeto(id){
+  const p = projetoDe(id);
+  if(!p) return;
+  const ts = tarefasDoProjeto(id);
+  if(!confirm('Excluir o projeto "' + p.nome + '"?' +
+    (ts.length ? '\n\nIsso apaga as ' + ts.length + ' demanda(s) dele e todas as conversas.' : '') +
+    '\n\nNão tem volta.')) return;
+  if(ts.length > 5 && !confirm('Confirma mesmo? São ' + ts.length + ' demandas neste projeto.')) return;
+  try{
+    const b = window._batch();
+    const snaps = await Promise.all(ts.map(t =>
+      window._getDocs(window._query(window._col(COL_MSG), window._where('tarefaId','==',t._id)))));
+    snaps.forEach(s => s.forEach(d => b.delete(window._doc(COL_MSG, d.id))));
+    ts.forEach(t => b.delete(window._doc(COL_TAR, t._id)));
+    b.delete(window._doc(COL_PROJ, id));
+    await b.commit();
+    if(tarefaAberta && ts.some(t => t._id === tarefaAberta)) fecharPainel();
+    toast('Projeto excluído.', 'ok');
   }catch(e){ toast('Não foi possível excluir: ' + (e && e.code || e), 'erro'); }
 }
 
