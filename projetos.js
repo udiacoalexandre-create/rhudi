@@ -846,33 +846,41 @@ function proximaSegunda(){
 function itemDoDia(t, podeEditar){
   const proj = projetoDe(t.projetoId);
   const alerta = deadlineEstourado(t)
-    ? '<span class="it__alerta">prazo final vencido</span>'
-    : (planejadoDepoisDoDeadline(t) ? '<span class="it__risco">depois do prazo final</span>'
-      : (t.prazoFinal ? '<span class="it__final"><i class="ti ti-flag"></i>' + esc(dataBR(t.prazoFinal)) + '</span>' : ''));
+    ? '<i class="ti ti-flag it__alerta" title="Prazo final vencido em ' + esc(dataBR(t.prazoFinal)) + '"></i>'
+    : (planejadoDepoisDoDeadline(t)
+      ? '<i class="ti ti-alert-triangle it__risco" title="Depois do prazo final (' + esc(dataBR(t.prazoFinal)) + ')"></i>'
+      : '');
+  const dica = t.titulo + (proj ? ' — ' + proj.nome : '') + ' — ' + STATUS[t.status].label +
+    (t.prazoFinal ? ' — prazo final ' + dataBR(t.prazoFinal) : '');
   return '<div class="it"' +
     (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
-    ' onclick="cliqueCard(\'' + t._id + '\',event)" title="' + esc(t.titulo) + ' — ' + esc(STATUS[t.status].label) + '">' +
-    '<span class="it__ponto" style="background:' + st(t).cor + '" title="' + esc(STATUS[t.status].label) + '"></span>' +
+    ' onclick="cliqueCard(\'' + t._id + '\',event)" title="' + esc(dica) + '">' +
+    '<span class="it__ponto" style="background:' + st(t).cor + '"></span>' +
     '<span class="it__tit">' + esc(t.titulo) + '</span>' +
-    indicadorConversa(t) +
-    '<span class="it__proj">' + (proj ? esc(recorta(proj.nome, 28)) : '—') + '</span>' +
     alerta +
   '</div>';
 }
 // A agenda fica embaixo do quadro, com os dias em grade: cada dia é uma caixa
 // que recebe card. Ler de relance "o que eu me programei para cada dia" é o
 // contraponto do kanban, que mostra o ESTADO de cada coisa.
+// A agenda fica em COLUNAS por dia, com os itens em linha (bullet + título) —
+// não em card. A faixa verde e as colunas sem caixa separam de vez este painel
+// do quadro de estado que fica acima.
 function agendaRodape(lista, podeEditar){
   const dias = diasDaAgenda(lista);
   return '<section class="ag">' +
-    '<div class="ag__tit"><i class="ti ti-calendar-week"></i> Agenda de planejamento' +
-      '<span class="small muted" style="font-weight:400">pelo dia em que você decidiu mexer' +
-      (podeEditar ? ' · arraste uma linha para outro dia para reprogramar' : '') + '</span></div>' +
+    '<div class="ag__faixa">' +
+      '<i class="ti ti-calendar-week"></i>' +
+      '<b>Agenda de planejamento</b>' +
+      '<span class="ag__sub">o dia em que você decidiu mexer em cada coisa' +
+        (podeEditar ? ' · arraste um item para outro dia para reprogramar' : '') + '</span>' +
+    '</div>' +
+    '<div class="ag__cols">' +
     dias.map(d => {
       const solta = podeEditar && !d.semSolta;
-      return '<div class="ag__dia' + (d.tarefas.length ? '' : ' ag__dia--vazio') + '">' +
-        '<div class="ag__rot">' +
-          '<span class="ag__nome" style="color:' + d.cor + '">' + esc(d.titulo) + '</span>' +
+      return '<div class="ag__col' + (d.tarefas.length ? '' : ' ag__col--vazia') + '">' +
+        '<div class="ag__cab" style="color:' + d.cor + '">' +
+          '<span class="ag__nome">' + esc(d.titulo) + '</span>' +
           (d.tarefas.length ? '<span class="ag__n">' + d.tarefas.length + '</span>' : '') +
         '</div>' +
         '<div class="ag__itens"' +
@@ -880,10 +888,11 @@ function agendaRodape(lista, podeEditar){
                    ' ondragleave="saiuAlvo(this,\'ag__itens--alvo\')"' +
                    ' ondrop="soltarNoDia(event,\'' + d.data + '\',this)"' : '') + '>' +
           (d.tarefas.length ? d.tarefas.map(t => itemDoDia(t, podeEditar)).join('')
-            : '<div class="ag__livre">' + (solta ? 'livre — solte uma linha aqui' : 'livre') + '</div>') +
+            : '<div class="ag__livre">' + (solta ? 'livre' : '—') + '</div>') +
         '</div>' +
       '</div>';
     }).join('') +
+    '</div>' +
   '</section>';
 }
 
