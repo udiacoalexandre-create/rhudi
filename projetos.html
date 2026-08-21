@@ -67,6 +67,7 @@ a{ color:var(--accent); text-decoration:none }
 :root{
   --st-a_fazer:    #64748b;
   --st-andamento:  #2563eb;
+  --st-futuro:     #0f766e;
   --st-aguardando: #b45309;
   --st-checar:     #7c3aed;
   --st-concluida:  #15803d;
@@ -159,28 +160,77 @@ a{ color:var(--accent); text-decoration:none }
 .reprog input{ border:none; background:transparent; font-family:inherit; font-size:11px; color:var(--text);
         width:90px; outline:none; padding:0 }
 
-/* ---------- TABELA DA AGENDA (grupos por data) ---------- */
-.g-bloco{ margin-bottom:var(--space-5) }
-.g-head{ display:flex; align-items:center; gap:9px; background:none; border:none; padding:0 0 var(--space-2);
-        cursor:pointer; font-family:inherit }
-.g-titulo{ font-size:17px; font-weight:600; letter-spacing:-.015em }
-.g-qtd{ font-size:13px; color:var(--text-muted) }
-.g-vazio{ margin-bottom:var(--space-2) }
-.g-vazio .g-titulo{ opacity:.4; font-size:15px }
-.g-vazio .g-qtd{ opacity:.6 }
-.g-tab{ background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;
-        box-shadow:var(--shadow) }
+/* ---------- MINHAS TAREFAS: agenda (esquerda) + kanban (direita) ---------- */
+.wrap--largo{ max-width:1760px }
+.dois{ display:grid; grid-template-columns:296px minmax(0,1fr); gap:var(--space-4); align-items:start }
+@media (max-width:1080px){ .dois{ grid-template-columns:1fr } }
+
+/* Agenda lateral: o planejamento por dia */
+.lat{ background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow);
+      padding:var(--space-4); position:sticky; top:120px; max-height:calc(100vh - 148px); overflow-y:auto }
+@media (max-width:1080px){ .lat{ position:static; max-height:none } }
+.lat__tit{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--text);
+      margin:0 0 4px }
+.lat__sub{ font-size:11px; color:var(--text-muted); margin-bottom:var(--space-4) }
+.dia{ margin-bottom:var(--space-3) }
+.dia__head{ display:flex; align-items:center; gap:7px; margin-bottom:6px }
+.dia__nome{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase }
+.dia__n{ font-size:10px; font-weight:700; color:var(--text-muted); background:var(--surface-soft);
+      border-radius:20px; padding:0 6px }
+.dia__lista{ display:flex; flex-direction:column; gap:5px; min-height:6px; border-radius:9px;
+      border:1.5px dashed transparent; padding:2px }
+.dia__lista--alvo{ border-color:var(--accent); background:var(--accent-bg) }
+.dia__vazio{ font-size:11px; color:var(--text-muted); padding:3px 4px; font-style:italic }
+.mini-card{ display:flex; gap:7px; align-items:flex-start; padding:7px 9px; background:var(--surface);
+      border:1px solid var(--border); border-left:3px solid var(--border-strong); border-radius:9px;
+      cursor:pointer; font-size:12.5px; line-height:1.35 }
+.mini-card:hover{ box-shadow:var(--shadow); border-color:var(--border-strong) }
+.mini-card__tit{ flex:1; min-width:0; color:var(--text) }
+.mini-card__sub{ font-size:10.5px; color:var(--text-muted); margin-top:2px }
+
+/* Kanban */
+/* As seis colunas cabem juntas em tela de trabalho (~1500px de área útil);
+   abaixo disso o quadro rola na horizontal em vez de esmagar os cards. */
+.kanban{ display:grid; grid-auto-flow:column; grid-auto-columns:minmax(198px,1fr);
+      gap:var(--space-2); overflow-x:auto; padding-bottom:var(--space-3); align-items:start }
+.col{ background:var(--surface-soft); border:1px solid var(--border); border-radius:14px;
+      display:flex; flex-direction:column; min-width:0 }
+.col__head{ display:flex; align-items:center; gap:6px; padding:10px 10px 10px 0;
+      border-bottom:1px solid var(--border); border-radius:14px 14px 0 0; background:var(--surface) }
+.col__marca{ width:5px; align-self:stretch; border-radius:0 3px 3px 0; flex-shrink:0 }
+.col__tit{ flex:1; min-width:0; font-size:10.5px; font-weight:700; letter-spacing:.04em; line-height:1.25 }
+.col__n{ background:var(--surface-soft); color:var(--text-secondary); border-radius:20px; padding:1px 7px;
+      font-size:11px; font-weight:700 }
+.col__corpo{ padding:10px; display:flex; flex-direction:column; gap:8px; min-height:74px;
+      max-height:calc(100vh - 250px); overflow-y:auto }
+.col--alvo{ outline:2px dashed var(--accent); outline-offset:-2px }
+.col--alvo .col__corpo{ background:var(--accent-bg) }
+.card{ background:var(--surface); border:1px solid var(--border); border-top:3px solid var(--border-strong);
+      border-radius:10px; padding:10px 11px; cursor:pointer; box-shadow:var(--shadow) }
+.card:hover{ box-shadow:var(--shadow-md) }
+.card--arrasta{ opacity:.35 }
+.card__tit{ font-size:13px; font-weight:500; color:var(--text); line-height:1.35 }
+.card__meta{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:8px; font-size:11px;
+      color:var(--text-muted) }
+.card__proj{ display:inline-flex; align-items:center; gap:4px; max-width:100%; overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap }
+.card__alerta{ color:var(--danger-text); font-weight:600 }
+.card__risco{ color:var(--warning-text); font-weight:600 }
+.card--concluido .card__tit{ text-decoration:line-through; color:var(--text-muted) }
+.mais-col{ font-size:11px; color:var(--text-muted); text-align:center; padding:4px }
+.dica-arrasta{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary);
+      background:var(--accent-bg); border-radius:10px; padding:8px 12px; margin-bottom:var(--space-4) }
+
+/* ---------- PEÇAS DA TABELA ---------- */
 .chat-ind{ display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--text-muted);
         background:var(--surface-soft); border-radius:20px; padding:1px 7px; margin-left:2px }
 .chat-ind--novo{ background:var(--accent); color:#fff; font-weight:700 }
-/* Data editável direto na célula, como nas referências */
 .cel-edit{ cursor:pointer }
 .cel-edit__txt{ display:inline-block; padding:3px 7px; border:1px dashed transparent; border-radius:var(--radius-sm) }
 .cel-edit:hover .cel-edit__txt{ border-color:var(--border-strong); background:var(--surface-soft) }
 .cel-edit input{ border:1px solid var(--accent); background:var(--surface); border-radius:var(--radius-sm);
         font-family:inherit; font-size:13px; color:var(--text); padding:3px 5px; width:140px;
         box-shadow:0 0 0 3px var(--accent-bg); outline:none }
-/* Barra de distribuição de status do projeto */
 .pilha{ display:flex; height:7px; width:130px; border-radius:20px; overflow:hidden; background:var(--surface-soft);
         flex-shrink:0 }
 .pilha span{ height:100% }

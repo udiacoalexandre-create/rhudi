@@ -46,13 +46,23 @@ const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
 
 // A cor é o sinal mais forte da interface: o status vira bloco de cor cheia
 // (na tabela) ou pílula sólida (nas listas), como nas referências visuais.
+// Os seis status são as seis colunas do kanban de "Minhas tarefas", na ordem.
+// 'label' é a versão curta (pílula, tabela); 'coluna' é o título da coluna.
 const STATUS = {
-  a_fazer:    { label:'A fazer',      cor:'var(--st-a_fazer)',    icone:'circle' },
-  andamento:  { label:'Trabalhando',  cor:'var(--st-andamento)',  icone:'player-play' },
-  aguardando: { label:'Aguardando',   cor:'var(--st-aguardando)', icone:'hourglass' },
-  checar:     { label:'A checar',     cor:'var(--st-checar)',     icone:'eye-check' },
-  concluida:  { label:'Concluída',    cor:'var(--st-concluida)',  icone:'circle-check' },
+  a_fazer:    { label:'Não iniciado', coluna:'NÃO INICIADO',        cor:'var(--st-a_fazer)',    icone:'circle',
+                dica:'Acabou de chegar para você e ainda não teve trabalho nenhum.' },
+  andamento:  { label:'Em andamento', coluna:'EM ANDAMENTO',        cor:'var(--st-andamento)',  icone:'player-play',
+                dica:'Você está trabalhando nisso agora ou hoje.' },
+  futuro:     { label:'Ação futura',  coluna:'AÇÃO FUTURA',         cor:'var(--st-futuro)',     icone:'clock-pause',
+                dica:'Não é para agora e não é prioridade — fica parada, mas visível.' },
+  aguardando: { label:'Aguardando',   coluna:'AGUARDANDO TERCEIROS',cor:'var(--st-aguardando)', icone:'hourglass',
+                dica:'Você pediu algo para alguém e está esperando a resposta.' },
+  checar:     { label:'Verificar',    coluna:'VERIFICAR / REVISAR', cor:'var(--st-checar)',     icone:'eye-check',
+                dica:'Estava com terceiros e voltou respondida: veja o que mudou e siga.' },
+  concluida:  { label:'Finalizado',   coluna:'FINALIZADO',          cor:'var(--st-concluida)',  icone:'circle-check',
+                dica:'Encerrada.' },
 };
+const COLUNAS = ['a_fazer','andamento','futuro','aguardando','checar','concluida'];
 function st(t){ return STATUS[t && t.status] || STATUS.a_fazer; }
 // Pílula sólida (listas, ticket, sublinhas).
 function stPill(t){
@@ -70,18 +80,6 @@ const TIPOS = {
   subtarefa:   { label:'Subtarefa',   icone:'corner-down-right' },
   solicitacao: { label:'Solicitação', icone:'arrow-forward-up' },
 };
-// Ordem dos grupos na agenda.
-const GRUPOS = [
-  { id:'checar',    titulo:'A checar (voltou para você)', cor:'var(--purple)' },
-  { id:'atrasada',  titulo:'Atrasadas',                   cor:'var(--danger)' },
-  { id:'hoje',      titulo:'Hoje',                        cor:'var(--accent)' },
-  { id:'semana',    titulo:'Esta semana',                 cor:'var(--cyan)' },
-  { id:'proxima',   titulo:'Próxima semana',              cor:'var(--purple)' },
-  { id:'depois',    titulo:'Mais para frente',            cor:'var(--text-secondary)' },
-  { id:'sem',       titulo:'Sem próxima ação definida',   cor:'var(--text-muted)' },
-  { id:'aguardando',titulo:'Aguardando terceiro',         cor:'var(--warning)' },
-];
-
 // ---------- Estado ----------
 let usuario   = null;   // {email, nome, papel}
 let usuarios  = [];     // pessoas com acesso a esta plataforma (com foto)
@@ -96,7 +94,6 @@ let mensagens = [];
 let paraAnexar = [];        // anexos na fila do compositor
 let paraMarcar = [];        // pessoas marcadas na próxima mensagem
 let recolhidos = {};        // projetos recolhidos na tabela (só nesta sessão)
-let gruposFechados = {};   // grupos recolhidos na agenda
 let filtro = '';           // busca da barra de ferramentas
 let abaTicket = 'upd';     // aba do ticket: upd | arq | hist
 let soMinhas = false;      // filtro "só as minhas" na aba Projetos
@@ -645,15 +642,19 @@ function statCard(label, valor, icone, cor){
 }
 
 // ============================================================
-// ABA 1 — MINHAS TAREFAS (agenda pela PRÓXIMA AÇÃO)
+// ABA 1 — MINHAS TAREFAS: agenda (esquerda) + kanban (direita)
 // ============================================================
-// Tabela agrupada por data, como no "Meu trabalho" da referência: cada grupo
-// tem título colorido, contagem e chevron, e os grupos vazios continuam à
-// vista (recolhidos) para a pessoa enxergar a semana inteira. A célula de
-// PRÓXIMA AÇÃO é editável na linha: é ali que a pessoa se reprograma sem
-// abrir a tarefa, e o prazo final ao lado continua de pé.
-// A célula mostra a data em texto ("hoje", "24/08") e só vira campo de data
-// quando a pessoa clica — o campo nativo aberto em toda linha polui a tabela.
+// Duas leituras da mesma lista, e é essa a ideia:
+//   · à ESQUERDA, a agenda por dia — organizada pelo prazo da PRÓXIMA AÇÃO,
+//     isto é, pelo dia em que a pessoa decidiu mexer naquilo. É planejamento:
+//     arrastar um card para outro dia reprograma a próxima ação.
+//   · à DIREITA, o kanban por ESTADO, nas seis colunas. Arrastar entre colunas
+//     muda o status (e registra na conversa da tarefa, como qualquer mudança).
+// Quem não pode editar (agenda de outra pessoa, sem ser Master) vê tudo, mas
+// sem arrastar.
+
+// ---------- Célula de data (usada aqui e na tabela dos projetos) ----------
+// Mostra a data em texto e só vira campo quando a pessoa clica.
 function celulaData(t, campo){
   const valor = campo === 'prazo' ? t.prazo : t.prazoFinal;
   const cls = classeData(valor, t, campo !== 'prazo');
@@ -678,9 +679,6 @@ function editarData(id, campo, ev){
   inp.focus();
   try{ inp.showPicker(); }catch(e){}
 }
-// Balão da conversa. O contador 'msgs' só existe nas tarefas criadas depois
-// desta versão, então quem já tem conversa antiga (sem contador) mostra o
-// balão sem número — melhor que esconder que há conversa.
 function indicadorConversa(t){
   const n = t.msgs || 0;
   if(!n && !t.ultimaMsgEm) return '';
@@ -694,88 +692,234 @@ function tickHTML(t){
     '(\'' + t._id + '\')"><i class="ti ti-check"></i></button>';
 }
 
-function linhaAgenda(t){
-  const proj = projetoDe(t.projetoId);
-  const pai = t.paiId ? tarefaDe(t.paiId) : null;
-  const sub = [];
-  if(t.tipo === 'solicitacao' && t.solicitante) sub.push('pedido de ' + esc(primeiroNome(t.solicitante)));
-  else if(t.tipo === 'subtarefa' && pai) sub.push('subtarefa de ' + esc(recorta(pai.titulo, 34)));
-  const pedAbertos = abertas(pedidosDe(t._id)).length;
-  if(pedAbertos) sub.push('esperando ' + pedAbertos + ' pedido(s)');
-  if(deadlineEstourado(t))
-    sub.push('<span style="color:var(--danger-text);font-weight:600">prazo final vencido</span>');
-  else if(planejadoDepoisDoDeadline(t))
-    sub.push('<span style="color:var(--warning-text);font-weight:600">próxima ação depois do prazo final</span>');
-  return '<tr class="' + (t.status === 'concluida' ? 'lin--concluida' : '') +
-      '" onclick="abrirTarefa(\'' + t._id + '\')">' +
-    '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' + tickHTML(t) +
-      '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div>' +
-      (sub.length ? '<div class="demanda__sub">' + sub.join(' · ') + '</div>' : '') +
-      '</div></div></td>' +
-    '<td class="small muted" style="white-space:nowrap">' +
-      (proj ? '<i class="ti ti-folder"></i> ' + esc(recorta(proj.nome, 26)) : '—') + '</td>' +
-    celulaData(t, 'prazo') +
-    celulaData(t, 'final') +
-    stCelula(t) +
-  '</tr>';
+// ---------- ARRASTAR E SOLTAR ----------
+let arrastando = null;
+function arrastarInicio(ev, id){
+  arrastando = id;
+  try{ ev.dataTransfer.setData('text/plain', id); ev.dataTransfer.effectAllowed = 'move'; }catch(e){}
+  if(ev.currentTarget) ev.currentTarget.classList.add('card--arrasta');
+}
+function arrastarFim(ev){
+  arrastando = null;
+  if(ev.currentTarget) ev.currentTarget.classList.remove('card--arrasta');
+  document.querySelectorAll('.col--alvo,.dia__lista--alvo')
+    .forEach(el => el.classList.remove('col--alvo', 'dia__lista--alvo'));
+}
+function sobreAlvo(ev, el, cls){
+  ev.preventDefault();
+  try{ ev.dataTransfer.dropEffect = 'move'; }catch(e){}
+  el.classList.add(cls);
+}
+function saiuAlvo(el, cls){ el.classList.remove(cls); }
+function idArrastado(ev){
+  let id = '';
+  try{ id = ev.dataTransfer.getData('text/plain'); }catch(e){}
+  return id || arrastando || '';
+}
+// Soltar numa coluna = mudar o estado da tarefa.
+function soltarNaColuna(ev, status, el){
+  ev.preventDefault();
+  el.classList.remove('col--alvo');
+  const id = idArrastado(ev);
+  arrastando = null;
+  if(id) mudarStatus(id, status);
+}
+// Soltar num dia = reprogramar a próxima ação (o planejamento).
+function soltarNoDia(ev, data, el){
+  ev.preventDefault();
+  el.classList.remove('dia__lista--alvo');
+  const id = idArrastado(ev);
+  arrastando = null;
+  if(id) mudarPrazo(id, data || '');
 }
 
-function blocoGrupo(g, lista){
-  const fechado = !!gruposFechados[g.id];
-  const vazio = !lista.length;
-  return '<section class="g-bloco' + (vazio ? ' g-vazio' : '') + '">' +
-    '<button class="g-head" onclick="alternarGrupo(\'' + g.id + '\')"' + (vazio ? ' disabled' : '') + '>' +
-      (vazio ? '<i class="ti ti-minus" style="color:var(--text-muted);font-size:15px"></i>'
-             : '<i class="ti ti-chevron-' + (fechado ? 'right' : 'down') + '" style="color:' + g.cor + '"></i>') +
-      '<span class="g-titulo" style="color:' + g.cor + '">' + esc(g.titulo) + '</span>' +
-      '<span class="g-qtd">' + lista.length + (lista.length === 1 ? ' item' : ' itens') + '</span>' +
-    '</button>' +
-    (vazio || fechado ? '' :
-      '<div class="g-tab"><div class="tab-wrap"><table class="tab">' +
-      '<thead><tr><th class="cel-dem">Demanda</th><th>Projeto</th><th>Próxima ação</th>' +
-      '<th>Prazo final</th><th style="text-align:center">Status</th></tr></thead>' +
-      '<tbody>' + lista.map(linhaAgenda).join('') + '</tbody></table></div></div>') +
-  '</section>';
+// ---------- AGENDA LATERAL (planejamento por dia) ----------
+const SEMANA = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+function diasDaAgenda(lista){
+  const h = hoje();
+  const dias = [];
+  const pega = f => lista.filter(f).sort(ordenarPorPrazo);
+  dias.push({ id:'atras', titulo:'Atrasadas', cor:'var(--danger)', data:null, semSolta:true,
+              tarefas:pega(t => t.prazo && t.prazo < h) });
+  dias.push({ id:'hoje', titulo:'Hoje · ' + dataBR(h), cor:'var(--accent)', data:h,
+              tarefas:pega(t => t.prazo === h) });
+  const amanha = maisDias(1);
+  dias.push({ id:'d1', titulo:'Amanhã · ' + dataBR(amanha), cor:'var(--text-secondary)', data:amanha,
+              tarefas:pega(t => t.prazo === amanha) });
+  // Resto desta semana, dia a dia (a semana fecha no domingo).
+  const fimSem = fimDaSemana();
+  for(let i = 2; i <= 8; i++){
+    const d = maisDias(i);
+    if(d > fimSem) break;
+    const dow = new Date(d + 'T12:00:00').getDay();
+    dias.push({ id:'d' + i, titulo:SEMANA[dow] + ' · ' + dataBR(d), cor:'var(--text-secondary)', data:d,
+                tarefas:pega(t => t.prazo === d) });
+  }
+  const fimProx = fimDaProximaSemana();
+  dias.push({ id:'prox', titulo:'Próxima semana', cor:'var(--purple)', data:proximaSegunda(),
+              tarefas:pega(t => t.prazo && t.prazo > fimSem && t.prazo <= fimProx) });
+  dias.push({ id:'depois', titulo:'Mais para frente', cor:'var(--text-muted)', data:null, semSolta:true,
+              tarefas:pega(t => t.prazo && t.prazo > fimProx) });
+  dias.push({ id:'semdata', titulo:'Para planejar (sem data)', cor:'var(--warning)', data:'',
+              tarefas:pega(t => !t.prazo) });
+  return dias;
+}
+function proximaSegunda(){
+  const d = new Date(fimDaSemana() + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  return iso(d);
+}
+function miniCard(t, podeEditar){
+  const proj = projetoDe(t.projetoId);
+  const alerta = deadlineEstourado(t) ? ' <span class="card__alerta">prazo final vencido</span>'
+    : (planejadoDepoisDoDeadline(t) ? ' <span class="card__risco">depois do prazo final</span>' : '');
+  return '<div class="mini-card" style="border-left-color:' + st(t).cor + '"' +
+    (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
+    ' onclick="abrirTarefa(\'' + t._id + '\')" title="' + esc(STATUS[t.status].label) + '">' +
+    '<div class="mini-card__tit">' + esc(recorta(t.titulo, 58)) + indicadorConversa(t) +
+      '<div class="mini-card__sub">' + (proj ? esc(recorta(proj.nome, 24)) : 'sem projeto') + alerta + '</div>' +
+    '</div>' +
+  '</div>';
+}
+function agendaLateral(lista, podeEditar){
+  const dias = diasDaAgenda(lista);
+  return '<aside class="lat">' +
+    '<div class="lat__tit"><i class="ti ti-calendar-week"></i> Agenda de planejamento</div>' +
+    '<div class="lat__sub">Pelo dia em que você decidiu mexer' +
+      (podeEditar ? '. Arraste um card para outro dia para reprogramar.' : '.') + '</div>' +
+    dias.map(d => {
+      const solta = podeEditar && !d.semSolta;
+      return '<div class="dia">' +
+        '<div class="dia__head">' +
+          '<span class="dia__nome" style="color:' + d.cor + '">' + esc(d.titulo) + '</span>' +
+          (d.tarefas.length ? '<span class="dia__n">' + d.tarefas.length + '</span>' : '') +
+        '</div>' +
+        '<div class="dia__lista"' +
+          (solta ? ' ondragover="sobreAlvo(event,this,\'dia__lista--alvo\')"' +
+                   ' ondragleave="saiuAlvo(this,\'dia__lista--alvo\')"' +
+                   ' ondrop="soltarNoDia(event,\'' + d.data + '\',this)"' : '') + '>' +
+          (d.tarefas.length ? d.tarefas.map(t => miniCard(t, podeEditar)).join('')
+            : '<div class="dia__vazio">' + (solta ? 'solte aqui' : 'nada') + '</div>') +
+        '</div>' +
+      '</div>';
+    }).join('') +
+  '</aside>';
+}
+
+// ---------- KANBAN (estado) ----------
+function cardKanban(t, podeEditar){
+  const proj = projetoDe(t.projetoId);
+  const filhas = filhasDe(t._id);
+  const feitas = filhas.filter(f => f.status === 'concluida').length;
+  const meta = [];
+  if(proj) meta.push('<span class="card__proj"><i class="ti ti-folder"></i>' + esc(recorta(proj.nome, 22)) + '</span>');
+  if(t.prazo) meta.push('<span class="' + classeData(t.prazo, t, false) + '"><i class="ti ti-calendar-event"></i> ' +
+    esc(prazoTexto(t.prazo)) + '</span>');
+  if(t.prazoFinal) meta.push('<span class="' + (deadlineEstourado(t) ? 'card__alerta' : '') +
+    '"><i class="ti ti-flag"></i> ' + esc(dataBR(t.prazoFinal)) + '</span>');
+  if(filhas.length) meta.push('<span><i class="ti ti-subtask"></i> ' + feitas + '/' + filhas.length + '</span>');
+  if(t.tipo === 'solicitacao' && t.solicitante)
+    meta.push('<span><i class="ti ti-arrow-forward-up"></i> ' + esc(primeiroNome(t.solicitante)) + '</span>');
+  const esperando = abertas(pedidosDe(t._id));
+  if(esperando.length && t.status === 'aguardando')
+    meta.push('<span><i class="ti ti-hourglass"></i> ' + esc(esperando.map(f => primeiroNome(f.responsavel)).join(', ')) + '</span>');
+  return '<div class="card' + (t.status === 'concluida' ? ' card--concluido' : '') +
+    '" style="border-top-color:' + st(t).cor + '"' +
+    (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
+    ' onclick="abrirTarefa(\'' + t._id + '\')">' +
+    '<div class="card__tit">' + esc(t.titulo) + ' ' + indicadorConversa(t) + '</div>' +
+    (meta.length ? '<div class="card__meta">' + meta.join('') + '</div>' : '') +
+  '</div>';
+}
+const LIMITE_FINALIZADO = 15;
+function kanbanHTML(lista, podeEditar){
+  return '<div class="kanban">' + COLUNAS.map(k => {
+    const s = STATUS[k];
+    let ts = lista.filter(t => t.status === k);
+    let mais = 0;
+    if(k === 'concluida'){
+      ts = ts.sort((a,b) => String(b.concluidaEm||'').localeCompare(String(a.concluidaEm||'')));
+      if(ts.length > LIMITE_FINALIZADO){ mais = ts.length - LIMITE_FINALIZADO; ts = ts.slice(0, LIMITE_FINALIZADO); }
+    }else{
+      ts = ts.sort(ordenarPorPrazo);
+    }
+    return '<section class="col"' +
+        (podeEditar ? ' ondragover="sobreAlvo(event,this,\'col--alvo\')"' +
+                      ' ondragleave="saiuAlvo(this,\'col--alvo\')"' +
+                      ' ondrop="soltarNaColuna(event,\'' + k + '\',this)"' : '') + '>' +
+      '<div class="col__head">' +
+        '<span class="col__marca" style="background:' + s.cor + '"></span>' +
+        '<span class="col__tit" style="color:' + s.cor + '" title="' + esc(s.dica) + '">' + esc(s.coluna) + '</span>' +
+        '<span class="col__n">' + (lista.filter(t => t.status === k).length) + '</span>' +
+      '</div>' +
+      '<div class="col__corpo">' +
+        (ts.length ? ts.map(t => cardKanban(t, podeEditar)).join('')
+          : '<div class="dia__vazio">' + (podeEditar ? 'solte um card aqui' : 'vazio') + '</div>') +
+        (mais ? '<div class="mais-col">+ ' + mais + ' finalizada(s) mais antiga(s)</div>' : '') +
+      '</div>' +
+    '</section>';
+  }).join('') + '</div>';
 }
 
 function viewAgenda(email, propria){
-  const minhas = abertas(tarefas.filter(t => t.responsavel === email));
-  const porGrupo = {};
-  GRUPOS.forEach(g => porGrupo[g.id] = []);
-  minhas.forEach(t => porGrupo[grupoDaTarefa(t)].push(t));
-  Object.keys(porGrupo).forEach(k => porGrupo[k].sort(ordenarPorPrazo));
+  const podeEditar = propria || ehMaster();
+  const todas = tarefas.filter(t => t.responsavel === email);
+  const emAberto = abertas(todas);
+  const atrasadas = emAberto.filter(t => t.prazo && t.prazo < hoje()).length;
+  const vencidos = emAberto.filter(deadlineEstourado).length;
+  const hojeN = emAberto.filter(t => t.prazo === hoje()).length;
+  const semData = emAberto.filter(t => !t.prazo).length;
 
-  const hojeCount = porGrupo.hoje.length + porGrupo.atrasada.length + porGrupo.checar.length;
-  const vencidos = minhas.filter(deadlineEstourado).length;
-  const stats = '<div class="stat-grid" style="margin-bottom:var(--space-6)">' +
-      statCard('Para hoje', hojeCount, 'sun', hojeCount ? 'accent' : 'success') +
-      statCard('Atrasadas', porGrupo.atrasada.length, 'alert-triangle', porGrupo.atrasada.length ? 'danger' : 'success') +
-      statCard('Prazo final vencido', vencidos, 'flag', vencidos ? 'danger' : 'success') +
-      statCard('Esta semana', porGrupo.semana.length, 'calendar-week', 'accent') +
-      statCard('Próxima semana', porGrupo.proxima.length, 'calendar-plus', 'purple') +
-      statCard('Aguardando terceiro', porGrupo.aguardando.length, 'hourglass', 'warning') +
-    '</div>';
+  const chip = (n, texto, cor, icone) => n
+    ? '<span class="chip chip--plain" style="color:' + cor + ';border-color:currentColor">' +
+      '<i class="ti ti-' + icone + '"></i> <b style="color:inherit">' + n + '</b> ' + texto + '</span>' : '';
 
-  let corpo = GRUPOS.map(g => blocoGrupo(g, porGrupo[g.id])).join('');
-  if(propria){
-    const meusPedidos = abertas(tarefas.filter(t => t.tipo === 'solicitacao' && t.solicitante === email));
-    if(meusPedidos.length)
-      corpo += blocoGrupo({ id:'meuspedidos', titulo:'Pedidos que eu fiz e estou esperando', cor:'var(--cyan)' },
-        meusPedidos.sort(ordenarPorPrazo));
-  }
-
-  const dia = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
-  return '<div class="wrap">' +
-    '<div class="row--between" style="margin-bottom:var(--space-5)">' +
+  return '<div class="wrap wrap--largo">' +
+    '<div class="row--between" style="margin-bottom:var(--space-4);flex-wrap:wrap">' +
       '<div>' +
         (propria ? '' : '<button class="btn" style="margin-bottom:var(--space-3)" onclick="pessoaAberta=null;render()"><i class="ti ti-arrow-left"></i> Equipe</button>') +
         '<h1 class="page-title">' + (propria ? 'Minhas tarefas' : 'Tarefas de ' + esc(nomeDe(email))) + '</h1>' +
-        '<p class="page-subtitle">' + (propria
-          ? dia.charAt(0).toUpperCase() + dia.slice(1) + ' · ' + (hojeCount ? hojeCount + ' item(ns) pedindo ação hoje' : 'nada pendente para hoje')
-          : 'Agenda desta pessoa, pelo prazo da próxima ação.') + '</p>' +
+        '<p class="page-subtitle">' + emAberto.length + ' em aberto · ' + hojeN + ' para hoje</p>' +
       '</div>' +
-      (propria ? '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' : '') +
-    '</div>' + stats + corpo + '</div>';
+      '<div class="row" style="flex-wrap:wrap">' +
+        chip(atrasadas, 'atrasada(s)', 'var(--danger-text)', 'alert-triangle') +
+        chip(vencidos, 'fora do prazo final', 'var(--danger-text)', 'flag') +
+        chip(semData, 'sem data', 'var(--warning-text)', 'calendar-question') +
+        (propria ? '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' : '') +
+      '</div>' +
+    '</div>' +
+    (todas.length ? '<div class="dois">' + agendaLateral(emAberto, podeEditar) +
+        '<div>' + kanbanHTML(todas, podeEditar) + pedidosQueFiz(email, propria) + '</div>' +
+      '</div>'
+      : vazio('checkbox', 'Nada por aqui ainda',
+          'Quando alguém te definir como responsável — ou você criar uma tarefa — ela aparece na agenda e no quadro.')) +
+  '</div>';
+}
+
+// Os pedidos que EU fiz vivem na agenda de quem recebeu; aqui fica só o
+// acompanhamento, para não perder de vista o que estou esperando.
+function pedidosQueFiz(email, propria){
+  if(!propria) return '';
+  const meus = abertas(tarefas.filter(t => t.tipo === 'solicitacao' && t.solicitante === email));
+  if(!meus.length) return '';
+  return '<section class="proj-bloco" style="margin-top:var(--space-4)">' +
+    '<div class="proj-bloco__head">' +
+      '<span class="proj-bloco__nome" style="cursor:default"><i class="ti ti-arrow-forward-up muted"></i>' +
+        'Pedidos que eu fiz e estou esperando</span>' +
+      '<span class="col__n">' + meus.length + '</span>' +
+    '</div>' +
+    '<div class="tab-wrap"><table class="tab">' +
+      '<thead><tr><th class="cel-dem">Pedido</th><th>Com quem</th><th style="text-align:center">Status</th>' +
+      '<th>Próxima ação</th><th>Prazo final</th></tr></thead><tbody>' +
+      meus.sort(ordenarPorPrazo).map(t =>
+        '<tr onclick="abrirTarefa(\'' + t._id + '\')">' +
+        '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' +
+          '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div></div></div></td>' +
+        '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
+        stCelula(t) + celulaData(t, 'prazo') + celulaData(t, 'final') +
+        '</tr>').join('') +
+    '</tbody></table></div>' +
+  '</section>';
 }
 
 // ============================================================
@@ -891,7 +1035,7 @@ function blocoProjeto(p){
 // projeto de relance, como a barra empilhada da referência.
 function pilhaStatus(ts, pct){
   if(!ts.length) return '';
-  const ordem = ['concluida','andamento','checar','aguardando','a_fazer'];
+  const ordem = ['concluida','andamento','checar','aguardando','futuro','a_fazer'];
   const partes = ordem.map(k => {
     const n = ts.filter(t => t.status === k).length;
     return n ? '<span style="width:' + (n / ts.length * 100) + '%;background:' + STATUS[k].cor +
@@ -899,7 +1043,6 @@ function pilhaStatus(ts, pct){
   }).join('');
   return '<span class="pilha" title="' + pct + '% concluído">' + partes + '</span>';
 }
-function alternarGrupo(id){ gruposFechados[id] = !gruposFechados[id]; render(); }
 function alternarProjeto(id){ recolhidos[id] = !recolhidos[id]; render(); }
 function alternarFilhas(id, ev){ if(ev) ev.stopPropagation(); expandidos[id] = expandidos[id] === false; render(); }
 
@@ -1282,6 +1425,8 @@ function fraseSituacao(t){
     return pedAbertos.length
       ? 'Travada esperando <b>' + esc(pedAbertos.map(f => primeiroNome(f.responsavel)).join(', ')) + '</b>.'
       : 'Aguardando algo de fora. Registre na conversa o que está esperando.';
+  if(t.status === 'futuro')
+    return 'Parada de propósito: ação futura' + (t.prazo ? ', prevista para <b>' + esc(prazoTexto(t.prazo)) + '</b>' : ' e sem data definida') + '.';
   if(t.status === 'checar')
     return 'Voltou para <b>você</b> conferir e seguir.';
   if(t.status === 'andamento')
@@ -1304,6 +1449,8 @@ function acoesSituacao(t){
     '" onclick="mudarStatus(\'' + id + '\',\'andamento\')"><i class="ti ti-player-play"></i> Estou trabalhando</button>');
   b.push('<button class="acao" onclick="modalSolicitar(\'' + id + '\')">' +
     '<i class="ti ti-user-plus"></i> Preciso de alguém</button>');
+  b.push('<button class="acao' + (t.status === 'futuro' ? ' acao--ativa' : '') +
+    '" onclick="mudarStatus(\'' + id + '\',\'futuro\')"><i class="ti ti-clock-pause"></i> Ação futura</button>');
   b.push('<button class="acao' + (t.status === 'aguardando' ? ' acao--ativa' : '') +
     '" onclick="mudarStatus(\'' + id + '\',\'aguardando\')"><i class="ti ti-hourglass"></i> Aguardando algo</button>');
   if(!(t.tipo === 'solicitacao' && meu))
