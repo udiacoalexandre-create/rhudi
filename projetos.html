@@ -470,6 +470,13 @@ a{ color:var(--accent); text-decoration:none }
         flex-shrink:0; transition:opacity .12s }
 .tab tbody tr:hover .linha-add{ opacity:1; border-style:solid }
 .linha-add:hover{ border-color:var(--accent); color:var(--accent); border-style:solid }
+/* Excluir a demanda na própria linha. Discreto por padrão, vermelho ao mirar. */
+.linha-del{ opacity:.3; width:21px; height:21px; border-radius:6px; border:1px solid transparent;
+        background:none; color:var(--text-muted); cursor:pointer; font-size:12px;
+        display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+        transition:opacity .12s, color .12s }
+.tab tbody tr:hover .linha-del{ opacity:.7 }
+.linha-del:hover{ opacity:1; color:var(--danger); border-color:var(--danger); background:var(--danger-bg) }
 
 .sit__quem{ display:inline-flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--border);
         border-radius:20px; padding:1px 9px 1px 2px; font-weight:600; color:var(--text); white-space:nowrap }

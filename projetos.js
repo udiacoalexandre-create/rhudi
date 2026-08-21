@@ -1062,10 +1062,14 @@ function blocoProjeto(p){
         (vencidos ? ' · <span style="color:var(--danger-text);font-weight:600">' + vencidos + ' fora do prazo</span>' : '') +
       '</span>' +
       '<span class="spacer"></span>' +
-      '<span class="small muted" title="Líder do projeto">' + pessoaMini(p.lider) + '</span>' +
-      '<button class="btn" onclick="modalNovaTarefa(\'' + p._id + '\')"><i class="ti ti-plus"></i> Demanda</button>' +
-      // As ações menos frequentes (pasta, frente, editar) num menu só: o
-      // cabeçalho estourava a linha com todos os botões à vista.
+      // Só o avatar do líder (o nome ia embora com o espaço que os dois botões
+      // precisam); o nome fica na dica.
+      '<span title="Líder: ' + esc(nomeDe(p.lider)) + '">' + avatar(p.lider, 'avatar--sm') + '</span>' +
+      '<button class="btn btn--primary" onclick="modalNovaTarefa(\'' + p._id + '\')">' +
+        '<i class="ti ti-plus"></i> Demanda</button>' +
+      (podeEditar ? '<button class="btn" title="Criar uma subdivisão do projeto" ' +
+        'onclick="modalFrente(\'' + p._id + '\')"><i class="ti ti-layout-rows"></i> Frente</button>' : '') +
+      // Pasta do Drive e editar projeto seguem no menu: são menos frequentes.
       '<button class="icon-btn" title="Mais ações do projeto" onclick="popProjeto(\'' + p._id + '\',event)">' +
         '<i class="ti ti-dots"></i></button>' +
     '</div>' +
@@ -1130,8 +1134,6 @@ function popProjeto(id, ev){
     itens.push('<a href="' + esc(p.driveUrl) + '" target="_blank" rel="noopener" onclick="fecharPop()">' +
       '<i class="ti ti-brand-google-drive"></i> Abrir a pasta no Drive</a>');
   if(podeEditar){
-    itens.push('<button onclick="fecharPop();modalFrente(\'' + id + '\')">' +
-      '<i class="ti ti-layout-rows"></i> Nova frente</button>');
     itens.push('<button onclick="fecharPop();modalNovoProjeto(\'' + id + '\')">' +
       '<i class="ti ti-pencil"></i> Editar projeto' + (p.driveUrl ? '' : ' (e vincular pasta)') + '</button>');
   }
@@ -1186,6 +1188,10 @@ function linhaTabela(t, nivel, filhas, aberto){
       ((nivel < 2 && t.tipo !== 'solicitacao')
         ? '<button class="linha-add" title="Criar subtarefa dentro desta" ' +
           'onclick="event.stopPropagation();modalNovaSubtarefa(\'' + t._id + '\')"><i class="ti ti-plus"></i></button>'
+        : '') +
+      ((ehMaster() || t.criadoPor === usuario.email)
+        ? '<button class="linha-del" title="Excluir esta demanda" ' +
+          'onclick="event.stopPropagation();excluirTarefa(\'' + t._id + '\')"><i class="ti ti-trash"></i></button>'
         : '') +
     '</div></td>' +
     '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
@@ -1871,19 +1877,31 @@ async function reabrirTarefa(id){
   await atualizarTarefa(id, { status:'a_fazer', concluidaEm:null });
   await postarMensagem(id, 'Reaberta por ' + usuario.nome + '.', 'sistema');
 }
+// Exclui a demanda e tudo que pende dela (subtarefas, pedidos e as conversas),
+// porque travar e pedir para apagar uma a uma só empurrava o trabalho.
+function subarvore(id, prof){
+  const fora = [id];
+  if((prof || 0) > 4) return fora;
+  filhasDe(id).forEach(f => fora.push.apply(fora, subarvore(f._id, (prof || 0) + 1)));
+  return fora;
+}
 async function excluirTarefa(id){
   const t = tarefaDe(id);
   if(!t) return;
-  if(filhasDe(id).length){ toast('Exclua primeiro as sublinhas desta tarefa.', 'erro'); return; }
-  if(!confirm('Excluir "' + t.titulo + '" e toda a conversa dela? Isso não tem volta.')) return;
+  const ids = subarvore(id);
+  const nFilhas = ids.length - 1;
+  if(!confirm('Excluir "' + t.titulo + '"' +
+    (nFilhas ? ' e as ' + nFilhas + ' sublinha(s) dela (subtarefas e pedidos)' : '') +
+    ', com as conversas? Isso não tem volta.')) return;
   try{
-    const snap = await window._getDocs(window._query(window._col(COL_MSG), window._where('tarefaId','==',id)));
     const b = window._batch();
-    snap.forEach(d => b.delete(window._doc(COL_MSG, d.id)));
-    b.delete(window._doc(COL_TAR, id));
+    const snaps = await Promise.all(ids.map(x =>
+      window._getDocs(window._query(window._col(COL_MSG), window._where('tarefaId','==',x)))));
+    snaps.forEach(s => s.forEach(d => b.delete(window._doc(COL_MSG, d.id))));
+    ids.forEach(x => b.delete(window._doc(COL_TAR, x)));
     await b.commit();
-    fecharPainel();
-    toast('Tarefa excluída.', 'ok');
+    if(tarefaAberta && ids.includes(tarefaAberta)) fecharPainel();
+    toast(nFilhas ? 'Demanda e sublinhas excluídas.' : 'Demanda excluída.', 'ok');
   }catch(e){ toast('Não foi possível excluir: ' + (e && e.code || e), 'erro'); }
 }
 
