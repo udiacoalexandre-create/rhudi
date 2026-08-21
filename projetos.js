@@ -235,6 +235,19 @@ function ehMaster(){ return usuario && usuario.papel === 'master'; }
 
 // ---------- Consultas em memória ----------
 function projetoDe(id){ return projetos.find(p => p._id === id) || null; }
+// Pasta do projeto no Drive da empresa: o arquivo pesado vive lá, e a tarefa
+// guarda o link. É o que dispensa subir arquivo grande para dentro do sistema.
+function pastaDoProjeto(projetoId){
+  const p = projetoDe(projetoId);
+  return (p && p.driveUrl) ? p.driveUrl : '';
+}
+function botaoPasta(projetoId, texto, cls){
+  const url = pastaDoProjeto(projetoId);
+  if(!url) return '';
+  return '<a class="' + (cls || 'btn') + '" href="' + esc(url) + '" target="_blank" rel="noopener" ' +
+    'onclick="event.stopPropagation()" title="Abrir a pasta deste projeto no Google Drive">' +
+    '<i class="ti ti-brand-google-drive"></i>' + (texto ? ' ' + esc(texto) : '') + '</a>';
+}
 function tarefaDe(id){ return tarefas.find(t => t._id === id) || null; }
 function tarefasDoProjeto(id){ return tarefas.filter(t => t.projetoId === id); }
 function filhasDe(id){ return tarefas.filter(t => t.paiId === id); }
@@ -1011,6 +1024,9 @@ function blocoProjeto(p){
       '</span>' +
       '<span class="spacer"></span>' +
       '<span class="small muted" title="Líder do projeto">' + pessoaMini(p.lider) + '</span>' +
+      (p.driveUrl ? botaoPasta(p._id, 'Pasta', 'btn')
+        : (podeEditar ? '<button class="btn" style="color:var(--text-muted)" title="Vincular a pasta deste projeto no Drive" ' +
+            'onclick="modalNovoProjeto(\'' + p._id + '\')"><i class="ti ti-folder-plus"></i> Vincular pasta</button>' : '')) +
       (podeEditar ? '<button class="icon-btn" title="Editar projeto" onclick="modalNovoProjeto(\'' + p._id + '\')">' +
         '<i class="ti ti-pencil"></i></button>' : '') +
       '<button class="btn" onclick="modalNovaTarefa(\'' + p._id + '\')"><i class="ti ti-plus"></i> Demanda</button>' +
@@ -1202,7 +1218,8 @@ function renderPainel(){
     '<div class="row--between">' +
       '<div class="tk-ctx">' +
         '<i class="ti ti-' + TIPOS[t.tipo || 'tarefa'].icone + '"></i>' + esc(TIPOS[t.tipo || 'tarefa'].label) +
-        (proj ? ' <span class="dot"></span> <span>' + esc(proj.nome) + '</span>' : '') +
+        (proj ? ' <span class="dot"></span> <span>' + esc(proj.nome) + '</span>' +
+          (proj.driveUrl ? ' ' + botaoPasta(proj._id, '', 'ctx-drive') : '') : '') +
         (pai ? ' <span class="dot"></span> <a href="#" onclick="abrirTarefa(\'' + pai._id + '\');return false">' +
                esc(recorta(pai.titulo, 34)) + '</a>' : '') +
       '</div>' +
@@ -1386,9 +1403,22 @@ function trocarAbaTicket(id){ abaTicket = id; renderPainel(); }
 function conteudoAbaTicket(t){
   if(abaTicket === 'arq'){
     const arqs = todosAnexos();
-    if(!arqs.length) return '<div class="small muted" style="text-align:center;padding:var(--space-5)">' +
-      'Nenhum anexo ainda. Anexe pela conversa: link do Drive ou arquivo pequeno.</div>';
-    return '<div class="arq-lista">' + arqs.map(a =>
+    const pasta = pastaDoProjeto(t.projetoId);
+    // A pasta do projeto vem primeiro: é lá que o arquivo de verdade mora.
+    const cabecalhoPasta = pasta
+      ? '<a class="arq arq--pasta" href="' + esc(pasta) + '" target="_blank" rel="noopener">' +
+        '<span class="arq__ico" style="background:var(--success-bg);color:var(--success-text)">' +
+          '<i class="ti ti-brand-google-drive"></i></span>' +
+        '<span class="arq__nome">Pasta deste projeto no Drive' +
+          '<div class="small muted" style="font-weight:400">Todos os arquivos do projeto ficam aqui</div></span>' +
+        '<i class="ti ti-external-link muted"></i></a>'
+      : '<div class="banner banner--info" style="margin-bottom:var(--space-3)"><i class="ti ti-folder-off"></i>' +
+        '<div>Este projeto ainda não tem pasta do Drive vinculada. Dá para vincular no cabeçalho do projeto, ' +
+        'na aba Projetos.</div></div>';
+    if(!arqs.length) return cabecalhoPasta +
+      '<div class="small muted" style="text-align:center;padding:var(--space-5)">' +
+      'Nenhum anexo nesta tarefa ainda. Suba o arquivo na pasta do projeto e cole o link aqui pelo botão de link.</div>';
+    return cabecalhoPasta + '<div class="arq-lista" style="margin-top:var(--space-3)">' + arqs.map(a =>
       '<a class="arq" ' + (a.tipo === 'link'
           ? 'href="' + esc(a.url) + '" target="_blank" rel="noopener"'
           : 'href="' + esc(a.dados) + '" download="' + esc(a.nome) + '"') + '>' +
@@ -1766,6 +1796,11 @@ function modalNovoProjeto(id){
     '<div class="fg"><label>Descrição / objetivo</label><textarea id="p-desc" placeholder="O que este projeto precisa entregar">' +
       esc(p ? p.descricao : '') + '</textarea></div>' +
     '<div class="fg"><label>Líder do projeto</label>' + selPessoas('p-lider', p ? p.lider : usuario.email) + '</div>' +
+    '<div class="fg"><label>Pasta do projeto no Google Drive</label>' +
+      '<input id="p-drive" value="' + esc(p ? (p.driveUrl || '') : '') +
+      '" placeholder="https://drive.google.com/drive/folders/..."></div>' +
+      '<div class="ajuda" style="margin:-10px 0 var(--space-4)">Abra a pasta do projeto no Drive da Udiaço, ' +
+      'copie o endereço da barra e cole aqui. Os arquivos do projeto passam a viver lá e as tarefas guardam o link.</div>' +
     '<div class="fg"><label>Situação</label><select id="p-status">' +
       ['ativo','pausado','concluido'].map(s => '<option value="' + s + '"' + (p && p.status === s ? ' selected' : '') + '>' +
         ({ativo:'Em andamento',pausado:'Pausado',concluido:'Concluído'})[s] + '</option>').join('') + '</select></div>',
@@ -1774,8 +1809,11 @@ function modalNovoProjeto(id){
 async function salvarProjeto(id){
   const nome = ($('p-nome').value || '').trim();
   if(!nome){ toast('Dê um nome ao projeto.', 'erro'); return; }
+  const drive = ($('p-drive').value || '').trim();
+  if(drive && !/^https?:\/\//i.test(drive)){ toast('O link da pasta precisa começar com https://', 'erro'); return; }
   const dados = { nome, descricao:($('p-desc').value || '').trim(),
-    lider:$('p-lider').value, status:$('p-status').value, atualizadoEm:new Date().toISOString() };
+    lider:$('p-lider').value, status:$('p-status').value, driveUrl:drive || null,
+    atualizadoEm:new Date().toISOString() };
   try{
     if(id){
       await window._updateDoc(window._doc(COL_PROJ, id), dados);
@@ -1969,9 +2007,18 @@ async function salvarResposta(id){
 
 // ---------- Anexo por link / marcar pessoas ----------
 function modalLink(){
+  const t = tarefaDe(tarefaAberta);
+  const pasta = t ? pastaDoProjeto(t.projetoId) : '';
   abrirModal(moldura('Anexar link',
-    '<div class="fg"><label>Link (Google Drive, planilha, pasta...)</label><input id="l-url" placeholder="https://drive.google.com/..."></div>' +
-    '<div class="fg"><label>Como chamar este link</label><input id="l-nome" placeholder="Ex.: Planilha de horas — julho"></div>',
+    (pasta
+      ? '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-brand-google-drive"></i>' +
+        '<div>Suba o arquivo na pasta do projeto, copie o link dele e cole abaixo.<br>' +
+        '<a href="' + esc(pasta) + '" target="_blank" rel="noopener"><b>Abrir a pasta deste projeto no Drive</b></a></div></div>'
+      : '') +
+    '<div class="fg"><label>Link do arquivo ou da pasta</label>' +
+      '<input id="l-url" placeholder="https://drive.google.com/..."></div>' +
+    '<div class="fg"><label>Como chamar este link</label>' +
+      '<input id="l-nome" placeholder="Ex.: Contrato assinado — v3"></div>',
     'Anexar', 'salvarLink()'));
 }
 function salvarLink(){
