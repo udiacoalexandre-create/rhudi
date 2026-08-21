@@ -84,6 +84,7 @@ let paraMarcar = [];        // pessoas marcadas na próxima mensagem
 let recolhidos = {};        // projetos recolhidos na tabela (só nesta sessão)
 let expandidos = {};        // tarefas com as filhas abertas na tabela
 let unsubs = [];
+let primeiroSnapNotif = true;
 
 // ============================================================
 // UTILITÁRIOS
@@ -383,8 +384,10 @@ function assinarDados(){
       const agora = notificacoes.filter(n => !n.lida).length;
       renderSino();
       if($('notif-painel').classList.contains('notif-painel--on')) renderNotificacoes();
-      // Avisa na hora quando chega algo novo com a tela aberta.
-      if(agora > antesNaoLidas){
+      // Avisa na hora quando chega algo novo com a tela aberta. O primeiro
+      // snapshot é o histórico que já estava lá — esse não vira aviso.
+      if(primeiroSnapNotif){ primeiroSnapNotif = false; }
+      else if(agora > antesNaoLidas){
         const n = notificacoes.find(x => !x.lida);
         if(n) toast(textoNotificacao(n), 'ok');
       }
@@ -773,8 +776,9 @@ function linhasComFilhas(t, nivel){
     .filter(f => mostrarConcluidas || f.status !== 'concluida')
     .sort((a,b) => (a.tipo === 'solicitacao' ? 1 : 0) - (b.tipo === 'solicitacao' ? 1 : 0) || ordenarPorPrazo(a,b));
   const aberto = expandidos[t._id] !== false;
+  const nivelFilha = Math.min(nivel + 1, 2);   // o recuo para em 2 níveis
   return linhaTabela(t, nivel, filhas.length, aberto) +
-    (aberto && nivel < 2 ? filhas.map(f => linhasComFilhas(f, nivel+1)).join('') : '');
+    (aberto ? filhas.map(f => linhasComFilhas(f, nivelFilha)).join('') : '');
 }
 
 function linhaTabela(t, nivel, qtdFilhas, aberto){
@@ -846,8 +850,11 @@ function viewEquipe(){
 // editáveis; (4) sublinhas (subtarefas e pedidos); (5) conversa, com o
 // compositor no topo e a atualização mais nova em primeiro lugar.
 let unsubMsgs = null;
+let lidoAoAbrir = '';   // até onde eu já tinha lido quando abri o ticket
 
 function abrirTarefa(id){
+  const t0 = tarefaDe(id);
+  lidoAoAbrir = (t0 && (t0.lidoPor || {})[chaveEmail(usuario.email)]) || '';
   tarefaAberta = id;
   paraAnexar = []; paraMarcar = []; mensagens = [];
   $('backdrop').classList.add('backdrop--on');
@@ -1082,8 +1089,7 @@ function miniLinha(t){
 // ---------- Linha do tempo da conversa (mais nova no topo) ----------
 function eventoHTML(m, ehUltima){
   const sys = m.tipo === 'sistema';
-  const nova = !sys && m.autor !== usuario.email &&
-    (!m.criadoEm || m.criadoEm > ((tarefaDe(tarefaAberta) || {}).lidoPor || {})[chaveEmail(usuario.email)] || '');
+  const nova = !sys && m.autor !== usuario.email && String(m.criadoEm || '') > lidoAoAbrir;
   return '<div class="ev' + (sys ? ' ev--sys' : '') + (nova ? ' ev--nova' : '') + '">' +
     '<div class="ev__col">' +
       (sys ? '<span class="marca-sys"><i class="ti ti-' + (m.icone || 'info-circle') + '"></i></span>'
@@ -1335,10 +1341,11 @@ async function salvarTarefa(paiId){
   if(!titulo){ toast('Descreva a demanda.', 'erro'); return; }
   const pai = paiId ? tarefaDe(paiId) : null;
   const resp = $('t-resp').value;
+  const projetoId = pai ? pai.projetoId : $('t-proj').value;
   const agora = new Date().toISOString();
   try{
     const id = await criarDoc(COL_TAR, {
-      projetoId: pai ? pai.projetoId : $('t-proj').value,
+      projetoId,
       titulo, descricao:($('t-desc').value || '').trim(),
       responsavel:resp,
       prazo:$('f-prazo').value || null,
@@ -1350,7 +1357,7 @@ async function salvarTarefa(paiId){
     });
     fecharModal();
     if(resp !== usuario.email)
-      await notificar([resp], 'atribuicao', titulo, { _id:id, titulo, projetoId: pai ? pai.projetoId : $('t-proj') && $('t-proj').value });
+      await notificar([resp], 'atribuicao', titulo, { _id:id, titulo, projetoId });
     toast(pai ? 'Subtarefa criada.' : 'Demanda criada.', 'ok');
     abrirTarefa(id);
   }catch(e){ toast('Erro ao criar: ' + (e && e.code || e), 'erro'); }
