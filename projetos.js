@@ -88,7 +88,6 @@ let tarefas   = [];
 let notificacoes = [];
 let aba = 'agenda';
 let projetoAberto = null;
-let pessoaAberta  = null;
 let tarefaAberta  = null;
 let mensagens = [];
 let paraAnexar = [];        // anexos na fila do compositor
@@ -668,7 +667,6 @@ async function limparNotificacoesAntigas(){
 function irPara(novaAba){
   aba = novaAba;
   if(novaAba !== 'projetos') projetoAberto = null;
-  if(novaAba !== 'equipe') pessoaAberta = null;
   render();
   window.scrollTo(0, 0);
 }
@@ -677,22 +675,23 @@ function render(){
   renderNav();
   renderSino();
   const v = $('view');
-  if(aba === 'agenda')        v.innerHTML = viewAgenda(usuario.email, true);
-  else if(aba === 'projetos') v.innerHTML = viewProjetos();
-  else if(aba === 'equipe')   v.innerHTML = pessoaAberta ? viewAgenda(pessoaAberta, false) : viewEquipe();
+  if(aba === 'projetos') v.innerHTML = viewProjetos();
+  else                  v.innerHTML = viewAgenda();
 }
 function renderNav(){
   const minhas = abertas(tarefas.filter(t => t.responsavel === usuario.email));
   const urgentes = minhas.filter(t => ['checar','atrasada','hoje'].includes(grupoDaTarefa(t))).length;
   const itens = [
-    { id:'agenda',   icone:'calendar-check', label:'Minhas tarefas', count:urgentes },
-    { id:'projetos', icone:'table',          label:'Projetos',       count:projetos.filter(p => p.status !== 'concluido').length },
-    { id:'equipe',   icone:'users',          label:'Equipe',         count:0 },
+    { id:'agenda',   icone:'layout-kanban', label:'Minhas tarefas',
+      count:urgentes, dica:urgentes ? urgentes + ' item(ns) pedindo ação hoje' : 'Seu quadro e sua agenda' },
+    { id:'projetos', icone:'table',         label:'Projetos',
+      count:projetos.filter(p => p.status !== 'concluido').length, dica:'Projetos, frentes e demandas' },
   ];
-  $('nav').innerHTML = itens.map(i =>
-    '<button class="nav__item' + (aba === i.id ? ' nav__item--active' : '') + '" onclick="irPara(\'' + i.id + '\')">' +
-      '<i class="ti ti-' + i.icone + '"></i> ' + i.label +
-      (i.count ? ' <span class="nav__count">' + i.count + '</span>' : '') +
+  $('abas').innerHTML = itens.map(i =>
+    '<button class="aba' + (aba === i.id ? ' aba--on' : '') + '" title="' + esc(i.dica) + '" ' +
+      'onclick="irPara(\'' + i.id + '\')">' +
+      '<i class="ti ti-' + i.icone + '"></i>' + i.label +
+      (i.count ? '<span class="aba__n">' + i.count + '</span>' : '') +
     '</button>').join('');
 }
 function vazio(icone, titulo, texto){
@@ -832,7 +831,7 @@ function diasDaAgenda(lista){
               tarefas:pega(t => t.prazo && t.prazo > fimSem && t.prazo <= fimProx) });
   dias.push({ id:'depois', titulo:'Mais para frente', cor:'var(--text-muted)', data:null, semSolta:true,
               tarefas:pega(t => t.prazo && t.prazo > fimProx) });
-  dias.push({ id:'semdata', titulo:'Para planejar (sem data)', cor:'var(--warning)', data:'',
+  dias.push({ id:'semdata', titulo:'Para planejar', cor:'var(--warning)', data:'',
               tarefas:pega(t => !t.prazo) });
   return dias;
 }
@@ -841,16 +840,23 @@ function proximaSegunda(){
   d.setDate(d.getDate() + 1);
   return iso(d);
 }
-function miniCard(t, podeEditar){
+// Item da agenda: uma LINHA, não um card. A agenda responde "o que eu me
+// programei para cada dia"; o quadro de cima responde "em que estado está
+// cada coisa". Dois quadros de card na mesma tela competiam entre si.
+function itemDoDia(t, podeEditar){
   const proj = projetoDe(t.projetoId);
-  const alerta = deadlineEstourado(t) ? ' <span class="card__alerta">prazo final vencido</span>'
-    : (planejadoDepoisDoDeadline(t) ? ' <span class="card__risco">depois do prazo final</span>' : '');
-  return '<div class="mini-card" style="border-left-color:' + st(t).cor + '"' +
+  const alerta = deadlineEstourado(t)
+    ? '<span class="it__alerta">prazo final vencido</span>'
+    : (planejadoDepoisDoDeadline(t) ? '<span class="it__risco">depois do prazo final</span>'
+      : (t.prazoFinal ? '<span class="it__final"><i class="ti ti-flag"></i>' + esc(dataBR(t.prazoFinal)) + '</span>' : ''));
+  return '<div class="it"' +
     (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
-    ' onclick="cliqueCard(\'' + t._id + '\',event)" title="' + esc(STATUS[t.status].label) + '">' +
-    '<div class="mini-card__tit">' + esc(recorta(t.titulo, 58)) + indicadorConversa(t) +
-      '<div class="mini-card__sub">' + (proj ? esc(recorta(proj.nome, 24)) : 'sem projeto') + alerta + '</div>' +
-    '</div>' +
+    ' onclick="cliqueCard(\'' + t._id + '\',event)" title="' + esc(t.titulo) + ' — ' + esc(STATUS[t.status].label) + '">' +
+    '<span class="it__ponto" style="background:' + st(t).cor + '" title="' + esc(STATUS[t.status].label) + '"></span>' +
+    '<span class="it__tit">' + esc(t.titulo) + '</span>' +
+    indicadorConversa(t) +
+    '<span class="it__proj">' + (proj ? esc(recorta(proj.nome, 28)) : '—') + '</span>' +
+    alerta +
   '</div>';
 }
 // A agenda fica embaixo do quadro, com os dias em grade: cada dia é uma caixa
@@ -861,54 +867,62 @@ function agendaRodape(lista, podeEditar){
   return '<section class="ag">' +
     '<div class="ag__tit"><i class="ti ti-calendar-week"></i> Agenda de planejamento' +
       '<span class="small muted" style="font-weight:400">pelo dia em que você decidiu mexer' +
-      (podeEditar ? ' · arraste um card para outro dia para reprogramar' : '') + '</span></div>' +
-    '<div class="ag__grade">' +
+      (podeEditar ? ' · arraste uma linha para outro dia para reprogramar' : '') + '</span></div>' +
     dias.map(d => {
       const solta = podeEditar && !d.semSolta;
-      return '<div class="ag__dia"><div class="dia">' +
-        '<div class="dia__head">' +
-          '<span class="dia__nome" style="color:' + d.cor + '">' + esc(d.titulo) + '</span>' +
-          (d.tarefas.length ? '<span class="dia__n">' + d.tarefas.length + '</span>' : '') +
+      return '<div class="ag__dia' + (d.tarefas.length ? '' : ' ag__dia--vazio') + '">' +
+        '<div class="ag__rot">' +
+          '<span class="ag__nome" style="color:' + d.cor + '">' + esc(d.titulo) + '</span>' +
+          (d.tarefas.length ? '<span class="ag__n">' + d.tarefas.length + '</span>' : '') +
         '</div>' +
-        '<div class="dia__lista"' +
-          (solta ? ' ondragover="sobreAlvo(event,this,\'dia__lista--alvo\')"' +
-                   ' ondragleave="saiuAlvo(this,\'dia__lista--alvo\')"' +
+        '<div class="ag__itens"' +
+          (solta ? ' ondragover="sobreAlvo(event,this,\'ag__itens--alvo\')"' +
+                   ' ondragleave="saiuAlvo(this,\'ag__itens--alvo\')"' +
                    ' ondrop="soltarNoDia(event,\'' + d.data + '\',this)"' : '') + '>' +
-          (d.tarefas.length ? d.tarefas.map(t => miniCard(t, podeEditar)).join('')
-            : '<div class="dia__vazio">' + (solta ? 'solte aqui' : 'nada') + '</div>') +
+          (d.tarefas.length ? d.tarefas.map(t => itemDoDia(t, podeEditar)).join('')
+            : '<div class="ag__livre">' + (solta ? 'livre — solte uma linha aqui' : 'livre') + '</div>') +
         '</div>' +
-      '</div></div>';
+      '</div>';
     }).join('') +
-    '</div>' +
   '</section>';
 }
 
 // ---------- KANBAN (estado) ----------
+// Card com ALTURA FIXA: título em até duas linhas e uma única linha de rodapé.
+// Antes o rodapé embrulhava em duas ou três linhas e cada card ficava de um
+// tamanho, o que atrapalhava a leitura da coluna.
 function cardKanban(t, podeEditar){
   const proj = projetoDe(t.projetoId);
   const filhas = filhasDe(t._id);
   const feitas = filhas.filter(f => f.status === 'concluida').length;
-  const meta = [];
-  if(proj) meta.push('<span class="card__proj"><i class="ti ti-folder"></i>' + esc(recorta(proj.nome, 22)) + '</span>');
   const fr = t.frenteId ? nomeFrente(t.projetoId, t.frenteId) : '';
-  if(fr) meta.push('<span class="card__proj" style="color:' + corFrente(t.projetoId, t.frenteId) +
-    ';font-weight:600"><span class="pop__ponto" style="background:currentColor"></span>' + esc(recorta(fr, 18)) + '</span>');
-  if(t.prazo) meta.push('<span class="' + classeData(t.prazo, t, false) + '"><i class="ti ti-calendar-event"></i> ' +
-    esc(prazoTexto(t.prazo)) + '</span>');
-  if(t.prazoFinal) meta.push('<span class="' + (deadlineEstourado(t) ? 'card__alerta' : '') +
-    '"><i class="ti ti-flag"></i> ' + esc(dataBR(t.prazoFinal)) + '</span>');
-  if(filhas.length) meta.push('<span><i class="ti ti-subtask"></i> ' + feitas + '/' + filhas.length + '</span>');
-  if(t.tipo === 'solicitacao' && t.solicitante)
-    meta.push('<span><i class="ti ti-arrow-forward-up"></i> ' + esc(primeiroNome(t.solicitante)) + '</span>');
   const esperando = abertas(pedidosDe(t._id));
-  if(esperando.length && t.status === 'aguardando')
-    meta.push('<span><i class="ti ti-hourglass"></i> ' + esc(esperando.map(f => primeiroNome(f.responsavel)).join(', ')) + '</span>');
+  // Rodapé: contexto (projeto/frente) à esquerda, datas e sinais à direita.
+  const ctx = fr
+    ? '<span class="card__ctx" style="color:' + corFrente(t.projetoId, t.frenteId) + '">' + esc(fr) + '</span>'
+    : (proj ? '<span class="card__ctx">' + esc(proj.nome) + '</span>' : '<span class="card__ctx">—</span>');
+  const sinais =
+    (filhas.length ? '<span title="' + feitas + ' de ' + filhas.length + ' sublinha(s) concluída(s)">' +
+      '<i class="ti ti-subtask"></i>' + feitas + '/' + filhas.length + '</span>' : '') +
+    (esperando.length && t.status === 'aguardando'
+      ? '<span title="Esperando ' + esc(esperando.map(f => primeiroNome(f.responsavel)).join(', ')) + '">' +
+        '<i class="ti ti-hourglass"></i></span>' : '') +
+    ((deadlineEstourado(t) || planejadoDepoisDoDeadline(t))
+      ? '<span class="' + (deadlineEstourado(t) ? 'card__alerta' : 'card__risco') +
+        '" title="Prazo final ' + esc(dataBR(t.prazoFinal)) + '"><i class="ti ti-flag"></i>' +
+        esc(dataBR(t.prazoFinal)) + '</span>' : '') +
+    (t.prazo ? '<span class="' + classeData(t.prazo, t, false) + '" title="Próxima ação ' +
+      esc(prazoTexto(t.prazo)) + '">' + esc(dataBR(t.prazo)) + '</span>' : '');
+  const dica = t.titulo + (proj ? ' — ' + proj.nome : '') + (fr ? ' / ' + fr : '') +
+    (t.tipo === 'solicitacao' && t.solicitante ? ' — pedido de ' + primeiroNome(t.solicitante) : '');
   return '<div class="card' + (t.status === 'concluida' ? ' card--concluido' : '') +
-    '" style="border-top-color:' + st(t).cor + '"' +
+    '" style="border-top-color:' + st(t).cor + '" title="' + esc(dica) + '"' +
     (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
     ' onclick="cliqueCard(\'' + t._id + '\',event)">' +
-    '<div class="card__tit">' + esc(t.titulo) + ' ' + indicadorConversa(t) + '</div>' +
-    (meta.length ? '<div class="card__meta">' + meta.join('') + '</div>' : '') +
+    '<div class="card__tit">' +
+      (t.tipo === 'solicitacao' ? '<i class="ti ti-arrow-forward-up" style="opacity:.6"></i> ' : '') +
+      esc(t.titulo) + '</div>' +
+    '<div class="card__meta">' + ctx + '<span class="spacer"></span>' + indicadorConversa(t) + sinais + '</div>' +
   '</div>';
 }
 const LIMITE_FINALIZADO = 15;
@@ -941,8 +955,8 @@ function kanbanHTML(lista, podeEditar){
   }).join('') + '</div>';
 }
 
-function viewAgenda(email, propria){
-  const podeEditar = propria || ehMaster();
+function viewAgenda(){
+  const email = usuario.email;
   const todas = tarefas.filter(t => t.responsavel === email);
   const emAberto = abertas(todas);
   const atrasadas = emAberto.filter(t => t.prazo && t.prazo < hoje()).length;
@@ -957,23 +971,23 @@ function viewAgenda(email, propria){
   return '<div class="wrap wrap--largo">' +
     '<div class="row--between" style="margin-bottom:var(--space-4);flex-wrap:wrap">' +
       '<div>' +
-        (propria ? '' : '<button class="btn" style="margin-bottom:var(--space-3)" onclick="pessoaAberta=null;render()"><i class="ti ti-arrow-left"></i> Equipe</button>') +
-        '<h1 class="page-title">' + (propria ? 'Minhas tarefas' : 'Tarefas de ' + esc(nomeDe(email))) + '</h1>' +
+        '<h1 class="page-title">Minhas tarefas</h1>' +
         '<p class="page-subtitle">' + emAberto.length + ' em aberto · ' + hojeN + ' para hoje</p>' +
       '</div>' +
       '<div class="row" style="flex-wrap:wrap">' +
         chip(atrasadas, 'atrasada(s)', 'var(--danger-text)', 'alert-triangle') +
         chip(vencidos, 'fora do prazo final', 'var(--danger-text)', 'flag') +
         chip(semData, 'sem data', 'var(--warning-text)', 'calendar-question') +
-        (propria ? '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' : '') +
+        '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' +
       '</div>' +
     '</div>' +
     (todas.length
-      ? kanbanHTML(todas, podeEditar) + agendaRodape(emAberto, podeEditar)
+      ? kanbanHTML(todas, true) + agendaRodape(emAberto, true)
       : vazio('checkbox', 'Nada por aqui ainda',
           'Quando alguém te definir como responsável — ou você criar uma tarefa — ela aparece no quadro e na agenda.')) +
   '</div>';
 }
+
 
 // ============================================================
 // ABA 2 — PROJETOS (uma tabela por projeto)
@@ -1384,38 +1398,6 @@ function linhaTabela(t, nivel, filhas, aberto){
     celulaData(t, 'prazo') +
     celulaData(t, 'final') +
   '</tr>';
-}
-
-// ============================================================
-// ABA 3 — EQUIPE
-// ============================================================
-function viewEquipe(){
-  const linhas = usuarios.map(u => {
-    const minhas = abertas(tarefas.filter(t => t.responsavel === u.email));
-    const c = { atrasada:0, hoje:0, semana:0, proxima:0, aguardando:0, checar:0 };
-    minhas.forEach(t => { const g = grupoDaTarefa(t); if(c[g] != null) c[g]++; });
-    return { u, minhas, c, vencidos:minhas.filter(deadlineEstourado).length };
-  }).sort((a,b) => b.minhas.length - a.minhas.length);
-  const cel = (n, cor) => '<td class="data-cel" style="text-align:right' +
-    (n && cor ? ';color:var(--' + cor + ');font-weight:600' : '') + '">' + (n || '—') + '</td>';
-  return '<div class="wrap">' +
-    '<h1 class="page-title">Equipe</h1>' +
-    '<p class="page-subtitle">Carga de cada pessoa pela próxima ação. Clique para ver a agenda dela.</p>' +
-    '<div class="proj-bloco" style="margin-top:var(--space-5)"><div class="tab-wrap"><table class="tab">' +
-    '<thead><tr><th>Pessoa</th><th style="text-align:right">A checar</th>' +
-    '<th style="text-align:right">Atrasadas</th><th style="text-align:right">Hoje</th>' +
-    '<th style="text-align:right">Esta semana</th><th style="text-align:right">Próxima</th>' +
-    '<th style="text-align:right">Aguardando</th><th style="text-align:right">Prazo final vencido</th>' +
-    '<th style="text-align:right">Total aberto</th></tr></thead><tbody>' +
-    linhas.map(l =>
-      '<tr onclick="pessoaAberta=\'' + l.u.email + '\';render()">' +
-      '<td><div class="person">' + avatar(l.u.email) +
-        '<div><div class="person__name">' + esc(nomeDe(l.u.email)) + '</div>' +
-        '<div class="person__sub">' + esc(l.u.email) + '</div></div></div></td>' +
-      cel(l.c.checar, 'purple') + cel(l.c.atrasada, 'danger') + cel(l.c.hoje, 'accent') +
-      cel(l.c.semana) + cel(l.c.proxima) + cel(l.c.aguardando, 'warning') + cel(l.vencidos, 'danger') +
-      '<td class="data-cel" style="text-align:right"><b>' + l.minhas.length + '</b></td></tr>').join('') +
-    '</tbody></table></div></div></div>';
 }
 
 // ============================================================
