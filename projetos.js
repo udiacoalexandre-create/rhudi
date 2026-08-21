@@ -2082,6 +2082,14 @@ async function mudarStatus(id, novo){
   const t = tarefaDe(id);
   if(!t) return;
   if(novo === 'concluida'){ concluirTarefa(id); return; }
+  // Estar "aguardando terceiros" sem ter pedido nenhum em aberto é um estado
+  // que não diz nada: quem está esperando o quê, de quem? Então cair nessa
+  // coluna abre o pedido, e é a criação dele que muda o status.
+  if(novo === 'aguardando' && !abertas(pedidosDe(id)).length){
+    modalSolicitar(id);
+    renderPainel();
+    return;
+  }
   if(t.status === novo){ renderPainel(); return; }
   await atualizarTarefa(id, { status:novo, concluidaEm:null, atualizadoEm:new Date().toISOString() });
   await postarMensagem(id, 'Situação: ' + (STATUS[novo] || {}).label + '.', 'sistema');
@@ -2097,7 +2105,27 @@ async function concluirTarefa(id){
   await atualizarTarefa(id, { status:'concluida', concluidaEm:new Date().toISOString() });
   await postarMensagem(id, 'Concluída por ' + usuario.nome + '.', 'sistema');
   await notificar(envolvidos(t), 'mensagem', 'Tarefa concluída: ' + t.titulo, t);
+  // Se era um pedido, quem pediu tem de recuperar a tarefa dele.
+  if(t.tipo === 'solicitacao' && t.paiId) await devolverAoPai(t, 'Pedido concluído por ' + usuario.nome + '.');
   toast('Tarefa concluída.', 'ok');
+}
+
+// Destrava a tarefa de quem pediu: quando não sobra nenhum pedido em aberto,
+// ela volta para VERIFICAR / REVISAR — é lá que a pessoa confere o que mudou.
+async function devolverAoPai(filha, aviso){
+  const pai = filha.paiId ? tarefaDe(filha.paiId) : null;
+  if(!pai) return;
+  const aindaAbertos = abertas(pedidosDe(pai._id)).filter(f => f._id !== filha._id);
+  if(aviso) await postarMensagem(pai._id, aviso, 'sistema');
+  if(aindaAbertos.length){
+    await postarMensagem(pai._id, 'Ainda falta(m) ' + aindaAbertos.length + ' pedido(s) para liberar.', 'sistema');
+    return;
+  }
+  if(pai.status === 'concluida') return;
+  await atualizarTarefa(pai._id, { status:'checar', atualizadoEm:new Date().toISOString() });
+  await postarMensagem(pai._id, 'Voltou para verificar/revisar.', 'sistema');
+  await notificar([pai.responsavel, filha.solicitante], 'resposta',
+    'Pode conferir: ' + recorta(pai.titulo, 60), pai);
 }
 async function reabrirTarefa(id){
   await atualizarTarefa(id, { status:'a_fazer', concluidaEm:null });
@@ -2455,16 +2483,8 @@ async function salvarResposta(id){
   try{
     await postarMensagem(id, texto, 'msg');
     await atualizarTarefa(id, { status:'concluida', concluidaEm:agora, atualizadoEm:agora });
-    const pai = t.paiId ? tarefaDe(t.paiId) : null;
-    if(pai){
-      await postarMensagem(pai._id, usuario.nome + ' respondeu ao pedido "' + t.titulo + '": ' + texto, 'sistema');
-      // Só destrava quando não sobrar nenhum outro pedido em aberto.
-      const aindaAbertos = abertas(pedidosDe(pai._id)).filter(f => f._id !== id);
-      if(!aindaAbertos.length && pai.status !== 'concluida'){
-        await atualizarTarefa(pai._id, { status:'checar', atualizadoEm:agora });
-        await postarMensagem(pai._id, 'Todos os pedidos voltaram — liberada para checar.', 'sistema');
-      }
-      await notificar([pai.responsavel, t.solicitante], 'resposta', texto, pai);
+    if(t.paiId){
+      await devolverAoPai(t, usuario.nome + ' respondeu ao pedido "' + t.titulo + '": ' + texto);
     }else{
       await notificar([t.solicitante], 'resposta', texto, t);
     }
