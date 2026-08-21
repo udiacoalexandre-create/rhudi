@@ -98,6 +98,7 @@ let paraMarcar = [];        // pessoas marcadas na próxima mensagem
 let recolhidos = {};        // projetos recolhidos na tabela (só nesta sessão)
 let gruposFechados = {};   // grupos recolhidos na agenda
 let filtro = '';           // busca da barra de ferramentas
+let abaTicket = 'upd';     // aba do ticket: upd | arq | hist
 let soMinhas = false;      // filtro "só as minhas" na aba Projetos
 let expandidos = {};        // tarefas com as filhas abertas na tabela
 let unsubs = [];
@@ -140,6 +141,17 @@ function dataBR(s){
   if(!s) return '';
   const p = String(s).slice(0,10).split('-');
   return p.length === 3 ? p[2] + '/' + p[1] : s;
+}
+// "agora há pouco" / "há 2 h" para o que é recente; data e hora para o resto.
+function quando(s){
+  if(!s) return '';
+  const d = new Date(s);
+  if(isNaN(d)) return '';
+  const min = Math.round((Date.now() - d.getTime()) / 60000);
+  if(min < 1) return 'agora há pouco';
+  if(min < 60) return 'há ' + min + ' min';
+  if(min < 300) return 'há ' + Math.round(min/60) + ' h';
+  return dataHoraBR(s);
 }
 function dataHoraBR(s){
   if(!s) return '';
@@ -262,6 +274,8 @@ function iniciar(){
   document.addEventListener('click', e => {
     const p = $('notif-painel');
     if(p.classList.contains('notif-painel--on') && !p.contains(e.target)) p.classList.remove('notif-painel--on');
+    const m = $('menu-ticket');
+    if(m && m.classList.contains('menu--on') && !m.contains(e.target)) m.classList.remove('menu--on');
   });
   document.onkeydown = e => {
     if(e.key !== 'Escape') return;
@@ -389,6 +403,7 @@ function assinarDados(){
     snap.forEach(d => tarefas.push(Object.assign({ _id:d.id }, d.data())));
     render();
     if(tarefaAberta) renderPainel();
+    abrirDoLink();
   }, erroFirestore));
   // Notificações: só as minhas (filtro no servidor, ordenação no cliente).
   unsubs.push(window._onSnapshot(
@@ -410,6 +425,17 @@ function assinarDados(){
       }
     }, erroFirestore));
   limparNotificacoesAntigas();
+}
+// Quem recebeu um link '#t=ID' cai direto no ticket, assim que os dados chegam.
+let linkJaAberto = false;
+function abrirDoLink(){
+  if(linkJaAberto || tarefaAberta) return;
+  const m = String(location.hash || '').match(/^#t=(.+)$/);
+  if(!m) { linkJaAberto = true; return; }
+  const t = tarefaDe(m[1]);
+  if(!t) return;                 // ainda pode estar carregando
+  linkJaAberto = true;
+  abrirTarefa(m[1]);
 }
 function erroFirestore(e){
   console.error(e);
@@ -444,7 +470,7 @@ async function postarMensagem(tarefaId, texto, tipo, anexos, mencoes){
     texto: texto || '', tipo: tipo || 'msg',
     anexos: anexos || [], mencoes: mencoes || [], criadoEm: agora
   });
-  const patch = { ultimaMsgEm: agora };
+  const patch = { ultimaMsgEm: agora, msgs: window._inc(1) };
   patch['lidoPor.' + chaveEmail(usuario.email)] = agora;   // quem escreveu já leu
   await atualizarTarefa(tarefaId, patch).catch(()=>{});
   return t;
@@ -618,62 +644,96 @@ function statCard(label, valor, icone, cor){
 // ============================================================
 // ABA 1 — MINHAS TAREFAS (agenda pela PRÓXIMA AÇÃO)
 // ============================================================
-// Cada linha traz o deadline ao lado e um campo para a pessoa REPROGRAMAR a
-// próxima ação sem abrir a tarefa: é assim que a demanda que chegou para hoje
-// vai para segunda sem mexer no prazo final combinado.
-function itemAgenda(t, opcoes){
-  const o = opcoes || {};
-  const cls = ['item'];
-  if(t.status === 'concluida') cls.push('item--concluida');
+// Tabela agrupada por data, como no "Meu trabalho" da referência: cada grupo
+// tem título colorido, contagem e chevron, e os grupos vazios continuam à
+// vista (recolhidos) para a pessoa enxergar a semana inteira. A célula de
+// PRÓXIMA AÇÃO é editável na linha: é ali que a pessoa se reprograma sem
+// abrir a tarefa, e o prazo final ao lado continua de pé.
+// A célula mostra a data em texto ("hoje", "24/08") e só vira campo de data
+// quando a pessoa clica — o campo nativo aberto em toda linha polui a tabela.
+function celulaData(t, campo){
+  const valor = campo === 'prazo' ? t.prazo : t.prazoFinal;
+  const cls = classeData(valor, t, campo !== 'prazo');
+  const texto = valor ? (campo === 'prazo' ? prazoTexto(valor) : dataBR(valor)) : '—';
+  const podeEditar = (t.responsavel === usuario.email || ehMaster()) && t.status !== 'concluida';
+  if(!podeEditar) return '<td class="data-cel ' + cls + '">' + esc(texto) + '</td>';
+  return '<td class="data-cel cel-edit ' + cls + '" title="' +
+    (campo === 'prazo' ? 'Clique para reprogramar a próxima ação' : 'Clique para mudar o prazo final') +
+    '" onclick="editarData(\'' + t._id + '\',\'' + campo + '\',event)">' +
+    '<span class="cel-edit__txt">' + esc(texto) + '</span></td>';
+}
+function editarData(id, campo, ev){
+  ev.stopPropagation();
+  const td = ev.currentTarget;
+  const t = tarefaDe(id);
+  if(!t || td.querySelector('input')) return;
+  const valor = (campo === 'prazo' ? t.prazo : t.prazoFinal) || '';
+  const fn = campo === 'prazo' ? 'mudarPrazo' : 'mudarPrazoFinal';
+  td.innerHTML = '<input type="date" value="' + esc(valor) + '" onclick="event.stopPropagation()" ' +
+    'onchange="' + fn + '(\'' + id + '\',this.value)" onblur="render()">';
+  const inp = td.querySelector('input');
+  inp.focus();
+  try{ inp.showPicker(); }catch(e){}
+}
+// Balão da conversa. O contador 'msgs' só existe nas tarefas criadas depois
+// desta versão, então quem já tem conversa antiga (sem contador) mostra o
+// balão sem número — melhor que esconder que há conversa.
+function indicadorConversa(t){
+  const n = t.msgs || 0;
+  if(!n && !t.ultimaMsgEm) return '';
+  return '<span class="chat-ind' + (temNaoLida(t) ? ' chat-ind--novo' : '') + '">' +
+    '<i class="ti ti-message-circle-2"></i>' + (n || '') + '</span>';
+}
+function tickHTML(t){
+  const c = t.status === 'concluida';
+  return '<button class="tick' + (c ? ' tick--ok' : '') + '" title="' + (c ? 'Reabrir' : 'Concluir') +
+    '" onclick="event.stopPropagation();' + (c ? 'reabrirTarefa' : 'concluirTarefa') +
+    '(\'' + t._id + '\')"><i class="ti ti-check"></i></button>';
+}
+
+function linhaAgenda(t){
   const proj = projetoDe(t.projetoId);
   const pai = t.paiId ? tarefaDe(t.paiId) : null;
-  const pedAbertos = abertas(pedidosDe(t._id)).length;
-
   const sub = [];
-  if(proj) sub.push('<span><i class="ti ti-folder"></i> ' + esc(proj.nome) + '</span>');
-  if(t.tipo === 'solicitacao' && t.solicitante)
-    sub.push('<span class="dot"></span><span><i class="ti ti-arrow-forward-up"></i> pedido de ' + esc(primeiroNome(t.solicitante)) + '</span>');
-  else if(t.tipo === 'subtarefa' && pai)
-    sub.push('<span class="dot"></span><span><i class="ti ti-corner-down-right"></i> ' + esc(recorta(pai.titulo, 40)) + '</span>');
-  if(t.prazoFinal){
-    const c = deadlineEstourado(t) ? 'style="color:var(--danger-text);font-weight:600"'
-            : (planejadoDepoisDoDeadline(t) ? 'style="color:var(--warning-text);font-weight:600"' : '');
-    sub.push('<span class="dot"></span><span ' + c + '><i class="ti ti-flag"></i> prazo final ' +
-      esc(dataBR(t.prazoFinal)) + (deadlineEstourado(t) ? ' (vencido)' : '') + '</span>');
-  }
-  if(pedAbertos) sub.push('<span class="dot"></span><span><i class="ti ti-hourglass"></i> ' + pedAbertos + ' pedido(s) em aberto</span>');
-  if(planejadoDepoisDoDeadline(t))
-    sub.push('<span class="dot"></span><span style="color:var(--warning-text)">próxima ação depois do prazo final</span>');
-
-  const podeReprog = t.responsavel === usuario.email && t.status !== 'concluida' && o.reprogramar !== false;
-  return '<div class="' + cls.join(' ') + '" style="border-left-color:' + st(t).cor +
+  if(t.tipo === 'solicitacao' && t.solicitante) sub.push('pedido de ' + esc(primeiroNome(t.solicitante)));
+  else if(t.tipo === 'subtarefa' && pai) sub.push('subtarefa de ' + esc(recorta(pai.titulo, 34)));
+  const pedAbertos = abertas(pedidosDe(t._id)).length;
+  if(pedAbertos) sub.push('esperando ' + pedAbertos + ' pedido(s)');
+  if(deadlineEstourado(t))
+    sub.push('<span style="color:var(--danger-text);font-weight:600">prazo final vencido</span>');
+  else if(planejadoDepoisDoDeadline(t))
+    sub.push('<span style="color:var(--warning-text);font-weight:600">próxima ação depois do prazo final</span>');
+  return '<tr class="' + (t.status === 'concluida' ? 'lin--concluida' : '') +
       '" onclick="abrirTarefa(\'' + t._id + '\')">' +
-    (o.avatar === false ? '' : avatar(t.responsavel, 'avatar--sm')) +
-    '<div class="item__main">' +
-      '<div class="item__tit">' + esc(t.titulo) +
-        (temNaoLida(t) ? ' <span class="pill pill--nova">novo</span>' : '') + '</div>' +
-      '<div class="item__sub">' + sub.join(' ') + '</div>' +
-    '</div>' +
-    '<div class="row" onclick="event.stopPropagation()" style="flex-shrink:0">' +
-      (podeReprog ? '<label class="reprog" title="Quando você vai mexer nisso"><i class="ti ti-calendar-event"></i>' +
-        '<input type="date" value="' + esc(t.prazo || '') + '" onchange="mudarPrazo(\'' + t._id + '\',this.value)"></label>' : '') +
-      stPill(t) +
-    '</div>' +
-  '</div>';
+    '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' + tickHTML(t) +
+      '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div>' +
+      (sub.length ? '<div class="demanda__sub">' + sub.join(' · ') + '</div>' : '') +
+      '</div></div></td>' +
+    '<td class="small muted" style="white-space:nowrap">' +
+      (proj ? '<i class="ti ti-folder"></i> ' + esc(recorta(proj.nome, 26)) : '—') + '</td>' +
+    celulaData(t, 'prazo') +
+    celulaData(t, 'final') +
+    stCelula(t) +
+  '</tr>';
 }
-function grupoHTML(g, lista, opcoes){
-  if(!lista.length) return '';
+
+function blocoGrupo(g, lista){
   const fechado = !!gruposFechados[g.id];
-  return '<section class="grupo">' +
-    '<button class="grupo__head" onclick="alternarGrupo(\'' + g.id + '\')">' +
-      '<i class="ti ti-chevron-' + (fechado ? 'right' : 'down') + '" style="color:' + (g.cor || 'var(--text-muted)') + '"></i>' +
-      '<span class="grupo__titulo" style="color:' + (g.cor || 'var(--text)') + '">' + esc(g.titulo) + '</span>' +
-      '<span class="grupo__cont">' + lista.length + '</span>' +
+  const vazio = !lista.length;
+  return '<section class="g-bloco' + (vazio ? ' g-vazio' : '') + '">' +
+    '<button class="g-head" onclick="alternarGrupo(\'' + g.id + '\')"' + (vazio ? ' disabled' : '') + '>' +
+      (vazio ? '<i class="ti ti-minus" style="color:var(--text-muted);font-size:15px"></i>'
+             : '<i class="ti ti-chevron-' + (fechado ? 'right' : 'down') + '" style="color:' + g.cor + '"></i>') +
+      '<span class="g-titulo" style="color:' + g.cor + '">' + esc(g.titulo) + '</span>' +
+      '<span class="g-qtd">' + lista.length + (lista.length === 1 ? ' item' : ' itens') + '</span>' +
     '</button>' +
-    (fechado ? '' : '<div class="lista">' + lista.map(t => itemAgenda(t, opcoes)).join('') + '</div>') +
+    (vazio || fechado ? '' :
+      '<div class="g-tab"><div class="tab-wrap"><table class="tab">' +
+      '<thead><tr><th class="cel-dem">Demanda</th><th>Projeto</th><th>Próxima ação</th>' +
+      '<th>Prazo final</th><th style="text-align:center">Status</th></tr></thead>' +
+      '<tbody>' + lista.map(linhaAgenda).join('') + '</tbody></table></div></div>') +
   '</section>';
 }
-function alternarGrupo(id){ gruposFechados[id] = !gruposFechados[id]; render(); }
 
 function viewAgenda(email, propria){
   const minhas = abertas(tarefas.filter(t => t.responsavel === email));
@@ -693,16 +753,13 @@ function viewAgenda(email, propria){
       statCard('Aguardando terceiro', porGrupo.aguardando.length, 'hourglass', 'warning') +
     '</div>';
 
-  let corpo = GRUPOS.map(g => grupoHTML(g, porGrupo[g.id], { reprogramar:propria })).join('');
+  let corpo = GRUPOS.map(g => blocoGrupo(g, porGrupo[g.id])).join('');
   if(propria){
     const meusPedidos = abertas(tarefas.filter(t => t.tipo === 'solicitacao' && t.solicitante === email));
-    if(meusPedidos.length){
-      corpo += grupoHTML({ id:'meuspedidos', titulo:'Pedidos que eu fiz e estou esperando', cor:'var(--cyan)' },
-        meusPedidos.sort(ordenarPorPrazo), { reprogramar:false });
-    }
+    if(meusPedidos.length)
+      corpo += blocoGrupo({ id:'meuspedidos', titulo:'Pedidos que eu fiz e estou esperando', cor:'var(--cyan)' },
+        meusPedidos.sort(ordenarPorPrazo));
   }
-  if(!corpo) corpo = vazio('calendar-off', 'Nada na agenda',
-    'Quando alguém te definir como responsável, a tarefa aparece aqui pelo prazo da próxima ação.');
 
   const dia = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
   return '<div class="wrap">' +
@@ -807,7 +864,7 @@ function blocoProjeto(p){
         '<i class="ti ti-chevron-' + (recolhido ? 'right' : 'down') + ' muted"></i>' + esc(p.nome) + '</button>' +
       (p.status === 'concluido' ? '<span class="badge badge--success">Concluído</span>' :
        p.status === 'pausado'   ? '<span class="badge badge--warning">Pausado</span>' : '') +
-      '<span class="prog" title="' + pct + '% concluído"><span class="prog__fill" style="width:' + pct + '%"></span></span>' +
+      pilhaStatus(ts, pct) +
       '<span class="small muted">' + pct + '% · ' + ab.length + ' em aberto' +
         (atrasadas ? ' · <span style="color:var(--danger-text);font-weight:600">' + atrasadas + ' atrasada(s)</span>' : '') +
         (vencidos ? ' · <span style="color:var(--danger-text);font-weight:600">' + vencidos + ' fora do prazo final</span>' : '') +
@@ -827,6 +884,19 @@ function blocoProjeto(p){
               'Clique em "Demanda" para criar a primeira, com responsável, próxima ação e prazo final.'))) +
   '</section>';
 }
+// Distribuição das demandas por status, em uma barra só — dá o retrato do
+// projeto de relance, como a barra empilhada da referência.
+function pilhaStatus(ts, pct){
+  if(!ts.length) return '';
+  const ordem = ['concluida','andamento','checar','aguardando','a_fazer'];
+  const partes = ordem.map(k => {
+    const n = ts.filter(t => t.status === k).length;
+    return n ? '<span style="width:' + (n / ts.length * 100) + '%;background:' + STATUS[k].cor +
+      '" title="' + n + ' ' + STATUS[k].label + '"></span>' : '';
+  }).join('');
+  return '<span class="pilha" title="' + pct + '% concluído">' + partes + '</span>';
+}
+function alternarGrupo(id){ gruposFechados[id] = !gruposFechados[id]; render(); }
 function alternarProjeto(id){ recolhidos[id] = !recolhidos[id]; render(); }
 function alternarFilhas(id, ev){ if(ev) ev.stopPropagation(); expandidos[id] = expandidos[id] === false; render(); }
 
@@ -854,10 +924,6 @@ function linhaTabela(t, nivel, filhas, aberto){
   if(planejadoDepoisDoDeadline(t))
     sub.push('<span style="color:var(--warning-text);font-weight:600">próxima ação depois do prazo final</span>');
 
-  const tick = '<button class="tick' + (concluida ? ' tick--ok' : '') + '" title="' +
-    (concluida ? 'Reabrir' : 'Concluir') + '" onclick="event.stopPropagation();' +
-    (concluida ? 'reabrirTarefa' : 'concluirTarefa') + '(\'' + t._id + '\')">' +
-    '<i class="ti ti-check"></i></button>';
   const ramo = nivel > 0
     ? '<i class="ti ti-' + (t.tipo === 'solicitacao' ? 'arrow-forward-up' : 'corner-down-right') + ' ramo"></i>'
     : '';
@@ -869,15 +935,14 @@ function linhaTabela(t, nivel, filhas, aberto){
   return '<tr class="nivel-' + nivel + (concluida ? ' lin--concluida' : '') +
       '" onclick="abrirTarefa(\'' + t._id + '\')">' +
     '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' +
-      tick + ramo + chevron +
-      '<div><div class="demanda__tit">' + esc(t.titulo) +
-        (temNaoLida(t) ? ' <span class="pill pill--nova">novo</span>' : '') + '</div>' +
+      tickHTML(t) + ramo + chevron +
+      '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div>' +
         (sub.length ? '<div class="demanda__sub">' + sub.join(' · ') + '</div>' : '') +
       '</div></div></td>' +
     '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
     stCelula(t) +
-    '<td class="data-cel ' + classeData(t.prazo, t, false) + '">' + esc(t.prazo ? prazoTexto(t.prazo) : '—') + '</td>' +
-    '<td class="data-cel ' + classeData(t.prazoFinal, t, true) + '">' + esc(t.prazoFinal ? dataBR(t.prazoFinal) : '—') + '</td>' +
+    celulaData(t, 'prazo') +
+    celulaData(t, 'final') +
   '</tr>';
 }
 
@@ -928,7 +993,9 @@ function abrirTarefa(id){
   const t0 = tarefaDe(id);
   lidoAoAbrir = (t0 && (t0.lidoPor || {})[chaveEmail(usuario.email)]) || '';
   tarefaAberta = id;
+  abaTicket = 'upd';
   paraAnexar = []; paraMarcar = []; mensagens = [];
+  try{ history.replaceState(null, '', '#t=' + id); }catch(e){}
   $('backdrop').classList.add('backdrop--on');
   $('drawer').classList.add('drawer--on');
   assinarMensagens(id);
@@ -938,6 +1005,7 @@ function abrirTarefa(id){
 function fecharPainel(){
   tarefaAberta = null;
   paraAnexar = []; paraMarcar = [];
+  try{ if(location.hash) history.replaceState(null, '', location.pathname + location.search); }catch(e){}
   if(unsubMsgs){ unsubMsgs(); unsubMsgs = null; }
   $('backdrop').classList.remove('backdrop--on');
   $('drawer').classList.remove('drawer--on');
@@ -988,7 +1056,20 @@ function renderPainel(){
         (pai ? ' <span class="dot"></span> <a href="#" onclick="abrirTarefa(\'' + pai._id + '\');return false">' +
                esc(recorta(pai.titulo, 34)) + '</a>' : '') +
       '</div>' +
-      '<button class="icon-btn" onclick="fecharPainel()" title="Fechar"><i class="ti ti-x"></i></button>' +
+      '<div class="row" style="gap:0">' +
+        '<div class="menu-wrap">' +
+          '<button class="icon-btn" title="Mais ações" onclick="alternarMenuTicket(event)"><i class="ti ti-dots"></i></button>' +
+          '<div class="menu" id="menu-ticket">' +
+            '<button onclick="copiarLinkTarefa(\'' + t._id + '\')"><i class="ti ti-link"></i> Copiar link da tarefa</button>' +
+            '<button onclick="modalRenomear(\'' + t._id + '\')"><i class="ti ti-pencil"></i> Renomear</button>' +
+            '<button onclick="modalDescricao(\'' + t._id + '\')"><i class="ti ti-align-left"></i> Editar descrição</button>' +
+            '<button onclick="modalNovaSubtarefa(\'' + t._id + '\')"><i class="ti ti-corner-down-right"></i> Nova subtarefa</button>' +
+            (podeExcluir ? '<hr><button class="perigo" onclick="excluirTarefa(\'' + t._id + '\')">' +
+              '<i class="ti ti-trash"></i> Excluir tarefa</button>' : '') +
+          '</div>' +
+        '</div>' +
+        '<button class="icon-btn" onclick="fecharPainel()" title="Fechar"><i class="ti ti-x"></i></button>' +
+      '</div>' +
     '</div>' +
     '<div class="tk-tit">' + esc(t.titulo) +
       '<button class="icon-btn tk-tit__edit" title="Renomear" onclick="modalRenomear(\'' + t._id + '\')">' +
@@ -1051,9 +1132,7 @@ function renderPainel(){
     '</div>' +
     '<div class="small muted" style="margin-top:var(--space-3)">Criada por ' + esc(nomeDe(t.criadoPor)) +
       ' em ' + esc(dataBR(t.criadoEm)) +
-      (t.concluidaEm ? ' · concluída em ' + esc(dataBR(t.concluidaEm)) : '') +
-      (podeExcluir ? ' · <a href="#" onclick="excluirTarefa(\'' + t._id + '\');return false" ' +
-        'style="color:var(--danger-text)">excluir</a>' : '') + '</div>' +
+      (t.concluidaEm ? ' · concluída em ' + esc(dataBR(t.concluidaEm)) : '') + '</div>' +
   '</div>' +
 
   // ---------- 4. Sublinhas ----------
@@ -1069,15 +1148,71 @@ function renderPainel(){
       '<div class="mini-lista">' + peds.sort(ordenarPorPrazo).map(miniLinha).join('') + '</div>' : '') +
   '</div>' +
 
-  // ---------- 5. Conversa ----------
-  '<div class="sec" style="border-bottom:none">' +
-    '<div class="sec__lab">Conversa</div>' +
-    '<div class="compositor">' +
+  // ---------- 5. Atualizações / Arquivos / Histórico ----------
+  // Separar as três coisas foi o que mais organizou o ticket: a conversa fica
+  // só com o que as pessoas escreveram, os anexos ganham uma lista própria e
+  // as mudanças automáticas (status, prazo, responsável) vão para o histórico.
+  abasTicket() +
+  '<div class="sec" style="border-bottom:none">' + conteudoAbaTicket(t) + '</div>' +
+
+  '</div>';
+
+  const ta = $('msg-texto');
+  ta.value = rascunho;
+  ta.onkeydown = e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarMensagem(); };
+}
+function atualizacoes(){ return mensagens.filter(m => m.tipo !== 'sistema'); }
+function eventosSistema(){ return mensagens.filter(m => m.tipo === 'sistema'); }
+function todosAnexos(){
+  const fora = [];
+  atualizacoes().forEach(m => (m.anexos || []).forEach(a =>
+    fora.push(Object.assign({}, a, { autor:m.autor, criadoEm:m.criadoEm }))));
+  return fora;
+}
+function abasTicket(){
+  const abas = [
+    { id:'upd',  icone:'message-circle-2', label:'Atualizações', n:atualizacoes().length },
+    { id:'arq',  icone:'paperclip',        label:'Arquivos',     n:todosAnexos().length },
+    { id:'hist', icone:'history',          label:'Histórico',    n:eventosSistema().length },
+  ];
+  return '<div class="tk-abas">' + abas.map(a =>
+    '<button class="tk-aba' + (abaTicket === a.id ? ' tk-aba--on' : '') + '" onclick="trocarAbaTicket(\'' + a.id + '\')">' +
+    '<i class="ti ti-' + a.icone + '"></i>' + a.label + (a.n ? ' <span>' + a.n + '</span>' : '') + '</button>').join('') + '</div>';
+}
+function trocarAbaTicket(id){ abaTicket = id; renderPainel(); }
+
+function conteudoAbaTicket(t){
+  if(abaTicket === 'arq'){
+    const arqs = todosAnexos();
+    if(!arqs.length) return '<div class="small muted" style="text-align:center;padding:var(--space-5)">' +
+      'Nenhum anexo ainda. Anexe pela conversa: link do Drive ou arquivo pequeno.</div>';
+    return '<div class="arq-lista">' + arqs.map(a =>
+      '<a class="arq" ' + (a.tipo === 'link'
+          ? 'href="' + esc(a.url) + '" target="_blank" rel="noopener"'
+          : 'href="' + esc(a.dados) + '" download="' + esc(a.nome) + '"') + '>' +
+        '<span class="arq__ico"><i class="ti ti-' + (a.tipo === 'link' ? 'external-link' : 'file') + '"></i></span>' +
+        '<span class="arq__nome">' + esc(a.nome) + '</span>' +
+        '<span class="small muted" style="white-space:nowrap">' + esc(primeiroNome(a.autor)) + ' · ' +
+          esc(dataBR(a.criadoEm)) + ' ' + (a.tipo === 'link' ? '' : kb(a.tamanho)) + '</span>' +
+      '</a>').join('') + '</div>';
+  }
+  if(abaTicket === 'hist'){
+    const evs = eventosSistema();
+    if(!evs.length) return '<div class="small muted" style="text-align:center;padding:var(--space-5)">' +
+      'Sem movimentações registradas ainda.</div>';
+    return evs.map(m =>
+      '<div class="hist"><span class="marca-sys" style="width:22px;height:22px;font-size:12px">' +
+      '<i class="ti ti-info-circle"></i></span><div style="flex:1"><div>' + esc(m.texto) + '</div>' +
+      '<div class="small muted">' + esc(quando(m.criadoEm)) + '</div></div></div>').join('');
+  }
+  // Aba padrão: as atualizações escritas por pessoas, mais nova no topo.
+  const upds = atualizacoes();
+  return '<div class="compositor">' +
       (paraMarcar.length ? '<div class="fila">' + paraMarcar.map((e,i) =>
         '<span class="tag-pessoa" onclick="desmarcarPessoa(' + i + ')">@' + esc(primeiroNome(e)) +
         ' <i class="ti ti-x"></i></span>').join('') + '</div>' : '') +
-      (paraAnexar.length ? '<div class="fila" id="fila-anexos">' + filaAnexosHTML() + '</div>' : '<div class="fila" id="fila-anexos"></div>') +
-      '<textarea id="msg-texto" placeholder="Registre a evolução, uma dúvida, um combinado... (Ctrl+Enter envia)"></textarea>' +
+      '<div class="fila" id="fila-anexos">' + filaAnexosHTML() + '</div>' +
+      '<textarea id="msg-texto" placeholder="Escreva uma atualização e marque quem precisa ver (Ctrl+Enter envia)"></textarea>' +
       '<div class="row">' +
         '<button class="btn" title="Anexar arquivo pequeno" onclick="document.getElementById(\'arq-input\').click()">' +
           '<i class="ti ti-paperclip"></i></button>' +
@@ -1089,16 +1224,41 @@ function renderPainel(){
         '<button class="btn btn--primary" onclick="enviarMensagem()"><i class="ti ti-send"></i> Enviar</button>' +
       '</div>' +
     '</div>' +
-    (mensagens.length ? '<div class="linha-tempo">' + mensagens.map((m,i) => eventoHTML(m, i === mensagens.length-1)).join('') + '</div>'
+    (upds.length ? '<div style="margin-top:var(--space-4)">' + upds.map(cartaoUpd).join('') + '</div>'
       : '<div class="small muted" style="text-align:center;padding:var(--space-5)">' +
-        'Nada registrado ainda. O que for escrito aqui fica com data, autor e anexos.</div>') +
-  '</div>' +
+        'Nada escrito ainda. O que for registrado aqui fica com autor, data e anexos.</div>');
+}
 
+// Cartão de atualização, como na referência do ticket.
+function cartaoUpd(m){
+  const nova = m.autor !== usuario.email && String(m.criadoEm || '') > lidoAoAbrir;
+  return '<div class="upd' + (nova ? ' upd--nova' : '') + '">' +
+    '<div class="upd__head">' + avatar(m.autor, 'avatar--sm') +
+      '<span class="upd__nome">' + esc(m.autor === usuario.email ? 'Você' : (m.autorNome || nomeDe(m.autor))) + '</span>' +
+      '<span class="upd__hora">' + esc(quando(m.criadoEm)) + '</span>' +
+      (m.mencoes && m.mencoes.length ? m.mencoes.map(e =>
+        '<span class="tag-pessoa" style="cursor:default">@' + esc(primeiroNome(e)) + '</span>').join('') : '') +
+    '</div>' +
+    '<div class="upd__corpo">' + esc(m.texto) +
+      ((m.anexos && m.anexos.length) ? '<div class="fila" style="margin-top:9px">' +
+        m.anexos.map(anexoHTML).join('') + '</div>' : '') +
+    '</div>' +
   '</div>';
+}
 
-  const ta = $('msg-texto');
-  ta.value = rascunho;
-  ta.onkeydown = e => { if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviarMensagem(); };
+function alternarMenuTicket(ev){
+  if(ev) ev.stopPropagation();
+  const m = $('menu-ticket');
+  if(m) m.classList.toggle('menu--on');
+}
+// Link direto para a tarefa: cola no chat/e-mail e a pessoa cai no ticket.
+function copiarLinkTarefa(id){
+  const url = location.origin + location.pathname + '#t=' + id;
+  const ok = () => toast('Link copiado.', 'ok');
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(url).then(ok, () => toast(url));
+  else toast(url);
+  const m = $('menu-ticket'); if(m) m.classList.remove('menu--on');
 }
 function focarCampo(id){ const e = $(id); if(e){ e.focus(); if(e.showPicker) try{ e.showPicker(); }catch(x){} } }
 function opcoesPessoa(sel){
@@ -1159,32 +1319,6 @@ function miniLinha(t){
 }
 
 // ---------- Linha do tempo da conversa (mais nova no topo) ----------
-function eventoHTML(m, ehUltima){
-  const sys = m.tipo === 'sistema';
-  const nova = !sys && m.autor !== usuario.email && String(m.criadoEm || '') > lidoAoAbrir;
-  return '<div class="ev' + (sys ? ' ev--sys' : '') + (nova ? ' ev--nova' : '') + '">' +
-    '<div class="ev__col">' +
-      (sys ? '<span class="marca-sys"><i class="ti ti-' + (m.icone || 'info-circle') + '"></i></span>'
-           : avatar(m.autor, 'avatar--sm')) +
-      (ehUltima ? '' : '<div class="ev__linha"></div>') +
-    '</div>' +
-    '<div class="ev__corpo">' +
-      '<div class="ev__meta">' +
-        (sys ? '' : '<span class="ev__nome">' + esc(m.autor === usuario.email ? 'Você' : (m.autorNome || nomeDe(m.autor))) + '</span>') +
-        '<span>' + esc(dataHoraBR(m.criadoEm)) + '</span>' +
-        (m.mencoes && m.mencoes.length ? m.mencoes.map(e =>
-          '<span class="tag-pessoa" style="cursor:default">@' + esc(primeiroNome(e)) + '</span>').join('') : '') +
-      '</div>' +
-      (sys
-        ? '<div class="ev__texto">' + esc(m.texto) + '</div>'
-        : '<div class="ev__caixa">' +
-            (m.texto ? '<div class="ev__texto">' + esc(m.texto) + '</div>' : '') +
-            (m.anexos && m.anexos.length ? '<div class="fila" style="margin-top:6px">' +
-              m.anexos.map(anexoHTML).join('') + '</div>' : '') +
-          '</div>') +
-    '</div>' +
-  '</div>';
-}
 function anexoHTML(a){
   if(a.tipo === 'link')
     return '<a class="anexo" href="' + esc(a.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' +

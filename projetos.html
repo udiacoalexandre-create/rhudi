@@ -8,7 +8,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc,
-           deleteDoc, onSnapshot, query, where, orderBy, writeBatch }
+           deleteDoc, onSnapshot, query, where, orderBy, writeBatch, increment }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -35,6 +35,7 @@
   window._onSnapshot = onSnapshot;
   window._query = query; window._where = where; window._orderBy = orderBy;
   window._batch = () => writeBatch(db);
+  window._inc = n => increment(n);
   window._signIn = (e, p) => signInWithEmailAndPassword(auth, e, p);
   window._resetSenha = e => sendPasswordResetEmail(auth, e);
   window._signOut = () => signOut(auth);
@@ -157,6 +158,75 @@ a{ color:var(--accent); text-decoration:none }
 .reprog:hover{ border-color:var(--accent); color:var(--accent-text) }
 .reprog input{ border:none; background:transparent; font-family:inherit; font-size:11px; color:var(--text);
         width:90px; outline:none; padding:0 }
+
+/* ---------- TABELA DA AGENDA (grupos por data) ---------- */
+.g-bloco{ margin-bottom:var(--space-5) }
+.g-head{ display:flex; align-items:center; gap:9px; background:none; border:none; padding:0 0 var(--space-2);
+        cursor:pointer; font-family:inherit }
+.g-titulo{ font-size:17px; font-weight:600; letter-spacing:-.015em }
+.g-qtd{ font-size:13px; color:var(--text-muted) }
+.g-vazio{ margin-bottom:var(--space-2) }
+.g-vazio .g-titulo{ opacity:.4; font-size:15px }
+.g-vazio .g-qtd{ opacity:.6 }
+.g-tab{ background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden;
+        box-shadow:var(--shadow) }
+.chat-ind{ display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--text-muted);
+        background:var(--surface-soft); border-radius:20px; padding:1px 7px; margin-left:2px }
+.chat-ind--novo{ background:var(--accent); color:#fff; font-weight:700 }
+/* Data editável direto na célula, como nas referências */
+.cel-edit{ cursor:pointer }
+.cel-edit__txt{ display:inline-block; padding:3px 7px; border:1px dashed transparent; border-radius:var(--radius-sm) }
+.cel-edit:hover .cel-edit__txt{ border-color:var(--border-strong); background:var(--surface-soft) }
+.cel-edit input{ border:1px solid var(--accent); background:var(--surface); border-radius:var(--radius-sm);
+        font-family:inherit; font-size:13px; color:var(--text); padding:3px 5px; width:140px;
+        box-shadow:0 0 0 3px var(--accent-bg); outline:none }
+/* Barra de distribuição de status do projeto */
+.pilha{ display:flex; height:7px; width:130px; border-radius:20px; overflow:hidden; background:var(--surface-soft);
+        flex-shrink:0 }
+.pilha span{ height:100% }
+
+/* ---------- MENU "..." ---------- */
+.menu-wrap{ position:relative }
+.menu{ position:absolute; top:36px; right:0; min-width:212px; background:var(--surface);
+        border:1px solid var(--border); border-radius:12px; box-shadow:0 14px 40px rgba(15,23,42,.18);
+        z-index:75; padding:6px; display:none }
+.menu--on{ display:block }
+.menu button{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:none;
+        background:none; font-family:inherit; font-size:13.5px; color:var(--text); padding:9px 10px;
+        border-radius:8px; cursor:pointer }
+.menu button:hover{ background:var(--surface-soft) }
+.menu button.perigo{ color:var(--danger-text) }
+.menu hr{ border:none; border-top:1px solid var(--border); margin:5px 2px }
+
+/* ---------- ABAS DO TICKET ---------- */
+.tk-abas{ display:flex; gap:2px; padding:0 var(--space-5); border-bottom:1px solid var(--border);
+        background:var(--surface) }
+.tk-aba{ display:flex; align-items:center; gap:7px; padding:11px 12px; border:none; background:none;
+        font-family:inherit; font-size:13.5px; color:var(--text-secondary); cursor:pointer;
+        border-bottom:2px solid transparent }
+.tk-aba:hover{ color:var(--text) }
+.tk-aba--on{ color:var(--accent); font-weight:600; border-bottom-color:var(--accent) }
+.tk-aba span{ background:var(--surface-soft); border-radius:20px; padding:0 6px; font-size:11px; font-weight:700 }
+.tk-aba--on span{ background:var(--accent); color:#fff }
+
+/* Cartão de atualização (uma por bloco, como na referência) */
+.upd{ border:1px solid var(--border); border-radius:12px; margin-bottom:var(--space-3); overflow:hidden }
+.upd--nova{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg) }
+.upd__head{ display:flex; align-items:center; gap:10px; padding:var(--space-3) var(--space-4) }
+.upd__nome{ font-weight:600; color:var(--text); font-size:13.5px }
+.upd__hora{ font-size:12px; color:var(--text-muted) }
+.upd__corpo{ padding:0 var(--space-4) var(--space-4); font-size:13.5px; color:var(--text);
+        white-space:pre-wrap; word-break:break-word }
+.hist{ display:flex; gap:10px; padding:9px 2px; border-bottom:1px solid var(--border); font-size:12.5px;
+        color:var(--text-secondary); align-items:flex-start }
+.hist:last-child{ border-bottom:none }
+.arq-lista{ display:flex; flex-direction:column; gap:8px }
+.arq{ display:flex; align-items:center; gap:11px; padding:10px 12px; border:1px solid var(--border);
+        border-radius:10px; text-decoration:none; color:var(--text) }
+.arq:hover{ border-color:var(--accent); background:var(--accent-bg) }
+.arq__ico{ width:34px; height:34px; border-radius:9px; background:var(--accent-bg); color:var(--accent-text);
+        display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0 }
+.arq__nome{ flex:1; min-width:0; font-size:13.5px; font-weight:500 }
 
 /* ---------- BARRA DE FERRAMENTAS ---------- */
 .toolbar{ display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap;
