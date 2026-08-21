@@ -12067,7 +12067,10 @@ onAuthStateChanged(auth, async u=>{
   const boot=MASTER_BOOTSTRAP.includes(mail);
   const autorizado = boot || (d && d.ativo!==false);
   papelUsuario = boot ? "master" : (d && d.papel) || null;
-  if(!autorizado || papelUsuario==="um989"){
+  // Plataforma: 'Treinamentos' é aberta por padrão, então só barra quem o
+  // Master desmarcou na tela de Acessos (plataformas.treinamentos === false).
+  const semPlataforma = papelUsuario!=="master" && !!(d && d.plataformas && d.plataformas.treinamentos===false);
+  if(!autorizado || papelUsuario==="um989" || semPlataforma){
     gateMsg('<div style="max-width:420px"><div style="font-size:40px">🔒</div>'
       +'<h2 style="color:#0f172a;margin:8px 0 4px">Sem acesso aos Treinamentos</h2>'
       +'<p style="color:#64748b;font-size:14px">Seu perfil não tem acesso a esta plataforma.</p>'

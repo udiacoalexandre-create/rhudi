@@ -37,6 +37,17 @@ service cloud.firestore {
     function isUM989() {
       return isSignedIn() && hasUserDoc() && userData().papel == 'um989';
     }
+    // Acesso por PLATAFORMA (o Master marca pessoa por pessoa na tela Acessos,
+    // no campo 'plataformas' do doc de usuarios). Plataforma nova nasce
+    // fechada: sem a marcação, nega. O Master entra em todas.
+    function temPlataforma(chave) {
+      return isAuthorized() && (
+        isMaster() ||
+        ('plataformas' in userData() &&
+         chave in userData().plataformas &&
+         userData().plataformas[chave] == true)
+      );
+    }
 
     // ── Controle de acesso (usuarios) ─────────────────────────
     // Qualquer autenticado lê (o app precisa ler o próprio papel);
@@ -75,11 +86,15 @@ service cloud.firestore {
     }
 
     // ── Projetos Estratégicos (projetos.html) ─────────────────
-    // Mesmo login e mesmo controle de acesso do RH: usuários autorizados,
-    // exceto o papel restrito UM989. As três coleções são deste app.
-    match /pe_projetos/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
-    match /pe_tarefas/{id}   { allow read, write: if isAuthorized() && !isUM989(); }
-    match /pe_mensagens/{id} { allow read, write: if isAuthorized() && !isUM989(); }
+    // Mesmo login do RH, mas plataforma própria: só entra o Master e quem ele
+    // marcou em 'Projetos Estratégicos'. Esconder o cartão no portal não basta
+    // — quem não tem a plataforma é barrado aqui, no banco.
+    function podeProjetos() {
+      return temPlataforma('projetos') && !isUM989();
+    }
+    match /pe_projetos/{id}  { allow read, write: if podeProjetos(); }
+    match /pe_tarefas/{id}   { allow read, write: if podeProjetos(); }
+    match /pe_mensagens/{id} { allow read, write: if podeProjetos(); }
 
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {

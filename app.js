@@ -136,7 +136,31 @@ const PAPEIS = {
 };
 // E-mail(s) que são sempre Master (bootstrap inicial do sistema)
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
-let usuarioAtual = null; // {email, nome, papel}
+let usuarioAtual = null; // {email, nome, papel, plataformas}
+
+// ============================================================
+// PLATAFORMAS (quem vê o quê no portal)
+// ============================================================
+// Cada plataforma é um app do portal. O Master libera pessoa por pessoa na
+// tela de Acessos, e a marcação fica no doc de 'usuarios' (campo plataformas).
+// Quando o usuário ainda não tem marcação, vale o 'padrao' — foi assim que o
+// controle por plataforma entrou sem tirar de ninguém o que já usava; app novo
+// nasce fechado e só entra quem o Master marcar.
+const PLATAFORMAS = {
+  rh:           {label:'Sistema de RH',         padrao:true},
+  treinamentos: {label:'Treinamentos',          padrao:true},
+  projetos:     {label:'Projetos Estratégicos', padrao:false},
+};
+function temPlataforma(chave, usr){
+  const u = usr || usuarioAtual;
+  if(!u || !PLATAFORMAS[chave]) return false;
+  if(u.ativo === false) return false;
+  if(u.papel === 'master') return true;            // Master entra em tudo
+  if(u.papel === 'um989') return chave === 'rh';   // UM989: só Férias UM989, dentro do RH
+  const p = u.plataformas;
+  if(!p || p[chave] === undefined || p[chave] === null) return !!PLATAFORMAS[chave].padrao;
+  return p[chave] === true;
+}
 
 function escopoUsuario(){
   const pi = usuarioAtual && PAPEIS[usuarioAtual.papel];
@@ -163,7 +187,7 @@ async function carregarUsuarioAtual(email){
     try{ await window._setDoc(window._doc('usuarios',mail),d); }catch(e){}
   }
   if(!d || d.ativo===false || !PAPEIS[d.papel]){ usuarioAtual=null; return false; }
-  usuarioAtual={email:mail,nome:d.nome||mail,papel:d.papel};
+  usuarioAtual={email:mail,nome:d.nome||mail,papel:d.papel,plataformas:d.plataformas||null};
   return true;
 }
 
@@ -4245,9 +4269,10 @@ async function initApp(user){
   mostrarPortal();
 }
 
-// Portal pós-login: ícones das PLATAFORMAS que o papel acessa.
+// Portal pós-login: ícones das PLATAFORMAS liberadas para o usuário.
 // "Sistema de RH" abre o app completo (os módulos permitidos ficam juntos lá
-// dentro); "Treinamentos" abre a outra plataforma. O que não tem acesso não aparece.
+// dentro); as outras abrem suas próprias páginas. Quem não tem a plataforma
+// liberada pelo Master (tela de Acessos) não vê o cartão.
 function mostrarPortal(){
   const hs=document.getElementById('home-screen');
   const ls=document.getElementById('login-screen');
@@ -4258,17 +4283,21 @@ function mostrarPortal(){
   const body=document.getElementById('portal-body');
   if(body){
     const tiles=[];
-    tiles.push('<div class="home-card" onclick="entrarBeneficios()">'
-      +'<div class="hc-ico"><i class="ti ti-briefcase"></i></div>'
-      +'<div class="hc-tit">Sistema de RH</div>'
-      +'<div class="hc-desc">'+(ehUM989()?'Controle de Férias UM989.':'Colaboradores, benefícios, férias, folha, prêmio e dashboard.')+'</div>'
-      +'<div class="hc-cta"><i class="ti ti-arrow-right"></i> Acessar</div></div>');
-    if(!ehUM989()){   // Treinamentos: todos os papéis, exceto UM989
+    if(temPlataforma('rh')){
+      tiles.push('<div class="home-card" onclick="entrarBeneficios()">'
+        +'<div class="hc-ico"><i class="ti ti-briefcase"></i></div>'
+        +'<div class="hc-tit">Sistema de RH</div>'
+        +'<div class="hc-desc">'+(ehUM989()?'Controle de Férias UM989.':'Colaboradores, benefícios, férias, folha, prêmio e dashboard.')+'</div>'
+        +'<div class="hc-cta"><i class="ti ti-arrow-right"></i> Acessar</div></div>');
+    }
+    if(temPlataforma('treinamentos')){
       tiles.push('<div class="home-card" onclick="window.location.href=\'buscador.html\'">'
         +'<div class="hc-ico hc-ico--blue"><i class="ti ti-movie"></i></div>'
         +'<div class="hc-tit">Treinamentos</div>'
         +'<div class="hc-desc">Catálogo de vídeos de treinamento.</div>'
         +'<div class="hc-cta hc-cta--blue">Acessar <i class="ti ti-arrow-right"></i></div></div>');
+    }
+    if(temPlataforma('projetos')){
       // Projetos Estratégicos: gestão de projetos/tarefas da área, com agenda
       // por prazo de próxima ação e troca de responsável por solicitação.
       tiles.push('<div class="home-card" onclick="window.location.href=\'projetos.html\'">'
@@ -4276,6 +4305,12 @@ function mostrarPortal(){
         +'<div class="hc-tit">Projetos Estratégicos</div>'
         +'<div class="hc-desc">Projetos, tarefas, prazos e solicitações entre a equipe.</div>'
         +'<div class="hc-cta hc-cta--purple">Acessar <i class="ti ti-arrow-right"></i></div></div>');
+    }
+    if(!tiles.length){
+      tiles.push('<div class="home-card" style="cursor:default">'
+        +'<div class="hc-ico"><i class="ti ti-lock"></i></div>'
+        +'<div class="hc-tit">Nenhuma plataforma liberada</div>'
+        +'<div class="hc-desc">Seu acesso está ativo, mas nenhuma plataforma foi liberada para você. Procure o administrador.</div></div>');
     }
     body.innerHTML=tiles.join('');
   }
@@ -4291,6 +4326,7 @@ function voltarPortal(){
 
 // Abre o app COMPLETO de RH (os módulos permitidos aparecem na barra de módulos).
 function entrarBeneficios(){
+  if(!temPlataforma('rh')){ toast('Você não tem acesso ao Sistema de RH.','error'); return; }
   const hs=document.getElementById('home-screen'); if(hs) hs.style.display='none';
   document.getElementById('app-screen').style.display='flex';
   const pi=PAPEIS[usuarioAtual.papel];
@@ -7880,6 +7916,13 @@ async function testarConexaoSenior(){
 // ============================================================
 function pgUsuarios(){
   const opts=Object.keys(PAPEIS).map(k=>'<option value="'+k+'">'+PAPEIS[k].label+'</option>').join('');
+  // Plataformas do portal: no cadastro novo já vêm marcadas as de padrão aberto.
+  const platsNovo=Object.keys(PLATAFORMAS).map(k=>
+    '<label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">'
+    +'<input type="checkbox" id="usr-plat-'+k+'" '+(PLATAFORMAS[k].padrao?'checked':'')+'> '+PLATAFORMAS[k].label+'</label>').join('');
+  const platsRows=Object.keys(PLATAFORMAS).map(k=>
+    '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px;font-weight:600">'+PLATAFORMAS[k].label+'</td>'
+    +'<td style="padding:7px 10px">'+(PLATAFORMAS[k].padrao?'Aberta por padrão (quem nunca foi marcado entra)':'Fechada por padrão (só quem o Master marcar)')+'</td></tr>').join('');
   // Referência: perfis (papéis) e tipos de cadastro
   const escDesc=p=> p.escopo==='all'?'Todas as empresas' : (p.escopo==='um989'?'Somente Férias UM989' : ((p.empresas||[]).join(', ')||'—'));
   const perfisRows=Object.keys(PAPEIS).map(k=>{const p=PAPEIS[k];
@@ -7890,7 +7933,7 @@ function pgUsuarios(){
   const TIPOS=[['OK','CLT normal'],['DUP','CLT com duplicidade (MEI/Sócio)'],['MEI','Contrato MEI'],['SOC','Sócio'],['TER','Terceiros'],['DIR','Diretoria'],['PART','Particular (funcionários dos sócios)']];
   const tiposRows=TIPOS.map(([k,d])=>'<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px">'+filtroBadge(k)+'</td><td style="padding:7px 10px">'+d+'</td></tr>').join('');
   return `
-    <div class="page-header"><h2>Acessos</h2><p>Gerencie os usuários e consulte os perfis e tipos de cadastro. Apenas o Master vê esta página.</p></div>
+    <div class="page-header"><h2>Acessos</h2><p>Gerencie os usuários, defina em quais plataformas cada um entra e consulte os perfis e tipos de cadastro. Apenas o Master vê esta página.</p></div>
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">Novo usuário</div>
       <div class="form-grid">
@@ -7899,6 +7942,8 @@ function pgUsuarios(){
         <div class="fg"><label>Senha inicial</label><input type="text" id="usr-senha" placeholder="mínimo 6 caracteres"></div>
         <div class="fg"><label>Papel</label><select id="usr-papel">${opts}</select></div>
       </div>
+      <div class="fg" style="margin-top:10px"><label>Plataformas liberadas</label>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;padding-top:4px">${platsNovo}</div></div>
       <div class="btn-row"><button class="btn btn-primary" onclick="criarUsuario()">Criar usuário</button></div>
       <div id="usr-msg" style="margin-top:8px"></div>
     </div>
@@ -7912,6 +7957,13 @@ function pgUsuarios(){
         <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:var(--surface2)"><th style="padding:7px 10px;text-align:left">Perfil</th><th style="padding:7px 10px;text-align:left">Escopo</th><th style="padding:7px 10px;text-align:center">Gerencia acessos</th></tr></thead>
           <tbody>${perfisRows}</tbody></table></div>
+      </div>
+      <div class="card" style="flex:1;min-width:280px;margin-bottom:0">
+        <div class="card-title">Plataformas do portal (referência)</div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--surface2)"><th style="padding:7px 10px;text-align:left">Plataforma</th><th style="padding:7px 10px;text-align:left">Padrão</th></tr></thead>
+          <tbody>${platsRows}</tbody></table></div>
+        <p class="text-xs text-muted" style="margin:8px 0 0">O Master entra em todas. O perfil UM989 fica sempre restrito a Férias UM989.</p>
       </div>
       <div class="card" style="flex:1;min-width:280px;margin-bottom:0">
         <div class="card-title">Tipos de cadastro (referência)</div>
@@ -7931,12 +7983,23 @@ async function renderUsuarios(){
   docs.sort((a,b)=>String(a.nome||a._id).localeCompare(String(b.nome||b._id)));
   if(!docs.length){ el.innerHTML='<div class="text-sm text-muted">Nenhum usuário cadastrado ainda.</div>'; return; }
   const opts=p=>Object.keys(PAPEIS).map(k=>'<option value="'+k+'" '+(p===k?'selected':'')+'>'+PAPEIS[k].label+'</option>').join('');
-  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Empresas</th><th>Status</th><th>Ações</th></tr></thead><tbody>'
+  // Marcações de plataforma. Master e UM989 aparecem travados: o acesso deles
+  // vem do papel (tudo / só Férias UM989), não da marcação.
+  const plats=u=>{
+    const travado = u.papel==='master' || u.papel==='um989';
+    return Object.keys(PLATAFORMAS).map(k=>
+      '<label style="display:block;font-size:11px;white-space:nowrap;'+(travado?'opacity:.55':'cursor:pointer')+'">'
+      +'<input type="checkbox" '+(temPlataforma(k,u)?'checked':'')+(travado?' disabled':'')
+      +' onchange="alterarPlataformaUsuario(\''+u._id+'\',\''+k+'\',this.checked)" style="vertical-align:-1px"> '
+      +PLATAFORMAS[k].label+'</label>').join('');
+  };
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Plataformas</th><th>Empresas</th><th>Status</th><th>Ações</th></tr></thead><tbody>'
     +docs.map(u=>{
       const pi=PAPEIS[u.papel]; const esc=pi?(pi.escopo==='all'?'Todas':(pi.empresas||[]).join(', ')):'—';
       const ativo=u.ativo!==false;
       return '<tr><td>'+(u.nome||'—')+'</td><td class="text-xs">'+u._id+'</td>'
         +'<td><select onchange="alterarPapelUsuario(\''+u._id+'\',this.value)" style="font-size:12px;padding:4px 6px;border:1.5px solid var(--border);border-radius:var(--radius-sm)">'+opts(u.papel)+'</select></td>'
+        +'<td>'+plats(u)+'</td>'
         +'<td class="text-xs text-muted" style="max-width:220px">'+esc+'</td>'
         +'<td>'+(ativo?'<span class="badge badge-green">Ativo</span>':'<span class="badge badge-gray">Inativo</span>')+'</td>'
         +'<td style="white-space:nowrap">'
@@ -7965,7 +8028,9 @@ async function criarUsuario(){
     if(!String(e.message||e).includes('email-already-in-use')){ showErr('Erro ao criar login: '+e.message); return; }
   }
   try{
-    await window._setDoc(window._doc('usuarios',email),{email,nome:nome||email,papel,ativo:true});
+    const plataformas={};
+    Object.keys(PLATAFORMAS).forEach(k=>{ const c=document.getElementById('usr-plat-'+k); plataformas[k]=!!(c&&c.checked); });
+    await window._setDoc(window._doc('usuarios',email),{email,nome:nome||email,papel,ativo:true,plataformas});
     if(msg) msg.innerHTML='<div class="alert alert-success">Usuário liberado: '+email+'</div>';
     ['usr-nome','usr-email','usr-senha'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
     renderUsuarios();
@@ -7976,6 +8041,16 @@ async function alterarPapelUsuario(email,papel){
   if(!podeGerenciarUsuarios()||!PAPEIS[papel]) return;
   try{ await window._setDoc(window._doc('usuarios',email),{papel},{merge:true}); toast('Papel atualizado','success'); renderUsuarios(); }
   catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// Libera ou bloqueia UMA plataforma para UMA pessoa (merge: não mexe nas outras).
+async function alterarPlataformaUsuario(email,chave,valor){
+  if(!podeGerenciarUsuarios()||!PLATAFORMAS[chave]) return;
+  try{
+    await window._setDoc(window._doc('usuarios',email),{plataformas:{[chave]:!!valor}},{merge:true});
+    toast(PLATAFORMAS[chave].label+(valor?' liberada':' bloqueada')+' para '+email,'success');
+    renderUsuarios();
+  }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
 async function toggleAtivoUsuario(email,ativo){

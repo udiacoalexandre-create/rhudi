@@ -178,9 +178,11 @@ function iniciar(){
   };
   window._onAuthStateChanged(window._auth, async user => {
     if(!user){ mostrarLogin(); return; }
-    const ok = await carregarUsuario(user.email);
-    if(!ok){
-      erroLogin('Seu e-mail não tem acesso liberado a este sistema. Procure o Alexandre.');
+    const r = await carregarUsuario(user.email);
+    if(r !== 'ok'){
+      erroLogin(r === 'sem-plataforma'
+        ? 'Seu acesso ao sistema está ativo, mas a plataforma Projetos Estratégicos não foi liberada para você. Peça ao Master (Sistema de RH > Acessos).'
+        : 'Seu e-mail não tem acesso liberado a este sistema. Procure o administrador.');
       await window._signOut();
       return;
     }
@@ -223,8 +225,19 @@ function erroLogin(msg){
   el.textContent = msg; el.style.display = 'block';
 }
 
+// Quem entra nesta plataforma: o Master sempre; os demais só se o Master tiver
+// marcado 'Projetos Estratégicos' para eles na tela de Acessos do Sistema de RH
+// (campo plataformas.projetos no doc de 'usuarios'). Plataforma nova nasce
+// fechada — por isso aqui a falta da marcação nega, e não libera.
+function temProjetos(d){
+  if(!d || d.ativo === false || d.papel === 'um989') return false;
+  if(d.papel === 'master') return true;
+  return !!(d.plataformas && d.plataformas.projetos === true);
+}
+
 // Lê o papel na coleção 'usuarios' (a mesma do rhudi; doc = e-mail).
-// Acesso liberado para quem tem doc ativo, exceto o papel restrito 'um989'.
+// Retorna 'ok', 'sem-acesso' (não é usuário do sistema) ou 'sem-plataforma'
+// (é usuário, mas esta plataforma não foi liberada para ele).
 async function carregarUsuario(email){
   const mail = (email || '').toLowerCase().trim();
   let d = null;
@@ -233,20 +246,22 @@ async function carregarUsuario(email){
     if(snap.exists()) d = snap.data();
   }catch(e){ /* sem permissão de leitura = sem acesso */ }
   if(!d && MASTER_BOOTSTRAP.includes(mail)) d = { email:mail, nome:mail, papel:'master', ativo:true };
-  if(!d || d.ativo === false || d.papel === 'um989') return false;
+  if(!d || d.ativo === false || d.papel === 'um989') return 'sem-acesso';
+  if(!temProjetos(d)) return 'sem-plataforma';
   usuario = { email:mail, nome:d.nome || mail, papel:d.papel || 'corporativo' };
   await carregarPessoas();
-  return true;
+  return 'ok';
 }
 
-// Pessoas que podem receber tarefas: todos os usuários ativos do sistema.
+// Pessoas que podem receber tarefas: só quem também tem esta plataforma
+// liberada — não faz sentido delegar para quem não consegue abrir o sistema.
 async function carregarPessoas(){
   usuarios = [];
   try{
     const snap = await window._getDocs(window._col('usuarios'));
     snap.forEach(d => {
       const u = d.data() || {};
-      if(u.ativo === false || u.papel === 'um989') return;
+      if(!temProjetos(u)) return;
       usuarios.push({ email:(u.email || d.id).toLowerCase(), nome:u.nome || d.id, papel:u.papel || '' });
     });
   }catch(e){ /* mantém ao menos o próprio usuário */ }
