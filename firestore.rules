@@ -74,6 +74,13 @@ service cloud.firestore {
       allow write: if isAuthorized() && !isUM989();
     }
 
+    // ── Projetos Estratégicos (projetos.html) ─────────────────
+    // Mesmo login e mesmo controle de acesso do RH: usuários autorizados,
+    // exceto o papel restrito UM989. As três coleções são deste app.
+    match /pe_projetos/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
+    match /pe_tarefas/{id}   { allow read, write: if isAuthorized() && !isUM989(); }
+    match /pe_mensagens/{id} { allow read, write: if isAuthorized() && !isUM989(); }
+
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {
       allow read, write: if false;

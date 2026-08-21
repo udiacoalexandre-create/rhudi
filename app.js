@@ -4269,6 +4269,13 @@ function mostrarPortal(){
         +'<div class="hc-tit">Treinamentos</div>'
         +'<div class="hc-desc">Catálogo de vídeos de treinamento.</div>'
         +'<div class="hc-cta hc-cta--blue">Acessar <i class="ti ti-arrow-right"></i></div></div>');
+      // Projetos Estratégicos: gestão de projetos/tarefas da área, com agenda
+      // por prazo de próxima ação e troca de responsável por solicitação.
+      tiles.push('<div class="home-card" onclick="window.location.href=\'projetos.html\'">'
+        +'<div class="hc-ico hc-ico--purple"><i class="ti ti-target-arrow"></i></div>'
+        +'<div class="hc-tit">Projetos Estratégicos</div>'
+        +'<div class="hc-desc">Projetos, tarefas, prazos e solicitações entre a equipe.</div>'
+        +'<div class="hc-cta hc-cta--purple">Acessar <i class="ti ti-arrow-right"></i></div></div>');
     }
     body.innerHTML=tiles.join('');
   }
