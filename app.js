@@ -7993,16 +7993,17 @@ async function renderUsuarios(){
       +' onchange="alterarPlataformaUsuario(\''+u._id+'\',\''+k+'\',this.checked)" style="vertical-align:-1px"> '
       +PLATAFORMAS[k].label+'</label>').join('');
   };
-  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Plataformas</th><th>Empresas</th><th>Status</th><th>Ações</th></tr></thead><tbody>'
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Foto</th><th>Nome</th><th>E-mail</th><th>Papel</th><th>Plataformas</th><th>Empresas</th><th>Status</th><th>Ações</th></tr></thead><tbody>'
     +docs.map(u=>{
       const pi=PAPEIS[u.papel]; const esc=pi?(pi.escopo==='all'?'Todas':(pi.empresas||[]).join(', ')):'—';
       const ativo=u.ativo!==false;
-      return '<tr><td>'+(u.nome||'—')+'</td><td class="text-xs">'+u._id+'</td>'
+      return '<tr>'+celulaFoto(u)+'<td>'+(u.nome||'—')+'</td><td class="text-xs">'+u._id+'</td>'
         +'<td><select onchange="alterarPapelUsuario(\''+u._id+'\',this.value)" style="font-size:12px;padding:4px 6px;border:1.5px solid var(--border);border-radius:var(--radius-sm)">'+opts(u.papel)+'</select></td>'
         +'<td>'+plats(u)+'</td>'
         +'<td class="text-xs text-muted" style="max-width:220px">'+esc+'</td>'
         +'<td>'+(ativo?'<span class="badge badge-green">Ativo</span>':'<span class="badge badge-gray">Inativo</span>')+'</td>'
         +'<td style="white-space:nowrap">'
+          +(u.foto?'<button class="btn btn-ghost btn-xs" onclick="removerFotoUsuario(\''+u._id+'\')">Remover foto</button> ':'')
           +'<button class="btn btn-ghost btn-xs" onclick="resetSenhaUsuario(\''+u._id+'\')">Redefinir senha</button> '
           +'<button class="btn btn-ghost btn-xs" onclick="toggleAtivoUsuario(\''+u._id+'\','+(!ativo)+')">'+(ativo?'Desativar':'Ativar')+'</button> '
           +'<button class="btn btn-danger btn-xs" onclick="excluirUsuario(\''+u._id+'\')">Excluir</button>'
@@ -8041,6 +8042,60 @@ async function alterarPapelUsuario(email,papel){
   if(!podeGerenciarUsuarios()||!PAPEIS[papel]) return;
   try{ await window._setDoc(window._doc('usuarios',email),{papel},{merge:true}); toast('Papel atualizado','success'); renderUsuarios(); }
   catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+// ---------- FOTO DO USUÁRIO ----------
+// A foto vai reduzida (128px, JPEG ~6 KB) para dentro do doc de 'usuarios'.
+// Assim aparece o rosto da pessoa nas miniaturas dos outros apps do portal
+// (Projetos Estratégicos), sem depender do Cloud Storage.
+function iniciaisNome(u){
+  const n=String(u.nome||u._id||'?').replace(/@.*$/,'').replace(/[._]/g,' ').trim().split(/\s+/);
+  return ((n[0]||'?')[0]+(n.length>1?n[n.length-1][0]:'')).toUpperCase();
+}
+function celulaFoto(u){
+  const miolo = u.foto
+    ? '<img src="'+u.foto+'" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;display:block">'
+    : '<span style="width:34px;height:34px;border-radius:50%;background:#EFF6FF;color:#1D4ED8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">'+iniciaisNome(u)+'</span>';
+  return '<td><button title="Trocar a foto" onclick="trocarFotoUsuario(\''+u._id+'\')" '
+    +'style="border:none;background:none;padding:0;cursor:pointer;line-height:0">'+miolo+'</button></td>';
+}
+function trocarFotoUsuario(email){
+  if(!podeGerenciarUsuarios()) return;
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*';
+  inp.onchange=()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    reduzirFoto(f,128,async dataUrl=>{
+      try{
+        await window._setDoc(window._doc('usuarios',email),{foto:dataUrl},{merge:true});
+        toast('Foto atualizada','success'); renderUsuarios();
+      }catch(e){ toast('Erro ao salvar a foto: '+e.message,'error'); }
+    });
+  };
+  inp.click();
+}
+async function removerFotoUsuario(email){
+  if(!podeGerenciarUsuarios()) return;
+  try{ await window._setDoc(window._doc('usuarios',email),{foto:null},{merge:true});
+       toast('Foto removida','success'); renderUsuarios(); }
+  catch(e){ toast('Erro: '+e.message,'error'); }
+}
+// Recorta no centro, redimensiona e devolve dataURL JPEG.
+function reduzirFoto(file,lado,cb){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=c.height=lado;
+      const ctx=c.getContext('2d');
+      const m=Math.min(img.width,img.height);
+      ctx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,lado,lado);
+      cb(c.toDataURL('image/jpeg',0.78));
+    };
+    img.onerror=()=>toast('Não consegui ler esta imagem','error');
+    img.src=fr.result;
+  };
+  fr.readAsDataURL(file);
 }
 
 // Libera ou bloqueia UMA plataforma para UMA pessoa (merge: não mexe nas outras).

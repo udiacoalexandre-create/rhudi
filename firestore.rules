@@ -55,6 +55,11 @@ service cloud.firestore {
     match /usuarios/{id} {
       allow read:  if isSignedIn();
       allow write: if isMaster() || (isBootstrapMaster() && id == email());
+      // Cada pessoa pode trocar a PRÓPRIA foto — e só a foto, nada de papel,
+      // plataformas ou 'ativo'. É o que permite subir o rosto do próprio
+      // perfil dentro do Projetos Estratégicos.
+      allow update: if isSignedIn() && id == email() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foto']);
     }
 
     // ── Dados do sistema ──────────────────────────────────────
@@ -95,6 +100,9 @@ service cloud.firestore {
     match /pe_projetos/{id}  { allow read, write: if podeProjetos(); }
     match /pe_tarefas/{id}   { allow read, write: if podeProjetos(); }
     match /pe_mensagens/{id} { allow read, write: if podeProjetos(); }
+    // Notificações (sino): cada um lê as suas; escrever é preciso para avisar
+    // o outro (quem responde cria a notificação de quem pediu).
+    match /pe_notificacoes/{id} { allow read, write: if podeProjetos(); }
 
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {
