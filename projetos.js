@@ -44,13 +44,27 @@ const COL_NOTIF = 'pe_notificacoes';
 
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
 
+// A cor é o sinal mais forte da interface: o status vira bloco de cor cheia
+// (na tabela) ou pílula sólida (nas listas), como nas referências visuais.
 const STATUS = {
-  a_fazer:    { label:'A fazer',      badge:'neutral', icone:'circle' },
-  andamento:  { label:'Trabalhando',  badge:'accent',  icone:'player-play' },
-  aguardando: { label:'Aguardando',   badge:'warning', icone:'hourglass' },
-  checar:     { label:'A checar',     badge:'purple',  icone:'eye-check' },
-  concluida:  { label:'Concluída',    badge:'success', icone:'circle-check' },
+  a_fazer:    { label:'A fazer',      cor:'var(--st-a_fazer)',    icone:'circle' },
+  andamento:  { label:'Trabalhando',  cor:'var(--st-andamento)',  icone:'player-play' },
+  aguardando: { label:'Aguardando',   cor:'var(--st-aguardando)', icone:'hourglass' },
+  checar:     { label:'A checar',     cor:'var(--st-checar)',     icone:'eye-check' },
+  concluida:  { label:'Concluída',    cor:'var(--st-concluida)',  icone:'circle-check' },
 };
+function st(t){ return STATUS[t && t.status] || STATUS.a_fazer; }
+// Pílula sólida (listas, ticket, sublinhas).
+function stPill(t){
+  const s = st(t);
+  return '<span class="st" style="background:' + s.cor + '">' + s.label + '</span>';
+}
+// Célula inteira preenchida (tabela do projeto): a cor é do <td>, então vai de
+// borda a borda e o hover da linha não a apaga.
+function stCelula(t){
+  const s = st(t);
+  return '<td class="cel-st" style="background:' + s.cor + '">' + s.label + '</td>';
+}
 const TIPOS = {
   tarefa:      { label:'Tarefa',      icone:'point' },
   subtarefa:   { label:'Subtarefa',   icone:'corner-down-right' },
@@ -58,14 +72,14 @@ const TIPOS = {
 };
 // Ordem dos grupos na agenda.
 const GRUPOS = [
-  { id:'checar',    titulo:'A checar (voltou para você)' },
-  { id:'atrasada',  titulo:'Atrasadas' },
-  { id:'hoje',      titulo:'Hoje' },
-  { id:'semana',    titulo:'Esta semana' },
-  { id:'proxima',   titulo:'Próxima semana' },
-  { id:'depois',    titulo:'Mais para frente' },
-  { id:'sem',       titulo:'Sem próxima ação definida' },
-  { id:'aguardando',titulo:'Aguardando terceiro' },
+  { id:'checar',    titulo:'A checar (voltou para você)', cor:'var(--purple)' },
+  { id:'atrasada',  titulo:'Atrasadas',                   cor:'var(--danger)' },
+  { id:'hoje',      titulo:'Hoje',                        cor:'var(--accent)' },
+  { id:'semana',    titulo:'Esta semana',                 cor:'var(--cyan)' },
+  { id:'proxima',   titulo:'Próxima semana',              cor:'var(--purple)' },
+  { id:'depois',    titulo:'Mais para frente',            cor:'var(--text-secondary)' },
+  { id:'sem',       titulo:'Sem próxima ação definida',   cor:'var(--text-muted)' },
+  { id:'aguardando',titulo:'Aguardando terceiro',         cor:'var(--warning)' },
 ];
 
 // ---------- Estado ----------
@@ -82,6 +96,9 @@ let mensagens = [];
 let paraAnexar = [];        // anexos na fila do compositor
 let paraMarcar = [];        // pessoas marcadas na próxima mensagem
 let recolhidos = {};        // projetos recolhidos na tabela (só nesta sessão)
+let gruposFechados = {};   // grupos recolhidos na agenda
+let filtro = '';           // busca da barra de ferramentas
+let soMinhas = false;      // filtro "só as minhas" na aba Projetos
 let expandidos = {};        // tarefas com as filhas abertas na tabela
 let unsubs = [];
 let primeiroSnapNotif = true;
@@ -606,11 +623,8 @@ function statCard(label, valor, icone, cor){
 // vai para segunda sem mexer no prazo final combinado.
 function itemAgenda(t, opcoes){
   const o = opcoes || {};
-  const g = grupoDaTarefa(t);
   const cls = ['item'];
   if(t.status === 'concluida') cls.push('item--concluida');
-  else if(['checar','aguardando','atrasada','hoje'].includes(g)) cls.push('item--' + g);
-  const st = STATUS[t.status] || STATUS.a_fazer;
   const proj = projetoDe(t.projetoId);
   const pai = t.paiId ? tarefaDe(t.paiId) : null;
   const pedAbertos = abertas(pedidosDe(t._id)).length;
@@ -632,7 +646,8 @@ function itemAgenda(t, opcoes){
     sub.push('<span class="dot"></span><span style="color:var(--warning-text)">próxima ação depois do prazo final</span>');
 
   const podeReprog = t.responsavel === usuario.email && t.status !== 'concluida' && o.reprogramar !== false;
-  return '<div class="' + cls.join(' ') + '" onclick="abrirTarefa(\'' + t._id + '\')">' +
+  return '<div class="' + cls.join(' ') + '" style="border-left-color:' + st(t).cor +
+      '" onclick="abrirTarefa(\'' + t._id + '\')">' +
     (o.avatar === false ? '' : avatar(t.responsavel, 'avatar--sm')) +
     '<div class="item__main">' +
       '<div class="item__tit">' + esc(t.titulo) +
@@ -642,17 +657,23 @@ function itemAgenda(t, opcoes){
     '<div class="row" onclick="event.stopPropagation()" style="flex-shrink:0">' +
       (podeReprog ? '<label class="reprog" title="Quando você vai mexer nisso"><i class="ti ti-calendar-event"></i>' +
         '<input type="date" value="' + esc(t.prazo || '') + '" onchange="mudarPrazo(\'' + t._id + '\',this.value)"></label>' : '') +
-      '<span class="badge badge--' + st.badge + '">' + st.label + '</span>' +
+      stPill(t) +
     '</div>' +
   '</div>';
 }
-function grupoHTML(titulo, lista, opcoes){
+function grupoHTML(g, lista, opcoes){
   if(!lista.length) return '';
+  const fechado = !!gruposFechados[g.id];
   return '<section class="grupo">' +
-    '<div class="grupo__head"><span class="grupo__titulo">' + esc(titulo) + '</span>' +
-    '<span class="nav__count">' + lista.length + '</span></div>' +
-    '<div class="lista">' + lista.map(t => itemAgenda(t, opcoes)).join('') + '</div></section>';
+    '<button class="grupo__head" onclick="alternarGrupo(\'' + g.id + '\')">' +
+      '<i class="ti ti-chevron-' + (fechado ? 'right' : 'down') + '" style="color:' + (g.cor || 'var(--text-muted)') + '"></i>' +
+      '<span class="grupo__titulo" style="color:' + (g.cor || 'var(--text)') + '">' + esc(g.titulo) + '</span>' +
+      '<span class="grupo__cont">' + lista.length + '</span>' +
+    '</button>' +
+    (fechado ? '' : '<div class="lista">' + lista.map(t => itemAgenda(t, opcoes)).join('') + '</div>') +
+  '</section>';
 }
+function alternarGrupo(id){ gruposFechados[id] = !gruposFechados[id]; render(); }
 
 function viewAgenda(email, propria){
   const minhas = abertas(tarefas.filter(t => t.responsavel === email));
@@ -672,14 +693,12 @@ function viewAgenda(email, propria){
       statCard('Aguardando terceiro', porGrupo.aguardando.length, 'hourglass', 'warning') +
     '</div>';
 
-  let corpo = GRUPOS.map(g => grupoHTML(g.titulo, porGrupo[g.id], { reprogramar:propria })).join('');
+  let corpo = GRUPOS.map(g => grupoHTML(g, porGrupo[g.id], { reprogramar:propria })).join('');
   if(propria){
     const meusPedidos = abertas(tarefas.filter(t => t.tipo === 'solicitacao' && t.solicitante === email));
     if(meusPedidos.length){
-      corpo += '<section class="grupo"><div class="grupo__head">' +
-        '<span class="grupo__titulo">Pedidos que eu fiz e estou esperando</span>' +
-        '<span class="nav__count">' + meusPedidos.length + '</span></div><div class="lista">' +
-        meusPedidos.sort(ordenarPorPrazo).map(t => itemAgenda(t, { reprogramar:false })).join('') + '</div></section>';
+      corpo += grupoHTML({ id:'meuspedidos', titulo:'Pedidos que eu fiz e estou esperando', cor:'var(--cyan)' },
+        meusPedidos.sort(ordenarPorPrazo), { reprogramar:false });
     }
   }
   if(!corpo) corpo = vazio('calendar-off', 'Nada na agenda',
@@ -702,31 +721,70 @@ function viewAgenda(email, propria){
 // ============================================================
 // ABA 2 — PROJETOS (uma tabela por projeto)
 // ============================================================
-// Cada projeto é um bloco com sua tabela: uma linha por demanda, e as
-// subtarefas e os pedidos entram recuados como sublinhas da tarefa mãe.
+// Cada projeto é um bloco com sua tabela: uma linha por demanda, subtarefas e
+// pedidos recuados como sublinhas. O status é bloco de cor cheia, o círculo à
+// esquerda conclui sem abrir a tarefa e a barra de ferramentas filtra tudo.
 let mostrarConcluidas = false;
+
+function passaFiltro(t){
+  if(soMinhas && t.responsavel !== usuario.email) return false;
+  if(!filtro) return true;
+  const f = filtro.toLowerCase();
+  return String(t.titulo||'').toLowerCase().includes(f)
+      || String(t.descricao||'').toLowerCase().includes(f)
+      || nomeDe(t.responsavel).toLowerCase().includes(f);
+}
+// A linha fica visível se ela passa no filtro ou se alguma sublinha passa —
+// senão o filtro esconderia a mãe e deixaria a filha órfã.
+function visivel(t, prof){
+  if(t.status === 'concluida' && !mostrarConcluidas) return false;
+  if(passaFiltro(t)) return true;
+  if((prof || 0) > 4) return false;
+  return filhasDe(t._id).some(f => visivel(f, (prof || 0) + 1));
+}
 
 function viewProjetos(){
   const ativos = projetos.filter(p => p.status !== 'concluido');
   const fechados = projetos.filter(p => p.status === 'concluido');
-  const total = abertas(tarefas).length;
   const cabecalho =
-    '<div class="row--between" style="margin-bottom:var(--space-5);flex-wrap:wrap">' +
+    '<div class="row--between" style="margin-bottom:var(--space-4);flex-wrap:wrap">' +
       '<div><h1 class="page-title">Projetos</h1>' +
-      '<p class="page-subtitle">' + ativos.length + ' em andamento · ' + total + ' demandas em aberto</p></div>' +
-      '<div class="row">' +
-        '<label class="chip chip--plain" style="cursor:pointer"><input type="checkbox"' +
-          (mostrarConcluidas ? ' checked' : '') + ' onchange="mostrarConcluidas=this.checked;render()"> Mostrar concluídas</label>' +
-        '<button class="btn btn--primary" onclick="modalNovoProjeto()"><i class="ti ti-plus"></i> Novo projeto</button>' +
-      '</div>' +
-    '</div>';
+      '<p class="page-subtitle">' + ativos.length + ' em andamento · ' + abertas(tarefas).length +
+      ' demandas em aberto</p></div>' +
+      '<button class="btn btn--primary" onclick="modalNovoProjeto()"><i class="ti ti-plus"></i> Novo projeto</button>' +
+    '</div>' + barraFerramentas();
   if(!projetos.length)
     return '<div class="wrap">' + cabecalho + vazio('folder-plus', 'Nenhum projeto ainda',
       'Crie o primeiro projeto para começar a organizar as demandas da área.') + '</div>';
+  const blocos = ativos.map(blocoProjeto).join('');
+  const blocosFim = fechados.map(blocoProjeto).join('');
   return '<div class="wrap">' + cabecalho +
-    ativos.map(blocoProjeto).join('') +
-    (fechados.length ? '<div class="section-label">Projetos concluídos</div>' + fechados.map(blocoProjeto).join('') : '') +
+    (blocos || (filtro || soMinhas ? vazio('search-off', 'Nada encontrado',
+      'Nenhuma demanda combina com o filtro atual.') : '')) +
+    (blocosFim ? '<div class="section-label">Projetos concluídos</div>' + blocosFim : '') +
   '</div>';
+}
+
+function barraFerramentas(){
+  const alt = (ligado, icone, texto, acao) =>
+    '<button class="alterna' + (ligado ? ' alterna--on' : '') + '" onclick="' + acao + '">' +
+    '<i class="ti ti-' + icone + '"></i> ' + texto + '</button>';
+  return '<div class="toolbar">' +
+    '<label class="busca"><i class="ti ti-search"></i>' +
+      '<input id="busca-input" placeholder="Buscar demanda ou pessoa..." value="' + esc(filtro) +
+      '" oninput="filtrar(this.value)">' +
+      (filtro ? '<i class="ti ti-x" style="cursor:pointer" onclick="filtrar(\'\')"></i>' : '') +
+    '</label>' +
+    alt(soMinhas, 'user', 'Só as minhas', 'soMinhas=!soMinhas;render()') +
+    alt(mostrarConcluidas, 'circle-check', 'Mostrar concluídas', 'mostrarConcluidas=!mostrarConcluidas;render()') +
+  '</div>';
+}
+// Re-renderiza a cada tecla, então devolve o foco e o cursor para a busca.
+function filtrar(v){
+  filtro = v;
+  render();
+  const el = $('busca-input');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} }
 }
 
 function blocoProjeto(p){
@@ -738,28 +796,31 @@ function blocoProjeto(p){
   const recolhido = !!recolhidos[p._id];
   const podeEditar = ehMaster() || p.criadoPor === usuario.email || p.lider === usuario.email;
 
-  // Árvore: só as raízes na primeira volta; as filhas entram recuadas.
-  const raizes = ts.filter(t => !t.paiId || !tarefaDe(t.paiId)).sort(ordenarPorPrazo);
+  const raizes = ts.filter(t => (!t.paiId || !tarefaDe(t.paiId)) && visivel(t)).sort(ordenarPorPrazo);
   const corpo = raizes.map(t => linhasComFilhas(t, 0)).join('');
+  // Com filtro ligado, projeto sem nenhuma linha visível sai da tela.
+  if(!corpo && (filtro || soMinhas)) return '';
 
   return '<section class="proj-bloco" id="proj-' + p._id + '">' +
     '<div class="proj-bloco__head">' +
       '<button class="proj-bloco__nome" onclick="alternarProjeto(\'' + p._id + '\')">' +
-        '<i class="ti ti-chevron-' + (recolhido ? 'right' : 'down') + '"></i>' + esc(p.nome) + '</button>' +
+        '<i class="ti ti-chevron-' + (recolhido ? 'right' : 'down') + ' muted"></i>' + esc(p.nome) + '</button>' +
       (p.status === 'concluido' ? '<span class="badge badge--success">Concluído</span>' :
        p.status === 'pausado'   ? '<span class="badge badge--warning">Pausado</span>' : '') +
-      '<span class="small muted">' + ab.length + ' em aberto' +
-        (atrasadas ? ' · <span style="color:var(--danger-text)">' + atrasadas + ' atrasada(s)</span>' : '') +
-        (vencidos ? ' · <span style="color:var(--danger-text)">' + vencidos + ' com prazo final vencido</span>' : '') +
-        ' · ' + pct + '% concluído</span>' +
+      '<span class="prog" title="' + pct + '% concluído"><span class="prog__fill" style="width:' + pct + '%"></span></span>' +
+      '<span class="small muted">' + pct + '% · ' + ab.length + ' em aberto' +
+        (atrasadas ? ' · <span style="color:var(--danger-text);font-weight:600">' + atrasadas + ' atrasada(s)</span>' : '') +
+        (vencidos ? ' · <span style="color:var(--danger-text);font-weight:600">' + vencidos + ' fora do prazo final</span>' : '') +
+      '</span>' +
       '<span class="spacer"></span>' +
       '<span class="small muted" title="Líder do projeto">' + pessoaMini(p.lider) + '</span>' +
-      (podeEditar ? '<button class="icon-btn" title="Editar projeto" onclick="modalNovoProjeto(\'' + p._id + '\')"><i class="ti ti-pencil"></i></button>' : '') +
+      (podeEditar ? '<button class="icon-btn" title="Editar projeto" onclick="modalNovoProjeto(\'' + p._id + '\')">' +
+        '<i class="ti ti-pencil"></i></button>' : '') +
       '<button class="btn" onclick="modalNovaTarefa(\'' + p._id + '\')"><i class="ti ti-plus"></i> Demanda</button>' +
     '</div>' +
     (recolhido ? '' :
       (corpo ? '<div class="tab-wrap"><table class="tab">' +
-        '<thead><tr><th class="cel-dem">Demanda</th><th>Responsável</th><th>Status</th>' +
+        '<thead><tr><th class="cel-dem">Demanda</th><th>Responsável</th><th style="text-align:center">Status</th>' +
         '<th>Próxima ação</th><th>Prazo final</th></tr></thead>' +
         '<tbody>' + corpo + '</tbody></table></div>'
       : vazio('list-check', 'Nenhuma demanda neste projeto',
@@ -771,39 +832,50 @@ function alternarFilhas(id, ev){ if(ev) ev.stopPropagation(); expandidos[id] = e
 
 // Uma linha + (recursivamente) as sublinhas dela.
 function linhasComFilhas(t, nivel){
-  if(t.status === 'concluida' && !mostrarConcluidas) return '';
   const filhas = filhasDe(t._id)
-    .filter(f => mostrarConcluidas || f.status !== 'concluida')
+    .filter(f => visivel(f))
     .sort((a,b) => (a.tipo === 'solicitacao' ? 1 : 0) - (b.tipo === 'solicitacao' ? 1 : 0) || ordenarPorPrazo(a,b));
   const aberto = expandidos[t._id] !== false;
   const nivelFilha = Math.min(nivel + 1, 2);   // o recuo para em 2 níveis
-  return linhaTabela(t, nivel, filhas.length, aberto) +
+  return linhaTabela(t, nivel, filhas, aberto) +
     (aberto ? filhas.map(f => linhasComFilhas(f, nivelFilha)).join('') : '');
 }
 
-function linhaTabela(t, nivel, qtdFilhas, aberto){
-  const st = STATUS[t.status] || STATUS.a_fazer;
+function linhaTabela(t, nivel, filhas, aberto){
+  const fs = filhas || [];
+  const feitas = fs.filter(f => f.status === 'concluida').length;
+  const concluida = t.status === 'concluida';
   const sub = [];
-  if(t.tipo === 'solicitacao' && t.solicitante) sub.push('pedido de ' + primeiroNome(t.solicitante));
+  if(t.tipo === 'solicitacao' && t.solicitante) sub.push('pedido de ' + esc(primeiroNome(t.solicitante)));
   else if(t.tipo === 'subtarefa') sub.push('subtarefa');
-  if(qtdFilhas) sub.push(qtdFilhas + ' sublinha(s)');
-  if(planejadoDepoisDoDeadline(t)) sub.push('próxima ação depois do prazo final');
+  if(fs.length) sub.push(feitas + '/' + fs.length +
+    ' <span class="prog prog--mini"><span class="prog__fill" style="width:' +
+    Math.round(feitas / fs.length * 100) + '%"></span></span>');
+  if(planejadoDepoisDoDeadline(t))
+    sub.push('<span style="color:var(--warning-text);font-weight:600">próxima ação depois do prazo final</span>');
+
+  const tick = '<button class="tick' + (concluida ? ' tick--ok' : '') + '" title="' +
+    (concluida ? 'Reabrir' : 'Concluir') + '" onclick="event.stopPropagation();' +
+    (concluida ? 'reabrirTarefa' : 'concluirTarefa') + '(\'' + t._id + '\')">' +
+    '<i class="ti ti-check"></i></button>';
   const ramo = nivel > 0
     ? '<i class="ti ti-' + (t.tipo === 'solicitacao' ? 'arrow-forward-up' : 'corner-down-right') + ' ramo"></i>'
     : '';
-  const toggle = qtdFilhas
-    ? '<button class="icon-btn" style="width:20px;height:20px;font-size:14px;margin-right:-2px" title="Mostrar/ocultar sublinhas" ' +
-      'onclick="alternarFilhas(\'' + t._id + '\',event)"><i class="ti ti-chevron-' + (aberto ? 'down' : 'right') + '"></i></button>'
+  const chevron = fs.length
+    ? '<button class="chevron" title="Mostrar/ocultar sublinhas" onclick="alternarFilhas(\'' + t._id + '\',event)">' +
+      '<i class="ti ti-chevron-' + (aberto ? 'down' : 'right') + '"></i></button>'
     : '';
-  return '<tr class="nivel-' + nivel + (t.status === 'concluida' ? ' lin--concluida' : '') +
+
+  return '<tr class="nivel-' + nivel + (concluida ? ' lin--concluida' : '') +
       '" onclick="abrirTarefa(\'' + t._id + '\')">' +
-    '<td class="cel-dem"><div class="demanda">' + toggle + ramo +
+    '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' +
+      tick + ramo + chevron +
       '<div><div class="demanda__tit">' + esc(t.titulo) +
         (temNaoLida(t) ? ' <span class="pill pill--nova">novo</span>' : '') + '</div>' +
-        (sub.length ? '<div class="demanda__sub">' + esc(sub.join(' · ')) + '</div>' : '') +
+        (sub.length ? '<div class="demanda__sub">' + sub.join(' · ') + '</div>' : '') +
       '</div></div></td>' +
     '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
-    '<td><span class="badge badge--' + st.badge + '">' + st.label + '</span></td>' +
+    stCelula(t) +
     '<td class="data-cel ' + classeData(t.prazo, t, false) + '">' + esc(t.prazo ? prazoTexto(t.prazo) : '—') + '</td>' +
     '<td class="data-cel ' + classeData(t.prazoFinal, t, true) + '">' + esc(t.prazoFinal ? dataBR(t.prazoFinal) : '—') + '</td>' +
   '</tr>';
@@ -900,7 +972,6 @@ function renderPainel(){
   if(!t){ d.innerHTML = '<div class="sec">' + vazio('trash', 'Esta tarefa foi excluída') + '</div>'; return; }
 
   const rascunho = $('msg-texto') ? $('msg-texto').value : '';
-  const st = STATUS[t.status] || STATUS.a_fazer;
   const proj = projetoDe(t.projetoId);
   const pai = t.paiId ? tarefaDe(t.paiId) : null;
   const subs = subtarefasDe(t._id);
@@ -923,7 +994,7 @@ function renderPainel(){
       '<button class="icon-btn tk-tit__edit" title="Renomear" onclick="modalRenomear(\'' + t._id + '\')">' +
       '<i class="ti ti-pencil"></i></button></div>' +
     '<div class="tk-chips">' +
-      '<span class="badge badge--' + st.badge + '">' + st.label + '</span>' +
+      stPill(t) +
       '<span class="chip" onclick="focarCampo(\'c-resp\')">' + avatar(t.responsavel, 'avatar--sm') +
         '<b>' + esc(primeiroNome(t.responsavel)) + '</b></span>' +
       '<span class="chip chip--plain" onclick="focarCampo(\'c-prazo\')"><i class="ti ti-calendar-event"></i>' +
@@ -939,9 +1010,10 @@ function renderPainel(){
   // ---------- 2. Situação ----------
   '<div class="sec">' +
     '<div class="sec__lab">Situação</div>' +
-    '<div class="sit">' +
+    '<div class="sit" style="border-left-color:' + st(t).cor + '">' +
       '<div class="sit__topo">' +
-        '<span class="marca-sys" style="width:30px;height:30px"><i class="ti ti-' + st.icone + '"></i></span>' +
+        '<span class="marca-sys" style="width:30px;height:30px;color:' + st(t).cor + '">' +
+          '<i class="ti ti-' + st(t).icone + '"></i></span>' +
         '<span class="sit__txt">' + fraseSituacao(t) + '</span>' +
       '</div>' +
       '<div class="sit__acoes">' + acoesSituacao(t) + '</div>' +
@@ -1077,12 +1149,12 @@ function acoesSituacao(t){
   return b.join('');
 }
 function miniLinha(t){
-  const st = STATUS[t.status] || STATUS.a_fazer;
-  return '<div class="mini" onclick="abrirTarefa(\'' + t._id + '\')">' +
+  return '<div class="mini" style="border-left-color:' + st(t).cor +
+      '" onclick="abrirTarefa(\'' + t._id + '\')">' +
     avatar(t.responsavel, 'avatar--sm') +
     '<span class="mini__tit">' + esc(t.titulo) + (temNaoLida(t) ? ' <span class="pill pill--nova">novo</span>' : '') + '</span>' +
     (t.prazo ? '<span class="small ' + classeData(t.prazo, t, false) + '">' + esc(prazoTexto(t.prazo)) + '</span>' : '') +
-    '<span class="badge badge--' + st.badge + '">' + st.label + '</span>' +
+    stPill(t) +
   '</div>';
 }
 
