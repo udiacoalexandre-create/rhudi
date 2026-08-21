@@ -470,8 +470,11 @@ async function postarMensagem(tarefaId, texto, tipo, anexos, mencoes){
     texto: texto || '', tipo: tipo || 'msg',
     anexos: anexos || [], mencoes: mencoes || [], criadoEm: agora
   });
-  const patch = { ultimaMsgEm: agora, msgs: window._inc(1) };
+  const patch = { ultimaMsgEm: agora };
   patch['lidoPor.' + chaveEmail(usuario.email)] = agora;   // quem escreveu já leu
+  // Guarda contra janela de cache: se a página em memória for a antiga (sem
+  // _inc), a mensagem ainda é enviada — só não incrementa o contador.
+  if(window._inc) patch.msgs = window._inc(1);
   await atualizarTarefa(tarefaId, patch).catch(()=>{});
   return t;
 }
