@@ -1965,6 +1965,10 @@ function acoesSituacao(t){
   const meu = t.responsavel === usuario.email;
   const b = [];
   if(t.status === 'concluida'){
+    // Pedido finalizado que não resolveu: comento e devolvo para a pessoa.
+    if(t.tipo === 'solicitacao' && t.paiId && (t.solicitante === usuario.email || ehMaster()))
+      b.push('<button class="acao acao--ativa" onclick="modalReabrirPedido(\'' + id + '\')">' +
+        '<i class="ti ti-rotate"></i> Comentar e devolver para ' + esc(primeiroNome(t.responsavel)) + '</button>');
     b.push('<button class="acao" onclick="reabrirTarefa(\'' + id + '\')"><i class="ti ti-rotate"></i> Reabrir</button>');
   }else{
     // Pedido que é meu: encerra respondendo, e é a resposta que destrava quem pediu.
@@ -1982,10 +1986,15 @@ function acoesSituacao(t){
   return b.length ? '<div class="sit__acoes">' + b.join('') + '</div>' : '';
 }
 function miniLinha(t){
+  const podeDevolver = t.tipo === 'solicitacao' && t.status === 'concluida' && t.paiId &&
+    (t.solicitante === usuario.email || ehMaster());
   return '<div class="mini" style="border-left-color:' + st(t).cor +
       '" onclick="abrirTarefa(\'' + t._id + '\')">' +
     avatar(t.responsavel, 'avatar--sm') +
     '<span class="mini__tit">' + esc(t.titulo) + (temNaoLida(t) ? ' <span class="pill pill--nova">novo</span>' : '') + '</span>' +
+    (podeDevolver ? '<button class="mini__acao" title="Comentar e devolver para ' + esc(nomeDe(t.responsavel)) + '" ' +
+      'onclick="event.stopPropagation();modalReabrirPedido(\'' + t._id + '\')">' +
+      '<i class="ti ti-rotate"></i> devolver</button>' : '') +
     (t.prazo ? '<span class="small ' + classeData(t.prazo, t, false) + '">' + esc(prazoTexto(t.prazo)) + '</span>' : '') +
     stPill(t) +
   '</div>';
@@ -2093,6 +2102,9 @@ async function mudarStatus(id, novo){
   if(t.status === novo){ renderPainel(); return; }
   await atualizarTarefa(id, { status:novo, concluidaEm:null, atualizadoEm:new Date().toISOString() });
   await postarMensagem(id, 'Situação: ' + (STATUS[novo] || {}).label + '.', 'sistema');
+  // Pedido que sai de finalizado volta a travar quem pediu.
+  if(t.tipo === 'solicitacao' && t.status === 'concluida' && t.paiId)
+    await travarPai(t, 'O pedido "' + t.titulo + '" foi reaberto — aguardando ' + nomeDe(t.responsavel) + ' de novo.');
 }
 async function concluirTarefa(id){
   const t = tarefaDe(id);
@@ -2108,6 +2120,17 @@ async function concluirTarefa(id){
   // Se era um pedido, quem pediu tem de recuperar a tarefa dele.
   if(t.tipo === 'solicitacao' && t.paiId) await devolverAoPai(t, 'Pedido concluído por ' + usuario.nome + '.');
   toast('Tarefa concluída.', 'ok');
+}
+
+// O contrário do devolverAoPai: um pedido que volta a ficar aberto trava de
+// novo a tarefa de quem pediu — ela não pode seguir enquanto a resposta não
+// vier. É o que faz o ciclo funcionar nos dois sentidos.
+async function travarPai(filha, aviso){
+  const pai = filha.paiId ? tarefaDe(filha.paiId) : null;
+  if(!pai || pai.status === 'concluida') return;
+  if(pai.status !== 'aguardando')
+    await atualizarTarefa(pai._id, { status:'aguardando', atualizadoEm:new Date().toISOString() });
+  await postarMensagem(pai._id, aviso || 'Pedido reaberto — aguardando terceiros de novo.', 'sistema');
 }
 
 // Destrava a tarefa de quem pediu: quando não sobra nenhum pedido em aberto,
@@ -2128,8 +2151,14 @@ async function devolverAoPai(filha, aviso){
     'Pode conferir: ' + recorta(pai.titulo, 60), pai);
 }
 async function reabrirTarefa(id){
+  const t = tarefaDe(id);
   await atualizarTarefa(id, { status:'a_fazer', concluidaEm:null });
   await postarMensagem(id, 'Reaberta por ' + usuario.nome + '.', 'sistema');
+  if(t && t.tipo === 'solicitacao' && t.paiId){
+    await atualizarTarefa(id, { prazo:hoje() }).catch(()=>{});   // volta para a agenda de hoje da pessoa
+    await travarPai(t, 'O pedido "' + t.titulo + '" foi reaberto — aguardando ' + nomeDe(t.responsavel) + ' de novo.');
+    await notificar([t.responsavel], 'solicitacao', 'Reaberto: ' + t.titulo, t);
+  }
 }
 // Exclui a demanda e tudo que pende dela (subtarefas, pedidos e as conversas),
 // porque travar e pedir para apagar uma a uma só empurrava o trabalho.
@@ -2457,6 +2486,41 @@ async function salvarSolicitacao(paiId){
     fecharModal();
     toast('Solicitação enviada para ' + primeiroNome(quem) + '.', 'ok');
   }catch(e){ toast('Erro ao solicitar: ' + (e && e.code || e), 'erro'); }
+}
+
+// ---------- Reabrir o pedido e devolver ao terceiro ----------
+// Quando a resposta veio incompleta: comento o que ainda falta e o pedido
+// volta para NÃO INICIADO na agenda da pessoa (para hoje), enquanto a minha
+// tarefa volta para AGUARDANDO TERCEIROS.
+function modalReabrirPedido(id){
+  const t = tarefaDe(id);
+  if(!t) return;
+  abrirModal(moldura('Devolver para ' + nomeDe(t.responsavel),
+    '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-rotate"></i>' +
+      '<div>O pedido volta para <b>não iniciado</b> na agenda de ' + esc(primeiroNome(t.responsavel)) +
+      ' (para hoje) e a sua tarefa volta para <b>aguardando terceiros</b>.</div></div>' +
+    '<div class="fg"><label>O que ainda falta</label><textarea id="rb-texto" ' +
+      'placeholder="Ex.: Faltou o parecer sobre a cláusula 7, que era o principal"></textarea></div>' +
+    '<div class="fg"><label>Novo prazo final (opcional)</label>' +
+      '<input type="date" id="rb-final" value="' + esc(t.prazoFinal || '') + '"></div>',
+    'Devolver', 'salvarReabertura(\'' + id + '\')'));
+}
+async function salvarReabertura(id){
+  const t = tarefaDe(id);
+  const texto = ($('rb-texto').value || '').trim();
+  const final = $('rb-final').value || null;
+  if(!t) return;
+  if(!texto){ toast('Escreva o que ainda falta.', 'erro'); return; }
+  try{
+    await postarMensagem(id, texto, 'msg');
+    await atualizarTarefa(id, { status:'a_fazer', concluidaEm:null, prazo:hoje(),
+                                prazoFinal:final, atualizadoEm:new Date().toISOString() });
+    await postarMensagem(id, usuario.nome + ' devolveu o pedido: ainda falta algo.', 'sistema');
+    await travarPai(t, 'Devolvido a ' + nomeDe(t.responsavel) + ': ' + texto);
+    await notificar([t.responsavel], 'solicitacao', texto, t);
+    fecharModal();
+    toast('Devolvido para ' + primeiroNome(t.responsavel) + '.', 'ok');
+  }catch(e){ toast('Erro ao devolver: ' + (e && e.code || e), 'erro'); }
 }
 
 // ---------- Responder e devolver ----------
