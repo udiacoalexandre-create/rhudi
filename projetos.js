@@ -1032,7 +1032,9 @@ function blocoProjeto(p){
       '<button class="btn" onclick="modalNovaTarefa(\'' + p._id + '\')"><i class="ti ti-plus"></i> Demanda</button>' +
     '</div>' +
     (recolhido ? '' :
-      (corpo ? '<div class="tab-wrap"><table class="tab">' +
+      (corpo ? '<div class="tab-wrap"><table class="tab tab--fixa">' +
+        '<colgroup><col style="width:46%"><col style="width:14%"><col style="width:12%">' +
+        '<col style="width:14%"><col style="width:14%"></colgroup>' +
         '<thead><tr><th class="cel-dem">Demanda</th><th>Responsável</th><th style="text-align:center">Status</th>' +
         '<th>Próxima ação</th><th>Prazo final</th></tr></thead>' +
         '<tbody>' + corpo + '</tbody></table></div>'
@@ -1070,30 +1072,32 @@ function linhaTabela(t, nivel, filhas, aberto){
   const fs = filhas || [];
   const feitas = fs.filter(f => f.status === 'concluida').length;
   const concluida = t.status === 'concluida';
-  const sub = [];
-  if(t.tipo === 'solicitacao' && t.solicitante) sub.push('pedido de ' + esc(primeiroNome(t.solicitante)));
-  else if(t.tipo === 'subtarefa') sub.push('subtarefa');
-  if(fs.length) sub.push(feitas + '/' + fs.length +
-    ' <span class="prog prog--mini"><span class="prog__fill" style="width:' +
-    Math.round(feitas / fs.length * 100) + '%"></span></span>');
-  if(planejadoDepoisDoDeadline(t))
-    sub.push('<span style="color:var(--warning-text);font-weight:600">próxima ação depois do prazo final</span>');
-
   const ramo = nivel > 0
-    ? '<i class="ti ti-' + (t.tipo === 'solicitacao' ? 'arrow-forward-up' : 'corner-down-right') + ' ramo"></i>'
+    ? '<i class="ti ti-' + (t.tipo === 'solicitacao' ? 'arrow-forward-up' : 'corner-down-right') +
+      ' ramo" title="' + (t.tipo === 'solicitacao'
+        ? 'Pedido' + (t.solicitante ? ' de ' + esc(nomeDe(t.solicitante)) : '')
+        : 'Subtarefa') + '"></i>'
     : '';
   const chevron = fs.length
     ? '<button class="chevron" title="Mostrar/ocultar sublinhas" onclick="alternarFilhas(\'' + t._id + '\',event)">' +
       '<i class="ti ti-chevron-' + (aberto ? 'down' : 'right') + '"></i></button>'
     : '';
+  // A antiga segunda linha virou sinal curto: o tipo está no ícone do ramo, o
+  // responsável e as datas já têm coluna, e o risco de prazo vira um alerta.
+  const marcas =
+    indicadorConversa(t) +
+    (fs.length ? '<span class="sub-cont" title="' + feitas + ' de ' + fs.length +
+      ' sublinha(s) concluída(s)">' + feitas + '/' + fs.length + '</span>' : '') +
+    (planejadoDepoisDoDeadline(t)
+      ? '<i class="ti ti-alert-triangle" style="color:var(--warning);flex-shrink:0" ' +
+        'title="Próxima ação depois do prazo final"></i>' : '');
 
   return '<tr class="nivel-' + nivel + (concluida ? ' lin--concluida' : '') +
       '" onclick="abrirTarefa(\'' + t._id + '\')">' +
     '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' +
       tickHTML(t) + ramo + chevron +
-      '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div>' +
-        (sub.length ? '<div class="demanda__sub">' + sub.join(' · ') + '</div>' : '') +
-      '</div>' +
+      '<span class="demanda__tit" title="' + esc(t.titulo) + '">' + esc(t.titulo) + '</span>' +
+      marcas +
       // Criar subtarefa dentro desta tarefa, sem sair da tabela do projeto.
       ((nivel < 2 && t.tipo !== 'solicitacao')
         ? '<button class="linha-add" title="Criar subtarefa dentro desta" ' +

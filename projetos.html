@@ -105,7 +105,7 @@ a{ color:var(--accent); text-decoration:none }
      line-height:1.35 }
 /* Na tabela a cor toma a célula inteira, de borda a borda: é o sinal mais
    forte da linha. O fio branco embaixo separa uma linha da outra. */
-.tab td.cel-st{ width:1%; min-width:140px; text-align:center; color:#fff; font-weight:600;
+.tab td.cel-st{ text-align:center; color:#fff; font-weight:600;
         font-size:12.5px; border-bottom:2px solid var(--surface) }
 
 /* ---------- AVATAR ---------- */
@@ -318,17 +318,26 @@ a{ color:var(--accent); text-decoration:none }
 .tab th{ text-align:left; padding:9px var(--space-4); font-weight:600; font-size:11px; letter-spacing:.05em;
         text-transform:uppercase; color:var(--text-muted); background:var(--surface-soft);
         border-top:1px solid var(--border); border-bottom:1px solid var(--border); white-space:nowrap }
-.tab td{ padding:10px var(--space-4); border-bottom:1px solid var(--border); color:var(--text-secondary);
+.tab td{ padding:6px var(--space-4); border-bottom:1px solid var(--border); color:var(--text-secondary);
         vertical-align:middle }
+/* Largura fixa por coluna: é o que deixa o título cortar com "..." em vez de
+   quebrar a linha. Cada demanda ocupa uma linha só. */
+.tab--fixa{ table-layout:fixed }
+.tab--fixa td{ overflow:hidden }
+/* Na tabela o avatar é menor: era ele que segurava a altura da linha. */
+.tab .avatar--sm{ width:22px; height:22px; font-size:9px }
+.tab .mini-pes{ gap:7px }
+.tab .chat-ind{ font-size:10.5px; padding:0 6px }
 .tab tbody tr{ cursor:pointer }
 .tab tbody tr:hover td{ background:#f9fbfe }
 .tab tr.lin--concluida .demanda__tit{ text-decoration:line-through; color:var(--text-muted) }
-.tab .cel-dem{ min-width:290px; border-left:4px solid transparent }
+.tab .cel-dem{ border-left:4px solid transparent }
 .tab .cel-resp{ white-space:nowrap }
-.demanda{ display:flex; align-items:flex-start; gap:9px }
-.demanda__tit{ color:var(--text); font-weight:500 }
-.demanda__sub{ font-size:11px; color:var(--text-muted); margin-top:2px; display:flex; align-items:center;
-        gap:6px; flex-wrap:wrap }
+.demanda{ display:flex; align-items:center; gap:8px; min-width:0 }
+.demanda__tit{ color:var(--text); font-weight:500; white-space:nowrap; overflow:hidden;
+        text-overflow:ellipsis; min-width:0 }
+.sub-cont{ flex-shrink:0; font-size:10.5px; font-weight:700; color:var(--text-secondary);
+        background:var(--surface-soft); border-radius:20px; padding:1px 7px; font-variant-numeric:tabular-nums }
 .ramo{ color:var(--border-strong); flex-shrink:0; font-size:15px }
 .nivel-1 .demanda{ padding-left:20px }
 .nivel-2 .demanda{ padding-left:42px }
@@ -337,13 +346,13 @@ a{ color:var(--accent); text-decoration:none }
 .data-cel--hoje{ color:var(--accent-text); font-weight:600 }
 .data-cel--risco{ color:var(--warning-text); font-weight:600 }
 /* Círculo de concluir, como nas referências */
-.tick{ width:19px; height:19px; flex-shrink:0; margin-top:1px; border-radius:50%; cursor:pointer;
+.tick{ width:19px; height:19px; flex-shrink:0; border-radius:50%; cursor:pointer;
         border:1.5px solid var(--border-strong); background:var(--surface); color:transparent;
         display:flex; align-items:center; justify-content:center; font-size:12px; padding:0;
         transition:border-color .12s, color .12s, background .12s }
 .tick:hover{ border-color:var(--st-concluida); color:var(--st-concluida) }
 .tick--ok{ background:var(--st-concluida); border-color:var(--st-concluida); color:#fff }
-.chevron{ width:19px; height:19px; flex-shrink:0; margin-top:1px; border:none; background:none; padding:0;
+.chevron{ width:19px; height:19px; flex-shrink:0; border:none; background:none; padding:0;
         cursor:pointer; color:var(--text-muted); font-size:15px; display:flex; align-items:center }
 .chevron:hover{ color:var(--text) }
 
@@ -437,7 +446,7 @@ a{ color:var(--accent); text-decoration:none }
         cursor:pointer; font-size:17px; display:inline-flex; align-items:center; justify-content:center }
 .comp__ico:hover{ background:var(--surface-soft); color:var(--accent) }
 /* Criar subtarefa direto na linha da tabela do projeto */
-.linha-add{ opacity:.4; width:21px; height:21px; margin-top:1px; border-radius:6px;
+.linha-add{ opacity:.4; width:21px; height:21px; border-radius:6px;
         border:1px dashed var(--border-strong); background:var(--surface); color:var(--text-muted);
         cursor:pointer; font-size:12px; display:inline-flex; align-items:center; justify-content:center;
         flex-shrink:0; transition:opacity .12s }
