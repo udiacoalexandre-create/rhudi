@@ -796,15 +796,19 @@ function miniCard(t, podeEditar){
     '</div>' +
   '</div>';
 }
-function agendaLateral(lista, podeEditar){
+// A agenda fica embaixo do quadro, com os dias em grade: cada dia é uma caixa
+// que recebe card. Ler de relance "o que eu me programei para cada dia" é o
+// contraponto do kanban, que mostra o ESTADO de cada coisa.
+function agendaRodape(lista, podeEditar){
   const dias = diasDaAgenda(lista);
-  return '<aside class="lat">' +
-    '<div class="lat__tit"><i class="ti ti-calendar-week"></i> Agenda de planejamento</div>' +
-    '<div class="lat__sub">Pelo dia em que você decidiu mexer' +
-      (podeEditar ? '. Arraste um card para outro dia para reprogramar.' : '.') + '</div>' +
+  return '<section class="ag">' +
+    '<div class="ag__tit"><i class="ti ti-calendar-week"></i> Agenda de planejamento' +
+      '<span class="small muted" style="font-weight:400">pelo dia em que você decidiu mexer' +
+      (podeEditar ? ' · arraste um card para outro dia para reprogramar' : '') + '</span></div>' +
+    '<div class="ag__grade">' +
     dias.map(d => {
       const solta = podeEditar && !d.semSolta;
-      return '<div class="dia">' +
+      return '<div class="ag__dia"><div class="dia">' +
         '<div class="dia__head">' +
           '<span class="dia__nome" style="color:' + d.cor + '">' + esc(d.titulo) + '</span>' +
           (d.tarefas.length ? '<span class="dia__n">' + d.tarefas.length + '</span>' : '') +
@@ -816,9 +820,10 @@ function agendaLateral(lista, podeEditar){
           (d.tarefas.length ? d.tarefas.map(t => miniCard(t, podeEditar)).join('')
             : '<div class="dia__vazio">' + (solta ? 'solte aqui' : 'nada') + '</div>') +
         '</div>' +
-      '</div>';
+      '</div></div>';
     }).join('') +
-  '</aside>';
+    '</div>' +
+  '</section>';
 }
 
 // ---------- KANBAN (estado) ----------
@@ -903,38 +908,11 @@ function viewAgenda(email, propria){
         (propria ? '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' : '') +
       '</div>' +
     '</div>' +
-    (todas.length ? '<div class="dois">' + agendaLateral(emAberto, podeEditar) +
-        '<div>' + kanbanHTML(todas, podeEditar) + pedidosQueFiz(email, propria) + '</div>' +
-      '</div>'
+    (todas.length
+      ? kanbanHTML(todas, podeEditar) + agendaRodape(emAberto, podeEditar)
       : vazio('checkbox', 'Nada por aqui ainda',
-          'Quando alguém te definir como responsável — ou você criar uma tarefa — ela aparece na agenda e no quadro.')) +
+          'Quando alguém te definir como responsável — ou você criar uma tarefa — ela aparece no quadro e na agenda.')) +
   '</div>';
-}
-
-// Os pedidos que EU fiz vivem na agenda de quem recebeu; aqui fica só o
-// acompanhamento, para não perder de vista o que estou esperando.
-function pedidosQueFiz(email, propria){
-  if(!propria) return '';
-  const meus = abertas(tarefas.filter(t => t.tipo === 'solicitacao' && t.solicitante === email));
-  if(!meus.length) return '';
-  return '<section class="proj-bloco" style="margin-top:var(--space-4)">' +
-    '<div class="proj-bloco__head">' +
-      '<span class="proj-bloco__nome" style="cursor:default"><i class="ti ti-arrow-forward-up muted"></i>' +
-        'Pedidos que eu fiz e estou esperando</span>' +
-      '<span class="col__n">' + meus.length + '</span>' +
-    '</div>' +
-    '<div class="tab-wrap"><table class="tab">' +
-      '<thead><tr><th class="cel-dem">Pedido</th><th>Com quem</th><th style="text-align:center">Status</th>' +
-      '<th>Próxima ação</th><th>Prazo final</th></tr></thead><tbody>' +
-      meus.sort(ordenarPorPrazo).map(t =>
-        '<tr onclick="abrirTarefa(\'' + t._id + '\')">' +
-        '<td class="cel-dem" style="border-left-color:' + st(t).cor + '"><div class="demanda">' +
-          '<div><div class="demanda__tit">' + esc(t.titulo) + indicadorConversa(t) + '</div></div></div></td>' +
-        '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
-        stCelula(t) + celulaData(t, 'prazo') + celulaData(t, 'final') +
-        '</tr>').join('') +
-    '</tbody></table></div>' +
-  '</section>';
 }
 
 // ============================================================

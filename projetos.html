@@ -161,18 +161,19 @@ a{ color:var(--accent); text-decoration:none }
         width:90px; outline:none; padding:0 }
 
 /* ---------- MINHAS TAREFAS: agenda (esquerda) + kanban (direita) ---------- */
-.wrap--largo{ max-width:1760px }
-.dois{ display:grid; grid-template-columns:296px minmax(0,1fr); gap:var(--space-4); align-items:start }
-@media (max-width:1080px){ .dois{ grid-template-columns:1fr } }
+.wrap--largo{ max-width:1900px }
 
-/* Agenda lateral: o planejamento por dia */
-.lat{ background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow);
-      padding:var(--space-4); position:sticky; top:120px; max-height:calc(100vh - 148px); overflow-y:auto }
-@media (max-width:1080px){ .lat{ position:static; max-height:none } }
-.lat__tit{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--text);
-      margin:0 0 4px }
-.lat__sub{ font-size:11px; color:var(--text-muted); margin-bottom:var(--space-4) }
-.dia{ margin-bottom:var(--space-3) }
+/* Agenda de planejamento, embaixo do quadro: os dias em grade, para usar a
+   largura toda e nunca precisar de rolagem lateral. */
+.ag{ margin-top:var(--space-5); background:var(--surface); border:1px solid var(--border);
+      border-radius:14px; box-shadow:var(--shadow); padding:var(--space-4) var(--space-5) var(--space-5) }
+.ag__tit{ display:flex; align-items:center; gap:9px; font-size:15px; font-weight:600; color:var(--text);
+      letter-spacing:-.01em; margin-bottom:var(--space-4); flex-wrap:wrap }
+.ag__tit i{ color:var(--accent) }
+.ag__grade{ display:grid; grid-template-columns:repeat(auto-fill,minmax(228px,1fr)); gap:var(--space-3);
+      align-items:start }
+.ag__dia{ background:var(--surface-soft); border:1px solid var(--border); border-radius:12px; padding:10px }
+.dia{ margin-bottom:0 }
 .dia__head{ display:flex; align-items:center; gap:7px; margin-bottom:6px }
 .dia__nome{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase }
 .dia__n{ font-size:10px; font-weight:700; color:var(--text-muted); background:var(--surface-soft);
@@ -189,10 +190,12 @@ a{ color:var(--accent); text-decoration:none }
 .mini-card__sub{ font-size:10.5px; color:var(--text-muted); margin-top:2px }
 
 /* Kanban */
-/* As seis colunas cabem juntas em tela de trabalho (~1500px de área útil);
-   abaixo disso o quadro rola na horizontal em vez de esmagar os cards. */
-.kanban{ display:grid; grid-auto-flow:column; grid-auto-columns:minmax(198px,1fr);
-      gap:var(--space-2); overflow-x:auto; padding-bottom:var(--space-3); align-items:start }
+/* As seis colunas dividem a largura da tela em partes iguais. Nada de rolagem
+   horizontal: em tela estreita elas quebram em 3 e depois em 2 por linha. */
+.kanban{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:var(--space-2);
+      align-items:start }
+@media (max-width:1180px){ .kanban{ grid-template-columns:repeat(3,minmax(0,1fr)) } }
+@media (max-width:700px){  .kanban{ grid-template-columns:repeat(2,minmax(0,1fr)) } }
 .col{ background:var(--surface-soft); border:1px solid var(--border); border-radius:14px;
       display:flex; flex-direction:column; min-width:0 }
 .col__head{ display:flex; align-items:center; gap:6px; padding:10px 10px 10px 0;
@@ -202,7 +205,7 @@ a{ color:var(--accent); text-decoration:none }
 .col__n{ background:var(--surface-soft); color:var(--text-secondary); border-radius:20px; padding:1px 7px;
       font-size:11px; font-weight:700 }
 .col__corpo{ padding:10px; display:flex; flex-direction:column; gap:8px; min-height:74px;
-      max-height:calc(100vh - 250px); overflow-y:auto }
+      max-height:min(58vh,640px); overflow-y:auto }
 .col--alvo{ outline:2px dashed var(--accent); outline-offset:-2px }
 .col--alvo .col__corpo{ background:var(--accent-bg) }
 .card{ background:var(--surface); border:1px solid var(--border); border-top:3px solid var(--border-strong);
