@@ -694,6 +694,14 @@ function tickHTML(t){
 
 // ---------- ARRASTAR E SOLTAR ----------
 let arrastando = null;
+let ultimoArrasteEm = 0;
+// Em alguns navegadores solta-e-clica dispara o clique no card de origem, o
+// que abriria o ticket logo depois de arrastar. Este atalho engole o clique
+// que vem colado no fim de um arraste.
+function cliqueCard(id, ev){
+  if(Date.now() - ultimoArrasteEm < 300){ if(ev) ev.preventDefault(); return; }
+  abrirTarefa(id);
+}
 function arrastarInicio(ev, id){
   arrastando = id;
   try{ ev.dataTransfer.setData('text/plain', id); ev.dataTransfer.effectAllowed = 'move'; }catch(e){}
@@ -701,6 +709,7 @@ function arrastarInicio(ev, id){
 }
 function arrastarFim(ev){
   arrastando = null;
+  ultimoArrasteEm = Date.now();
   if(ev.currentTarget) ev.currentTarget.classList.remove('card--arrasta');
   document.querySelectorAll('.col--alvo,.dia__lista--alvo')
     .forEach(el => el.classList.remove('col--alvo', 'dia__lista--alvo'));
@@ -775,7 +784,7 @@ function miniCard(t, podeEditar){
     : (planejadoDepoisDoDeadline(t) ? ' <span class="card__risco">depois do prazo final</span>' : '');
   return '<div class="mini-card" style="border-left-color:' + st(t).cor + '"' +
     (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
-    ' onclick="abrirTarefa(\'' + t._id + '\')" title="' + esc(STATUS[t.status].label) + '">' +
+    ' onclick="cliqueCard(\'' + t._id + '\',event)" title="' + esc(STATUS[t.status].label) + '">' +
     '<div class="mini-card__tit">' + esc(recorta(t.titulo, 58)) + indicadorConversa(t) +
       '<div class="mini-card__sub">' + (proj ? esc(recorta(proj.nome, 24)) : 'sem projeto') + alerta + '</div>' +
     '</div>' +
@@ -826,7 +835,7 @@ function cardKanban(t, podeEditar){
   return '<div class="card' + (t.status === 'concluida' ? ' card--concluido' : '') +
     '" style="border-top-color:' + st(t).cor + '"' +
     (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
-    ' onclick="abrirTarefa(\'' + t._id + '\')">' +
+    ' onclick="cliqueCard(\'' + t._id + '\',event)">' +
     '<div class="card__tit">' + esc(t.titulo) + ' ' + indicadorConversa(t) + '</div>' +
     (meta.length ? '<div class="card__meta">' + meta.join('') + '</div>' : '') +
   '</div>';
