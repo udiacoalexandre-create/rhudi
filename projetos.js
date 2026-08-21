@@ -94,6 +94,7 @@ let mensagens = [];
 let paraAnexar = [];        // anexos na fila do compositor
 let paraMarcar = [];        // pessoas marcadas na próxima mensagem
 let recolhidos = {};        // projetos recolhidos na tabela (só nesta sessão)
+let frentesFechadas = {};  // frentes recolhidas (chave 'projetoId:frenteId')
 let filtro = '';           // busca da barra de ferramentas
 let abaTicket = 'upd';     // aba do ticket: upd | arq | hist
 let respondendo = null;    // id da atualização que está com a caixa de resposta aberta
@@ -235,6 +236,29 @@ function ehMaster(){ return usuario && usuario.papel === 'master'; }
 
 // ---------- Consultas em memória ----------
 function projetoDe(id){ return projetos.find(p => p._id === id) || null; }
+// FRENTES: subdivisões do projeto, que não são tarefa. Um projeto do comercial
+// se divide em SDR, CRÉDITO, ORÇAMENTO, e cada frente tem suas tarefas (e as
+// subtarefas delas). Ficam dentro do próprio doc do projeto — são poucas, e
+// assim renomear ou reordenar é uma escrita só.
+const CORES_FRENTE = ['var(--accent)','var(--purple)','var(--cyan)','var(--st-aguardando)',
+                      'var(--st-concluida)','#be185d','#4338ca','#b45309'];
+function frentesDe(projetoId){
+  const p = projetoDe(projetoId);
+  return (p && Array.isArray(p.frentes)) ? p.frentes : [];
+}
+function frenteDe(projetoId, frenteId){
+  return frentesDe(projetoId).find(f => f.id === frenteId) || null;
+}
+function nomeFrente(projetoId, frenteId){
+  const f = frenteDe(projetoId, frenteId);
+  return f ? f.nome : '';
+}
+function corFrente(projetoId, frenteId){
+  const i = frentesDe(projetoId).findIndex(f => f.id === frenteId);
+  return i < 0 ? 'var(--text-muted)' : CORES_FRENTE[i % CORES_FRENTE.length];
+}
+function novoId(){ return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
 // Pasta do projeto no Drive da empresa: o arquivo pesado vive lá, e a tarefa
 // guarda o link. É o que dispensa subir arquivo grande para dentro do sistema.
 function pastaDoProjeto(projetoId){
@@ -846,6 +870,9 @@ function cardKanban(t, podeEditar){
   const feitas = filhas.filter(f => f.status === 'concluida').length;
   const meta = [];
   if(proj) meta.push('<span class="card__proj"><i class="ti ti-folder"></i>' + esc(recorta(proj.nome, 22)) + '</span>');
+  const fr = t.frenteId ? nomeFrente(t.projetoId, t.frenteId) : '';
+  if(fr) meta.push('<span class="card__proj" style="color:' + corFrente(t.projetoId, t.frenteId) +
+    ';font-weight:600"><span class="pop__ponto" style="background:currentColor"></span>' + esc(recorta(fr, 18)) + '</span>');
   if(t.prazo) meta.push('<span class="' + classeData(t.prazo, t, false) + '"><i class="ti ti-calendar-event"></i> ' +
     esc(prazoTexto(t.prazo)) + '</span>');
   if(t.prazoFinal) meta.push('<span class="' + (deadlineEstourado(t) ? 'card__alerta' : '') +
@@ -942,7 +969,8 @@ function passaFiltro(t){
   const f = filtro.toLowerCase();
   return String(t.titulo||'').toLowerCase().includes(f)
       || String(t.descricao||'').toLowerCase().includes(f)
-      || nomeDe(t.responsavel).toLowerCase().includes(f);
+      || nomeDe(t.responsavel).toLowerCase().includes(f)
+      || String(nomeFrente(t.projetoId, t.frenteId) || '').toLowerCase().includes(f);
 }
 // A linha fica visível se ela passa no filtro ou se alguma sublinha passa —
 // senão o filtro esconderia a mãe e deixaria a filha órfã.
@@ -1007,9 +1035,20 @@ function blocoProjeto(p){
   const podeEditar = ehMaster() || p.criadoPor === usuario.email || p.lider === usuario.email;
 
   const raizes = ts.filter(t => (!t.paiId || !tarefaDe(t.paiId)) && visivel(t)).sort(ordenarPorPrazo);
-  const corpo = raizes.map(t => linhasComFilhas(t, 0)).join('');
+  // As demandas entram agrupadas pelas FRENTES do projeto; o que não tem
+  // frente cai em "Geral", que só aparece quando existe algo lá.
+  const frentes = frentesDe(p._id);
+  const grupos = frentes.map(f => ({
+    frente:f, cor:corFrente(p._id, f.id),
+    raizes:raizes.filter(t => t.frenteId === f.id)
+  }));
+  const semFrente = raizes.filter(t => !t.frenteId || !frenteDe(p._id, t.frenteId));
+  if(semFrente.length || !frentes.length)
+    grupos.push({ frente:null, cor:'var(--text-muted)', raizes:semFrente });
+  const corpo = grupos.map(g => linhasDaFrente(p, g)).join('');
+  const temLinha = grupos.some(g => g.raizes.length);
   // Com filtro ligado, projeto sem nenhuma linha visível sai da tela.
-  if(!corpo && (filtro || soMinhas)) return '';
+  if(!temLinha && (filtro || soMinhas)) return '';
 
   return '<section class="proj-bloco" id="proj-' + p._id + '">' +
     '<div class="proj-bloco__head">' +
@@ -1019,20 +1058,19 @@ function blocoProjeto(p){
        p.status === 'pausado'   ? '<span class="badge badge--warning">Pausado</span>' : '') +
       pilhaStatus(ts, pct) +
       '<span class="small muted">' + pct + '% · ' + ab.length + ' em aberto' +
-        (atrasadas ? ' · <span style="color:var(--danger-text);font-weight:600">' + atrasadas + ' atrasada(s)</span>' : '') +
-        (vencidos ? ' · <span style="color:var(--danger-text);font-weight:600">' + vencidos + ' fora do prazo final</span>' : '') +
+        (atrasadas ? ' · <span style="color:var(--danger-text);font-weight:600">' + atrasadas + ' atrasada</span>' : '') +
+        (vencidos ? ' · <span style="color:var(--danger-text);font-weight:600">' + vencidos + ' fora do prazo</span>' : '') +
       '</span>' +
       '<span class="spacer"></span>' +
       '<span class="small muted" title="Líder do projeto">' + pessoaMini(p.lider) + '</span>' +
-      (p.driveUrl ? botaoPasta(p._id, 'Pasta', 'btn')
-        : (podeEditar ? '<button class="btn" style="color:var(--text-muted)" title="Vincular a pasta deste projeto no Drive" ' +
-            'onclick="modalNovoProjeto(\'' + p._id + '\')"><i class="ti ti-folder-plus"></i> Vincular pasta</button>' : '')) +
-      (podeEditar ? '<button class="icon-btn" title="Editar projeto" onclick="modalNovoProjeto(\'' + p._id + '\')">' +
-        '<i class="ti ti-pencil"></i></button>' : '') +
       '<button class="btn" onclick="modalNovaTarefa(\'' + p._id + '\')"><i class="ti ti-plus"></i> Demanda</button>' +
+      // As ações menos frequentes (pasta, frente, editar) num menu só: o
+      // cabeçalho estourava a linha com todos os botões à vista.
+      '<button class="icon-btn" title="Mais ações do projeto" onclick="popProjeto(\'' + p._id + '\',event)">' +
+        '<i class="ti ti-dots"></i></button>' +
     '</div>' +
     (recolhido ? '' :
-      (corpo ? '<div class="tab-wrap"><table class="tab tab--fixa">' +
+      (temLinha || frentes.length ? '<div class="tab-wrap"><table class="tab tab--fixa">' +
         '<colgroup><col style="width:46%"><col style="width:14%"><col style="width:12%">' +
         '<col style="width:14%"><col style="width:14%"></colgroup>' +
         '<thead><tr><th class="cel-dem">Demanda</th><th>Responsável</th><th style="text-align:center">Status</th>' +
@@ -1053,6 +1091,52 @@ function pilhaStatus(ts, pct){
       '" title="' + n + ' ' + STATUS[k].label + '"></span>' : '';
   }).join('');
   return '<span class="pilha" title="' + pct + '% concluído">' + partes + '</span>';
+}
+// Cabeçalho da frente dentro da tabela (uma linha atravessando as colunas) e
+// as demandas dela embaixo.
+function linhasDaFrente(p, g){
+  const chave = p._id + ':' + (g.frente ? g.frente.id : 'geral');
+  const fechada = !!frentesFechadas[chave];
+  const nome = g.frente ? g.frente.nome : 'Geral';
+  const emAberto = g.raizes.filter(t => t.status !== 'concluida').length;
+  const podeEditar = ehMaster() || p.criadoPor === usuario.email || p.lider === usuario.email;
+  const cab = '<tr class="fr" onclick="alternarFrente(\'' + chave + '\')">' +
+    '<td colspan="5"><div class="fr__linha">' +
+      '<i class="ti ti-chevron-' + (fechada ? 'right' : 'down') + '" style="color:' + g.cor + '"></i>' +
+      '<span class="fr__nome" style="color:' + g.cor + '">' + esc(nome) + '</span>' +
+      '<span class="fr__n">' + g.raizes.length + (g.raizes.length === 1 ? ' demanda' : ' demandas') +
+        (emAberto !== g.raizes.length ? ' · ' + emAberto + ' em aberto' : '') + '</span>' +
+      '<span class="spacer"></span>' +
+      '<button class="fr__acao" title="Nova demanda nesta frente" onclick="event.stopPropagation();' +
+        'modalNovaTarefa(\'' + p._id + '\',\'' + (g.frente ? g.frente.id : '') + '\')">' +
+        '<i class="ti ti-plus"></i> Demanda</button>' +
+      ((g.frente && podeEditar) ? '<button class="fr__acao" title="Renomear ou excluir esta frente" ' +
+        'onclick="event.stopPropagation();modalFrente(\'' + p._id + '\',\'' + g.frente.id + '\')">' +
+        '<i class="ti ti-pencil"></i></button>' : '') +
+    '</div></td></tr>';
+  if(fechada) return cab;
+  const linhas = g.raizes.sort(ordenarPorPrazo).map(t => linhasComFilhas(t, 0)).join('');
+  return cab + (linhas || '<tr class="fr-vazia"><td colspan="5">' +
+    (g.frente ? 'Nenhuma demanda nesta frente ainda.' : 'Nenhuma demanda fora das frentes.') + '</td></tr>');
+}
+function alternarFrente(chave){ frentesFechadas[chave] = !frentesFechadas[chave]; render(); }
+function popProjeto(id, ev){
+  ev.stopPropagation();
+  const p = projetoDe(id);
+  if(!p) return;
+  const podeEditar = ehMaster() || p.criadoPor === usuario.email || p.lider === usuario.email;
+  const itens = [];
+  if(p.driveUrl)
+    itens.push('<a href="' + esc(p.driveUrl) + '" target="_blank" rel="noopener" onclick="fecharPop()">' +
+      '<i class="ti ti-brand-google-drive"></i> Abrir a pasta no Drive</a>');
+  if(podeEditar){
+    itens.push('<button onclick="fecharPop();modalFrente(\'' + id + '\')">' +
+      '<i class="ti ti-layout-rows"></i> Nova frente</button>');
+    itens.push('<button onclick="fecharPop();modalNovoProjeto(\'' + id + '\')">' +
+      '<i class="ti ti-pencil"></i> Editar projeto' + (p.driveUrl ? '' : ' (e vincular pasta)') + '</button>');
+  }
+  if(!itens.length) itens.push('<div class="pop__lab">Sem ações disponíveis</div>');
+  abrirPop(ev, itens.join(''));
 }
 function alternarProjeto(id){ recolhidos[id] = !recolhidos[id]; render(); }
 function alternarFilhas(id, ev){ if(ev) ev.stopPropagation(); expandidos[id] = expandidos[id] === false; render(); }
@@ -1223,6 +1307,9 @@ function renderPainel(){
       '<div class="tk-ctx">' +
         '<i class="ti ti-' + TIPOS[t.tipo || 'tarefa'].icone + '"></i>' + esc(TIPOS[t.tipo || 'tarefa'].label) +
         (proj ? ' <span class="dot"></span> <span>' + esc(proj.nome) + '</span>' +
+          (t.frenteId && nomeFrente(t.projetoId, t.frenteId)
+            ? ' <span class="dot"></span> <span style="color:' + corFrente(t.projetoId, t.frenteId) +
+              ';font-weight:600">' + esc(nomeFrente(t.projetoId, t.frenteId)) + '</span>' : '') +
           (proj.driveUrl ? ' ' + botaoPasta(proj._id, '', 'ctx-drive') : '') : '') +
         (pai ? ' <span class="dot"></span> <a href="#" onclick="abrirTarefa(\'' + pai._id + '\');return false">' +
                esc(recorta(pai.titulo, 34)) + '</a>' : '') +
@@ -1247,7 +1334,7 @@ function renderPainel(){
       '<button class="icon-btn tk-tit__edit" title="Renomear" onclick="modalRenomear(\'' + t._id + '\')">' +
       '<i class="ti ti-pencil"></i></button></div>' +
     '<div class="tk-chips">' + chipStatus(t) + chipPessoa(t) +
-      chipData(t, 'prazo') + chipData(t, 'final') + '</div>' +
+      chipData(t, 'prazo') + chipData(t, 'final') + chipFrente(t) + '</div>' +
   '</div>' +
 
   '<div class="drawer__body">' +
@@ -1325,6 +1412,47 @@ function chipPessoa(t){
     avatar(t.responsavel, 'avatar--sm') + '<b>' + esc(primeiroNome(t.responsavel)) + '</b>' +
     '<i class="ti ti-chevron-down"></i></span>';
 }
+// Frente da demanda: só aparece quando o projeto tem frentes definidas.
+function chipFrente(t){
+  const fs = frentesDe(t.projetoId);
+  if(!fs.length) return '';
+  const nome = nomeFrente(t.projetoId, t.frenteId) || 'Geral';
+  const cor = t.frenteId ? corFrente(t.projetoId, t.frenteId) : 'var(--text-muted)';
+  return '<span class="chip chip--plain" title="Frente do projeto — clique para mover" ' +
+    'onclick="popFrente(\'' + t._id + '\',event)">' +
+    '<span class="pop__ponto" style="background:' + cor + '"></span>' +
+    '<b>' + esc(nome) + '</b> <i class="ti ti-chevron-down"></i></span>';
+}
+function popFrente(id, ev){
+  ev.stopPropagation();
+  const t = tarefaDe(id);
+  if(!t) return;
+  const fs = frentesDe(t.projetoId);
+  abrirPop(ev, '<div class="pop__lab">Mover para a frente</div>' +
+    ['', ].concat(fs.map(f => f.id)).map(fid => {
+      const nome = fid ? nomeFrente(t.projetoId, fid) : 'Geral (sem frente)';
+      const cor = fid ? corFrente(t.projetoId, fid) : 'var(--text-muted)';
+      return '<button class="' + ((t.frenteId || '') === fid ? 'pop--sel' : '') +
+        '" onclick="fecharPop();mudarFrente(\'' + id + '\',\'' + fid + '\')">' +
+        '<span class="pop__ponto" style="background:' + cor + '"></span>' + esc(nome) + '</button>';
+    }).join(''));
+}
+// Mover a demanda de frente leva as sublinhas com ela — elas pertencem à mesma
+// frente por definição.
+async function mudarFrente(id, frenteId){
+  const t = tarefaDe(id);
+  if(!t || (t.frenteId || '') === frenteId) return;
+  const nome = frenteId ? nomeFrente(t.projetoId, frenteId) : 'Geral';
+  try{
+    const b = window._batch();
+    b.update(window._doc(COL_TAR, id), { frenteId:frenteId || null, atualizadoEm:new Date().toISOString() });
+    filhasDe(id).forEach(f => b.update(window._doc(COL_TAR, f._id), { frenteId:frenteId || null }));
+    await b.commit();
+    await postarMensagem(id, 'Movida para a frente "' + nome + '".', 'sistema');
+    toast('Movida para ' + nome + '.', 'ok');
+  }catch(e){ toast('Erro: ' + (e && e.code || e), 'erro'); }
+}
+
 function chipData(t, campo){
   const valor = campo === 'prazo' ? t.prazo : t.prazoFinal;
   const cls = classeData(valor, t, campo !== 'prazo');
@@ -1832,8 +1960,69 @@ async function salvarProjeto(id){
   }catch(e){ toast('Erro ao salvar: ' + (e && e.code || e), 'erro'); }
 }
 
+// ---------- Frentes do projeto ----------
+function modalFrente(projetoId, frenteId){
+  const f = frenteId ? frenteDe(projetoId, frenteId) : null;
+  abrirModal(moldura(f ? 'Editar frente' : 'Nova frente do projeto',
+    '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-layout-rows"></i>' +
+      '<div>Frente é uma subdivisão do projeto — não é tarefa. Ex.: um projeto do comercial dividido ' +
+      'em <b>SDR</b>, <b>Crédito</b> e <b>Orçamento</b>, cada uma com suas demandas.</div></div>' +
+    '<div class="fg"><label>Nome da frente</label><input id="fr-nome" value="' + esc(f ? f.nome : '') +
+      '" placeholder="Ex.: SDR"></div>' +
+    (f ? '<div class="small muted">Ao excluir, as demandas desta frente não são apagadas: elas voltam ' +
+      'para "Geral".</div>' : ''),
+    f ? 'Salvar' : 'Criar frente',
+    'salvarFrente(\'' + projetoId + '\',' + (frenteId ? '\'' + frenteId + '\'' : 'null') + ')') +
+    (f ? '<div style="padding:0 var(--space-5) var(--space-5);margin-top:-8px">' +
+      '<button class="btn btn--danger" onclick="excluirFrente(\'' + projetoId + '\',\'' + frenteId + '\')">' +
+      '<i class="ti ti-trash"></i> Excluir frente</button></div>' : ''));
+}
+async function salvarFrente(projetoId, frenteId){
+  const nome = ($('fr-nome').value || '').trim();
+  if(!nome){ toast('Dê um nome à frente.', 'erro'); return; }
+  const atuais = frentesDe(projetoId).slice();
+  if(frenteId){
+    const i = atuais.findIndex(x => x.id === frenteId);
+    if(i < 0) return;
+    atuais[i] = Object.assign({}, atuais[i], { nome });
+  }else{
+    atuais.push({ id:novoId(), nome });
+  }
+  try{
+    await window._updateDoc(window._doc(COL_PROJ, projetoId), { frentes:atuais, atualizadoEm:new Date().toISOString() });
+    fecharModal();
+    toast(frenteId ? 'Frente atualizada.' : 'Frente criada.', 'ok');
+  }catch(e){ toast('Erro ao salvar: ' + (e && e.code || e), 'erro'); }
+}
+// Excluir a frente não apaga demanda: elas voltam para "Geral".
+async function excluirFrente(projetoId, frenteId){
+  const f = frenteDe(projetoId, frenteId);
+  const dentro = tarefas.filter(t => t.projetoId === projetoId && t.frenteId === frenteId);
+  if(!f) return;
+  if(!confirm('Excluir a frente "' + f.nome + '"?' +
+    (dentro.length ? '\nAs ' + dentro.length + ' demanda(s) dela voltam para "Geral".' : ''))) return;
+  try{
+    const b = window._batch();
+    dentro.forEach(t => b.update(window._doc(COL_TAR, t._id), { frenteId:null }));
+    b.update(window._doc(COL_PROJ, projetoId), { frentes:frentesDe(projetoId).filter(x => x.id !== frenteId) });
+    await b.commit();
+    fecharModal();
+    toast('Frente excluída.', 'ok');
+  }catch(e){ toast('Erro ao excluir: ' + (e && e.code || e), 'erro'); }
+}
+
 // ---------- Tarefa / subtarefa ----------
-function modalNovaTarefa(projetoId){
+function opcoesFrente(projetoId, sel){
+  const fs = frentesDe(projetoId);
+  return '<option value="">Geral (sem frente)</option>' + fs.map(f =>
+    '<option value="' + esc(f.id) + '"' + (f.id === sel ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('');
+}
+// Trocar o projeto no formulário troca a lista de frentes.
+function atualizarFrentesModal(){
+  const sel = $('t-frente');
+  if(sel) sel.innerHTML = opcoesFrente($('t-proj').value, '');
+}
+function modalNovaTarefa(projetoId, frenteId){
   if(!projetos.length){
     toast('Crie um projeto antes de lançar demandas.');
     aba = 'projetos'; render(); modalNovoProjeto();
@@ -1841,10 +2030,12 @@ function modalNovaTarefa(projetoId){
   }
   const ativos = projetos.filter(p => p.status !== 'concluido');
   const lista = ativos.length ? ativos : projetos;
+  const projSel = projetoId || (lista[0] && lista[0]._id);
   abrirModal(moldura('Nova demanda',
-    '<div class="fg"><label>Projeto</label><select id="t-proj">' + lista.map(p =>
+    '<div class="fg"><label>Projeto</label><select id="t-proj" onchange="atualizarFrentesModal()">' + lista.map(p =>
       '<option value="' + p._id + '"' + (p._id === projetoId ? ' selected' : '') + '>' + esc(p.nome) + '</option>').join('') +
       '</select></div>' +
+    '<div class="fg"><label>Frente</label><select id="t-frente">' + opcoesFrente(projSel, frenteId || '') + '</select></div>' +
     '<div class="fg"><label>Demanda</label><input id="t-titulo" placeholder="Ex.: Levantar as bases de horas extras de julho"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc" placeholder="Contexto, links, o que se espera de resultado"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' + selPessoas('t-resp', usuario.email) + '</div>' +
@@ -1873,6 +2064,7 @@ async function salvarTarefa(paiId){
   try{
     const id = await criarDoc(COL_TAR, {
       projetoId,
+      frenteId: pai ? (pai.frenteId || null) : (($('t-frente') && $('t-frente').value) || null),
       titulo, descricao:($('t-desc').value || '').trim(),
       responsavel:resp,
       prazo:$('f-prazo').value || null,
@@ -1948,7 +2140,7 @@ async function salvarSolicitacao(paiId){
   const agora = new Date().toISOString();
   try{
     const filhaId = await criarDoc(COL_TAR, {
-      projetoId:pai.projetoId, titulo:resumo, descricao:texto,
+      projetoId:pai.projetoId, frenteId:pai.frenteId || null, titulo:resumo, descricao:texto,
       responsavel:quem, prazo, prazoFinal:final,
       status:'a_fazer', tipo:'solicitacao',
       paiId, solicitante:usuario.email,
