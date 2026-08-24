@@ -41,6 +41,7 @@ const COL_PROJ  = 'pe_projetos';
 const COL_TAR   = 'pe_tarefas';
 const COL_MSG   = 'pe_mensagens';
 const COL_NOTIF = 'pe_notificacoes';
+const COL_CONF  = 'pe_config';
 
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
 
@@ -101,6 +102,7 @@ let rascunhoResp = '';     // o que já foi digitado nessa caixa
 let soMinhas = false;      // filtro "só as minhas" na aba Projetos
 let expandidos = {};        // tarefas com as filhas abertas na tabela
 let unsubs = [];
+let confDrive = null;      // {clientId, pastaMaeId, pastaMaeNome} — integração com o Drive
 let primeiroSnapNotif = true;
 
 // ============================================================
@@ -465,6 +467,10 @@ function assinarDados(){
     if(tarefaAberta) renderPainel();
     abrirDoLink();
   }, erroFirestore));
+  unsubs.push(window._onSnapshot(window._doc(COL_CONF, 'drive'), snap => {
+    confDrive = snap.exists() ? snap.data() : null;
+    if(aba === 'projetos') render();
+  }, () => {}));
   // Notificações: só as minhas (filtro no servidor, ordenação no cliente).
   unsubs.push(window._onSnapshot(
     window._query(window._col(COL_NOTIF), window._where('para', '==', usuario.email)),
@@ -1037,6 +1043,8 @@ function viewProjetos(){
       '<div><h1 class="page-title">Projetos</h1>' +
       '<p class="page-subtitle">' + ativos.length + ' em andamento · ' + abertas(tarefas).length +
       ' demandas em aberto</p></div>' +
+      (ehMaster() ? '<button class="icon-btn" title="Integração com o Google Drive" ' +
+        'onclick="modalConfigDrive()"><i class="ti ti-brand-google-drive"></i></button>' : '') +
       '<button class="btn btn--primary" onclick="modalNovoProjeto()"><i class="ti ti-plus"></i> Novo projeto</button>' +
     '</div>' + barraFerramentas();
   if(!projetos.length)
@@ -1342,6 +1350,9 @@ function popProjeto(id, ev){
   if(p.driveUrl)
     itens.push('<a href="' + esc(p.driveUrl) + '" target="_blank" rel="noopener" onclick="fecharPop()">' +
       '<i class="ti ti-brand-google-drive"></i> Abrir a pasta no Drive</a>');
+  else if(driveConfigurado())
+    itens.push('<button onclick="fecharPop();criarPastaDoProjeto(\'' + id + '\')">' +
+      '<i class="ti ti-folder-plus"></i> Criar a pasta no Drive</button>');
   if(podeEditar){
     itens.push('<button onclick="fecharPop();modalNovoProjeto(\'' + id + '\')">' +
       '<i class="ti ti-pencil"></i> Editar projeto' + (p.driveUrl ? '' : ' (e vincular pasta)') + '</button>');
@@ -2671,6 +2682,107 @@ function salvarMarcar(){
     .filter(c => c.checked).map(c => c.value);
   fecharModal();
   renderPainel();
+}
+
+// ============================================================
+// GOOGLE DRIVE: pasta do projeto criada pelo app
+// ============================================================
+// O app pede um token do Google na hora (janela do próprio Google, com a conta
+// da pessoa) e cria a pasta dentro da pasta-mãe configurada. O token fica só na
+// memória desta aba — nada de chave guardada em lugar nenhum. Quem cria é a
+// pessoa logada, então a pasta nasce com o dono e as permissões certas.
+let tokenDrive = '';
+function driveConfigurado(){ return !!(confDrive && confDrive.clientId && confDrive.pastaMaeId); }
+// Aceita o link inteiro da pasta ou só o id.
+function idDaPasta(txt){
+  const s = String(txt || '').trim();
+  const m = s.match(/[-\w]{25,}/);
+  return m ? m[0] : '';
+}
+function pedirTokenDrive(){
+  return new Promise((resolve, reject) => {
+    if(tokenDrive) return resolve(tokenDrive);
+    const g = window.google;
+    if(!g || !g.accounts || !g.accounts.oauth2)
+      return reject(new Error('A biblioteca do Google não carregou. Recarregue a página e tente de novo.'));
+    try{
+      const cli = g.accounts.oauth2.initTokenClient({
+        client_id: confDrive.clientId,
+        scope: 'https://www.googleapis.com/auth/drive',
+        callback: r => {
+          if(r && r.access_token){ tokenDrive = r.access_token; resolve(tokenDrive); }
+          else reject(new Error('Autorização não concluída.'));
+        },
+        error_callback: e => reject(new Error((e && e.type === 'popup_closed')
+          ? 'A janela do Google foi fechada antes de autorizar.'
+          : 'O navegador bloqueou a janela do Google. Libere o pop-up ou abra a plataforma em uma aba própria.'))
+      });
+      cli.requestAccessToken({ prompt:'' });
+    }catch(e){ reject(e); }
+  });
+}
+async function criarPastaDoProjeto(id){
+  const p = projetoDe(id);
+  if(!p) return;
+  if(!driveConfigurado()){
+    toast(ehMaster() ? 'Configure a integração com o Drive primeiro (botão Drive, no topo).'
+                     : 'A integração com o Drive ainda não foi configurada pelo Master.', 'erro');
+    return;
+  }
+  if(p.driveUrl && !confirm('Este projeto já tem pasta vinculada. Criar outra e trocar o link?')) return;
+  try{
+    const tk = await pedirTokenDrive();
+    const r = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink&supportsAllDrives=true', {
+      method:'POST',
+      headers:{ authorization:'Bearer ' + tk, 'content-type':'application/json' },
+      body: JSON.stringify({ name:p.nome, mimeType:'application/vnd.google-apps.folder',
+                             parents:[confDrive.pastaMaeId] })
+    });
+    if(!r.ok){
+      const t = await r.text();
+      throw new Error(r.status === 404 ? 'A pasta-mãe configurada não foi encontrada (ou sua conta não tem acesso a ela).'
+        : 'O Google recusou: ' + t.slice(0, 160));
+    }
+    const f = await r.json();
+    const url = f.webViewLink || ('https://drive.google.com/drive/folders/' + f.id);
+    await window._updateDoc(window._doc(COL_PROJ, id), { driveUrl:url, atualizadoEm:new Date().toISOString() });
+    toast('Pasta criada no Drive e vinculada ao projeto.', 'ok');
+  }catch(e){ toast(e.message || String(e), 'erro'); }
+}
+function modalConfigDrive(){
+  const c = confDrive || {};
+  abrirModal(moldura('Integração com o Google Drive',
+    '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-brand-google-drive"></i>' +
+      '<div>Com isso ligado, cada projeto ganha um botão que <b>cria a pasta dele no Drive</b> ' +
+      'dentro da pasta-mãe abaixo, e o link fica vinculado sozinho.</div></div>' +
+    '<div class="fg"><label>ID do cliente OAuth</label><input id="cd-cli" value="' + esc(c.clientId || '') +
+      '" placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com"></div>' +
+      '<div class="ajuda" style="margin:-10px 0 var(--space-4)">Google Cloud → Credenciais → ID do cliente OAuth ' +
+      '(aplicativo da Web), com as origens https://udiacoalexandre-create.github.io e https://udiaco.com.br.</div>' +
+    '<div class="fg"><label>Pasta-mãe no Drive (link ou ID)</label><input id="cd-pasta" value="' +
+      esc(c.pastaMaeId || '') + '" placeholder="https://drive.google.com/drive/folders/..."></div>' +
+      '<div class="ajuda" style="margin:-10px 0 var(--space-4)">É dentro dela que as pastas de projeto vão nascer. ' +
+      'Quem tiver acesso a essa pasta terá acesso às pastas dos projetos.</div>' +
+    '<div class="fg"><label>Como chamar essa pasta (opcional)</label><input id="cd-nome" value="' +
+      esc(c.pastaMaeNome || '') + '" placeholder="Ex.: Projetos Estratégicos"></div>',
+    'Salvar', 'salvarConfigDrive()'));
+}
+async function salvarConfigDrive(){
+  const cli = ($('cd-cli').value || '').trim();
+  const pasta = idDaPasta($('cd-pasta').value);
+  if(cli && !/\.apps\.googleusercontent\.com$/.test(cli)){
+    toast('O ID do cliente termina em .apps.googleusercontent.com', 'erro'); return;
+  }
+  if($('cd-pasta').value.trim() && !pasta){ toast('Não achei o ID da pasta nesse link.', 'erro'); return; }
+  try{
+    await window._setDoc(window._doc(COL_CONF, 'drive'), {
+      clientId:cli, pastaMaeId:pasta, pastaMaeNome:($('cd-nome').value || '').trim(),
+      atualizadoEm:new Date().toISOString(), atualizadoPor:usuario.email
+    }, { merge:true });
+    tokenDrive = '';                       // muda a configuração, pede token de novo
+    fecharModal();
+    toast('Integração salva.', 'ok');
+  }catch(e){ toast('Erro ao salvar: ' + (e && e.code || e), 'erro'); }
 }
 
 // ============================================================

@@ -44,6 +44,9 @@
   window.dispatchEvent(new Event('firebaseReady'));
 </script>
 
+<!-- Google Identity Services: só é usado para pedir o token do Drive na hora
+     de criar a pasta de um projeto. Carrega em paralelo e não trava nada. -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 <!-- Sistema de design da Udiaço (o mesmo do rhudi) -->

@@ -103,6 +103,13 @@ service cloud.firestore {
     // Notificações (sino): cada um lê as suas; escrever é preciso para avisar
     // o outro (quem responde cria a notificação de quem pediu).
     match /pe_notificacoes/{id} { allow read, write: if podeProjetos(); }
+    // Configuração da plataforma (hoje: integração com o Google Drive).
+    // Todo mundo lê — o app precisa do Client ID para pedir o token —, mas só
+    // o Master altera.
+    match /pe_config/{id} {
+      allow read:  if podeProjetos();
+      allow write: if isMaster();
+    }
 
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {
