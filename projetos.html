@@ -633,6 +633,14 @@ a{ color:var(--accent); text-decoration:none }
 .stat__value{ letter-spacing:-.02em }
 .vazio{ text-align:center; padding:var(--space-8) var(--space-5); color:var(--text-muted) }
 .vazio i{ font-size:36px; display:block; margin-bottom:var(--space-3); opacity:.45 }
+.aviso-versao{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:95;
+        display:flex; align-items:center; gap:12px; background:var(--text); color:#fff;
+        padding:10px 12px 10px 18px; border-radius:12px; box-shadow:0 12px 34px rgba(15,23,42,.34);
+        font-size:13.5px; max-width:92vw }
+.aviso-versao .btn{ height:32px; background:rgba(255,255,255,.16); border-color:transparent; color:#fff }
+.aviso-versao .btn:hover{ background:rgba(255,255,255,.3) }
+.aviso-versao .icon-btn{ color:rgba(255,255,255,.75) }
+.aviso-versao .icon-btn:hover{ background:rgba(255,255,255,.16); color:#fff }
 #toast{ position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px);
         background:var(--text); color:#fff; padding:11px 20px; border-radius:12px;
         font-size:13px; opacity:0; pointer-events:none; transition:all .2s; z-index:90; max-width:90vw;

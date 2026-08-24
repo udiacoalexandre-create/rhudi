@@ -341,6 +341,8 @@ function iniciar(){
     else if(tarefaAberta) fecharPainel();
     else $('notif-painel').classList.remove('notif-painel--on');
   };
+  checarVersao();
+  setInterval(checarVersao, 5 * 60 * 1000);
   window._onAuthStateChanged(window._auth, async user => {
     if(!user){ mostrarLogin(); return; }
     const r = await carregarUsuario(user.email);
@@ -619,6 +621,8 @@ function renderNotificacoes(){
       '<b style="font-size:13px">Notificações' + (n ? ' (' + n + ')' : '') + '</b>' +
       (n ? '<button class="btn" style="height:28px;font-size:12px" onclick="marcarTodasLidas()">Marcar todas como lidas</button>' : '') +
     '</div>' +
+    (versaoTexto() ? '<div class="small muted" style="padding:6px var(--space-4);text-align:right;' +
+      'border-bottom:1px solid var(--border)">' + esc(versaoTexto()) + '</div>' : '') +
     (lista.length ? lista.map(x =>
       '<button class="notif' + (x.lida ? '' : ' notif--nova') + '" onclick="abrirNotificacao(\'' + x._id + '\')">' +
         avatar(x.de, 'avatar--sm') +
@@ -2664,6 +2668,41 @@ function salvarMarcar(){
     .filter(c => c.checked).map(c => c.value);
   fecharModal();
   renderPainel();
+}
+
+// ============================================================
+// VERSÃO NO AR
+// ============================================================
+// O GitHub Pages guarda os arquivos por 10 minutos, então a aba que já está
+// aberta continua rodando a versão antiga depois de uma publicação — e o
+// sintoma é "mexeram no sistema e não mudou nada". Em vez de depender de
+// alguém lembrar de recarregar, o app compara de tempos em tempos a data do
+// próprio projetos.js com a que ele carregou e avisa quando muda.
+let versaoCarregada = '';
+async function checarVersao(){
+  try{
+    const r = await fetch('projetos.js', { method:'HEAD', cache:'no-store' });
+    const v = r.headers.get('last-modified') || r.headers.get('etag') || '';
+    if(!v) return;
+    if(!versaoCarregada){ versaoCarregada = v; return; }
+    if(v !== versaoCarregada) avisarVersaoNova();
+  }catch(e){ /* sem rede: tenta de novo no próximo ciclo */ }
+}
+function versaoTexto(){
+  if(!versaoCarregada) return '';
+  const d = new Date(versaoCarregada);
+  return isNaN(d) ? '' : 'versão de ' + pad(d.getDate()) + '/' + pad(d.getMonth()+1) + ' ' +
+    pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+function avisarVersaoNova(){
+  if($('aviso-versao')) return;
+  const el = document.createElement('div');
+  el.id = 'aviso-versao';
+  el.className = 'aviso-versao';
+  el.innerHTML = '<i class="ti ti-refresh"></i><span>Saiu uma versão nova do sistema.</span>' +
+    '<button class="btn" onclick="location.reload()">Recarregar agora</button>' +
+    '<button class="icon-btn" title="Depois" onclick="this.parentNode.remove()"><i class="ti ti-x"></i></button>';
+  document.body.appendChild(el);
 }
 
 // ============================================================
