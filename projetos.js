@@ -1978,6 +1978,11 @@ function acoesSituacao(t){
     // Sempre disponível: virar um pedido para outra pessoa.
     b.push('<button class="acao" onclick="modalSolicitar(\'' + id + '\')">' +
       '<i class="ti ti-user-plus"></i> Preciso de alguém</button>');
+    // Tarefa que eu criei para outra pessoa e que não está no meu quadro:
+    // passa a ser acompanhada (vira pedido, e nasce a minha em aguardando).
+    if(!t.paiId && t.tipo !== 'solicitacao' && t.criadoPor === usuario.email && !meu)
+      b.push('<button class="acao" onclick="acompanharTarefa(\'' + id + '\')">' +
+        '<i class="ti ti-eye"></i> Acompanhar no meu quadro</button>');
     // Concluir só aparece para quem está com a tarefa na mão.
     if(meu && t.tipo !== 'solicitacao')
       b.push('<button class="acao acao--ok" onclick="concluirTarefa(\'' + id + '\')">' +
@@ -2347,6 +2352,12 @@ function opcoesFrente(projetoId, sel){
     '<option value="' + esc(f.id) + '"' + (f.id === sel ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('');
 }
 // Trocar o projeto no formulário troca a lista de frentes.
+// A caixa de acompanhamento só faz sentido quando o responsável é outra pessoa.
+function atualizarAcompanhar(){
+  const linha = $('t-acomp-linha'), sel = $('t-resp');
+  if(!linha || !sel) return;
+  linha.style.display = (sel.value && sel.value !== usuario.email) ? 'block' : 'none';
+}
 function atualizarFrentesModal(){
   const sel = $('t-frente');
   if(sel) sel.innerHTML = opcoesFrente($('t-proj').value, '');
@@ -2367,9 +2378,19 @@ function modalNovaTarefa(projetoId, frenteId){
     '<div class="fg"><label>Frente</label><select id="t-frente">' + opcoesFrente(projSel, frenteId || '') + '</select></div>' +
     '<div class="fg"><label>Demanda</label><input id="t-titulo" placeholder="Ex.: Levantar as bases de horas extras de julho"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc" placeholder="Contexto, links, o que se espera de resultado"></textarea></div>' +
-    '<div class="fg"><label>Responsável</label>' + selPessoas('t-resp', usuario.email) + '</div>' +
+    '<div class="fg"><label>Responsável</label>' +
+      '<select id="t-resp" onchange="atualizarAcompanhar()">' + opcoesPessoa(usuario.email) + '</select></div>' +
+    // Delegar é diferente de entregar: por padrão a demanda que vai para outra
+    // pessoa fica no MEU quadro como acompanhamento, em aguardando terceiros, e
+    // volta para verificar quando ela concluir.
+    '<div class="fg" id="t-acomp-linha" style="display:none">' +
+      '<label style="display:flex;align-items:center;gap:9px;cursor:pointer">' +
+      '<input type="checkbox" id="t-acomp" checked> Acompanhar no meu quadro</label>' +
+      '<div class="ajuda">Fica em <b>aguardando terceiros</b> para você e volta para ' +
+      '<b>verificar / revisar</b> quando a pessoa concluir. Desmarque para entregar de vez.</div></div>' +
     camposPrazos(hoje(), ''),
     'Criar demanda', 'salvarTarefa(null)'));
+  atualizarAcompanhar();
 }
 function modalNovaSubtarefa(paiId){
   const pai = tarefaDe(paiId);
@@ -2389,20 +2410,42 @@ async function salvarTarefa(paiId){
   const pai = paiId ? tarefaDe(paiId) : null;
   const resp = $('t-resp').value;
   const projetoId = pai ? pai.projetoId : $('t-proj').value;
+  const frenteId = pai ? (pai.frenteId || null) : (($('t-frente') && $('t-frente').value) || null);
+  const descricao = ($('t-desc').value || '').trim();
+  const prazo = $('f-prazo').value || null;
+  const prazoFinal = $('f-final').value || null;
   const agora = new Date().toISOString();
+  const acompanhar = !pai && resp !== usuario.email && !!($('t-acomp') && $('t-acomp').checked);
+  const base = { projetoId, frenteId, titulo, descricao, criadoPor:usuario.email,
+                 criadoEm:agora, atualizadoEm:agora, ultimaMsgEm:null, lidoPor:{} };
   try{
-    const id = await criarDoc(COL_TAR, {
-      projetoId,
-      frenteId: pai ? (pai.frenteId || null) : (($('t-frente') && $('t-frente').value) || null),
-      titulo, descricao:($('t-desc').value || '').trim(),
-      responsavel:resp,
-      prazo:$('f-prazo').value || null,
-      prazoFinal:$('f-final').value || null,
+    if(acompanhar){
+      // Delegar com acompanhamento: nasce o par. A minha fica travada em
+      // aguardando terceiros; a dela é o pedido, e concluir devolve a minha
+      // para verificar / revisar (o mesmo caminho do "Preciso de alguém").
+      const meuId = await criarDoc(COL_TAR, Object.assign({}, base, {
+        responsavel:usuario.email, status:'aguardando', tipo:'tarefa', paiId:null, solicitante:null,
+        prazo: prazoFinal || prazo, prazoFinal
+      }));
+      const delaId = await criarDoc(COL_TAR, Object.assign({}, base, {
+        responsavel:resp, status:'a_fazer', tipo:'solicitacao', paiId:meuId, solicitante:usuario.email,
+        prazo, prazoFinal
+      }));
+      fecharModal();
+      await postarMensagem(meuId, 'Delegada a ' + nomeDe(resp) +
+        (prazoFinal ? ' com prazo final ' + dataBR(prazoFinal) : '') + '. Fica aguardando a resposta.', 'sistema');
+      if(descricao) await postarMensagem(delaId, descricao, 'msg');
+      await notificar([resp], 'solicitacao', titulo + (prazoFinal ? ' (até ' + dataBR(prazoFinal) + ')' : ''),
+        { _id:delaId, titulo, projetoId });
+      toast('Delegada a ' + primeiroNome(resp) + '. Fica no seu quadro em aguardando terceiros.', 'ok');
+      abrirTarefa(meuId);
+      return;
+    }
+    const id = await criarDoc(COL_TAR, Object.assign({}, base, {
+      responsavel:resp, prazo, prazoFinal,
       status:'a_fazer', tipo: pai ? 'subtarefa' : 'tarefa',
-      paiId: paiId || null, solicitante:null,
-      criadoPor:usuario.email, criadoEm:agora, atualizadoEm:agora,
-      ultimaMsgEm:null, lidoPor:{}
-    });
+      paiId: paiId || null, solicitante:null
+    }));
     fecharModal();
     if(resp !== usuario.email)
       await notificar([resp], 'atribuicao', titulo, { _id:id, titulo, projetoId });
@@ -2486,6 +2529,28 @@ async function salvarSolicitacao(paiId){
     fecharModal();
     toast('Solicitação enviada para ' + primeiroNome(quem) + '.', 'ok');
   }catch(e){ toast('Erro ao solicitar: ' + (e && e.code || e), 'erro'); }
+}
+
+// Passa a acompanhar uma tarefa que já está com outra pessoa: nasce a minha
+// em aguardando terceiros e a dela vira o pedido ligado a ela. Serve para as
+// demandas delegadas antes de existir a caixa "acompanhar no meu quadro".
+async function acompanharTarefa(id){
+  const t = tarefaDe(id);
+  if(!t || t.paiId || t.tipo === 'solicitacao') return;
+  const agora = new Date().toISOString();
+  try{
+    const meuId = await criarDoc(COL_TAR, {
+      projetoId:t.projetoId, frenteId:t.frenteId || null, titulo:t.titulo, descricao:t.descricao || '',
+      responsavel:usuario.email, status:'aguardando', tipo:'tarefa', paiId:null, solicitante:null,
+      prazo:t.prazoFinal || hoje(), prazoFinal:t.prazoFinal || null,
+      criadoPor:usuario.email, criadoEm:agora, atualizadoEm:agora, ultimaMsgEm:null, lidoPor:{}
+    });
+    await atualizarTarefa(id, { paiId:meuId, tipo:'solicitacao', solicitante:usuario.email, atualizadoEm:agora });
+    await postarMensagem(meuId, 'Acompanhando a demanda com ' + nomeDe(t.responsavel) + '.', 'sistema');
+    await postarMensagem(id, usuario.nome + ' passou a acompanhar esta demanda: ao concluir, ela volta para ele conferir.', 'sistema');
+    toast('Agora está no seu quadro, em aguardando terceiros.', 'ok');
+    abrirTarefa(meuId);
+  }catch(e){ toast('Erro: ' + (e && e.code || e), 'erro'); }
 }
 
 // ---------- Reabrir o pedido e devolver ao terceiro ----------
