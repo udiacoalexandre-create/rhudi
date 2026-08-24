@@ -1120,8 +1120,11 @@ function blocoProjeto(p){
       '<span title="Líder: ' + esc(nomeDe(p.lider)) + '">' + avatar(p.lider, 'avatar--sm') + '</span>' +
       '<button class="btn btn--primary" onclick="modalNovaTarefa(\'' + p._id + '\')">' +
         '<i class="ti ti-plus"></i> Demanda</button>' +
-      (podeEditar ? '<button class="btn" title="Criar uma subdivisão do projeto" ' +
-        'onclick="modalFrente(\'' + p._id + '\')"><i class="ti ti-layout-rows"></i> Frente</button>' : '') +
+      // Criar frente é organizar o trabalho, não mexer no projeto: fica liberado
+      // para qualquer pessoa com acesso. Editar e excluir o projeto seguem
+      // restritos ao Master, a quem criou e ao líder.
+      '<button class="btn" title="Criar uma subdivisão do projeto" ' +
+        'onclick="modalFrente(\'' + p._id + '\')"><i class="ti ti-layout-rows"></i> Frente</button>' +
       // Pasta do Drive e editar projeto seguem no menu: são menos frequentes.
       '<button class="icon-btn" title="Mais ações do projeto" onclick="popProjeto(\'' + p._id + '\',event)">' +
         '<i class="ti ti-dots"></i></button>' +
@@ -1156,7 +1159,6 @@ function linhasDaFrente(p, g){
   const fechada = !!frentesFechadas[chave];
   const nome = g.frente ? g.frente.nome : 'Geral';
   const emAberto = g.raizes.filter(t => t.status !== 'concluida').length;
-  const podeEditar = ehMaster() || p.criadoPor === usuario.email || p.lider === usuario.email;
   const cab = '<tr class="fr" onclick="alternarFrente(\'' + chave + '\')"' +
     ' ondragover="sobreFrente(event,this)" ondragleave="this.classList.remove(\'fr-alvo\')"' +
     ' ondrop="soltarNaFrente(event,\'' + p._id + '\',\'' + (g.frente ? g.frente.id : '') + '\',this)">' +
@@ -1169,7 +1171,7 @@ function linhasDaFrente(p, g){
       '<button class="fr__acao" title="Nova demanda nesta frente" onclick="event.stopPropagation();' +
         'modalNovaTarefa(\'' + p._id + '\',\'' + (g.frente ? g.frente.id : '') + '\')">' +
         '<i class="ti ti-plus"></i> Demanda</button>' +
-      ((g.frente && podeEditar) ? '<button class="fr__acao" title="Renomear ou excluir esta frente" ' +
+      (g.frente ? '<button class="fr__acao" title="Renomear ou excluir esta frente" ' +
         'onclick="event.stopPropagation();modalFrente(\'' + p._id + '\',\'' + g.frente.id + '\')">' +
         '<i class="ti ti-pencil"></i></button>' : '') +
     '</div></td></tr>';
