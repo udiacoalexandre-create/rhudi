@@ -295,6 +295,17 @@ function ordenarNaTabela(arr){
     return oa === ob ? ordenarPorPrazo(a, b) : oa - ob;
   });
 }
+// Ordem dentro da coluna do quadro. Campo separado da 'ordem' da tabela: os
+// agrupamentos são outros (lá é frente/sublinha, aqui é status), então usar o
+// mesmo número bagunçaria um ao arrumar o outro.
+function ordenarNoQuadro(arr){
+  if(!arr.some(t => typeof t.ordemQuadro === 'number')) return arr.slice().sort(ordenarPorPrazo);
+  return arr.slice().sort((a, b) => {
+    const oa = typeof a.ordemQuadro === 'number' ? a.ordemQuadro : 1e9;
+    const ob = typeof b.ordemQuadro === 'number' ? b.ordemQuadro : 1e9;
+    return oa === ob ? ordenarPorPrazo(a, b) : oa - ob;
+  });
+}
 function ordenarProjetos(arr){
   if(!arr.some(p => typeof p.ordem === 'number'))
     return arr.slice().sort((a,b) => String(a.nome||'').localeCompare(String(b.nome||''), 'pt-BR'));
@@ -798,13 +809,57 @@ function idArrastado(ev){
   try{ id = ev.dataTransfer.getData('text/plain'); }catch(e){}
   return id || arrastando || '';
 }
+// Soltar em cima de um card = colocar antes ou depois dele. Se o card de
+// destino estiver em outra coluna, a tarefa muda de estado também (passando
+// pelas mesmas regras do arraste para a coluna).
+function sobreCard(ev, el, id){
+  if(!arrastando || arrastando === id) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const r = el.getBoundingClientRect();
+  const cima = (ev.clientY - r.top) < r.height / 2;
+  el.classList.toggle('card--cima', cima);
+  el.classList.toggle('card--baixo', !cima);
+}
+function saiuCard(el){ el.classList.remove('card--cima','card--baixo'); }
+async function soltarNoCard(ev, id, el){
+  ev.preventDefault(); ev.stopPropagation();
+  const r = el.getBoundingClientRect();
+  const antes = (ev.clientY - r.top) < r.height / 2;
+  const movId = idArrastado(ev);
+  saiuCard(el);
+  arrastando = null;
+  ultimoArrasteEm = Date.now();
+  document.querySelectorAll('.col--alvo').forEach(x => x.classList.remove('col--alvo'));
+  if(!movId || movId === id) return;
+  const alvo = tarefaDe(id), mov = tarefaDe(movId);
+  if(!alvo || !mov) return;
+  // A coluna é o conjunto de cards da mesma pessoa no mesmo estado.
+  const coluna = tarefas.filter(t => t.responsavel === alvo.responsavel && t.status === alvo.status);
+  const lista = ordenarNoQuadro(coluna).filter(t => t._id !== mov._id);
+  const i = lista.findIndex(t => t._id === alvo._id);
+  if(i < 0) return;
+  lista.splice(antes ? i : i + 1, 0, mov);
+  try{
+    const b = window._batch();
+    lista.forEach((t, k) => b.update(window._doc(COL_TAR, t._id), { ordemQuadro:k }));
+    await b.commit();
+    // Trocou de coluna: o estado passa pelas regras de sempre (aguardando pede
+    // pedido, finalizado passa pelo concluir).
+    if(mov.status !== alvo.status) await mudarStatus(mov._id, alvo.status);
+  }catch(e){ toast('Não foi possível reordenar: ' + (e && e.code || e), 'erro'); }
+}
+
 // Soltar numa coluna = mudar o estado da tarefa.
 function soltarNaColuna(ev, status, el){
   ev.preventDefault();
   el.classList.remove('col--alvo');
   const id = idArrastado(ev);
   arrastando = null;
-  if(id) mudarStatus(id, status);
+  if(!id) return;
+  const t = tarefaDe(id);
+  // Soltar no vazio da coluna = ir para o fim dela.
+  if(t) atualizarTarefa(id, { ordemQuadro:1e6 }).catch(()=>{});
+  if(!t || t.status !== status) mudarStatus(id, status);
 }
 // Soltar num dia = reprogramar a próxima ação (o planejamento).
 function soltarNoDia(ev, data, el){
@@ -937,7 +992,9 @@ function cardKanban(t, podeEditar){
     (t.tipo === 'solicitacao' && t.solicitante ? ' — pedido de ' + primeiroNome(t.solicitante) : '');
   return '<div class="card' + (t.status === 'concluida' ? ' card--concluido' : '') +
     '" style="border-top-color:' + st(t).cor + '" title="' + esc(dica) + '"' +
-    (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')" ondragend="arrastarFim(event)"' : '') +
+    (podeEditar ? ' draggable="true" ondragstart="arrastarInicio(event,\'' + t._id + '\')"' +
+      ' ondragend="arrastarFim(event)" ondragover="sobreCard(event,this,\'' + t._id + '\')"' +
+      ' ondragleave="saiuCard(this)" ondrop="soltarNoCard(event,\'' + t._id + '\',this)"' : '') +
     ' onclick="cliqueCard(\'' + t._id + '\',event)">' +
     '<div class="card__tit">' +
       (t.tipo === 'solicitacao' ? '<i class="ti ti-arrow-forward-up" style="opacity:.6"></i> ' : '') +
@@ -955,7 +1012,7 @@ function kanbanHTML(lista, podeEditar){
       ts = ts.sort((a,b) => String(b.concluidaEm||'').localeCompare(String(a.concluidaEm||'')));
       if(ts.length > LIMITE_FINALIZADO){ mais = ts.length - LIMITE_FINALIZADO; ts = ts.slice(0, LIMITE_FINALIZADO); }
     }else{
-      ts = ts.sort(ordenarPorPrazo);
+      ts = ordenarNoQuadro(ts);
     }
     return '<section class="col' + (ts.length ? '' : ' col--vazia') + '"' +
         (podeEditar ? ' ondragover="sobreAlvo(event,this,\'col--alvo\')"' +
