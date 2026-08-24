@@ -726,8 +726,9 @@ function celulaData(t, campo){
   const cls = classeData(valor, t, campo !== 'prazo');
   const texto = valor ? (campo === 'prazo' ? prazoTexto(valor) : dataBR(valor)) : '—';
   const podeEditar = (t.responsavel === usuario.email || ehMaster()) && t.status !== 'concluida';
-  if(!podeEditar) return '<td class="data-cel ' + cls + '">' + esc(texto) + '</td>';
-  return '<td class="data-cel cel-edit ' + cls + '" title="' +
+  const rot = campo === 'prazo' ? 'Próxima ação' : 'Prazo final';
+  if(!podeEditar) return '<td class="data-cel ' + cls + '" data-rot="' + rot + '">' + esc(texto) + '</td>';
+  return '<td class="data-cel cel-edit ' + cls + '" data-rot="' + rot + '" title="' +
     (campo === 'prazo' ? 'Clique para reprogramar a próxima ação' : 'Clique para mudar o prazo final') +
     '" onclick="editarData(\'' + t._id + '\',\'' + campo + '\',event)">' +
     '<span class="cel-edit__txt">' + esc(texto) + '</span></td>';
@@ -950,7 +951,7 @@ function kanbanHTML(lista, podeEditar){
     }else{
       ts = ts.sort(ordenarPorPrazo);
     }
-    return '<section class="col"' +
+    return '<section class="col' + (ts.length ? '' : ' col--vazia') + '"' +
         (podeEditar ? ' ondragover="sobreAlvo(event,this,\'col--alvo\')"' +
                       ' ondragleave="saiuAlvo(this,\'col--alvo\')"' +
                       ' ondrop="soltarNaColuna(event,\'' + k + '\',this)"' : '') + '>' +

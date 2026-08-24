@@ -250,7 +250,7 @@ a{ color:var(--accent); text-decoration:none }
 .kanban{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:var(--space-2);
       align-items:start }
 @media (max-width:1180px){ .kanban{ grid-template-columns:repeat(3,minmax(0,1fr)) } }
-@media (max-width:700px){  .kanban{ grid-template-columns:repeat(2,minmax(0,1fr)) } }
+@media (max-width:900px){  .kanban{ grid-template-columns:repeat(2,minmax(0,1fr)) } }
 .col{ background:var(--surface-soft); border:1px solid var(--border); border-radius:14px;
       display:flex; flex-direction:column; min-width:0 }
 .col__head{ display:flex; align-items:center; gap:6px; padding:10px 10px 10px 0;
@@ -646,12 +646,91 @@ a{ color:var(--accent); text-decoration:none }
         font-size:13px; opacity:0; pointer-events:none; transition:all .2s; z-index:90; max-width:90vw;
         box-shadow:0 10px 30px rgba(15,23,42,.3) }
 #toast.on{ opacity:1; transform:translateX(-50%) translateY(0) }
+/* ============================================================
+   CELULAR
+   ============================================================
+   Duas telas não cabem em 390px como estão: o quadro de seis colunas e a
+   tabela de projeto de cinco colunas. No celular o quadro vira uma coluna
+   por vez (empilhada, com as vazias recolhidas no cabeçalho) e cada linha
+   da tabela vira um bloco de duas linhas. Nada rola na horizontal. */
 @media (max-width:760px){
   .campos,.fg-dupla{ grid-template-columns:1fr }
-  .wrap{ padding:var(--space-4) }
-  .nav{ overflow-x:auto }
-  .notif-painel{ right:var(--space-3) }
-  .busca{ min-width:0; flex:1 }
+  .wrap{ padding:var(--space-4) var(--space-3) }
+  .notif-painel{ right:var(--space-2); left:var(--space-2); width:auto }
+  .busca{ min-width:0; flex:1 1 100% }        /* a busca ganha a linha inteira */
+  .toolbar .alterna{ flex:1 1 auto; justify-content:center }
+  .page-title{ font-size:22px }
+  .modal{ padding:var(--space-3) }
+  .modal__card{ max-height:94vh }
+
+  /* Quadro: uma coluna por vez, empilhada */
+  .kanban{ grid-template-columns:1fr; gap:var(--space-3) }
+  .col__corpo{ max-height:none }
+  .col__tit{ font-size:11.5px }
+  .col--vazia .col__corpo{ display:none }          /* vazia mostra só o cabeçalho */
+  .col--vazia{ opacity:.7 }
+  .card{ height:auto; min-height:62px }            /* no celular sobra largura: o título cabe */
+  .card__tit{ font-size:13.5px; -webkit-line-clamp:3 }
+
+  /* Agenda: um dia por linha */
+  .ag{ margin-top:var(--space-5) }
+  .ag__cols{ grid-template-columns:1fr }
+  .ag__col{ border-left:none; border-top:1px solid var(--border); padding:var(--space-3) var(--space-4) }
+  .ag__col--vazia{ display:none }                  /* dia sem nada não ocupa tela no celular */
+  .ag__faixa{ padding:10px var(--space-4) }
+  .ag__sub{ display:none }
+  .it__tit{ -webkit-line-clamp:3 }
+
+  /* Tabela do projeto: cada linha vira um bloco de duas linhas */
+  .tab--fixa{ table-layout:auto }
+  .tab colgroup,.tab thead{ display:none }
+  .tab,.tab tbody{ display:block; width:100% }
+  .tab tbody tr{ display:flex; flex-wrap:wrap; align-items:center; gap:5px 9px;
+        padding:9px 12px 10px; border-bottom:1px solid var(--border) }
+  .tab tbody tr td{ display:inline-flex; align-items:center; border:none; padding:0; width:auto;
+        overflow:visible }
+  /* a barra colorida do status continua vindo do border-left (cor no inline) */
+  .tab tbody tr td.cel-dem{ flex:1 1 100%; padding-left:8px }
+  /* na largura do celular o título quebra em vez de cortar: sobra linha, não largura */
+  .tab .demanda__tit{ white-space:normal; overflow:visible; text-overflow:clip; line-height:1.35 }
+  .tab .demanda{ align-items:flex-start }
+  .tab .tick,.tab .chevron,.tab .ramo{ margin-top:2px }
+  .tab td.cel-resp{ order:1 }
+  .tab td.cel-st{ order:2; border-radius:20px; padding:3px 11px; font-size:11px; width:auto;
+        text-align:left; border-bottom:none }
+  .tab td.data-cel{ order:3; font-size:12px; gap:4px }
+  .tab td.data-cel::before{ content:attr(data-rot) ": "; color:var(--text-muted); font-size:10.5px;
+        text-transform:uppercase; letter-spacing:.03em }
+  .nivel-1 .demanda{ padding-left:14px }
+  .nivel-2 .demanda{ padding-left:28px }
+  .linha-add,.linha-del{ opacity:.65 }
+  .alca{ display:none }                            /* arrastar não funciona em toque */
+
+  /* Faixa de frente e cabeçalho do projeto */
+  .tab tbody tr.fr{ display:block; padding:0 }
+  .tab tbody tr.fr td{ display:block; width:100%; padding:8px 12px }
+  .tab tbody tr.fr-vazia td{ padding-left:18px }
+  .fr__acao{ opacity:.8 }
+  .proj-bloco__head{ padding:var(--space-3) var(--space-4); gap:var(--space-2) }
+  .proj-bloco__nome{ font-size:15px; flex:1 1 100% }
+  .pilha{ display:none }
+  .alca--proj{ display:none }
+
+  /* Ticket ocupa a tela inteira */
+  .drawer{ width:100% }
+  .tk-abas{ padding:0 var(--space-3); overflow-x:auto }   /* as três abas cabem rolando */
+  .tk-aba{ padding:11px 9px; font-size:13px; white-space:nowrap }
+  .tk-head{ padding:var(--space-3) var(--space-4) }
+  .tk-tit{ font-size:17px }
+  .sec,.conv{ padding:var(--space-4) }
+  .upd__corpo{ padding-left:var(--space-4) }
+  .aviso-versao{ left:var(--space-3); right:var(--space-3); transform:none; max-width:none }
+}
+@media (max-width:420px){
+  .topbar{ padding:8px var(--space-3) }
+  .aba{ padding:0 11px; font-size:13px }
+  .card__meta{ font-size:10px }
+  .ag__faixa b{ font-size:13px }
 }
 </style>
 </head>
