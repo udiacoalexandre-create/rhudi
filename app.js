@@ -2395,10 +2395,10 @@ function pgBenLancamento(){
   // Rodapé único: Voltar sempre à esquerda, Continuar sempre à direita, no
   // mesmo lugar em todos os passos. O miolo é opcional (dica ou ação do passo).
   let rodapeHtml='';
-  const rodape=(prev,next,meio,rotuloNext,btnEsq)=>rodapeHtml='<div class="lan-rodape">'
-    +(btnEsq||(prev?'<button class="btn btn-ghost" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:120px"></span>'))
+  const rodape=(prev,next,meio,rotuloNext,btnEsq,btnDir)=>rodapeHtml='<div class="lan-rodape">'
+    +(btnEsq||(prev?'<button class="btn btn-ghost" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:150px"></span>'))
     +'<div class="lan-rodape__meio">'+(meio||'')+'</div>'
-    +(next?'<button class="btn btn-primary" onclick="lanIrPasso('+next+')">'+(rotuloNext||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:120px"></span>')
+    +(btnDir||(next?'<button class="btn btn-primary" onclick="lanIrPasso('+next+')">'+(rotuloNext||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:150px"></span>'))
     +'</div>';
   const nav=(prev,next)=>'<div class="lan-navbtns">'
     +(prev?'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span></span>')
@@ -2500,17 +2500,11 @@ function pgBenLancamento(){
     rodape(3,5);
 
   } else if(lanStep===5){
-    const _bs=(duComps[lanComp]||{}).baseSalva;
-    corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">Conferência e faltas'+_ajuda('Lance as faltas na tabela. Use o filtro Jornada para achar quem está fora do padrão. Para ajustar uma pessoa só, edite os dias na linha dela.')+'</div>'
-      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">'
-        +(_bs?'<span class="lan-base-ok"><i class="ti ti-check"></i> Salva em '+new Date(_bs.salvoEm).toLocaleString('pt-BR')+'</span>':'')
-        +'<button class="btn btn-success btn-sm" onclick="salvarBaseDiasUteis()"><i class="ti ti-device-floppy"></i> '+(_bs?'Salvar de novo':'Salvar base de dias úteis')+'</button>'
-        +_ajuda('Registra jornada, férias, faltas e extras desta competência.')
-      +'</div>'
-      +'</div>'
-      +'<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros;
-    rodape(4,6);
+    corpo='<div id="lan-resumo" style="margin-bottom:10px"></div>'+filtros;
+    rodape(4,null,'',
+      null,null,
+      '<button class="btn btn-primary" onclick="salvarBaseESeguir()" style="min-width:260px">'
+        +'<i class="ti ti-device-floppy"></i> Salvar base e continuar <i class="ti ti-arrow-right"></i></button>');
 
   } else {
     corpo='<div class="lan-caixa">'
@@ -11899,10 +11893,15 @@ function duLimparAjustes(){
 // coleção `lancamento`, gravado a cada edição da tabela. O que faltava era o
 // REGISTRO do fechamento desta etapa: totais, calendário usado e quem
 // conferiu. Fica junto da confirmação do calendário, em config/diasUteisComp.
-async function salvarBaseDiasUteis(){
-  if(!baseApuracao){ toast('Importe a base no passo 1.','error'); return; }
+// Passo 5: grava a base e avança, sem botão solto na tela.
+async function salvarBaseESeguir(){
+  const ok=await salvarBaseDiasUteis(true);
+  if(ok!==false) lanIrPasso(6);
+}
+async function salvarBaseDiasUteis(silencioso){
+  if(!baseApuracao){ toast('Importe a base no passo 1.','error'); return false; }
   const du=diasUteisComp(lanComp);
-  if(!du){ toast('Competência inválida.','error'); return; }
+  if(!du){ toast('Competência inválida.','error'); return false; }
   const ativos=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   let somaJor=0, somaFal=0, somaFer=0, somaExt=0, somaLiq=0, travados=0, comFaltas=0, comFerias=0, comExtras=0;
   ativos.forEach(c=>{
@@ -11915,10 +11914,8 @@ async function salvarBaseDiasUteis(){
     if(fer>0) comFerias++;
     if(ext>0) comExtras++;
   });
-  if(!du.confirmado && !confirm('Os dias úteis de '+lanComp+' ainda não foram confirmados no calendário (passo 2).\n\nSalvar a base mesmo assim?')) return;
-  if(!confirm('Salvar a base de dias úteis de '+lanComp+'?\n\n'
-    +ativos.length+' colaboradores · '+du.dias+' dias úteis no mês\n'
-    +comFaltas+' com faltas · '+comFerias+' com férias · '+comExtras+' com dias extras · '+travados+' com jornada travada')) return;
+  if(!silencioso && !confirm('Salvar a base de dias úteis de '+lanComp+'?\n\n'
+    +ativos.length+' colaboradores · '+du.dias+' dias úteis no mês')) return false;
   const c=duComps[lanComp]||(duComps[lanComp]={excecoes:{}});
   c.dias=du.dias;
   c.diasDoMes=du.grade.filter(d=>d.util).map(d=>d.dia);
@@ -11935,7 +11932,7 @@ async function salvarBaseDiasUteis(){
   };
   try{
     await salvarDUComps();
-    toast('Base de dias úteis de '+lanComp+' salva: '+ativos.length+' colaboradores, '+somaLiq+' dias líquidos.','success');
-    showPage('ben-lancamento');
-  }catch(e){ toast('Erro ao salvar: '+e.message,'error'); }
+    toast('Base de '+lanComp+' salva: '+ativos.length+' colaboradores.','success');
+    if(!silencioso) showPage('ben-lancamento');
+  }catch(e){ toast('Erro ao salvar: '+e.message,'error'); return false; }
 }
