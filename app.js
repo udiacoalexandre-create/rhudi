@@ -1111,9 +1111,17 @@ function benMatchColab(c,b){
 
 function filtrarColabs(){
   const q=(g('bl-q')||'').toLowerCase();
+  // O CPF está gravado em dois formatos na base (com e sem pontuação), então a
+  // busca compara só os dígitos — senão digitar 12509180819 não acha
+  // 125.091.808-19 e o cadastro parece não existir.
+  const qd=q.replace(/\D/g,'');
   const emp=getMs('emp'), dep=getMs('dep'), st=getMs('status'), tipo=getMs('tipo'), ben=getMs('ben'), jor=getMs('jornada');
   let f=colaboradores.filter(c=>
-    c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.cpf||'').includes(q));
+    c.nome.toLowerCase().includes(q)
+    ||(c.mat||'').toLowerCase().includes(q)
+    ||(c.cpf||'').includes(q)
+    ||(qd.length>=3 && String(c.cpf||'').replace(/\D/g,'').includes(qd))
+    ||(qd.length>=3 && String(c.mat||'').replace(/\D/g,'').includes(qd)));
   if(emp.length) f=f.filter(c=>_empresaMatch(c,emp));
   if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
   if(st.length)  f=f.filter(c=>st.includes(c.status));
