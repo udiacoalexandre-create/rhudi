@@ -2370,6 +2370,9 @@ function feriasDiasUteisAuto(c, comp, du){
 // ============================================================
 // BENEF\u00CDCIOS: LAN\u00C7AMENTO MENSAL
 // ============================================================
+// Informação secundária não ocupa a tela: vira "?" com tooltip.
+function _ajuda(txt){ return '<span class="ajuda" title="'+String(txt||'').replace(/"/g,'&quot;')+'">?</span>'; }
+
 function pgBenLancamento(){
   // Conta apenas quem realmente aparece na apuração (mesmo filtro do getLanAtivos):
   // exclui Demitido/N/A e quem não é elegível a nenhum benefício. Assim o número
@@ -2391,8 +2394,8 @@ function pgBenLancamento(){
   }).join('')+'</div>';
   // Rodapé único: Voltar sempre à esquerda, Continuar sempre à direita, no
   // mesmo lugar em todos os passos. O miolo é opcional (dica ou ação do passo).
-  const rodape=(prev,next,meio,rotuloNext)=>'<div class="lan-rodape">'
-    +(prev?'<button class="btn btn-ghost" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:120px"></span>')
+  const rodape=(prev,next,meio,rotuloNext,btnEsq)=>'<div class="lan-rodape">'
+    +(btnEsq||(prev?'<button class="btn btn-ghost" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:120px"></span>'))
     +'<div class="lan-rodape__meio">'+(meio||'')+'</div>'
     +(next?'<button class="btn btn-primary" onclick="lanIrPasso('+next+')">'+(rotuloNext||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:120px"></span>')
     +'</div>';
@@ -2456,21 +2459,16 @@ function pgBenLancamento(){
 
   let corpo='';
   if(lanStep===1){
-    corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">1. Base de colaboradores</div>'
-      +'<div class="lan-caixa__d">O sistema importa sozinho a versão mais recente salva em Históricos. Confira a versão e a data antes de seguir.</div>'
-      +'<div id="lan-base-info"></div>'
-      +'</div>'
-      +rodape(null, temBase?2:null, temBase?'':'Importe uma base para continuar');
+    corpo='<div class="lan-caixa"><div id="lan-base-info"></div></div>'
+      +rodape(null, temBase?2:null, '',
+        'Continuar',
+        '<button class="btn btn-ghost" onclick="abrirImportarBase()"><i class="ti ti-refresh"></i> Trocar base</button>');
 
   } else if(lanStep===2){
     const _mm=(lanComp.split('/')[0]||''), _aa=(lanComp.split('/')[1]||String(new Date().getFullYear()));
     const _anos=[]; for(let a=new Date().getFullYear()-1;a<=new Date().getFullYear()+2;a++) _anos.push(String(a));
     const _sel='padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px';
-    const _nomeMes=([['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],['05','Maio'],['06','Junho'],['07','Julho'],['08','Agosto'],['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro']].find(x=>x[0]===_mm)||['','']) [1];
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">2. Competência e dias úteis</div>'
-      +'<div class="lan-caixa__d">Escolha o mês que está sendo apurado.</div>'
       +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'
         +'<div class="fg"><label>Mês</label><select id="lan-mes" style="'+_sel+';min-width:150px" onchange="onLanMesAno()">'
           +[['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],['05','Maio'],['06','Junho'],['07','Julho'],['08','Agosto'],['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro']].map(m=>'<option value="'+m[0]+'"'+(m[0]===_mm?' selected':'')+'>'+m[1]+'</option>').join('')
@@ -2480,29 +2478,23 @@ function pgBenLancamento(){
         +'</select></div>'
       +'</div>'
       +'<div class="lan-destaque"><span class="lan-destaque__n">'+lanDU+'</span>'
-        +'<span class="lan-destaque__l">dias úteis em '+_nomeMes+' de '+_aa+'</span></div>'
-      +(_duCal?'<div class="text-xs text-muted">'+explicaDiasUteis(_duCal)+'</div>':'')
+        +'<span class="lan-destaque__l">dias úteis</span></div>'
       +'</div>'
       +'<div class="alert alert-info" style="font-size:13px;margin-bottom:12px"><i class="ti ti-hand-click"></i> '
-        +'<strong>Clique sobre um dia útil para marcá-lo como não útil</strong> — e clique de novo para voltar. '
-        +'Serve para ponte, feriado local ou trabalho em fim de semana. O número acima muda a cada clique.</div>'
+        +'Clique no calendário abaixo para marcar ou desmarcar dias úteis.</div>'
       +'<div id="lan-calendario"></div>'
-      +'<div class="alert alert-info" style="font-size:12px;margin-bottom:12px"><i class="ti ti-info-circle"></i> '
-        +'Este número vale para todos, exceto quem tem jornada travada no cadastro. Ajuste de uma pessoa específica é feito no passo 5.</div>'
-      +rodape(1,3,'Ao continuar, estes '+lanDU+' dias ficam registrados para '+lanComp+'.');
+      +rodape(1,3);
 
   } else if(lanStep===3){
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">3. Férias na competência</div>'
-      +'<div class="lan-caixa__d">Estar de férias não zera o benefício: quem vendeu dias ou voltou no meio do mês tem dias a receber. Confira a lista abaixo.</div>'
+      +'<div class="lan-caixa__t">3. Férias'+_ajuda('Estar de férias não zera o benefício: quem vendeu dias ou voltou no meio do mês tem dias a receber. Clique em Editar para corrigir período ou dias vendidos.')+'</div>'
       +'<div id="lan-ferias"></div>'
       +'</div>'
       +rodape(2,4);
 
   } else if(lanStep===4){
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">4. Dias extras</div>'
-      +'<div class="lan-caixa__d">Estes colaboradores costumam trabalhar dias extras. Marque quem teve, ajuste a quantidade e aplique.</div>'
+      +'<div class="lan-caixa__t">4. Dias extras'+_ajuda('Colaboradores que costumam trabalhar dias extras. Marque quem teve, ajuste a quantidade e aplique.')+'</div>'
       +'<div id="lan-extras"></div>'
       +'</div>'
       +rodape(3,5);
@@ -2510,12 +2502,11 @@ function pgBenLancamento(){
   } else if(lanStep===5){
     const _bs=(duComps[lanComp]||{}).baseSalva;
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">5. Conferência e faltas</div>'
-      +'<div class="lan-caixa__d">Lance as <strong>faltas</strong> na tabela abaixo e use o filtro <strong>Jornada</strong> para achar quem está fora do padrão. Ajuste os dias de uma pessoa direto na linha dela.</div>'
+      +'<div class="lan-caixa__t">5. Conferência e faltas'+_ajuda('Lance as faltas na tabela. Use o filtro Jornada para achar quem está fora do padrão. Para ajustar uma pessoa só, edite os dias na linha dela.')+'</div>'
       +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
         +(_bs?'<span class="lan-base-ok"><i class="ti ti-check"></i> Base salva em '+new Date(_bs.salvoEm).toLocaleString('pt-BR')+'</span>':'')
         +'<button class="btn btn-success btn-sm" onclick="salvarBaseDiasUteis()"><i class="ti ti-device-floppy"></i> '+(_bs?'Salvar de novo':'Salvar base de dias úteis')+'</button>'
-        +'<span class="text-xs text-muted">Registra jornada, férias, faltas e extras desta competência.</span>'
+        +_ajuda('Registra jornada, férias, faltas e extras desta competência.')
       +'</div>'
       +'</div>'
       +rodape(4,6)
@@ -2523,8 +2514,7 @@ function pgBenLancamento(){
 
   } else {
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">6. Fechar e exportar</div>'
-      +'<div class="lan-caixa__d">Escolha o benefício para conferir na tabela, feche a competência e gere os arquivos.</div>'
+      +'<div class="lan-caixa__t">6. Fechar e exportar'+_ajuda('Escolha o benefício para conferir na tabela, feche a competência e gere os arquivos.')+'</div>'
       +'<div class="lan-actions" style="justify-content:flex-start">'
         +'<label class="lan-actions__l" for="lan-fechar-ben">Benefício</label>'
         +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="max-width:240px">'
@@ -2797,15 +2787,8 @@ function renderBaseApuracaoInfo(){
     const latest=basesSalvasList[0];
     const desatualizada = latest && latest._id!==baseApuracao._id && String(latest.salvoEm||'')>String(baseApuracao.salvoEm||'');
     // Faixa em linha: selo + versao/data/qtd + acoes, tudo na mesma altura do enunciado.
-    el.innerHTML='<div class="lan-base-row" style="justify-content:flex-start">'
-      +'<span class="lan-base-ok"><i class="ti ti-database-import"></i> Base importada</span>'
-      +'<div class="lan-base-facts">'
-        +'<span>Versão <strong>'+baseApuracao.competencia+'</strong></span>'
-        +'<span>'+dt+'</span>'
-        +'<span><strong>'+n+'</strong> colaboradores</span>'
-      +'</div>'
-      +'<button class="btn btn-ghost btn-sm" onclick="abrirImportarBase()" title="Recarregar outra versão da base"><i class="ti ti-refresh"></i> Trocar base</button>'
-      +'</div>'
+    el.innerHTML='<div class="lan-destaque"><span class="lan-destaque__n">'+n+'</span>'
+      +'<span class="lan-destaque__l">colaboradores · versão '+baseApuracao.competencia+'</span></div>'
       +(desatualizada?'<div class="alert alert-warning" style="margin:8px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px"><span><i class="ti ti-alert-triangle"></i> Existe uma versão mais recente ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+').</span>'
         +'<button class="btn btn-warning btn-sm" onclick="importarBaseApuracao(\''+latest._id+'\')">Usar a mais recente</button></div>':'');
   } else {
@@ -11736,8 +11719,7 @@ function renderExtrasHabituais(){
   const totalDias=marcados.reduce((a,h)=>a+_extrasEstado(h.mat,h.dias).dias,0);
   el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
     +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-calendar-plus"></i></span><div>'
-      +'<div class="lan-step__t">Dias extras habituais — conferir</div>'
-      +'<div class="lan-step__d">Estes colaboradores costumam trabalhar dias extras. Confirme quem teve e quantos, antes de seguir.</div></div></div>'
+      +'<div class="lan-step__t">Dias extras habituais</div></div></div>'
     +'<div class="lan-split-side lan-actions">'
       +'<span class="text-xs text-muted">'+marcados.length+' de '+extrasHabituais.length+' marcados · '+totalDias+' dia(s) no total</span>'
       +'<button class="btn btn-ghost btn-sm" onclick="abrirAdicionarExtraHabitual()"><i class="ti ti-plus"></i> Adicionar</button>'
@@ -11837,8 +11819,7 @@ function renderFeriasConferencia(){
   }).join('');
   el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
     +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-umbrella"></i></span><div>'
-      +'<div class="lan-step__t">Férias na competência — conferir</div>'
-      +'<div class="lan-step__d">Estar de férias não zera o benefício: dias vendidos e período parcial deixam dias a receber.</div></div></div>'
+      +'<div class="lan-step__t">Férias na competência</div></div></div>'
     +'<div class="lan-split-side lan-actions">'
       +'<span class="text-xs text-muted">'+lista.length+' em férias · <strong>'+comBeneficio+'</strong> com dias a receber</span>'
       +(semPeriodo?'<span class="badge badge--danger">'+semPeriodo+' sem período</span>':'')
@@ -11886,20 +11867,11 @@ function renderCalendarioDU(){
       +'</div>');
   });
   el.innerHTML='<div class="cal-wrap">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
-      +'<div style="font-weight:700">'+_duNomeMes(du.mes)+' de '+du.ano+'</div>'
-      +(du.ajustados.length
-        ? '<button class="btn btn-ghost btn-sm" onclick="duLimparAjustes()"><i class="ti ti-eraser"></i> Desfazer '+du.ajustados.length+' ajuste(s)</button>'
-        : '')
-    +'</div>'
-      +'<div class="cal-cab">'+['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>'<div>'+d+'</div>').join('')+'</div>'
-      +'<div class="cal-grade">'+cels.join('')+'</div>'
-      +'<div class="cal-legenda">'
-        +'<span><i class="cal-p cal-util"></i> dia útil ('+du.dias+')</span>'
-        +'<span><i class="cal-p cal-nao"></i> fim de semana ('+du.fds+')</span>'
-        +'<span><i class="cal-p cal-feriado"></i> feriado</span>'
-        +'<span><i class="cal-p cal-forcado"></i> ajustado à mão</span>'
-      +'</div>'
+    +(du.ajustados.length
+      ? '<div style="text-align:right;margin-bottom:6px"><button class="btn btn-ghost btn-sm" onclick="duLimparAjustes()"><i class="ti ti-eraser"></i> Desfazer '+du.ajustados.length+' ajuste(s)</button></div>'
+      : '')
+    +'<div class="cal-cab">'+['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>'<div>'+d+'</div>').join('')+'</div>'
+    +'<div class="cal-grade">'+cels.join('')+'</div>'
     +'</div>';
 }
 
