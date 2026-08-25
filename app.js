@@ -5695,7 +5695,7 @@ function renderFarois(dados){
 }
 
 // ── Modal de detalhe/edicao de ferias de um colaborador ─────────
-function abrirDetalheFerias(id){
+function abrirDetalheFerias(id,editando){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const f=getFarol(c);
   const meses=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -5793,6 +5793,39 @@ function abrirDetalheFerias(id){
   document.body.insertAdjacentHTML('beforeend', html);
   document.getElementById('modal-ferias-detalhe')?.classList.add('open');
   verificarAlertasFerias(id);
+  if(editando) setTimeout(()=>{ try{ ferdEdit(true); }catch(e){} },40);
+}
+
+// Painel de férias: incluir alguém que ainda não aparece na lista.
+function abrirIncluirFerias(){
+  const jaNaLista=new Set(_feriasNaComp(lanComp).map(x=>x.c._id));
+  const cands=colsApuracao()
+    .filter(c=>!jaNaLista.has(c._id) && !STATUS_NAO_RECEBE.includes(c.status))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  document.getElementById('modal-inc-fer')?.remove();
+  const rows=cands.map(c=>'<div class="incl-row" onclick="_incluirFerias(\''+c._id+'\')" '
+    +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
+    +'data-busca="'+((c.nome||'')+' '+(c.mat||'')).toLowerCase().replace(/"/g,'')+'">'
+    +'<div><div style="font-weight:600">'+c.nome+'</div>'
+    +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'+(c.depto?' · '+c.depto:'')+'</div></div>'
+    +'<span class="btn btn-ghost btn-sm"><i class="ti ti-chevron-right"></i></span></div>').join('');
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="modal-overlay ds open" id="modal-inc-fer" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:560px"><div class="modal-title">Incluir colaborador</div>'
+    +'<input type="text" id="incf-q" placeholder="Buscar nome ou matrícula..." oninput="_filtrarIncluirFerias()" '
+      +'style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px;margin:12px 0">'
+    +'<div id="incf-lista" style="max-height:52vh;overflow:auto">'+(rows||'<div class="empty-state"><p>Todos já estão na lista.</p></div>')+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-inc-fer\').remove()">Fechar</button></div>'
+    +'</div></div>');
+  setTimeout(()=>document.getElementById('incf-q')?.focus(),50);
+}
+function _filtrarIncluirFerias(){
+  const q=(document.getElementById('incf-q')?.value||'').toLowerCase();
+  document.querySelectorAll('#incf-lista .incl-row').forEach(r=>{ r.style.display=(!q||(r.dataset.busca||'').includes(q))?'':'none'; });
+}
+function _incluirFerias(id){
+  document.getElementById('modal-inc-fer')?.remove();
+  abrirDetalheFerias(id,true);   // já abre em edição, no período de férias
 }
 function ferdEdit(on){
   if(on) setTimeout(()=>{ try{ _ferdPrevia(); }catch(e){} },30);
@@ -11821,6 +11854,7 @@ function renderFeriasConferencia(){
     +'<div class="lan-split-side lan-actions">'
       +'<span class="text-xs text-muted">'+lista.length+' em férias · <strong>'+comBeneficio+'</strong> com dias a receber</span>'
       +(semPeriodo?'<span class="badge badge--danger">'+semPeriodo+' sem período</span>':'')
+      +'<button class="btn btn-ghost btn-sm" onclick="abrirIncluirFerias()"><i class="ti ti-user-plus"></i> Incluir colaborador</button>'
     +'</div></div>'
     +(semPeriodo?'<div class="alert alert-warning" style="font-size:12px"><i class="ti ti-alert-triangle"></i> '
       +'<strong>'+semPeriodo+' colaborador(es) com status Férias e sem período cadastrado.</strong> '
