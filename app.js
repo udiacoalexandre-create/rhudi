@@ -1359,7 +1359,7 @@ function renderColabList(){
   }
   const tbody=document.getElementById('bl-tbody'); if(!tbody) return;
   if(f.length===0){
-    tbody.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>';
     return;
   }
   tbody.innerHTML=f.map(c=>`<tr>
@@ -2432,13 +2432,9 @@ function pgBenLancamento(){
     +'<table class="tbl launch-tbl"><thead><tr>'
     +'<th>Mat.</th><th>Nome</th>'
     +'<th title="Jornada: especial travada no cadastro, ou dias úteis do mês">Dias da Jornada</th><th title="Faltas do mês anterior (−)">Faltas</th><th title="Férias/abono comprados (−)">Férias</th><th title="Dias extras (+)">Extras</th><th title="Jornada + extras − faltas − férias = base do cálculo">Dias Úteis Líquidos</th>'
-    +'<th>VR</th><th>Café</th><th>Cesta</th><th>Comb.</th><th>VT</th><th>Total</th>'
     +'</tr></thead><tbody id="lan-tbody"></tbody>'
     +'<tfoot id="lan-tfoot" style="display:none">'
-    +'<tr class="total-row-label"><td colspan="7"> <span id="lan-tot-label"></span></td>'
-    +'<td style="text-align:center">VR</td><td style="text-align:center">Café</td><td style="text-align:center">Cesta</td><td style="text-align:center">Comb.</td><td style="text-align:center">VT</td><td style="text-align:center">Total</td></tr>'
-    +'<tr class="total-row"><td colspan="7"><span id="lan-tot-colab" style="font-size:11px;opacity:.8"></span></td>'
-    +'<td id="lan-tot-vr" style="text-align:right"></td><td id="lan-tot-cafe" style="text-align:right"></td><td id="lan-tot-cesta" style="text-align:right"></td><td id="lan-tot-comb" style="text-align:right"></td><td id="lan-tot-vt" style="text-align:right"></td><td id="lan-tot-geral" style="text-align:right;font-size:13px;color:#86EFAC"></td></tr>'
+    +'<tr class="total-row"><td colspan="7"><span id="lan-tot-label"></span> <span id="lan-tot-colab" style="font-size:11px;opacity:.8"></span></td></tr>'
     +'</tfoot></table></div>';
 
   // mini-tabela para os passos 2 (ferias) e 3 (afastados)
@@ -3018,7 +3014,7 @@ function renderLancamento(){
   // Apuracao exige uma base importada (congelada) antes de comecar.
   if(!baseApuracao){
     const tb=document.getElementById('lan-tbody');
-    if(tb) tb.innerHTML='<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">📥</div><p>Importe uma base salva para iniciar a apuração.<br><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="abrirImportarBase()">Importar base de colaboradores</button></p></div></td></tr>';
+    if(tb) tb.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📥</div><p>Importe uma base salva para iniciar a apuração.<br><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="abrirImportarBase()">Importar base de colaboradores</button></p></div></td></tr>';
     const tf=document.getElementById('lan-tfoot'); if(tf) tf.style.display='none';
     const rs=document.getElementById('lan-resumo'); if(rs) rs.innerHTML='';
     return;
@@ -3042,12 +3038,7 @@ function renderLancamento(){
     const totalAtivos=colsApuracao().filter(c=>c.status!=='Inativo'&&elegivelBeneficios(c)).length;
     document.getElementById('lan-tot-label').textContent=ativos.length===totalAtivos?'Totais do mês':`Seleção (${ativos.length})`;
     document.getElementById('lan-tot-colab').textContent=`${ativos.length} colaborador${ativos.length!==1?'es':''}`;
-    document.getElementById('lan-tot-vr').textContent=tVR>0?brl(tVR):'—';
-    document.getElementById('lan-tot-cafe').textContent=tCafe>0?brl(tCafe):'—';
-    document.getElementById('lan-tot-cesta').textContent=tCesta>0?brl(tCesta):'—';
-    document.getElementById('lan-tot-comb').textContent=tComb>0?brl(tComb):'—';
-    document.getElementById('lan-tot-vt').textContent=tVT>0?brl(tVT):'—';
-    document.getElementById('lan-tot-geral').textContent=brl(tVR+tCafe+tCesta+tComb+tVT);
+
   }
   const resumo=document.getElementById('lan-resumo');
   if(resumo){
@@ -3070,7 +3061,7 @@ function renderLancamento(){
   if(lanStep===6){ try{ renderTabelaBenef(); }catch(e){ console.error(e); } }
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
   if(ativos.length===0){
-    tbody.innerHTML=`<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="7"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML=ativos.map((c,i)=>{
@@ -3096,12 +3087,6 @@ function renderLancamento(){
       <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)" title="${ferAuto?'Preenchido automaticamente pelos dias úteis de férias na competência. Edite para sobrescrever.':'Valor informado manualmente. Apague para voltar ao automático.'}" style="${ferAuto&&fev>0?'background:#EFF6FF':''}"></td>
       <td><input type="number" value="${ext}" min="0" max="31" class="input-extras" onchange="setLan('${c.mat}','extras',this.value)" title="Dias extras"></td>
       <td class="dias-reais">${dr}${_selosJornada(c,du2,fat,fev,ext,dr)}</td>
-      <td class="total-cell">${vr>0?brl(vr):'\u2014'}</td>
-      <td class="total-cell">${cafe>0?brl(cafe):'\u2014'}</td>
-      <td class="total-cell">${cesta>0?brl(cesta):'\u2014'}</td>
-      <td class="total-cell">${comb>0?brl(comb):'\u2014'}</td>
-      <td class="total-cell">${vt>0?brl(vt):'\u2014'}</td>
-      <td class="total-cell" style="color:var(--blue);font-weight:700">${brl(total)}</td>
     </tr>`;
   }).join('');
 }
