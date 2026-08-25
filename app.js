@@ -2500,7 +2500,7 @@ function pgBenLancamento(){
     rodape(3,5);
 
   } else if(lanStep===5){
-    corpo='<div id="lan-resumo" style="margin-bottom:10px"></div>'+filtros;
+    corpo='<div id="lan-resumo" style="margin-bottom:10px"></div>'+filtros+'<div id="lan-chips"></div>';
     rodape(4,null,'',
       null,null,
       '<button class="btn btn-primary" onclick="salvarBaseESeguir()" style="min-width:260px">'
@@ -3065,6 +3065,7 @@ function renderLancamento(){
       +item('Total Geral',sTot.size,tVR+tCafe+tCesta+tComb+tVT,'var(--green)',' lan-kpi--total')
       +'</div>';
   }
+  if(lanStep===5){ try{ renderChipsJornada(); }catch(e){ console.error(e); } }
   if(lanStep===6){ try{ renderTabelaBenef(); }catch(e){ console.error(e); } }
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
   if(ativos.length===0){
@@ -11978,6 +11979,39 @@ async function salvarBaseDiasUteis(silencioso){
     toast('Base de '+lanComp+' salva: '+ativos.length+' colaboradores.','success');
     if(!silencioso) showPage('ben-lancamento');
   }catch(e){ toast('Erro ao salvar: '+e.message,'error'); return false; }
+}
+
+// Atalhos de conferência: os mesmos valores do filtro "Jornada", visíveis na
+// tela com a contagem — dentro do dropdown ninguém achava.
+function renderChipsJornada(){
+  const el=document.getElementById('lan-chips'); if(!el) return;
+  const base=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
+  const conta={travada:0,faltas:0,ferias:0,extras:0,dif:0};
+  base.forEach(c=>{ const j=motivosJornada(c);
+    j.motivos.forEach(m=>{ if(conta[m]!=null) conta[m]++; });
+    if(j.difere) conta.dif++; });
+  const sel=getMs('ljor');
+  const chip=(v,rot,n,cor)=>'<button class="btn '+(sel.includes(v)?'btn-primary':'btn-ghost')+' btn-sm" '
+    +'onclick="toggleChipJornada(\''+v+'\')" style="'+(sel.includes(v)?'':'border-color:'+cor+';color:'+cor)+'">'
+    +rot+' <strong>'+n+'</strong></button>';
+  el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    +'<span class="text-xs text-muted">Conferir:</span>'
+    +chip('travada','Jornada travada',conta.travada,'var(--blue)')
+    +chip('faltas','Com faltas',conta.faltas,'var(--red)')
+    +chip('ferias','Com férias',conta.ferias,'var(--yellow)')
+    +chip('extras','Com dias extras',conta.extras,'var(--green)')
+    +chip('dif','Qualquer diferença',conta.dif,'var(--text2)')
+    +(sel.length?'<button class="btn btn-ghost btn-sm" onclick="limparChipsJornada()">Limpar</button>':'')
+    +'</div>';
+}
+function toggleChipJornada(v){
+  const cb=[...document.querySelectorAll('.ms-ljor')].find(x=>x.value===v);
+  if(cb){ cb.checked=!cb.checked; try{ updateMsCounts(); }catch(e){} renderLancamento(); }
+}
+function limparChipsJornada(){
+  document.querySelectorAll('.ms-ljor').forEach(cb=>cb.checked=false);
+  try{ updateMsCounts(); }catch(e){}
+  renderLancamento();
 }
 
 // ── Passo 6: total e lista de quem recebe o benefício escolhido ────
