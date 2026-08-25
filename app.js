@@ -1020,6 +1020,7 @@ function afterRender(id){
   if(id==='ben-dash') renderBenDashboard();
   if(id==='config-main'){
     const s=configSub||'beneficios';
+    if(s==='feriados'){ loadFeriados().then(renderFeriadosLista); return; }
     if(s==='acessos') renderUsuarios();
     else if(s==='um989') loadUM989().then(renderUM989);
     else loadConfig().then(()=>{ const set=(id,v)=>{const e=document.getElementById(id); if(e)e.value=v;}; set('cfg-val-vr',VR_PADRAO); set('cfg-val-cafe',CAFE_PADRAO); set('cfg-val-cesta',CESTA_PADRAO); set('cfg-val-premio',PREMIO_VAL); renderConfigVT(); });
@@ -2382,6 +2383,7 @@ function pgBenLancamento(){
   const head=(n,t,d)=>'<div class="lan-step__head"><span class="lan-step__num">'+n+'</span><div><div class="lan-step__t">'+t+'</div><div class="lan-step__d">'+d+'</div></div></div>';
   const semBase='<div class="alert alert-warning" style="margin-bottom:12px"><i class="ti ti-alert-triangle"></i> Nenhuma base importada. Volte ao <strong>Passo 1</strong> para importar. <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="lanIrPasso(1)">Ir ao Passo 1</button></div>';
   const temBase=!!baseApuracao;
+  const _duCal=diasUteisComp(lanComp);   // dias úteis pelo calendário, p/ comparar com o valor em uso
 
   // Barra de filtros baixa: os botoes de multi-selecao ja mostram o proprio nome,
   // entao os rotulos acima viram altura desperdicada.
@@ -2438,11 +2440,20 @@ function pgBenLancamento(){
       +'<div class="lan-split-side lan-actions">'
         +'<span class="lan-actions__l">Mês/Ano</span><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:104px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" value="'+lanComp+'" onchange="onLanCompChange(this.value)">'
         +'<span class="lan-actions__l">Dias úteis</span><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:70px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" onchange="setLanDU(this.value);renderLancamento()">'
+        +(_duCal && _duCal.dias!==lanDU
+            ? '<button class="btn btn-ghost btn-sm" onclick="recalcularDiasUteis()" title="Voltar ao valor do calendário"><i class="ti ti-calendar"></i> Usar '+_duCal.dias+'</button>'
+            : '')
         +'<button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>'
         +'<span class="lan-actions__sep"></span>'
         +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
         +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(3)">Próximo <i class="ti ti-arrow-right"></i></button>'
-      +'</div></div>';
+      +'</div></div>'
+      // O número nunca deve ser caixa-preta: a conta fica escrita embaixo.
+      +(_duCal
+        ? '<div class="alert '+(_duCal.dias===lanDU?'alert-info':'alert-warning')+'" style="font-size:12px;margin-bottom:12px">'
+          +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
+          +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
+        : '');
   } else if(lanStep===3){
     corpo='<div class="lan-step lan-step--split">'
       +head(3,'Faltas e dias extras (manual)','Preencha na tabela: faltas e férias descontam, extras somam. As <strong>férias</strong> vêm automáticas da Base.')
@@ -4214,7 +4225,31 @@ async function loadLancamento(){
   }catch(e){ console.error('Erro lancamento:',e); }
 }
 // Recarrega o lancamento ao trocar a competencia no campo do Lancamento.
-async function onLanCompChange(v){ setLanComp(v); await loadLancamento(); renderLancamento(); }
+// Guarda para qual competência o valor automático já foi aplicado: assim um
+// ajuste manual do usuário não é sobrescrito a cada render, só quando o mês muda.
+let lanDUAutoComp='';
+function aplicarDUAutomatico(comp,forcar){
+  const c=comp||lanComp;
+  if(!forcar && lanDUAutoComp===c) return null;
+  const du=diasUteisComp(c);
+  if(!du) return null;
+  setLanDU(du.dias); lanDUAutoComp=c;
+  return du;
+}
+async function onLanCompChange(v){
+  setLanComp(v);
+  aplicarDUAutomatico(v,true);   // mês novo, conta nova
+  await loadLancamento();
+  renderLancamento();
+  showPage('ben-lancamento');
+}
+// Botão do passo 2: volta ao valor do calendário depois de um ajuste manual.
+function recalcularDiasUteis(){
+  const du=aplicarDUAutomatico(lanComp,true);
+  if(!du){ toast('Competência inválida.','error'); return; }
+  toast(du.dias+' dias úteis em '+lanComp+'.','success');
+  showPage('ben-lancamento');
+}
 
 async function loadConfig(){
   try{
@@ -4343,7 +4378,8 @@ function entrarBeneficios(){
   // basesSalvas fica FORA daqui: cada versão guarda uma cópia completa da base
   // (~850 KB), então baixar as 89 no login custava ~74 MB para a tela inicial,
   // que não usa nenhuma. Passou a ser carregado sob demanda, e por índice.
-  Promise.all([loadColaboradores(),loadLancamento(),loadConfig()]).then(()=>{
+  Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadFeriados()]).then(()=>{
+    aplicarDUAutomatico(lanComp);   // dias úteis da competência corrente
     window.__benefLoaded=true;
     switchModule('base');
     checarRetornosFeriasBoot();
@@ -9176,10 +9212,11 @@ function pgConfiguracoes(){
   }
   const sub=configSub||'beneficios';
   const tb=(id,icon,label)=>'<button class="lan-tab'+(sub===id?' lan-tab--active':'')+'" onclick="configIrSub(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
-  const tabs='<div class="lan-tabs">'+tb('beneficios','gift','Benefícios')+tb('acessos','user-cog','Acessos e permissões')+tb('um989','users','UM989')+'</div>';
+  const tabs='<div class="lan-tabs">'+tb('beneficios','gift','Benefícios')+tb('feriados','calendar','Feriados')+tb('acessos','user-cog','Acessos e permissões')+tb('um989','users','UM989')+'</div>';
   let corpo='';
   if(sub==='acessos') corpo=pgUsuarios();
   else if(sub==='um989') corpo=pgFerUM989();
+  else if(sub==='feriados') corpo=_configFeriadosHTML();
   else corpo=_configBeneficiosHTML();
   return '<div class="page-header"><h2 class="page-title">Configurações</h2><p class="page-subtitle">Central de configurações do sistema — acesso exclusivo do master.</p></div>'
     +tabs+'<div>'+corpo+'</div>';
@@ -11173,4 +11210,208 @@ async function gerarModeloNovos(){
     console.error('modelo novos',e);
     toast('Erro ao gerar o modelo: '+e.message,'error');
   }
+}
+
+// ============================================================
+// CALENDÁRIO: FERIADOS E DIAS ÚTEIS DA COMPETÊNCIA
+// ============================================================
+// Regra combinada com o RH da Udiaço:
+//  - Carnaval, Quarta de Cinzas e Corpus Christi SÃO dias úteis aqui (são
+//    ponto facultativo, não feriado por lei) — por isso não entram na lista.
+//  - Feriados municipais: só os de Carapicuíba, cadastrados na tela de
+//    Configurações (config/feriados). Não vêm embutidos no código.
+//  - Competência é o mês cheio (dia 1 ao último dia).
+
+let feriadosExtras=[];   // [{data:'AAAA-MM-DD'|'MM-DD', nome, todoAno:bool}]
+
+// Domingo de Páscoa (Meeus/Jones/Butcher) — base dos feriados móveis.
+function _pascoa(ano){
+  const A=ano%19,B=Math.floor(ano/100),C=ano%100,D=Math.floor(B/4),E=B%4,
+        F=Math.floor((B+8)/25),G=Math.floor((B-F+1)/3),H=(19*A+B-D-G+15)%30,
+        I=Math.floor(C/4),K=C%4,L=(32+2*E+2*I-H-K)%7,M=Math.floor((A+11*H+22*L)/451),
+        mes=Math.floor((H+L-7*M+114)/31),dia=((H+L-7*M+114)%31)+1;
+  return new Date(ano,mes-1,dia);
+}
+function _isoData(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _somaDias(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+
+// Feriados nacionais com força de lei. Sexta-feira Santa é móvel;
+// 20/11 (Consciência Negra) é nacional desde a Lei 14.759/2023.
+function feriadosNacionais(ano){
+  const p=_pascoa(ano);
+  return [
+    {data:ano+'-01-01', nome:'Confraternização Universal'},
+    {data:_isoData(_somaDias(p,-2)), nome:'Sexta-feira Santa'},
+    {data:ano+'-04-21', nome:'Tiradentes'},
+    {data:ano+'-05-01', nome:'Dia do Trabalho'},
+    {data:ano+'-09-07', nome:'Independência'},
+    {data:ano+'-10-12', nome:'Nossa Senhora Aparecida'},
+    {data:ano+'-11-02', nome:'Finados'},
+    {data:ano+'-11-15', nome:'Proclamação da República'},
+    {data:ano+'-11-20', nome:'Consciência Negra'},
+    {data:ano+'-12-25', nome:'Natal'},
+  ];
+}
+// Extras cadastrados (municipais/empresa) já resolvidos para o ano.
+function feriadosDoAno(ano){
+  const lista=feriadosNacionais(ano).map(f=>Object.assign({origem:'nacional'},f));
+  (feriadosExtras||[]).forEach(f=>{
+    const s=String(f.data||'').trim();
+    let data=null;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) data = s.startsWith(ano+'-') ? s : null;   // data fixa de um ano só
+    else if(/^\d{2}-\d{2}$/.test(s))  data = ano+'-'+s;                          // repete todo ano
+    if(data) lista.push({data, nome:f.nome||'Feriado', origem:'local'});
+  });
+  return lista.sort((a,b)=>a.data.localeCompare(b.data));
+}
+
+// Dias úteis do mês da competência MM/AAAA, com o detalhamento da conta.
+function diasUteisComp(comp){
+  const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/);
+  if(!m) return null;
+  const mes=+m[1]-1, ano=+m[2];
+  if(mes<0||mes>11) return null;
+  const ult=new Date(ano,mes+1,0).getDate();
+  const doAno=feriadosDoAno(ano);
+  const mapa={}; doAno.forEach(f=>{ mapa[f.data]=f; });
+  let uteis=0, fds=0; const feriadosUteis=[], feriadosNoFDS=[];
+  for(let d=1;d<=ult;d++){
+    const dt=new Date(ano,mes,d), wd=dt.getDay(), s=_isoData(dt);
+    if(wd===0||wd===6){ fds++; if(mapa[s]) feriadosNoFDS.push(mapa[s]); continue; }
+    if(mapa[s]){ feriadosUteis.push(mapa[s]); continue; }
+    uteis++;
+  }
+  return {dias:uteis, totalDias:ult, fds, feriados:feriadosUteis, feriadosNoFDS, mes:mes+1, ano};
+}
+// Frase curta explicando de onde veio o número.
+function explicaDiasUteis(du){
+  if(!du) return '';
+  const f=du.feriados.length
+    ? ' − '+du.feriados.length+' feriado'+(du.feriados.length>1?'s':'')+' ('
+      +du.feriados.map(x=>x.data.slice(8)+'/'+x.data.slice(5,7)+' '+x.nome).join(', ')+')'
+    : ' · sem feriado em dia útil';
+  const extra=du.feriadosNoFDS.length
+    ? ' — '+du.feriadosNoFDS.map(x=>x.nome).join(', ')+' caiu no fim de semana'
+    : '';
+  return du.totalDias+' dias − '+du.fds+' de fim de semana'+f+extra+' = <strong>'+du.dias+' dias úteis</strong>';
+}
+
+// ── Carga e gravação dos feriados cadastrados ─────────────────────
+async function loadFeriados(){
+  try{
+    const snap=await window._getDoc(window._doc('config','feriados'));
+    if(snap.exists()){ const d=snap.data()||{}; feriadosExtras=Array.isArray(d.lista)?d.lista:[]; }
+  }catch(e){ console.error('feriados:',e); }
+  return feriadosExtras;
+}
+async function salvarFeriados(){
+  await fsSet('config','feriados',{lista:feriadosExtras,
+    atualizadoEm:new Date().toISOString(),
+    atualizadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+}
+
+// ── Configurações › Feriados ──────────────────────────────────────
+function _configFeriadosHTML(){
+  const ano=new Date().getFullYear();
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Como os dias úteis são contados</div>
+      <div style="font-size:13px;line-height:1.8">
+        <div>Dias úteis = dias do mês − sábados e domingos − feriados que caem em dia útil.</div>
+        <div>Os <strong>feriados nacionais</strong> já entram sozinhos, inclusive os móveis (Sexta-feira Santa é calculada pela Páscoa).</div>
+        <div><strong>Carnaval, Quarta-feira de Cinzas e Corpus Christi contam como dia útil</strong> — são ponto facultativo, não feriado por lei. Se a Udiaço mudar essa regra, cadastre-os aqui embaixo.</div>
+        <div>Abaixo ficam os feriados <strong>municipais de Carapicuíba</strong> e os da empresa.</div>
+      </div>
+    </div>
+    <div class="lan-step lan-step--split">
+      <div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-calendar"></i></span><div>
+        <div class="lan-step__t">Feriados cadastrados</div>
+        <div class="lan-step__d">Use <strong>dd/mm</strong> para o que se repete todo ano, ou <strong>dd/mm/aaaa</strong> para um ano só.</div>
+      </div></div>
+      <div class="lan-split-side lan-actions">
+        <span class="lan-actions__l">Data</span>
+        <input type="text" id="fer-data" placeholder="dd/mm ou dd/mm/aaaa" style="width:150px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+        <span class="lan-actions__l">Nome</span>
+        <input type="text" id="fer-nome" placeholder="Aniversário de Carapicuíba" style="width:220px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
+        <button class="btn btn-primary btn-sm" onclick="adicionarFeriado()"><i class="ti ti-plus"></i> Adicionar</button>
+      </div>
+    </div>
+    <div id="fer-lista"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">Dias úteis de ${ano} e ${ano+1} com o calendário atual</div>
+      <div id="fer-previa"></div>
+    </div>`;
+}
+
+function renderFeriadosLista(){
+  const el=document.getElementById('fer-lista');
+  if(el){
+    if(!feriadosExtras.length){
+      el.innerHTML='<div class="alert alert-info" style="font-size:13px"><i class="ti ti-info-circle"></i> Nenhum feriado local cadastrado — só os nacionais estão sendo considerados. '
+        +'O <strong>aniversário de Carapicuíba (26/03)</strong> costuma ser o principal; confirme com o RH antes de cadastrar.</div>';
+    } else {
+      const ord=feriadosExtras.slice().sort((a,b)=>String(a.data).slice(-5).localeCompare(String(b.data).slice(-5)));
+      el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+        +'<th>Data</th><th>Feriado</th><th>Quando vale</th><th style="text-align:center">Ação</th>'
+        +'</tr></thead><tbody>'
+        +ord.map(f=>{
+          const s=String(f.data||'');
+          const repete=/^\d{2}-\d{2}$/.test(s);
+          const vis=repete?(s.slice(3)+'/'+s.slice(0,2)):(s.slice(8)+'/'+s.slice(5,7)+'/'+s.slice(0,4));
+          return '<tr><td><code>'+vis+'</code></td><td>'+(f.nome||'—')+'</td>'
+            +'<td>'+(repete?'<span class="badge badge--success">todo ano</span>':'<span class="badge badge--neutral">só '+s.slice(0,4)+'</span>')+'</td>'
+            +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="removerFeriado(\''+s+'\')"><i class="ti ti-trash"></i></button></td></tr>';
+        }).join('')+'</tbody></table></div>';
+    }
+  }
+  const pv=document.getElementById('fer-previa');
+  if(pv){
+    const ano=new Date().getFullYear();
+    const nomes=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const linha=a=>'<tr><td style="font-weight:700">'+a+'</td>'
+      +nomes.map((n,i)=>{const du=diasUteisComp(String(i+1).padStart(2,'0')+'/'+a);
+        return '<td style="text-align:center" title="'+(du?explicaDiasUteis(du).replace(/<[^>]+>/g,''):'')+'">'+(du?du.dias:'—')+'</td>';}).join('')
+      +'</tr>';
+    pv.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Ano</th>'
+      +nomes.map(n=>'<th style="text-align:center">'+n.slice(0,3)+'</th>').join('')+'</tr></thead>'
+      +'<tbody>'+linha(ano)+linha(ano+1)+'</tbody></table></div>'
+      +'<div class="text-xs text-muted" style="margin-top:6px">Passe o mouse no número para ver a conta do mês.</div>';
+  }
+}
+
+async function adicionarFeriado(){
+  const dRaw=(document.getElementById('fer-data')?.value||'').trim();
+  const nome=(document.getElementById('fer-nome')?.value||'').trim();
+  if(!nome){ toast('Informe o nome do feriado.','error'); return; }
+  let data=null;
+  let m=dRaw.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if(m) data=String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');       // MM-DD, repete
+  else {
+    m=dRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(m) data=m[3]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[1]).padStart(2,'0');
+  }
+  if(!data){ toast('Data inválida. Use dd/mm ou dd/mm/aaaa.','error'); return; }
+  if(feriadosExtras.some(f=>f.data===data)){ toast('Essa data já está cadastrada.','error'); return; }
+  feriadosExtras.push({data,nome});
+  try{
+    await salvarFeriados();
+    document.getElementById('fer-data').value=''; document.getElementById('fer-nome').value='';
+    // O calendário mudou: o valor em uso pode ter ficado desatualizado.
+    aplicarDUAutomatico(lanComp,true);
+    renderFeriadosLista();
+    toast('Feriado cadastrado. Os dias úteis foram recalculados.','success');
+  }catch(e){ feriadosExtras=feriadosExtras.filter(f=>f.data!==data); toast('Erro ao salvar: '+e.message,'error'); }
+}
+
+async function removerFeriado(data){
+  const f=feriadosExtras.find(x=>x.data===data); if(!f) return;
+  if(!confirm('Remover o feriado "'+(f.nome||data)+'"?\n\nOs dias úteis dos meses afetados aumentam em 1.')) return;
+  const antes=feriadosExtras.slice();
+  feriadosExtras=feriadosExtras.filter(x=>x.data!==data);
+  try{
+    await salvarFeriados();
+    aplicarDUAutomatico(lanComp,true);
+    renderFeriadosLista();
+    toast('Feriado removido.','error');
+  }catch(e){ feriadosExtras=antes; toast('Erro: '+e.message,'error'); }
 }
