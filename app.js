@@ -1014,7 +1014,7 @@ function afterRender(id){
   if(id==='ben-lancamento'){
     popularLanFiltros();
     lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); });
-    if(lanStep===2) loadExtrasHabituais().then(renderExtrasHabituais);
+    if(lanStep===2){ renderFeriasConferencia(); loadExtrasHabituais().then(renderExtrasHabituais); }
   }
   if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
@@ -2466,7 +2466,7 @@ function pgBenLancamento(){
           +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
           +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
         : '')
-      +'<div id="lan-extras"></div>';
+      +'<div id="lan-ferias"></div><div id="lan-extras"></div>';
   } else if(lanStep===3){
     corpo='<div class="lan-step lan-step--split">'
       +head(3,'Faltas e dias extras (manual)','Preencha na tabela: faltas e férias descontam, extras somam. As <strong>férias</strong> vêm automáticas da Base.')
@@ -5382,17 +5382,24 @@ function _diasCorridos(iniIso, fimIso){
   if(!a||!b) return 0;
   return Math.max(0, Math.round((b-a)/86400000)+1);
 }
-// Dias UTEIS (seg-sex) do periodo de ferias [ferInicio,ferFim] que caem no mes
-// da competencia comp (MM/AAAA). Nao considera feriados (nao ha calendario).
+// Dias UTEIS do periodo de ferias [ferInicio,ferFim] que caem no mes da
+// competencia. Pula fim de semana E feriado: o feriado ja saiu dos dias uteis
+// do mes, entao conta-lo tambem como dia de ferias descontaria duas vezes e
+// tirava um dia de beneficio de quem tem feriado dentro das ferias.
 function feriasDiasUteisNaComp(c, comp){
-  const m=String(comp||'').match(/^(\d{2})\/(\d{4})$/); if(!m) return 0;
+  const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/); if(!m) return 0;
   const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim); if(!ini||!fim) return 0;
   const mes=+m[1]-1, ano=+m[2];
   const mIni=new Date(ano,mes,1), mFim=new Date(ano,mes+1,0);
   const a=ini>mIni?ini:mIni, b=fim<mFim?fim:mFim;
   if(a>b) return 0;
+  const feriados={}; (typeof feriadosDoAno==='function'?feriadosDoAno(ano):[]).forEach(f=>{feriados[f.data]=1;});
   let dias=0; const d=new Date(a);
-  while(d<=b){ const wd=d.getDay(); if(wd!==0&&wd!==6) dias++; d.setDate(d.getDate()+1); }
+  while(d<=b){
+    const wd=d.getDay();
+    if(wd!==0&&wd!==6 && !feriados[_isoData(d)]) dias++;
+    d.setDate(d.getDate()+1);
+  }
   return dias;
 }
 // Situacao das ferias em relacao a hoje: 'em_ferias' | 'retorno_pendente' | null.
@@ -11638,4 +11645,75 @@ async function aplicarExtrasHabituais(){
       +(desmarcadosComValor.length?' e zerados em '+desmarcadosComValor.length:'')+'.','success');
     showPage('ben-lancamento');
   }catch(e){ toast('Erro ao aplicar: '+e.message,'error'); }
+}
+
+// ============================================================
+// FÉRIAS NA COMPETÊNCIA: conferência antes de fechar
+// ============================================================
+// Estar "de férias" não significa zero benefício no mês. O colaborador pode
+// ter vendido até 10 dias (abono) e/ou o período pode cobrir só parte do mês
+// — férias de 30 dias que começam num mês e terminam no outro. Este painel
+// mostra, pessoa por pessoa, quantos dias de benefício sobram e por quê.
+function _feriasNaComp(comp){
+  const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/); if(!m) return [];
+  const mes=+m[1]-1, ano=+m[2];
+  const mIni=new Date(ano,mes,1), mFim=new Date(ano,mes+1,0);
+  const du=lanDU;
+  return colsApuracao().filter(c=>{
+    if(STATUS_NAO_RECEBE.includes(c.status) || !elegivelBeneficios(c)) return false;
+    const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim);
+    if(ini&&fim) return !(fim<mIni || ini>mFim);            // período toca o mês
+    return statusGrupo(c.status)==='ferias';                 // status sem período
+  }).map(c=>{
+    const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim);
+    const duCol=getLanDU(c.mat,du);
+    const diasFer=feriasLancamento(c.mat,duCol);
+    const manual=(()=>{ const l=lancamento[c.mat]||{}; return !(l.ferias===undefined||l.ferias===null||l.ferias===''); })();
+    const avisos=[];
+    if(!ini||!fim) avisos.push({t:'danger',txt:'sem período cadastrado — o sistema está descontando o mês inteiro'});
+    else {
+      if(ini<mIni||fim>mFim) avisos.push({t:'info',txt:'período atravessa o mês'});
+      if(fnum(c.ferDiasComprados)>10) avisos.push({t:'warning',txt:'dias comprados acima de 10 (limite do abono)'});
+    }
+    if(manual) avisos.push({t:'info',txt:'dias de férias informados à mão'});
+    return {c, ini, fim, duCol, diasFer, dr:Math.max(0,duCol-diasFer-fnum((lancamento[c.mat]||{}).faltas)+fnum((lancamento[c.mat]||{}).extras)),
+            comprados:fnum(c.ferDiasComprados), avisos, manual};
+  }).sort((a,b)=>(a.c.nome||'').localeCompare(b.c.nome||''));
+}
+
+function renderFeriasConferencia(){
+  const el=document.getElementById('lan-ferias'); if(!el) return;
+  const lista=_feriasNaComp(lanComp);
+  if(!lista.length){ el.innerHTML=''; return; }
+  const semPeriodo=lista.filter(x=>!x.ini||!x.fim).length;
+  const comBeneficio=lista.filter(x=>x.dr>0).length;
+  const fmtD=d=>d?(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')):'—';
+  const linhas=lista.map(x=>{
+    const av=x.avisos.map(a=>'<span class="badge badge--'+a.t+'" style="font-size:9px">'+a.txt+'</span>').join(' ');
+    return '<tr'+(x.dr>0?' style="background:var(--success-bg)"':'')+'>'
+      +'<td><div style="font-weight:600">'+x.c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(x.c.mat||'—')+'</code>'+(x.c.depto?' · '+x.c.depto:'')+'</div></td>'
+      +'<td class="text-sm">'+(x.ini?fmtD(x.ini)+' a '+fmtD(x.fim):'<span style="color:var(--red)">não cadastrado</span>')+'</td>'
+      +'<td style="text-align:center">'+(x.comprados>0?x.comprados+'d':'—')+'</td>'
+      +'<td style="text-align:center">'+x.duCol+'</td>'
+      +'<td style="text-align:center;font-weight:600;color:var(--yellow)">'+x.diasFer+'</td>'
+      +'<td style="text-align:center;font-weight:700;'+(x.dr>0?'color:var(--green)':'color:var(--text3)')+'">'+x.dr+'</td>'
+      +'<td>'+(av||'<span class="text-xs text-muted">—</span>')+'</td></tr>';
+  }).join('');
+  el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
+    +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-umbrella"></i></span><div>'
+      +'<div class="lan-step__t">Férias na competência — conferir</div>'
+      +'<div class="lan-step__d">Estar de férias não zera o benefício: dias vendidos e período parcial deixam dias a receber.</div></div></div>'
+    +'<div class="lan-split-side lan-actions">'
+      +'<span class="text-xs text-muted">'+lista.length+' em férias · <strong>'+comBeneficio+'</strong> com dias a receber</span>'
+      +(semPeriodo?'<span class="badge badge--danger">'+semPeriodo+' sem período</span>':'')
+    +'</div></div>'
+    +(semPeriodo?'<div class="alert alert-warning" style="font-size:12px"><i class="ti ti-alert-triangle"></i> '
+      +'<strong>'+semPeriodo+' colaborador(es) com status Férias e sem período cadastrado.</strong> '
+      +'Sem as datas o sistema desconta o mês inteiro — se a pessoa voltou no meio do mês ou vendeu dias, ela perde benefício indevidamente. '
+      +'Cadastre início e fim na Base de Colaboradores.</div>':'')
+    +'<div class="tbl-wrap" style="margin-bottom:12px"><table class="tbl"><thead><tr>'
+      +'<th>Colaborador</th><th>Período no mês</th><th style="text-align:center" title="Dias vendidos (abono pecuniário)">Vendidos</th>'
+      +'<th style="text-align:center">Jornada</th><th style="text-align:center">Dias de férias</th>'
+      +'<th style="text-align:center">Dias a receber</th><th>Observações</th>'
+    +'</tr></thead><tbody>'+linhas+'</tbody></table></div>';
 }
