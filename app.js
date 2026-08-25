@@ -84,8 +84,8 @@ let lancamento = {};
 // Agora vive em estado + localStorage, compartilhado por todas as telas.
 let lanComp = '';
 let lanDU = 22;
-let lanStep = 1;        // passo atual do fichario de Lancamento (1..4)
-let lanStep4Ben = 'vt'; // beneficio em conferencia no passo 4
+let lanStep = 1;        // passo atual do fichario de Lancamento (1..5)
+let lanStep4Ben = 'vt'; // beneficio em conferencia no passo 5
 function loadLanCtx(){
   try{
     lanComp = localStorage.getItem('rhudi_lanComp') || '';
@@ -1014,7 +1014,8 @@ function afterRender(id){
   if(id==='ben-lancamento'){
     popularLanFiltros();
     lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); });
-    if(lanStep===2){ renderCalendarioDU(); renderFeriasConferencia(); loadExtrasHabituais().then(renderExtrasHabituais); }
+    if(lanStep===2) renderCalendarioDU();
+    if(lanStep===3){ renderFeriasConferencia(); loadExtrasHabituais().then(renderExtrasHabituais); }
   }
   if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
@@ -2372,9 +2373,10 @@ function pgBenLancamento(){
   const deptos=[...new Set(_base.map(c=>c.depto||'').filter(Boolean))].sort();
   const passos=[
     {n:1,label:'Importar base'},
-    {n:2,label:'Competência e dias'},
-    {n:3,label:'Faltas e extras'},
-    {n:4,label:'Conferir e fechar'},
+    {n:2,label:'Competência e dias úteis'},
+    {n:3,label:'Férias e dias extras'},
+    {n:4,label:'Conferência e faltas'},
+    {n:5,label:'Fechar e exportar'},
   ];
   const tabs='<div class="lan-tabs">'+passos.map(p=>{
     const cls=p.n===lanStep?' lan-tab--active':(p.n<lanStep?' lan-tab--done':'');
@@ -2440,44 +2442,61 @@ function pgBenLancamento(){
 
   let corpo='';
   if(lanStep===1){
-    // Passo 1 em duas colunas: enunciado a esquerda, base + acoes a direita.
+    // Só importar e conferir a versão. Nada de tabela aqui: ela confundia,
+    // porque parecia que já havia algo a fazer antes de escolher o mês.
     corpo='<div class="lan-step lan-step--split">'
-      +head(1,'Importar e conferir a base','Confira a <strong>versão</strong> e a <strong>data</strong> antes de avançar.')
+      +head(1,'Importar a base de colaboradores','Confira a <strong>versão</strong> e a <strong>data</strong>, e avance.')
       +'<div class="lan-split-side" id="lan-base-info"></div>'
-      +'</div>'
-      +(temBase?('<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros):'');
+      +'</div>';
+
   } else if(lanStep===2){
     corpo='<div class="lan-step lan-step--split">'
-      +head(2,'Competência e dias úteis','Aplica à tabela importada, exceto jornadas travadas no cadastro.')
+      +head(2,'Competência e dias úteis','Escolha o mês e confirme quais são os dias úteis no calendário abaixo.')
       +'<div class="lan-split-side lan-actions">'
         +'<span class="lan-actions__l">Mês/Ano</span><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:104px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" value="'+lanComp+'" onchange="onLanCompChange(this.value)">'
         +'<span class="lan-actions__l">Dias úteis</span><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:70px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" onchange="setLanDU(this.value);renderLancamento()">'
         +(_duCal && _duCal.dias!==lanDU
             ? '<button class="btn btn-ghost btn-sm" onclick="recalcularDiasUteis()" title="Voltar ao valor do calendário"><i class="ti ti-calendar"></i> Usar '+_duCal.dias+'</button>'
             : '')
-        +'<button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()">Aplicar a todos</button>'
+        +'<button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()" title="Grava estes dias para todos, menos jornadas travadas">Aplicar a todos</button>'
         +'<span class="lan-actions__sep"></span>'
         +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
         +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(3)">Próximo <i class="ti ti-arrow-right"></i></button>'
       +'</div></div>'
-      // O número nunca deve ser caixa-preta: a conta fica escrita embaixo.
       +(_duCal
         ? '<div class="alert '+(_duCal.dias===lanDU?'alert-info':'alert-warning')+'" style="font-size:12px;margin-bottom:12px">'
           +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
           +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
         : '')
-      +'<div id="lan-calendario"></div><div id="lan-ferias"></div><div id="lan-extras"></div>';
+      +'<div id="lan-calendario"></div>';
+
   } else if(lanStep===3){
+    // Os dois casos que exigem decisão humana antes de olhar a tabela.
     corpo='<div class="lan-step lan-step--split">'
-      +head(3,'Faltas e dias extras (manual)','Preencha na tabela: faltas e férias descontam, extras somam. As <strong>férias</strong> vêm automáticas da Base.')
+      +head(3,'Férias e dias extras','Confirme quem tem férias atravessando o mês e quem trabalhou dias extras. Só depois a tabela faz sentido.')
       +'<div class="lan-split-side">'+nav(2,4)+'</div></div>'
-      +'<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros;
-  } else {
-    // Os tres sub-passos (benefício / fechar / exportar) viram uma faixa em linha.
+      +'<div id="lan-ferias"></div><div id="lan-extras"></div>';
+
+  } else if(lanStep===4){
+    const _bs=(duComps[lanComp]||{}).baseSalva;
     corpo='<div class="lan-step lan-step--split">'
-      +head(4,'Conferir, fechar e exportar','Escolha o benefício, confira na tabela abaixo, feche a competência e gere os arquivos.')
+      +head(4,'Conferência e faltas','Use os filtros para achar quem está fora do padrão, lance as <strong>faltas</strong> e ajuste o que estiver errado.')
       +'<div class="lan-split-side lan-actions">'
-        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(3)" title="Voltar ao passo 3"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +(_bs?'<span class="lan-base-ok"><i class="ti ti-check"></i> Base salva em '+new Date(_bs.salvoEm).toLocaleString('pt-BR')+'</span>':'')
+        +'<button class="btn btn-success btn-sm" onclick="salvarBaseDiasUteis()"><i class="ti ti-device-floppy"></i> '+(_bs?'Salvar de novo':'Salvar base de dias úteis')+'</button>'
+        +'<span class="lan-actions__sep"></span>'
+        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(3)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(5)">Próximo <i class="ti ti-arrow-right"></i></button>'
+      +'</div></div>'
+      +(_bs?'':'<div class="alert alert-info" style="font-size:12px;margin-bottom:12px"><i class="ti ti-info-circle"></i> '
+        +'Depois de conferir, <strong>salve a base de dias úteis</strong> — é ela que registra a jornada, as férias, as faltas e os extras desta competência.</div>')
+      +'<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros;
+
+  } else {
+    corpo='<div class="lan-step lan-step--split">'
+      +head(5,'Fechar e exportar','Escolha o benefício, confira na tabela abaixo, feche a competência e gere os arquivos.')
+      +'<div class="lan-split-side lan-actions">'
+        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(4)" title="Voltar à conferência"><i class="ti ti-arrow-left"></i> Voltar</button>'
         +'<span class="lan-actions__sep"></span>'
         +'<label class="lan-actions__l" for="lan-fechar-ben">Benefício</label>'
         +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" title="A tabela abaixo mostra só este benefício, com os totais" style="max-width:220px">'
@@ -2503,7 +2522,7 @@ function pgBenLancamento(){
       </div>
       ${corpo}
     </div>
-    ${(temBase && (lanStep===1||lanStep===3||lanStep===4))?tabela:''}
+    ${(temBase && (lanStep===4||lanStep===5))?tabela:''}
    </div>`;
 }
 function lanIrPasso(n){ lanStep=n; showPage('ben-lancamento'); }
@@ -2945,7 +2964,7 @@ function getLanAtivos(){
   const q=(g('lan-q')||'').toLowerCase();
   const emp=getMs('lemp'), dep=getMs('ldep');
   let ben=getMs('lben');
-  if(lanStep===4 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
+  if(lanStep===5 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
   let f=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   if(emp.length) f=f.filter(c=>_empresaMatch(c,emp));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
@@ -11846,4 +11865,50 @@ async function duConfirmarCompetencia(){
     toast('Dias úteis de '+lanComp+' confirmados: '+du.dias+'.','success');
     showPage('ben-lancamento');
   }catch(e){ toast('Erro ao confirmar: '+e.message,'error'); }
+}
+
+// ── Passo 4: salvar a base de dias úteis da competência ───────────
+// O detalhe por colaborador (jornada, faltas, férias, extras) já vive na
+// coleção `lancamento`, gravado a cada edição da tabela. O que faltava era o
+// REGISTRO do fechamento desta etapa: totais, calendário usado e quem
+// conferiu. Fica junto da confirmação do calendário, em config/diasUteisComp.
+async function salvarBaseDiasUteis(){
+  if(!baseApuracao){ toast('Importe a base no passo 1.','error'); return; }
+  const du=diasUteisComp(lanComp);
+  if(!du){ toast('Competência inválida.','error'); return; }
+  const ativos=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
+  let somaJor=0, somaFal=0, somaFer=0, somaExt=0, somaLiq=0, travados=0, comFaltas=0, comFerias=0, comExtras=0;
+  ativos.forEach(c=>{
+    const duCol=getLanDU(c.mat,lanDU);
+    const l=lancamento[c.mat]||{};
+    const fal=fnum(l.faltas), ext=fnum(l.extras), fer=feriasLancamento(c.mat,duCol);
+    somaJor+=duCol; somaFal+=fal; somaFer+=fer; somaExt+=ext; somaLiq+=getLanDR(c.mat,lanDU);
+    if(c.diasFixos) travados++;
+    if(fal>0) comFaltas++;
+    if(fer>0) comFerias++;
+    if(ext>0) comExtras++;
+  });
+  if(!du.confirmado && !confirm('Os dias úteis de '+lanComp+' ainda não foram confirmados no calendário (passo 2).\n\nSalvar a base mesmo assim?')) return;
+  if(!confirm('Salvar a base de dias úteis de '+lanComp+'?\n\n'
+    +ativos.length+' colaboradores · '+du.dias+' dias úteis no mês\n'
+    +comFaltas+' com faltas · '+comFerias+' com férias · '+comExtras+' com dias extras · '+travados+' com jornada travada')) return;
+  const c=duComps[lanComp]||(duComps[lanComp]={excecoes:{}});
+  c.dias=du.dias;
+  c.diasDoMes=du.grade.filter(d=>d.util).map(d=>d.dia);
+  c.feriados=du.feriados.map(f=>({data:f.data,nome:f.nome,origem:f.origem}));
+  c.baseSalva={
+    salvoEm:new Date().toISOString(),
+    salvoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'',
+    baseVersao:baseApuracao.competencia||'', baseSalvoEm:baseApuracao.salvoEm||'',
+    colaboradores:ativos.length,
+    diasUteisMes:du.dias,
+    somaJornada:somaJor, somaFaltas:somaFal, somaFerias:somaFer, somaExtras:somaExt, somaLiquidos:somaLiq,
+    comFaltas, comFerias, comExtras, jornadaTravada:travados,
+    calendarioConfirmado:!!du.confirmado
+  };
+  try{
+    await salvarDUComps();
+    toast('Base de dias úteis de '+lanComp+' salva: '+ativos.length+' colaboradores, '+somaLiq+' dias líquidos.','success');
+    showPage('ben-lancamento');
+  }catch(e){ toast('Erro ao salvar: '+e.message,'error'); }
 }
