@@ -1011,7 +1011,11 @@ function renderPage(id){
 function afterRender(id){
   if(id==='base-lista') renderColabList();
   if(id==='base-novo') setTimeout(()=>{initDeptoAutocomplete('f');initFormDisplay('f');},100);
-  if(id==='ben-lancamento'){ popularLanFiltros(); lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); }); }
+  if(id==='ben-lancamento'){
+    popularLanFiltros();
+    lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); });
+    if(lanStep===2) loadExtrasHabituais().then(renderExtrasHabituais);
+  }
   if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
@@ -2392,6 +2396,14 @@ function pgBenLancamento(){
     +'<div class="filter-group">'+msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:_empresaLabel(e.cod)+' ('+e.qtd+')'})),'renderLancamento')+'</div>'
     +'<div class="filter-group">'+msDropdown('ldep','Departamento',deptos.map(d=>({value:d,label:d})),'renderLancamento')+'</div>'
     +'<div class="filter-group">'+msDropdown('lben','Benefício',[{value:'vr',label:'VR'},{value:'cafe',label:'Café'},{value:'cesta',label:'Cesta'},{value:'comb',label:'Combustível'},{value:'vt',label:'VT'}],'renderLancamento')+'</div>'
+    +'<div class="filter-group">'+msDropdown('ljor','Jornada',[
+        {value:'dif',    label:'Qualquer diferença'},
+        {value:'travada',label:'Jornada travada (dias fixos)'},
+        {value:'faltas', label:'Com faltas'},
+        {value:'ferias', label:'Com férias'},
+        {value:'extras', label:'Com dias extras'},
+        {value:'igual',  label:'Sem diferença'},
+      ],'renderLancamento')+'</div>'
     +'<button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()" title="Limpar filtros">Limpar</button>'
     +'<button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>'
     +'</div>';
@@ -2453,7 +2465,8 @@ function pgBenLancamento(){
         ? '<div class="alert '+(_duCal.dias===lanDU?'alert-info':'alert-warning')+'" style="font-size:12px;margin-bottom:12px">'
           +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
           +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
-        : '');
+        : '')
+      +'<div id="lan-extras"></div>';
   } else if(lanStep===3){
     corpo='<div class="lan-step lan-step--split">'
       +head(3,'Faltas e dias extras (manual)','Preencha na tabela: faltas e férias descontam, extras somam. As <strong>férias</strong> vêm automáticas da Base.')
@@ -2874,7 +2887,7 @@ async function retornarColabsFerias(naoTirou){
 
 function limparFiltrosLan(){
   const q=document.getElementById('lan-q'); if(q) q.value='';
-  document.querySelectorAll('.ms-lemp,.ms-ldep,.ms-lben').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('.ms-lemp,.ms-ldep,.ms-lben,.ms-ljor').forEach(cb=>cb.checked=false);
   renderLancamento();
 }
 
@@ -2899,6 +2912,35 @@ function lanBenMatch(c,b){
   return true;
 }
 
+// Por que este colaborador tem dias diferentes do padrão do mês. Um mesmo
+// colaborador pode acumular motivos (ex.: travado E com faltas).
+function motivosJornada(c){
+  const du=lanDU;
+  const l=lancamento[c.mat]||{};
+  const duCol=getLanDU(c.mat,du);
+  const faltas=fnum(l.faltas), extras=fnum(l.extras), fer=feriasLancamento(c.mat,duCol);
+  const m=[];
+  if(c.diasFixos) m.push('travada');
+  else if(duCol!==du) m.push('travada');     // jornada diferente do padrão sem estar no cadastro
+  if(faltas>0) m.push('faltas');
+  if(fer>0)    m.push('ferias');
+  if(extras>0) m.push('extras');
+  return {motivos:m, duCol, faltas, extras, fer, dr:getLanDR(c.mat,du), difere:m.length>0||getLanDR(c.mat,du)!==du};
+}
+
+// Selos curtos ao lado dos dias líquidos, dizendo por que o número saiu do padrão.
+function _selosJornada(c,duCol,faltas,fer,extras,dr){
+  const t=[];
+  if(c.diasFixos) t.push(['J','var(--blue)','Jornada travada no cadastro: '+c.diasFixos+' dias']);
+  else if(duCol!==lanDU) t.push(['J','var(--blue)','Jornada diferente do padrão do mês ('+lanDU+')']);
+  if(faltas>0) t.push(['F','var(--red)',faltas+' falta(s)']);
+  if(fer>0)    t.push(['V','var(--yellow)',fer+' dia(s) de férias']);
+  if(extras>0) t.push(['+','var(--green)',extras+' dia(s) extra(s)']);
+  if(!t.length) return '';
+  return ' '+t.map(x=>'<span title="'+x[2]+'" style="display:inline-block;min-width:14px;text-align:center;font-size:9px;font-weight:800;'
+    +'color:#fff;background:'+x[1]+';border-radius:3px;padding:0 3px;margin-left:2px">'+x[0]+'</span>').join('');
+}
+
 function getLanAtivos(){
   const q=(g('lan-q')||'').toLowerCase();
   const emp=getMs('lemp'), dep=getMs('ldep');
@@ -2909,6 +2951,13 @@ function getLanAtivos(){
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
   if(dep.length) f=f.filter(c=>dep.includes(c.depto||''));
   if(ben.length) f=f.filter(c=>ben.some(b=>lanBenMatch(c,b)));
+  const jor=getMs('ljor');
+  if(jor.length) f=f.filter(c=>{
+    const j=motivosJornada(c);
+    if(jor.includes('igual') && !j.difere) return true;
+    if(jor.includes('dif')   &&  j.difere) return true;
+    return j.motivos.some(m=>jor.includes(m));
+  });
   return f;
 }
 
@@ -2992,7 +3041,7 @@ function renderLancamento(){
       <td><input type="number" value="${fat}" min="0" max="31" class="input-falta" onchange="setLan('${c.mat}','faltas',this.value)"></td>
       <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)" title="${ferAuto?'Preenchido automaticamente pelos dias úteis de férias na competência. Edite para sobrescrever.':'Valor informado manualmente. Apague para voltar ao automático.'}" style="${ferAuto&&fev>0?'background:#EFF6FF':''}"></td>
       <td><input type="number" value="${ext}" min="0" max="31" class="input-extras" onchange="setLan('${c.mat}','extras',this.value)" title="Dias extras"></td>
-      <td class="dias-reais">${dr}</td>
+      <td class="dias-reais">${dr}${_selosJornada(c,du2,fat,fev,ext,dr)}</td>
       <td class="total-cell">${vr>0?brl(vr):'\u2014'}</td>
       <td class="total-cell">${cafe>0?brl(cafe):'\u2014'}</td>
       <td class="total-cell">${cesta>0?brl(cesta):'\u2014'}</td>
@@ -11414,4 +11463,179 @@ async function removerFeriado(data){
     renderFeriadosLista();
     toast('Feriado removido.','error');
   }catch(e){ feriadosExtras=antes; toast('Erro: '+e.message,'error'); }
+}
+
+// ============================================================
+// DIAS EXTRAS HABITUAIS: conferência antes de fechar a competência
+// ============================================================
+// Há colaboradores que trabalham dias extras quase todo mês. Em vez de
+// alguém lembrar de lançar um por um, o sistema traz a lista para
+// CONFIRMAR — incluindo ou excluindo cada um e ajustando a quantidade.
+// A lista mora em config/extrasHabituais e é editável.
+
+const EXTRAS_HAB_PADRAO_DIAS=2;
+// Semente: os nomes vieram do RH e foram casados por matrícula na base.
+// Só é gravada se ainda não existir a configuração (primeira vez).
+const EXTRAS_HAB_SEMENTE=[
+  {mat:'10000995',nome:'JORGE OLIVEIRA DA SILVA'},
+  {mat:'10010175',nome:'JOAO DE ARAUJO TORRES'},
+  {mat:'10020083',nome:'ROUSEVELT BLANC'},
+  {mat:'10040003',nome:'DOUSSENE METHELUS'},
+  {mat:'10040029',nome:'MARIO CENATUS'},
+  {mat:'10060003',nome:'JOSELITO GUEDES PEREIRA'},
+  {mat:'10060058',nome:'WANDERLI ALVES DA SILVA AZEVEDO'},
+  {mat:'10080028',nome:'JOSE ROBERTO NASCIMENTO ABADE'},
+  {mat:'10080053',nome:'JOSIMAR PEREIRA LUIZ'},
+];
+let extrasHabituais=[];          // [{mat,nome,dias}]
+let extrasHabCarregado=false;
+
+async function loadExtrasHabituais(){
+  if(extrasHabCarregado) return extrasHabituais;
+  try{
+    const snap=await window._getDoc(window._doc('config','extrasHabituais'));
+    if(snap.exists() && Array.isArray((snap.data()||{}).lista)){
+      extrasHabituais=(snap.data().lista||[]).slice();
+    } else {
+      extrasHabituais=EXTRAS_HAB_SEMENTE.map(x=>Object.assign({dias:EXTRAS_HAB_PADRAO_DIAS},x));
+      await salvarExtrasHabituais();
+    }
+    extrasHabCarregado=true;
+  }catch(e){ console.error('extras habituais:',e); }
+  return extrasHabituais;
+}
+async function salvarExtrasHabituais(){
+  await fsSet('config','extrasHabituais',{lista:extrasHabituais,
+    atualizadoEm:new Date().toISOString(),
+    atualizadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+}
+
+// Estado da conferência desta competência: quem está marcado e com quantos dias.
+let extrasConfirma={};   // {mat:{incluir:bool, dias:number}}
+function _extrasEstado(mat,padrao){
+  if(!extrasConfirma[mat]) extrasConfirma[mat]={incluir:true,dias:padrao};
+  return extrasConfirma[mat];
+}
+function extrasToggle(mat){
+  const e=_extrasEstado(mat,EXTRAS_HAB_PADRAO_DIAS);
+  e.incluir=!e.incluir;
+  renderExtrasHabituais();
+}
+function extrasSetDias(mat,v){
+  const e=_extrasEstado(mat,EXTRAS_HAB_PADRAO_DIAS);
+  e.dias=Math.max(0,Math.min(31,fnum(v)));
+  renderExtrasHabituais();
+}
+async function extrasRemoverDaLista(mat){
+  const x=extrasHabituais.find(h=>h.mat===mat); if(!x) return;
+  if(!confirm('Tirar "'+x.nome+'" da lista de dias extras habituais?\n\nEle deixa de ser trazido para conferência nos próximos meses.')) return;
+  const antes=extrasHabituais.slice();
+  extrasHabituais=extrasHabituais.filter(h=>h.mat!==mat);
+  try{ await salvarExtrasHabituais(); delete extrasConfirma[mat]; renderExtrasHabituais(); toast('Removido da lista.','error'); }
+  catch(e){ extrasHabituais=antes; toast('Erro: '+e.message,'error'); }
+}
+async function extrasAdicionarNaLista(mat){
+  const c=colsApuracao().find(x=>x.mat===mat); if(!c) return;
+  if(extrasHabituais.some(h=>h.mat===mat)){ toast('Já está na lista.','info'); return; }
+  extrasHabituais.push({mat:c.mat,nome:c.nome,dias:EXTRAS_HAB_PADRAO_DIAS});
+  try{ await salvarExtrasHabituais(); document.getElementById('modal-extras-add')?.remove(); renderExtrasHabituais();
+       toast(c.nome+' entrou na lista de extras habituais.','success'); }
+  catch(e){ extrasHabituais=extrasHabituais.filter(h=>h.mat!==mat); toast('Erro: '+e.message,'error'); }
+}
+function abrirAdicionarExtraHabitual(){
+  const cands=colsApuracao().filter(c=>!extrasHabituais.some(h=>h.mat===c.mat))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  document.getElementById('modal-extras-add')?.remove();
+  const rows=cands.map(c=>'<div class="incl-row" onclick="extrasAdicionarNaLista(\''+c.mat+'\')" '
+    +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
+    +'data-busca="'+((c.nome||'')+' '+(c.mat||'')).toLowerCase().replace(/"/g,'')+'">'
+    +'<div><div style="font-weight:600">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code> · '+(c.depto||'—')+'</div></div>'
+    +'<span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('');
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="modal-overlay ds open" id="modal-extras-add" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:560px"><div class="modal-title">Adicionar aos extras habituais</div>'
+    +'<div class="modal-sub">Quem entrar aqui é trazido para conferência todo mês, com '+EXTRAS_HAB_PADRAO_DIAS+' dias por padrão.</div>'
+    +'<input type="text" id="exh-q" placeholder="Buscar nome ou matrícula..." oninput="filtrarExtraAdd()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;margin:10px 0">'
+    +'<div id="exh-lista" style="max-height:50vh;overflow:auto">'+(rows||'<div class="empty-state"><p>Todos já estão na lista.</p></div>')+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'modal-extras-add\').remove()">Fechar</button></div>'
+    +'</div></div>');
+}
+function filtrarExtraAdd(){
+  const q=(document.getElementById('exh-q')?.value||'').toLowerCase();
+  document.querySelectorAll('#exh-lista .incl-row').forEach(r=>{ r.style.display=(!q||(r.dataset.busca||'').includes(q))?'':'none'; });
+}
+
+// Painel de conferência (passo 2 do Lançamento).
+function renderExtrasHabituais(){
+  const el=document.getElementById('lan-extras'); if(!el) return;
+  if(!extrasHabituais.length){ el.innerHTML=''; return; }
+  const base=colsApuracao();
+  const linhas=extrasHabituais.map(h=>{
+    const c=base.find(x=>x.mat===h.mat);
+    const est=_extrasEstado(h.mat, h.dias!=null?h.dias:EXTRAS_HAB_PADRAO_DIAS);
+    const l=lancamento[h.mat]||{};
+    const jaLancado=fnum(l.extras);
+    const sit=!c ? '<span class="badge badge--danger">fora da base desta apuração</span>'
+      : (statusGrupo(c.status)==='ferias' ? '<span class="badge badge--warning">de férias</span>'
+      : (statusGrupo(c.status)==='so_cesta' ? '<span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span>'
+      : '<span class="badge badge--success">Trabalhando</span>'));
+    const alerta = c && statusGrupo(c.status)!=='trabalhando'
+      ? ' <span class="text-xs" style="color:var(--yellow)">confira se houve dia extra mesmo assim</span>' : '';
+    return '<tr'+(est.incluir?'':' style="opacity:.45"')+'>'
+      +'<td style="text-align:center"><input type="checkbox" '+(est.incluir?'checked':'')+' onchange="extrasToggle(\''+h.mat+'\')" style="accent-color:var(--brand)"></td>'
+      +'<td><div style="font-weight:600">'+(c?c.nome:h.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+h.mat+'</code>'+(c&&c.depto?' · '+c.depto:'')+'</div></td>'
+      +'<td>'+sit+alerta+'</td>'
+      +'<td style="text-align:center"><input type="number" min="0" max="31" value="'+est.dias+'" '
+        +'onchange="extrasSetDias(\''+h.mat+'\',this.value)" class="input-extras" style="width:64px"'+(est.incluir?'':' disabled')+'></td>'
+      +'<td style="text-align:center">'+(jaLancado>0?'<span class="badge badge--accent">'+jaLancado+' já lançado</span>':'<span class="text-xs text-muted">—</span>')+'</td>'
+      +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="extrasRemoverDaLista(\''+h.mat+'\')" title="Tirar da lista de habituais"><i class="ti ti-trash"></i></button></td></tr>';
+  }).join('');
+  const marcados=extrasHabituais.filter(h=>_extrasEstado(h.mat,h.dias).incluir);
+  const totalDias=marcados.reduce((a,h)=>a+_extrasEstado(h.mat,h.dias).dias,0);
+  el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
+    +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-calendar-plus"></i></span><div>'
+      +'<div class="lan-step__t">Dias extras habituais — conferir</div>'
+      +'<div class="lan-step__d">Estes colaboradores costumam trabalhar dias extras. Confirme quem teve e quantos, antes de seguir.</div></div></div>'
+    +'<div class="lan-split-side lan-actions">'
+      +'<span class="text-xs text-muted">'+marcados.length+' de '+extrasHabituais.length+' marcados · '+totalDias+' dia(s) no total</span>'
+      +'<button class="btn btn-ghost btn-sm" onclick="abrirAdicionarExtraHabitual()"><i class="ti ti-plus"></i> Adicionar</button>'
+      +'<button class="btn btn-primary btn-sm" onclick="aplicarExtrasHabituais()"><i class="ti ti-check"></i> Aplicar dias extras</button>'
+    +'</div></div>'
+    +'<div class="tbl-wrap" style="margin-bottom:12px"><table class="tbl"><thead><tr>'
+      +'<th style="text-align:center;width:40px">Teve?</th><th>Colaborador</th><th>Situação</th>'
+      +'<th style="text-align:center">Dias extras</th><th style="text-align:center">Na competência</th><th style="text-align:center">Lista</th>'
+    +'</tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+
+// Grava os dias extras confirmados na competência atual.
+async function aplicarExtrasHabituais(){
+  const base=colsApuracao();
+  const aplicar=[], zerar=[];
+  extrasHabituais.forEach(h=>{
+    const est=_extrasEstado(h.mat, h.dias!=null?h.dias:EXTRAS_HAB_PADRAO_DIAS);
+    if(!base.some(c=>c.mat===h.mat)) return;           // não está nesta apuração
+    if(est.incluir && est.dias>0) aplicar.push({mat:h.mat,dias:est.dias});
+    else zerar.push(h.mat);
+  });
+  if(!aplicar.length && !zerar.length){ toast('Nada a aplicar.','info'); return; }
+  const desmarcadosComValor=zerar.filter(m=>fnum((lancamento[m]||{}).extras)>0);
+  if(desmarcadosComValor.length && !confirm(
+      aplicar.length+' colaborador(es) receberão dias extras.\n\n'
+      +desmarcadosComValor.length+' desmarcado(s) têm dias extras lançados nesta competência e serão ZERADOS.\n\nContinuar?')) return;
+  try{
+    const b=window._writeBatch(window._db);
+    aplicar.forEach(x=>{
+      if(!lancamento[x.mat]) lancamento[x.mat]={};
+      lancamento[x.mat].extras=x.dias;
+      b.set(window._doc('lancamento',_lanKey(lanComp,x.mat)),lancamento[x.mat]);
+    });
+    desmarcadosComValor.forEach(m=>{
+      lancamento[m].extras=0;
+      b.set(window._doc('lancamento',_lanKey(lanComp,m)),lancamento[m]);
+    });
+    await b.commit();
+    toast('Dias extras aplicados a '+aplicar.length+' colaborador(es)'
+      +(desmarcadosComValor.length?' e zerados em '+desmarcadosComValor.length:'')+'.','success');
+    showPage('ben-lancamento');
+  }catch(e){ toast('Erro ao aplicar: '+e.message,'error'); }
 }
