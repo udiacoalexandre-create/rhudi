@@ -2507,21 +2507,29 @@ function pgBenLancamento(){
         +'<i class="ti ti-device-floppy"></i> Salvar base e continuar <i class="ti ti-arrow-right"></i></button>');
 
   } else {
+    const _lbl={vt:'Vale Transporte',comb:'Combustível',cesta:'Cesta Básica',vr:'Vale Refeição',cafe:'Café da Manhã',todos:'Todos os benefícios'};
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">Fechar e exportar'+_ajuda('Escolha o benefício para conferir na tabela, feche a competência e gere os arquivos.')+'</div>'
-      +'<div class="lan-actions" style="justify-content:flex-start;margin-top:8px">'
-        +'<label class="lan-actions__l" for="lan-fechar-ben">Benefício</label>'
-        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="max-width:240px">'
-        +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
-        +'</select>'
-        +'<span class="lan-actions__sep"></span>'
-        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()"><i class="ti ti-lock"></i> Fechar competência</button>'
-        +'<button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()"><i class="ti ti-download"></i> Pagamento</button>'
-        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()"><i class="ti ti-download"></i> Senior</button>'
+      +'<div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">'
+        +'<div class="fg"><label>Benefício</label>'
+        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px;min-width:220px">'
+        +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos os benefícios']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
+        +'</select></div>'
+        +'<div id="lan-total-benef"></div>'
       +'</div>'
       +'</div>'
-      +'<div id="lan-resumo" style="margin-bottom:8px"></div>';
-    rodape(5,null);
+      +'<div class="filter-bar filter-bar--slim">'
+        +'<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="lan-q" placeholder="Buscar nome ou matrícula..." aria-label="Buscar" oninput="renderLancamento()"></div>'
+        +'<div class="filter-group">'+msDropdown('lemp','Empresa',empresas.map(e=>({value:e.cod,label:_empresaLabel(e.cod)+' ('+e.qtd+')'})),'renderLancamento')+'</div>'
+        +'<button class="btn btn-ghost btn-sm" onclick="limparFiltrosLan()">Limpar</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="exportarLancamentoExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>'
+      +'</div>'
+      +'<div id="lan-tab-benef"></div>';
+    rodape(5,null,'',null,null,
+      '<span style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn btn-success" onclick="fecharCompetencia()"><i class="ti ti-lock"></i> Fechar competência</button>'
+      +'<button class="btn btn-primary" id="lan-btn-export3" onclick="exportarPedidoBenef()"><i class="ti ti-download"></i> Pagamento</button>'
+      +'<button class="btn btn-warning" onclick="exportarSeniorBenef()"><i class="ti ti-download"></i> Senior</button>'
+      +'</span>');
   }
 
   return `
@@ -2532,7 +2540,7 @@ function pgBenLancamento(){
         ${tabs}
       </div>
       ${corpo}
-      ${(temBase && (lanStep===5||lanStep===6))?tabela:''}
+      ${(temBase && lanStep===5)?tabela:''}
     </div>
     ${rodapeHtml}
    </div>`;
@@ -3057,6 +3065,7 @@ function renderLancamento(){
       +item('Total Geral',sTot.size,tVR+tCafe+tCesta+tComb+tVT,'var(--green)',' lan-kpi--total')
       +'</div>';
   }
+  if(lanStep===6){ try{ renderTabelaBenef(); }catch(e){ console.error(e); } }
   const tbody=document.getElementById('lan-tbody'); if(!tbody) return;
   if(ativos.length===0){
     tbody.innerHTML=`<tr><td colspan="13"><div class="empty-state"><div class="empty-icon"></div><p>Nenhum resultado.</p></div></td></tr>`;
@@ -11935,4 +11944,41 @@ async function salvarBaseDiasUteis(silencioso){
     toast('Base de '+lanComp+' salva: '+ativos.length+' colaboradores.','success');
     if(!silencioso) showPage('ben-lancamento');
   }catch(e){ toast('Erro ao salvar: '+e.message,'error'); return false; }
+}
+
+// ── Passo 6: total e lista de quem recebe o benefício escolhido ────
+function renderTabelaBenef(){
+  const alvo=document.getElementById('lan-tab-benef');
+  const elTot=document.getElementById('lan-total-benef');
+  if(!alvo) return;
+  const ben=lanStep4Ben||'vt';
+  const rotulo={vt:'Vale Transporte',comb:'Combustível',cesta:'Cesta Básica',vr:'Vale Refeição',cafe:'Café da Manhã',todos:'Todos os benefícios'}[ben]||ben;
+  const du=lanDU;
+  const linhas=[]; let total=0;
+  getLanAtivos().forEach(c=>{
+    const dr=getLanDR(c.mat,du);
+    const v=calcBen(c,dr,getLanDU(c.mat,du));
+    const val = ben==='todos' ? (v.vr+v.cafe+v.cesta+v.comb+v.vt) : (v[ben]||0);
+    if(val<=0) return;
+    total+=val;
+    linhas.push({c,dr,val});
+  });
+  if(elTot) elTot.innerHTML='<div class="lan-destaque" style="margin:0">'
+    +'<span class="lan-destaque__n">'+brl(total)+'</span>'
+    +'<span class="lan-destaque__l">'+linhas.length+' colaborador'+(linhas.length!==1?'es':'')+' · '+rotulo+'</span></div>';
+  if(!linhas.length){
+    alvo.innerHTML='<div class="empty-state"><p>Ninguém recebe '+rotulo+' com os filtros atuais.</p></div>';
+    return;
+  }
+  alvo.innerHTML='<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
+    +'<th>Matrícula</th><th>Nome</th><th>Empresa</th><th style="text-align:center">Dias</th><th style="text-align:right">Valor</th>'
+    +'</tr></thead><tbody>'
+    +linhas.sort((a,b)=>(a.c.nome||'').localeCompare(b.c.nome||'')).map(x=>
+      '<tr><td><code style="font-size:10px">'+(x.c.mat||'—')+'</code></td>'
+      +'<td style="font-weight:500">'+x.c.nome+'</td>'
+      +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
+      +'<td style="text-align:center">'+x.dr+'</td>'
+      +'<td style="text-align:right;font-weight:600">'+brl(x.val)+'</td></tr>').join('')
+    +'</tbody><tfoot><tr class="total-row"><td colspan="4" style="text-align:right;font-weight:700">Total</td>'
+    +'<td style="text-align:right;font-weight:700">'+brl(total)+'</td></tr></tfoot></table></div>';
 }
