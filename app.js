@@ -2332,12 +2332,17 @@ function calcMob(val,dr,du){
 function calcVT(c,dr){ return [1,2,3,4].reduce((s,n)=>s+fnum(c['vt'+n])*fnum(c['v'+n]),0)*dr; }
 
 function getLanDU(mat, defaultDU){
-  // 1. Se tem diasFixos no cadastro, usa sempre esse valor
+  // 1. Jornada travada no cadastro vence sempre.
   const colab=colsApuracao().find(c=>c.mat===mat);
   if(colab?.diasFixos) return fnum(colab.diasFixos);
-  // 2. Se foi definido manualmente no lancamento, usa esse
+  // 2. Ajuste EXPLÍCITO na linha da tabela (passo 4) vence o calendário.
+  //    O flag duManual distingue isso do valor que o antigo "Aplicar a todos"
+  //    gravava em massa — sem ele, um valor velho no banco venceria o
+  //    calendário novo e a correção não teria efeito nenhum.
   const l=lancamento[mat]||{};
-  return l.duteis!==undefined?fnum(l.duteis):defaultDU;
+  if(l.duManual && l.duteis!==undefined) return fnum(l.duteis);
+  // 3. Caso geral: o que foi definido no calendário da competência.
+  return defaultDU;
 }
 function getLanDR(mat, defaultDU){
   const du=getLanDU(mat,defaultDU);
@@ -2450,25 +2455,38 @@ function pgBenLancamento(){
       +'</div>';
 
   } else if(lanStep===2){
-    corpo='<div class="lan-step lan-step--split">'
-      +head(2,'Competência e dias úteis','Escolha o mês e confirme quais são os dias úteis no calendário abaixo.')
-      +'<div class="lan-split-side lan-actions">'
-        +'<span class="lan-actions__l">Mês/Ano</span><input type="text" id="lan-comp" placeholder="MM/AAAA" style="width:104px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" value="'+lanComp+'" onchange="onLanCompChange(this.value)">'
-        +'<span class="lan-actions__l">Dias úteis</span><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:70px;padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px" onchange="setLanDU(this.value);renderLancamento()">'
+    const _mm=(lanComp.split('/')[0]||''), _aa=(lanComp.split('/')[1]||String(new Date().getFullYear()));
+    const _anos=[]; for(let a=new Date().getFullYear()-1;a<=new Date().getFullYear()+2;a++) _anos.push(String(a));
+    const _selSt='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
+    // Vertical e na ordem em que se pensa: escolher o mês, fechar os dias, seguir.
+    corpo='<div class="lan-step">'
+      +head(2,'Competência e dias úteis','Escolha o mês, confirme no calendário quantos e quais são os dias úteis, e avance.')
+      +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:4px">'
+        +'<div class="fg"><label>Mês</label><select id="lan-mes" style="'+_selSt+';min-width:140px" onchange="onLanMesAno()">'
+          +[['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],['05','Maio'],['06','Junho'],['07','Julho'],['08','Agosto'],['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro']].map(m=>'<option value="'+m[0]+'"'+(m[0]===_mm?' selected':'')+'>'+m[1]+'</option>').join('')
+        +'</select></div>'
+        +'<div class="fg"><label>Ano</label><select id="lan-ano" style="'+_selSt+'" onchange="onLanMesAno()">'
+          +_anos.map(a=>'<option value="'+a+'"'+(a===_aa?' selected':'')+'>'+a+'</option>').join('')
+        +'</select></div>'
+        +'<div class="fg"><label>Dias úteis</label><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:90px;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px" onchange="setLanDU(this.value);renderLancamento()"></div>'
         +(_duCal && _duCal.dias!==lanDU
             ? '<button class="btn btn-ghost btn-sm" onclick="recalcularDiasUteis()" title="Voltar ao valor do calendário"><i class="ti ti-calendar"></i> Usar '+_duCal.dias+'</button>'
             : '')
-        +'<button class="btn btn-primary btn-sm" onclick="aplicarDiasUteis()" title="Grava estes dias para todos, menos jornadas travadas">Aplicar a todos</button>'
-        +'<span class="lan-actions__sep"></span>'
-        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
-        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(3)">Próximo <i class="ti ti-arrow-right"></i></button>'
-      +'</div></div>'
+      +'</div>'
       +(_duCal
-        ? '<div class="alert '+(_duCal.dias===lanDU?'alert-info':'alert-warning')+'" style="font-size:12px;margin-bottom:12px">'
+        ? '<div class="alert '+(_duCal.dias===lanDU?'alert-info':'alert-warning')+'" style="font-size:12px;margin:12px 0 0">'
           +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
           +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
         : '')
-      +'<div id="lan-calendario"></div>';
+      +'</div>'
+      +'<div id="lan-calendario"></div>'
+      +'<div class="alert alert-info" style="font-size:12px;margin-bottom:12px"><i class="ti ti-info-circle"></i> '
+        +'Este número vale para <strong>todos</strong>, exceto quem tem jornada travada no cadastro. '
+        +'Ajustes de uma pessoa específica são feitos no passo 4, na linha dela.</div>'
+      +'<div class="lan-step"><div class="lan-navbtns">'
+        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
+        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(3)">Continuar <i class="ti ti-arrow-right"></i></button>'
+      +'</div></div>';
 
   } else if(lanStep===3){
     // Os dois casos que exigem decisão humana antes de olhar a tabela.
@@ -3050,9 +3068,12 @@ function renderLancamento(){
     const dr=getLanDR(c.mat,du);
     const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
     const total=vr+cafe+comb+vt+cesta;
+    const manualDU=!!(l.duManual && l.duteis!==undefined);
     const duCell = locked
-      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--blue)" title="Jornada travada no cadastro - nao afetada pelo Aplicar a todos">&#128274; ${du2}</span>`
-      : `<input type="number" value="${du2}" min="0" max="31" class="input-du" onchange="setLan('${c.mat}','duteis',this.value)">`;
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--blue)" title="Jornada travada no cadastro — o calendário não altera este colaborador">&#128274; ${du2}</span>`
+      : `<input type="number" value="${du2}" min="0" max="31" class="input-du" onchange="setLan('${c.mat}','duteis',this.value)"
+           title="${manualDU?'Ajustado à mão nesta competência. Apague o campo para voltar ao calendário ('+lanDU+').':'Vem do calendário da competência ('+lanDU+'). Digite para ajustar só esta pessoa.'}"
+           style="${manualDU?'background:#FEF3C7;border-color:var(--yellow)':''}">`;
     return `<tr${locked?' class="linha-travada"':''}>
       <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${c.nome}">${c.nome}</td>
@@ -3075,8 +3096,12 @@ function renderLancamento(){
 
 async function setLan(mat,campo,val){
   if(!lancamento[mat]) lancamento[mat]={};
-  if(campo==='ferias' && (val===''||val===null||val===undefined)){
+  const vazio=(val===''||val===null||val===undefined);
+  if(campo==='ferias' && vazio){
     delete lancamento[mat].ferias;   // campo vazio: volta ao cálculo automático
+  } else if(campo==='duteis'){
+    if(vazio){ delete lancamento[mat].duteis; delete lancamento[mat].duManual; }  // volta ao calendário
+    else { lancamento[mat].duteis=fnum(val); lancamento[mat].duManual=true; }     // ajuste explícito desta linha
   } else {
     lancamento[mat][campo]=fnum(val);
   }
@@ -3084,20 +3109,6 @@ async function setLan(mat,campo,val){
   renderLancamento();
 }
 
-async function aplicarDiasUteis(){
-  const du=lanDU;
-  const b=window._writeBatch(window._db);
-  let travados=0;
-  colsApuracao().forEach(c=>{
-    if(c.diasFixos){travados++;return;} // pula colaboradores com dias fixos no cadastro
-    if(!lancamento[c.mat]) lancamento[c.mat]={};
-    lancamento[c.mat].duteis=du;
-    b.set(window._doc('lancamento',_lanKey(lanComp,c.mat)),lancamento[c.mat]);
-  });
-  await b.commit();
-  renderLancamento();
-  toast(`\u2705 Dias (${du}) aplicados.`+(travados?` ${travados} travados mantidos.`:''),'success');
-}
 
 const BENEF_LABELS={todos:'Todos os benefícios',vr:'Vale Refeição',cafe:'Café da Manhã',cesta:'Cesta Básica',comb:'Combustível',vt:'Vale Transporte'};
 
@@ -4303,6 +4314,12 @@ function aplicarDUAutomatico(comp,forcar){
   if(!du) return null;
   setLanDU(du.dias); lanDUAutoComp=c;
   return du;
+}
+// Mês e ano viraram dois campos: junta e delega.
+function onLanMesAno(){
+  const mm=document.getElementById('lan-mes')?.value||'';
+  const aa=document.getElementById('lan-ano')?.value||'';
+  if(mm&&aa) onLanCompChange(mm+'/'+aa);
 }
 async function onLanCompChange(v){
   setLanComp(v);
