@@ -2394,7 +2394,8 @@ function pgBenLancamento(){
   }).join('')+'</div>';
   // Rodapé único: Voltar sempre à esquerda, Continuar sempre à direita, no
   // mesmo lugar em todos os passos. O miolo é opcional (dica ou ação do passo).
-  const rodape=(prev,next,meio,rotuloNext,btnEsq)=>'<div class="lan-rodape">'
+  let rodapeHtml='';
+  const rodape=(prev,next,meio,rotuloNext,btnEsq)=>rodapeHtml='<div class="lan-rodape">'
     +(btnEsq||(prev?'<button class="btn btn-ghost" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:120px"></span>'))
     +'<div class="lan-rodape__meio">'+(meio||'')+'</div>'
     +(next?'<button class="btn btn-primary" onclick="lanIrPasso('+next+')">'+(rotuloNext||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:120px"></span>')
@@ -2459,10 +2460,9 @@ function pgBenLancamento(){
 
   let corpo='';
   if(lanStep===1){
-    corpo='<div class="lan-caixa"><div id="lan-base-info"></div></div>'
-      +rodape(null, temBase?2:null, '',
-        'Continuar',
-        '<button class="btn btn-ghost" onclick="abrirImportarBase()"><i class="ti ti-refresh"></i> Trocar base</button>');
+    corpo='<div class="lan-caixa"><div id="lan-base-info"></div></div>';
+    rodape(null, temBase?2:null, '', 'Continuar',
+      '<button class="btn btn-ghost" onclick="abrirImportarBase()"><i class="ti ti-refresh"></i> Trocar base</button>');
 
   } else if(lanStep===2){
     const _mm=(lanComp.split('/')[0]||''), _aa=(lanComp.split('/')[1]||String(new Date().getFullYear()));
@@ -2482,40 +2482,40 @@ function pgBenLancamento(){
       +'</div>'
       +'<div class="alert alert-info" style="font-size:13px;margin-bottom:12px"><i class="ti ti-hand-click"></i> '
         +'Clique no calendário abaixo para marcar ou desmarcar dias úteis.</div>'
-      +'<div id="lan-calendario"></div>'
-      +rodape(1,3);
+      +'<div id="lan-calendario"></div>';
+    rodape(1,3);
 
   } else if(lanStep===3){
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">3. Férias'+_ajuda('Estar de férias não zera o benefício: quem vendeu dias ou voltou no meio do mês tem dias a receber. Clique em Editar para corrigir período ou dias vendidos.')+'</div>'
+      +'<div class="lan-caixa__t">Férias'+_ajuda('Estar de férias não zera o benefício: quem vendeu dias ou voltou no meio do mês tem dias a receber. Clique em Editar para corrigir período ou dias vendidos.')+'</div>'
       +'<div id="lan-ferias"></div>'
-      +'</div>'
-      +rodape(2,4);
+      +'</div>';
+    rodape(2,4);
 
   } else if(lanStep===4){
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">4. Dias extras'+_ajuda('Colaboradores que costumam trabalhar dias extras. Marque quem teve, ajuste a quantidade e aplique.')+'</div>'
+      +'<div class="lan-caixa__t">Dias extras'+_ajuda('Colaboradores que costumam trabalhar dias extras. Marque quem teve, ajuste a quantidade e aplique.')+'</div>'
       +'<div id="lan-extras"></div>'
-      +'</div>'
-      +rodape(3,5);
+      +'</div>';
+    rodape(3,5);
 
   } else if(lanStep===5){
     const _bs=(duComps[lanComp]||{}).baseSalva;
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">5. Conferência e faltas'+_ajuda('Lance as faltas na tabela. Use o filtro Jornada para achar quem está fora do padrão. Para ajustar uma pessoa só, edite os dias na linha dela.')+'</div>'
-      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
-        +(_bs?'<span class="lan-base-ok"><i class="ti ti-check"></i> Base salva em '+new Date(_bs.salvoEm).toLocaleString('pt-BR')+'</span>':'')
+      +'<div class="lan-caixa__t">Conferência e faltas'+_ajuda('Lance as faltas na tabela. Use o filtro Jornada para achar quem está fora do padrão. Para ajustar uma pessoa só, edite os dias na linha dela.')+'</div>'
+      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">'
+        +(_bs?'<span class="lan-base-ok"><i class="ti ti-check"></i> Salva em '+new Date(_bs.salvoEm).toLocaleString('pt-BR')+'</span>':'')
         +'<button class="btn btn-success btn-sm" onclick="salvarBaseDiasUteis()"><i class="ti ti-device-floppy"></i> '+(_bs?'Salvar de novo':'Salvar base de dias úteis')+'</button>'
         +_ajuda('Registra jornada, férias, faltas e extras desta competência.')
       +'</div>'
       +'</div>'
-      +rodape(4,6)
       +'<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros;
+    rodape(4,6);
 
   } else {
     corpo='<div class="lan-caixa">'
-      +'<div class="lan-caixa__t">6. Fechar e exportar'+_ajuda('Escolha o benefício para conferir na tabela, feche a competência e gere os arquivos.')+'</div>'
-      +'<div class="lan-actions" style="justify-content:flex-start">'
+      +'<div class="lan-caixa__t">Fechar e exportar'+_ajuda('Escolha o benefício para conferir na tabela, feche a competência e gere os arquivos.')+'</div>'
+      +'<div class="lan-actions" style="justify-content:flex-start;margin-top:8px">'
         +'<label class="lan-actions__l" for="lan-fechar-ben">Benefício</label>'
         +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="max-width:240px">'
         +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
@@ -2526,23 +2526,21 @@ function pgBenLancamento(){
         +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()"><i class="ti ti-download"></i> Senior</button>'
       +'</div>'
       +'</div>'
-      +rodape(5,null)
       +'<div id="lan-resumo" style="margin-bottom:8px"></div>';
+    rodape(5,null);
   }
 
   return `
    <div class="bl-page">
-    <div style="flex:0 0 auto">
+    <div class="lan-conteudo">
       <div class="lan-top">
-        <div class="page-header">
-          <h2 class="page-title">Lançamento Mensal</h2>
-          <p class="page-subtitle">Apure e feche os benefícios do mês.</p>
-        </div>
+        <div class="page-header"><h2 class="page-title">Lançamento Mensal</h2></div>
         ${tabs}
       </div>
       ${corpo}
+      ${(temBase && (lanStep===5||lanStep===6))?tabela:''}
     </div>
-    ${(temBase && (lanStep===5||lanStep===6))?tabela:''}
+    ${rodapeHtml}
    </div>`;
 }
 function lanIrPasso(n){

@@ -538,11 +538,16 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .ds .lan-step--split .stats-inline { justify-content: flex-end; }
 
 /* Rodapé de navegação do assistente: sempre no mesmo lugar, em todos os passos */
-.ds .lan-rodape { display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 12px 16px; margin-bottom: 12px; }
-.ds .lan-rodape__meio { flex: 1 1 auto; text-align: center; font-size: 12px; color: var(--text2); }
-.ds .lan-rodape .btn { min-width: 120px; justify-content: center; }
+/* Rodapé TRAVADO no fim da área da página: não anda com o conteúdo. */
+.ds .lan-rodape { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; background: var(--surface); border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 14px rgba(15,23,42,.07); padding: 12px 18px; margin: 0 -24px -24px;
+  position: relative; z-index: 20; }
+.ds .lan-rodape__meio { flex: 1 1 auto; text-align: center; font-size: 12px; color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ds .lan-rodape .btn { min-width: 150px; justify-content: center; padding: 10px 18px; font-size: 14px; }
+/* Área rolável acima do rodapé */
+.ds .lan-conteudo { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-bottom: 8px; }
 .ds .lan-caixa { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   box-shadow: var(--shadow); padding: 18px 20px; margin-bottom: 12px; }
 .ds .lan-caixa__t { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
