@@ -6140,16 +6140,18 @@ function min2str(min){
 
 // ── Página principal — wizard de 7 passos ────────────────────────
 function pgPremioAssiduidade(){
-  // Titulo e abas dividem a mesma faixa (as abas entram em #premio-tabs).
+  // Mesmo esqueleto do Lançamento: conteúdo rola, rodapé fica travado no fim.
   return `
-    <div class="lan-top">
-      <div class="page-header">
-        <h2 class="page-title">Prêmio de Assiduidade</h2>
-        <p class="page-subtitle">Calcule e exporte o prêmio. Valor fixo: ${brl(PREMIO_VAL)}.</p>
+   <div class="bl-page">
+    <div class="lan-conteudo">
+      <div class="lan-top">
+        <div class="page-header"><h2 class="page-title">Prêmio de Assiduidade</h2></div>
+        <div id="premio-tabs"></div>
       </div>
-      <div id="premio-tabs"></div>
+      <div id="premio-wizard"></div>
     </div>
-    <div id="premio-wizard"></div>`;
+    <div id="premio-rodape"></div>
+   </div>`;
 }
 
 function afterRenderPremio(){
@@ -6186,115 +6188,117 @@ function renderPremioWizard(){
     + '</div>';
 
   const head=(n,t,d)=>'<div class="lan-step__head"><span class="lan-step__num">'+n+'</span><div><div class="lan-step__t">'+t+'</div><div class="lan-step__d">'+d+'</div></div></div>';
-  const nav=(prev,next,nextLabel)=>'<div class="lan-navbtns">'
-    +(prev?'<button class="btn btn-ghost btn-sm" onclick="premioIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span></span>')
-    +(next?'<button class="btn btn-primary btn-sm" onclick="premioIrPasso('+next+')">'+(nextLabel||'Próximo')+' <i class="ti ti-arrow-right"></i></button>':'<span></span>')
+  const nav=()=>'';
+  let rodapeHtml='';
+  const rodape=(prev,next,rotulo,btnEsq,btnDir)=>rodapeHtml='<div class="lan-rodape">'
+    +(btnEsq||(prev?'<button class="btn btn-ghost" onclick="premioIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:150px"></span>'))
+    +'<div class="lan-rodape__meio"></div>'
+    +(btnDir||(next?'<button class="btn btn-primary" onclick="premioIrPasso('+next+')">'+(rotulo||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:150px"></span>'))
     +'</div>';
 
   let conteudo = '';
 
   if(atual === 1){
-    // ── PASSO 1: Base importada + filtros + tabela ──
     const base = _premioBasePop();
     const _ver=basesSalvasList[0];
     const _verDt=_ver&&_ver.salvoEm?new Date(_ver.salvoEm).toLocaleString('pt-BR'):'—';
-    const _verLinha=_ver
-      ? '<span>Versão <strong>'+_ver.competencia+'</strong></span><span>'+_verDt+'</span>'
-      : '<span class="text-muted">Sem versão salva em Históricos</span>';
     const emps=[...new Set(base.map(c=>_empresaKey(c)).filter(Boolean))].sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b)));
-    conteudo = '<div class="lan-step lan-step--split">'
-      + head(1,'Importar e conferir a base','Confira a tabela antes de avançar — afastados podem ser reativados nela.')
-      + '<div class="lan-split-side"><div class="lan-base-row">'
-        + '<span class="lan-base-ok"><i class="ti ti-database-import"></i> Base importada</span>'
-        + '<div class="lan-base-facts">'+_verLinha+'<span><strong>'+base.length+'</strong> colaboradores</span></div>'
-        + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-          + '<button class="btn btn-ghost btn-sm" onclick="premioImportarBase()" title="Recarregar outra versão da base"><i class="ti ti-refresh"></i> Trocar base</button>'
-          + '<button class="btn btn-primary btn-sm" onclick="premioIrPasso(2)">Confirmar e avançar <i class="ti ti-arrow-right"></i></button>'
-        + '</div></div></div>'
-      + '</div>'
-      // Filtros (sem rotulos: o proprio "Todas as ..." nomeia o filtro)
-      + '<div class="filter-bar filter-bar--slim">'
-        + '<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="pb-q" placeholder="Buscar nome, matrícula ou departamento..." aria-label="Buscar" oninput="renderPremioBaseTabela()"></div>'
-        + '<div class="filter-group"><select id="pb-emp" aria-label="Empresa" onchange="renderPremioBaseTabela()"><option value="">Todas as empresas</option>'+emps.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
-        + '<div class="filter-group"><select id="pb-sit" aria-label="Situação" onchange="renderPremioBaseTabela()"><option value="">Todas as situações</option><option value="trabalhando">Trabalhando</option><option value="ferias">Férias</option><option value="afastado">Afastado</option></select></div>'
-      + '</div>'
-      // Tabela importada
-      + '<div class="tbl-wrap" style="max-height:calc(100vh - 300px)"><table class="tbl"><thead><tr><th>Matrícula</th><th>Nome</th><th>Empresa</th><th>Departamento</th><th>Situação</th><th style="text-align:center">Ação</th></tr></thead>'
-        + '<tbody id="premio-base-tbody">'+_premioBaseRows(base)+'</tbody></table></div>';
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-destaque"><span class="lan-destaque__n">'+base.length+'</span>'
+        +'<span class="lan-destaque__l">colaboradores</span></div>'
+      +(_ver?'<div class="text-sm" style="color:var(--text2)">Versão <strong>'+_ver.competencia+'</strong> · salva em '+_verDt+'</div>'
+            :'<div class="text-sm" style="color:var(--red)">Sem versão salva em Históricos</div>')
+      +'</div>'
+      +'<div class="filter-bar filter-bar--slim">'
+        +'<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="pb-q" placeholder="Buscar nome, matrícula ou departamento..." aria-label="Buscar" oninput="renderPremioBaseTabela()"></div>'
+        +'<div class="filter-group"><select id="pb-emp" aria-label="Empresa" onchange="renderPremioBaseTabela()"><option value="">Todas as empresas</option>'+emps.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
+        +'<div class="filter-group"><select id="pb-sit" aria-label="Situação" onchange="renderPremioBaseTabela()"><option value="">Todas as situações</option><option value="trabalhando">Trabalhando</option><option value="ferias">Férias</option><option value="afastado">Afastado</option></select></div>'
+      +'</div>'
+      +'<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr><th>Matrícula</th><th>Nome</th><th>Empresa</th><th>Departamento</th><th>Situação</th><th style="text-align:center">Ação</th></tr></thead>'
+        +'<tbody id="premio-base-tbody">'+_premioBaseRows(base)+'</tbody></table></div>';
+    rodape(null,2,'Continuar',
+      '<button class="btn btn-ghost" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Trocar base</button>');
 
   } else if(atual === 2){
-    // ── PASSO 2: Competência ──
     const anos=[2024,2025,2026,2027];
-    const anoAtual=new Date().getFullYear();
-    const mesAtual=new Date().getMonth()+1;
+    const anoAtual=new Date().getFullYear(), mesAtual=new Date().getMonth()+1;
     const meses=[{v:1,l:'Janeiro'},{v:2,l:'Fevereiro'},{v:3,l:'Março'},{v:4,l:'Abril'},
       {v:5,l:'Maio'},{v:6,l:'Junho'},{v:7,l:'Julho'},{v:8,l:'Agosto'},
       {v:9,l:'Setembro'},{v:10,l:'Outubro'},{v:11,l:'Novembro'},{v:12,l:'Dezembro'}];
-    const selSt='padding:6px 9px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px';
-    conteudo = '<div class="lan-step lan-step--split">'
-      + head(2,'Mês e ano de referência','Competência usada no cálculo do prêmio.')
-      + '<div class="lan-split-side lan-actions">'
-        + '<span class="lan-actions__l">Mês</span><select id="premio-mes" style="'+selSt+';min-width:120px">'
-          + meses.map(m=>'<option value="'+m.v+'"'+(m.v===mesAtual?' selected':'')+'>'+m.l+'</option>').join('')+'</select>'
-        + '<span class="lan-actions__l">Ano</span><select id="premio-ano" style="'+selSt+'">'
-          + anos.map(a=>'<option value="'+a+'"'+(a===anoAtual?' selected':'')+'>'+a+'</option>').join('')+'</select>'
-        + '<span class="lan-actions__sep"></span>'
-        + '<button class="btn btn-ghost btn-sm" onclick="premioIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
-        + '<button class="btn btn-primary btn-sm" onclick="premioIniciarApuracao()">Iniciar apuração <i class="ti ti-arrow-right"></i></button>'
-      + '</div></div>';
+    const sel='padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px';
+    conteudo='<div class="lan-caixa">'
+      +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'
+        +'<div class="fg"><label>Mês</label><select id="premio-mes" style="'+sel+';min-width:150px">'
+          +meses.map(m=>'<option value="'+m.v+'"'+(m.v===mesAtual?' selected':'')+'>'+m.l+'</option>').join('')+'</select></div>'
+        +'<div class="fg"><label>Ano</label><select id="premio-ano" style="'+sel+'">'
+          +anos.map(a=>'<option value="'+a+'"'+(a===anoAtual?' selected':'')+'>'+a+'</option>').join('')+'</select></div>'
+      +'</div></div>';
+    rodape(1,null,null,null,
+      '<button class="btn btn-primary" onclick="premioIniciarApuracao()">Iniciar apuração <i class="ti ti-arrow-right"></i></button>');
 
   } else if(atual === 3){
-    // ── PASSO 3: Importar PDF de apuração ──
-    conteudo = '<div class="lan-step">'
-      + head(3,'Importar apuração da Senior','Competência <strong>'+premioState.competencia+'</strong>. Importe o relatório de apuração de colaboradores (PDF/Excel). Ao ler, mostramos quantos colaboradores foram identificados.')
-      + '<div class="upload-zone" onclick="document.getElementById(\'premio-apuracao-file\').click()">'
-        + '<input type="file" id="premio-apuracao-file" accept=".pdf,.xlsx,.xls,.txt,.csv" style="display:none" onchange="processarApuracaoPremio(event)">'
-        + '<div style="font-size:26px;margin-bottom:6px"><i class="ti ti-file-upload"></i></div>'
-        + '<div class="upload-text">Selecionar arquivo de apuração</div>'
-        + '<div class="upload-sub">Relatório "HRAP001.APU" da Senior — PDF ou Excel</div>'
-      + '</div>'
-      + '<div id="premio-apuracao-preview" style="margin-top:14px"></div>'
-      + '<details style="margin-top:12px"><summary class="text-xs text-muted" style="cursor:pointer">Ver códigos do relatório (de/para)</summary>'
-        + '<div class="text-xs text-muted" style="margin-top:6px">014 Atestado · 015 Faltas · 020 Atestado Horas · 064 Atestado Noturno · 101 Saída Antecipada · 103 Atraso · 107 Falta Parcial · 108 Abono Gestor</div></details>'
-      + '<div class="lan-navbtns"><button class="btn btn-ghost btn-sm" onclick="premioIrPasso(2)"><i class="ti ti-arrow-left"></i> Voltar</button><span></span></div>'
-      + '</div>';
+    const temDados=(premioState.tabela||[]).length>0;
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">Apuração de '+premioState.competencia
+        +_ajuda('Relatório HRAP001.APU da Senior, em PDF ou Excel. Códigos: 014 Atestado · 015 Faltas · 020 Atestado Horas · 064 Atestado Noturno · 101 Saída Antecipada · 103 Atraso · 107 Falta Parcial · 108 Abono Gestor.')+'</div>'
+      +'<div class="upload-zone" onclick="document.getElementById(\'premio-apuracao-file\').click()" style="margin-top:10px">'
+        +'<input type="file" id="premio-apuracao-file" accept=".pdf,.xlsx,.xls,.txt,.csv" style="display:none" onchange="processarApuracaoPremio(event)">'
+        +'<div style="font-size:26px;margin-bottom:6px"><i class="ti ti-file-upload"></i></div>'
+        +'<div class="upload-text">Selecionar arquivo de apuração</div>'
+        +'<div class="upload-sub">PDF ou Excel</div>'
+      +'</div>'
+      +'<div id="premio-apuracao-preview" style="margin-top:14px"></div>'
+      +'</div>';
+    rodape(2, temDados?4:null, 'Continuar');
 
   } else if(atual === 4){
-    // ── PASSO 4: Análise dos dados ──
     conteudo = renderPremioTabelaHTML(false);
+    rodape(3,null,null,null,
+      '<button class="btn btn-primary" onclick="aplicarRegrasPremio()"><i class="ti ti-wand"></i> Aplicar regras automáticas</button>');
 
   } else if(atual === 5){
-    // ── PASSO 5: Regras aplicadas ──
     conteudo = renderPremioTabelaHTML(true);
+    rodape(4,55,'Revisar MEI');
 
   } else if(atual === 55){
-    // ── PASSO 6 (interno 55): Revisão MEI ──
     const meis = premioState.tabela.filter(r=>r.situacao==='MEI');
     if(meis.length === 0){ premioState.passo = 7; renderPremioWizard(); return; }
-    conteudo = '<div class="lan-step lan-step--split">'
-      + head(6,'Revisão dos MEI ('+meis.length+')','MEI recebem por padrão. Ajuste para NÃO os que perderam o prêmio por apontamentos externos.')
-      + '<div class="lan-split-side lan-actions">'
-        + '<span class="badge badge--accent" id="mei-resumo">'+meis.filter(r=>r.recebe==='SIM').length+' SIM · '+meis.filter(r=>r.recebe==='NAO').length+' NÃO · '+brl(meis.filter(r=>r.recebe==='SIM').length*PREMIO_VAL)+'</span>'
-        + '<span class="lan-actions__sep"></span>'
-        + '<button class="btn btn-ghost btn-sm" onclick="premioIrPasso(5)"><i class="ti ti-arrow-left"></i> Voltar</button>'
-        + '<button class="btn btn-primary btn-sm" onclick="premioIrPasso(7)">Conferir e fechar <i class="ti ti-arrow-right"></i></button>'
-      + '</div></div>'
-      + '<div class="filter-bar filter-bar--slim">'
-        + '<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="mei-q" placeholder="Buscar nome ou matrícula..." aria-label="Buscar" oninput="filtrarTabelaMei()"></div>'
-      + '</div>'
-      + '<div class="tbl-wrap" style="max-height:calc(100vh - 300px)"><table class="tbl"><thead><tr>'
-        + '<th>Matrícula</th><th>Nome</th><th style="text-align:center">Atraso</th><th style="text-align:center">Saída</th><th style="text-align:center">Atestado</th><th style="text-align:center">Faltas</th><th style="text-align:center">Abono</th><th style="text-align:center">Recebe</th>'
-        + '</tr></thead><tbody id="mei-tbody">'+renderMeiLinhas(meis)+'</tbody></table></div>';
+    const sim=meis.filter(r=>r.recebe==='SIM').length, nao=meis.filter(r=>r.recebe==='NAO').length;
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">MEI'+_ajuda('MEI recebem por padrão. Ajuste para NÃO quem perdeu o prêmio por apontamentos externos.')+'</div>'
+      +'<div class="stats-inline" style="margin-top:8px">'
+        +_dsStat('user-check','success',sim,'Recebem')
+        +_dsStat('user-x','danger',nao,'Não recebem')
+        +_dsStatAccent('cash',brl(sim*PREMIO_VAL),'Total')
+      +'</div></div>'
+      +'<div class="filter-bar filter-bar--slim">'
+        +'<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="mei-q" placeholder="Buscar nome ou matrícula..." aria-label="Buscar" oninput="filtrarTabelaMei()"></div>'
+        +'<span id="mei-resumo" style="display:none"></span>'
+      +'</div>'
+      +'<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
+        +'<th>Matrícula</th><th>Nome</th><th style="text-align:center">Atraso</th><th style="text-align:center">Saída</th><th style="text-align:center">Atestado</th><th style="text-align:center">Faltas</th><th style="text-align:center">Abono</th><th style="text-align:center">Recebe</th>'
+        +'</tr></thead><tbody id="mei-tbody">'+renderMeiLinhas(meis)+'</tbody></table></div>';
+    rodape(5,7,'Continuar');
 
   } else if(atual === 7){
-    // ── PASSO 7: Conferir, fechar e exportar ──
     conteudo = renderPremioPasso7HTML();
+    const fechado=!!premioState.fechado;
+    const sim=(premioState.tabela||[]).filter(r=>r.recebe==='SIM');
+    rodape(55,null,null,null,
+      '<span style="display:flex;gap:8px;flex-wrap:wrap">'
+      +(fechado
+        ? '<button class="btn btn-ghost" onclick="premioNovaCompetencia()"><i class="ti ti-refresh"></i> Nova competência</button>'
+          +'<button class="btn btn-success" onclick="exportarPremioCaju()"><i class="ti ti-download"></i> Exportar CSV Caju ('+sim.length+')</button>'
+        : '<button class="btn btn-success" onclick="fecharCompetencionPremio()"><i class="ti ti-lock"></i> Fechar '+premioState.competencia+'</button>')
+      +'</span>');
   }
 
   // As abas moram na faixa do titulo; se ela nao existir, caem junto do conteudo.
   const tabsEl = document.getElementById('premio-tabs');
   if(tabsEl){ tabsEl.innerHTML = barraHtml; el.innerHTML = conteudo; }
   else el.innerHTML = barraHtml + conteudo;
+  const rodEl = document.getElementById('premio-rodape');
+  if(rodEl) rodEl.innerHTML = rodapeHtml;
 }
 
 function _premioHead(n,t,d){ return '<div class="lan-step__head"><span class="lan-step__num">'+n+'</span><div><div class="lan-step__t">'+t+'</div><div class="lan-step__d">'+d+'</div></div></div>'; }
@@ -6332,44 +6336,27 @@ function p7Limpar(){ ['p7-q','p7-rec','p7-emp'].forEach(id=>{const e=document.ge
 function _premioValorDe(r){ return (r.valorPago!=null && r.valorPago!=='') ? fnum(r.valorPago) : PREMIO_VAL; }
 function renderPremioPasso7HTML(){
   const t = premioState.tabela;
-  if(!t||!t.length) return '<div class="alert alert-warning">Nenhum dado. Volte ao Passo 3 e importe a apuração.</div>';
+  if(!t||!t.length) return '<div class="alert alert-warning">Nenhum dado. Volte ao passo da apuração.</div>';
   const sim = t.filter(r=>r.recebe==='SIM');
   const nao = t.filter(r=>r.recebe==='NAO');
   const total = sim.reduce((s,r)=>s+_premioValorDe(r),0);
   const fechado = !!premioState.fechado;
-
-  // Acoes sobem para a faixa do enunciado; o ajuste de valores (que depende de
-  // olhar a lista) continua embaixo da tabela.
-  let acoesTopo, rodape='';
-  if(fechado){
-    acoesTopo = '<span class="lan-base-ok"><i class="ti ti-lock-check"></i> '+premioState.competencia+' fechada</span>'
-      + '<span class="lan-actions__sep"></span>'
-      + '<button class="btn btn-ghost btn-sm" onclick="premioNovaCompetencia()"><i class="ti ti-refresh"></i> Nova competência</button>'
-      + '<button class="btn btn-success btn-sm" onclick="exportarPremioCaju()"><i class="ti ti-download"></i> Exportar CSV Caju ('+sim.length+')</button>';
-  } else {
-    acoesTopo = '<button class="btn btn-ghost btn-sm" onclick="premioIrPasso(55)"><i class="ti ti-arrow-left"></i> Voltar</button>'
-      + '<button class="btn btn-success btn-sm" onclick="fecharCompetencionPremio()" title="Salva no Histórico com log"><i class="ti ti-lock"></i> Fechar '+premioState.competencia+'</button>';
-    rodape = '<div class="lan-sub" style="margin-top:10px;padding:10px 12px"><div class="lan-sub__t">Ajuste de valores (opcional)</div>'
-      + '<div class="lan-sub__d" style="margin-bottom:6px">Altere o valor de um colaborador só para pagar retroativo/diferente — a justificativa vai para o histórico.</div>'
-      + '<textarea id="p7-justif" rows="2" placeholder="Justificativa (obrigatória se algum valor for alterado)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;resize:vertical"></textarea></div>';
-  }
-
-  return '<div class="lan-step lan-step--split">'
-    + _premioHead(7,'Conferir e fechar','Confira a lista final, feche a competência e exporte o CSV do Caju.')
-    + '<div class="lan-split-side lan-actions">'
-      + '<div class="stats-inline">'
-        + _dsStat('user-check','success',sim.length,'Receberão')
-        + _dsStat('user-x','danger',nao.length,'Não receberão')
-        + _dsStatAccent('cash',brl(total),'Total a pagar')
-      + '</div>'
-      + '<span class="lan-actions__sep"></span>'
-      + acoesTopo
-    + '</div></div>'
+  // As ações vivem no rodapé travado. Aqui fica só o que se olha.
+  return '<div class="lan-caixa">'
+    +'<div class="lan-destaque"><span class="lan-destaque__n">'+brl(total)+'</span>'
+      +'<span class="lan-destaque__l">'+sim.length+' colaborador'+(sim.length!==1?'es':'')+' · '+premioState.competencia+'</span></div>'
+    +(fechado?'<span class="lan-base-ok"><i class="ti ti-lock-check"></i> Competência fechada</span>':'')
+    +'<div class="stats-inline" style="margin-top:8px">'
+      +_dsStat('user-check','success',sim.length,'Receberão')
+      +_dsStat('user-x','danger',nao.length,'Não receberão')
+    +'</div></div>'
     + _premioFiltros('p7')
-    + '<div class="tbl-wrap" style="max-height:calc(100vh - 340px)"><table class="tbl"><thead><tr>'
+    + '<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
       + '<th>Matrícula</th><th>Nome</th><th>Empresa</th><th>Situação</th><th style="text-align:center">Recebe</th><th style="text-align:right">Valor</th>'
       + '</tr></thead><tbody id="p7-tbody">'+renderPasso7Linhas(t)+'</tbody></table></div>'
-    + rodape;
+    + (fechado?'':'<div class="lan-caixa" style="margin-top:10px"><div class="lan-caixa__t" style="font-size:13px">Ajuste de valores'
+        +_ajuda('Altere o valor de um colaborador só para pagar retroativo ou diferente. A justificativa vai para o histórico.')+'</div>'
+        +'<textarea id="p7-justif" rows="2" placeholder="Justificativa (obrigatória se algum valor for alterado)" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;resize:vertical;margin-top:6px"></textarea></div>');
 }
 function renderPasso7Linhas(dados){
   const fechado=!!premioState.fechado;
@@ -6847,33 +6834,23 @@ function montarTabelaPremio(){
 // ── Renderizar tabela de análise (Passo 4 e 5) ──────────────────
 function renderPremioTabelaHTML(comRegras){
   const t = premioState.tabela;
-  if(!t||!t.length) return '<div class="alert alert-warning">Nenhum dado. Volte ao Passo 3 e importe a apuração.</div>';
+  if(!t||!t.length) return '<div class="alert alert-warning">Nenhum dado. Volte ao passo da apuração e importe o arquivo.</div>';
   const sim = t.filter(r=>r.recebe==='SIM').length;
   const nao = t.filter(r=>r.recebe==='NAO').length;
   const pend = t.filter(r=>!r.recebe).length;
-  const n = comRegras?5:4;
-  const titulo = comRegras?'Regras aplicadas':'Análise dos dados';
-  const desc = comRegras
-    ? 'Resultado das regras. Ajuste manualmente se necessário e siga para os MEI.'
-    : 'Confira os apontamentos da Senior e aplique as regras para calcular quem recebe.';
-  const acaoPrim = comRegras
-    ? '<button class="btn btn-primary btn-sm" onclick="premioIrPasso(55)">Revisar MEI <i class="ti ti-arrow-right"></i></button>'
-    : '<button class="btn btn-primary btn-sm" onclick="aplicarRegrasPremio()"><i class="ti ti-wand"></i> Aplicar regras automáticas</button>';
-  // Enunciado a esquerda; indicadores e acoes a direita, na mesma faixa.
-  return '<div class="lan-step lan-step--split">'
-    + _premioHead(n,titulo,desc)
-    + '<div class="lan-split-side lan-actions">'
-      + '<div class="stats-inline">'
-        + _dsStat('user-check','success',sim,'Recebe')
-        + _dsStat('user-x','danger',nao,'Não recebe')
-        + _dsStat('clock','neutral',pend,'Pendente')
-      + '</div>'
-      + '<span class="lan-actions__sep"></span>'
-      + '<button class="btn btn-ghost btn-sm" onclick="premioIrPasso('+(comRegras?4:3)+')"><i class="ti ti-arrow-left"></i> Voltar</button>'
-      + acaoPrim
-    + '</div></div>'
+  const titulo = comRegras?'Regras aplicadas':'Apontamentos importados';
+  const dica = comRegras
+    ? 'Resultado das regras. Ajuste manualmente na coluna Recebe se necessário.'
+    : 'Confira os apontamentos vindos da Senior antes de aplicar as regras.';
+  return '<div class="lan-caixa">'
+    +'<div class="lan-caixa__t">'+titulo+_ajuda(dica)+'</div>'
+    +'<div class="stats-inline" style="margin-top:8px">'
+      +_dsStat('user-check','success',sim,'Recebe')
+      +_dsStat('user-x','danger',nao,'Não recebe')
+      +_dsStat('clock','neutral',pend,'Pendente')
+    +'</div></div>'
     + _premioFiltros('p5')
-    + '<div class="tbl-wrap" style="max-height:calc(100vh - 300px)"><table class="tbl"><thead><tr>'
+    + '<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
       + '<th>Mat.</th><th>Nome</th><th>Empresa</th><th>Situação</th><th style="text-align:center">Recebe</th>'
       + '<th style="text-align:center">Atraso</th><th style="text-align:center">Saída</th><th style="text-align:center">Atestado</th><th style="text-align:center">At.Horas</th><th style="text-align:center">At.Not.</th><th style="text-align:center">Faltas</th><th style="text-align:center">Ft.Parc.</th><th style="text-align:center">Abono</th>'
       + '</tr></thead><tbody id="p5-tbody">'+renderPremioLinhas(t)+'</tbody></table></div>';
