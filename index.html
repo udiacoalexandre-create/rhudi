@@ -537,6 +537,20 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .ds .stats-inline .stat__label { font-size: 11px; }
 .ds .lan-step--split .stats-inline { justify-content: flex-end; }
 
+/* Rodapé de navegação do assistente: sempre no mesmo lugar, em todos os passos */
+.ds .lan-rodape { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 12px 16px; margin-bottom: 12px; }
+.ds .lan-rodape__meio { flex: 1 1 auto; text-align: center; font-size: 12px; color: var(--text2); }
+.ds .lan-rodape .btn { min-width: 120px; justify-content: center; }
+.ds .lan-caixa { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); padding: 18px 20px; margin-bottom: 12px; }
+.ds .lan-caixa__t { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.ds .lan-caixa__d { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 14px; }
+.ds .lan-destaque { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
+.ds .lan-destaque__n { font-size: 34px; font-weight: 800; color: var(--brand); line-height: 1; }
+.ds .lan-destaque__l { font-size: 14px; color: var(--text-secondary); }
+
 /* Calendário da competência: ver e ajustar QUAIS são os dias úteis */
 .ds .cal-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
 .ds .cal-cab { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }

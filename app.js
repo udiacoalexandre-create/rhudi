@@ -84,8 +84,8 @@ let lancamento = {};
 // Agora vive em estado + localStorage, compartilhado por todas as telas.
 let lanComp = '';
 let lanDU = 22;
-let lanStep = 1;        // passo atual do fichario de Lancamento (1..5)
-let lanStep4Ben = 'vt'; // beneficio em conferencia no passo 5
+let lanStep = 1;        // passo atual do fichario de Lancamento (1..6)
+let lanStep4Ben = 'vt'; // beneficio em conferencia no passo 6
 function loadLanCtx(){
   try{
     lanComp = localStorage.getItem('rhudi_lanComp') || '';
@@ -1015,7 +1015,8 @@ function afterRender(id){
     popularLanFiltros();
     lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); });
     if(lanStep===2) renderCalendarioDU();
-    if(lanStep===3){ renderFeriasConferencia(); loadExtrasHabituais().then(renderExtrasHabituais); }
+    if(lanStep===3) renderFeriasConferencia();
+    if(lanStep===4) loadExtrasHabituais().then(renderExtrasHabituais);
   }
   if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
@@ -2377,16 +2378,24 @@ function pgBenLancamento(){
   const empresas=(()=>{const gg={};_base.forEach(c=>{const p=_empresaKey(c);if(p)gg[p]=(gg[p]||0)+1;});return Object.keys(gg).sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b))).map(p=>({cod:p,qtd:gg[p]}));})();
   const deptos=[...new Set(_base.map(c=>c.depto||'').filter(Boolean))].sort();
   const passos=[
-    {n:1,label:'Importar base'},
-    {n:2,label:'Competência e dias úteis'},
-    {n:3,label:'Férias e dias extras'},
-    {n:4,label:'Conferência e faltas'},
-    {n:5,label:'Fechar e exportar'},
+    {n:1,label:'Base'},
+    {n:2,label:'Dias úteis'},
+    {n:3,label:'Férias'},
+    {n:4,label:'Dias extras'},
+    {n:5,label:'Conferência'},
+    {n:6,label:'Fechar e exportar'},
   ];
   const tabs='<div class="lan-tabs">'+passos.map(p=>{
     const cls=p.n===lanStep?' lan-tab--active':(p.n<lanStep?' lan-tab--done':'');
     return '<button class="lan-tab'+cls+'" onclick="lanIrPasso('+p.n+')"><span class="lan-tab__n">'+(p.n<lanStep?'✓':p.n)+'</span> '+p.label+'</button>';
   }).join('')+'</div>';
+  // Rodapé único: Voltar sempre à esquerda, Continuar sempre à direita, no
+  // mesmo lugar em todos os passos. O miolo é opcional (dica ou ação do passo).
+  const rodape=(prev,next,meio,rotuloNext)=>'<div class="lan-rodape">'
+    +(prev?'<button class="btn btn-ghost" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:120px"></span>')
+    +'<div class="lan-rodape__meio">'+(meio||'')+'</div>'
+    +(next?'<button class="btn btn-primary" onclick="lanIrPasso('+next+')">'+(rotuloNext||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:120px"></span>')
+    +'</div>';
   const nav=(prev,next)=>'<div class="lan-navbtns">'
     +(prev?'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span></span>')
     +(next?'<button class="btn btn-primary btn-sm" onclick="lanIrPasso('+next+')">Próximo <i class="ti ti-arrow-right"></i></button>':'<span></span>')
@@ -2447,84 +2456,87 @@ function pgBenLancamento(){
 
   let corpo='';
   if(lanStep===1){
-    // Só importar e conferir a versão. Nada de tabela aqui: ela confundia,
-    // porque parecia que já havia algo a fazer antes de escolher o mês.
-    corpo='<div class="lan-step lan-step--split">'
-      +head(1,'Importar a base de colaboradores','Confira a <strong>versão</strong> e a <strong>data</strong>, e avance.')
-      +'<div class="lan-split-side" id="lan-base-info"></div>'
-      +'</div>';
+    corpo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">1. Base de colaboradores</div>'
+      +'<div class="lan-caixa__d">O sistema importa sozinho a versão mais recente salva em Históricos. Confira a versão e a data antes de seguir.</div>'
+      +'<div id="lan-base-info"></div>'
+      +'</div>'
+      +rodape(null, temBase?2:null, temBase?'':'Importe uma base para continuar');
 
   } else if(lanStep===2){
     const _mm=(lanComp.split('/')[0]||''), _aa=(lanComp.split('/')[1]||String(new Date().getFullYear()));
     const _anos=[]; for(let a=new Date().getFullYear()-1;a<=new Date().getFullYear()+2;a++) _anos.push(String(a));
-    const _selSt='padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px';
-    // Vertical e na ordem em que se pensa: escolher o mês, fechar os dias, seguir.
-    corpo='<div class="lan-step">'
-      +head(2,'Competência e dias úteis','Escolha o mês, confirme no calendário quantos e quais são os dias úteis, e avance.')
-      +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:4px">'
-        +'<div class="fg"><label>Mês</label><select id="lan-mes" style="'+_selSt+';min-width:140px" onchange="onLanMesAno()">'
+    const _sel='padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:14px';
+    const _nomeMes=([['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],['05','Maio'],['06','Junho'],['07','Julho'],['08','Agosto'],['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro']].find(x=>x[0]===_mm)||['','']) [1];
+    corpo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">2. Competência e dias úteis</div>'
+      +'<div class="lan-caixa__d">Escolha o mês que está sendo apurado.</div>'
+      +'<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'
+        +'<div class="fg"><label>Mês</label><select id="lan-mes" style="'+_sel+';min-width:150px" onchange="onLanMesAno()">'
           +[['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],['05','Maio'],['06','Junho'],['07','Julho'],['08','Agosto'],['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro']].map(m=>'<option value="'+m[0]+'"'+(m[0]===_mm?' selected':'')+'>'+m[1]+'</option>').join('')
         +'</select></div>'
-        +'<div class="fg"><label>Ano</label><select id="lan-ano" style="'+_selSt+'" onchange="onLanMesAno()">'
+        +'<div class="fg"><label>Ano</label><select id="lan-ano" style="'+_sel+'" onchange="onLanMesAno()">'
           +_anos.map(a=>'<option value="'+a+'"'+(a===_aa?' selected':'')+'>'+a+'</option>').join('')
         +'</select></div>'
-        +'<div class="fg"><label>Dias úteis</label><input type="number" id="lan-du" value="'+lanDU+'" min="1" max="31" style="width:90px;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px" onchange="setLanDU(this.value);renderLancamento()"></div>'
-        +(_duCal && _duCal.dias!==lanDU
-            ? '<button class="btn btn-ghost btn-sm" onclick="recalcularDiasUteis()" title="Voltar ao valor do calendário"><i class="ti ti-calendar"></i> Usar '+_duCal.dias+'</button>'
-            : '')
       +'</div>'
-      +(_duCal
-        ? '<div class="alert '+(_duCal.dias===lanDU?'alert-info':'alert-warning')+'" style="font-size:12px;margin:12px 0 0">'
-          +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
-          +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
-        : '')
+      +'<div class="lan-destaque"><span class="lan-destaque__n">'+lanDU+'</span>'
+        +'<span class="lan-destaque__l">dias úteis em '+_nomeMes+' de '+_aa+'</span></div>'
+      +(_duCal?'<div class="text-xs text-muted">'+explicaDiasUteis(_duCal)+'</div>':'')
       +'</div>'
+      +'<div class="alert alert-info" style="font-size:13px;margin-bottom:12px"><i class="ti ti-hand-click"></i> '
+        +'<strong>Clique sobre um dia útil para marcá-lo como não útil</strong> — e clique de novo para voltar. '
+        +'Serve para ponte, feriado local ou trabalho em fim de semana. O número acima muda a cada clique.</div>'
       +'<div id="lan-calendario"></div>'
       +'<div class="alert alert-info" style="font-size:12px;margin-bottom:12px"><i class="ti ti-info-circle"></i> '
-        +'Este número vale para <strong>todos</strong>, exceto quem tem jornada travada no cadastro. '
-        +'Ajustes de uma pessoa específica são feitos no passo 4, na linha dela.</div>'
-      +'<div class="lan-step"><div class="lan-navbtns">'
-        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(1)"><i class="ti ti-arrow-left"></i> Voltar</button>'
-        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(3)">Continuar <i class="ti ti-arrow-right"></i></button>'
-      +'</div></div>';
+        +'Este número vale para todos, exceto quem tem jornada travada no cadastro. Ajuste de uma pessoa específica é feito no passo 5.</div>'
+      +rodape(1,3,'Ao continuar, estes '+lanDU+' dias ficam registrados para '+lanComp+'.');
 
   } else if(lanStep===3){
-    // Os dois casos que exigem decisão humana antes de olhar a tabela.
-    corpo='<div class="lan-step lan-step--split">'
-      +head(3,'Férias e dias extras','Confirme quem tem férias atravessando o mês e quem trabalhou dias extras. Só depois a tabela faz sentido.')
-      +'<div class="lan-split-side">'+nav(2,4)+'</div></div>'
-      +'<div id="lan-ferias"></div><div id="lan-extras"></div>';
+    corpo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">3. Férias na competência</div>'
+      +'<div class="lan-caixa__d">Estar de férias não zera o benefício: quem vendeu dias ou voltou no meio do mês tem dias a receber. Confira a lista abaixo.</div>'
+      +'<div id="lan-ferias"></div>'
+      +'</div>'
+      +rodape(2,4);
 
   } else if(lanStep===4){
+    corpo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">4. Dias extras</div>'
+      +'<div class="lan-caixa__d">Estes colaboradores costumam trabalhar dias extras. Marque quem teve, ajuste a quantidade e aplique.</div>'
+      +'<div id="lan-extras"></div>'
+      +'</div>'
+      +rodape(3,5);
+
+  } else if(lanStep===5){
     const _bs=(duComps[lanComp]||{}).baseSalva;
-    corpo='<div class="lan-step lan-step--split">'
-      +head(4,'Conferência e faltas','Use os filtros para achar quem está fora do padrão, lance as <strong>faltas</strong> e ajuste o que estiver errado.')
-      +'<div class="lan-split-side lan-actions">'
+    corpo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">5. Conferência e faltas</div>'
+      +'<div class="lan-caixa__d">Lance as <strong>faltas</strong> na tabela abaixo e use o filtro <strong>Jornada</strong> para achar quem está fora do padrão. Ajuste os dias de uma pessoa direto na linha dela.</div>'
+      +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
         +(_bs?'<span class="lan-base-ok"><i class="ti ti-check"></i> Base salva em '+new Date(_bs.salvoEm).toLocaleString('pt-BR')+'</span>':'')
         +'<button class="btn btn-success btn-sm" onclick="salvarBaseDiasUteis()"><i class="ti ti-device-floppy"></i> '+(_bs?'Salvar de novo':'Salvar base de dias úteis')+'</button>'
-        +'<span class="lan-actions__sep"></span>'
-        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(3)"><i class="ti ti-arrow-left"></i> Voltar</button>'
-        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(5)">Próximo <i class="ti ti-arrow-right"></i></button>'
-      +'</div></div>'
-      +(_bs?'':'<div class="alert alert-info" style="font-size:12px;margin-bottom:12px"><i class="ti ti-info-circle"></i> '
-        +'Depois de conferir, <strong>salve a base de dias úteis</strong> — é ela que registra a jornada, as férias, as faltas e os extras desta competência.</div>')
+        +'<span class="text-xs text-muted">Registra jornada, férias, faltas e extras desta competência.</span>'
+      +'</div>'
+      +'</div>'
+      +rodape(4,6)
       +'<div id="lan-resumo" style="margin-bottom:8px"></div>'+filtros;
 
   } else {
-    corpo='<div class="lan-step lan-step--split">'
-      +head(5,'Fechar e exportar','Escolha o benefício, confira na tabela abaixo, feche a competência e gere os arquivos.')
-      +'<div class="lan-split-side lan-actions">'
-        +'<button class="btn btn-ghost btn-sm" onclick="lanIrPasso(4)" title="Voltar à conferência"><i class="ti ti-arrow-left"></i> Voltar</button>'
-        +'<span class="lan-actions__sep"></span>'
+    corpo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">6. Fechar e exportar</div>'
+      +'<div class="lan-caixa__d">Escolha o benefício para conferir na tabela, feche a competência e gere os arquivos.</div>'
+      +'<div class="lan-actions" style="justify-content:flex-start">'
         +'<label class="lan-actions__l" for="lan-fechar-ben">Benefício</label>'
-        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" title="A tabela abaixo mostra só este benefício, com os totais" style="max-width:220px">'
+        +'<select id="lan-fechar-ben" onchange="onLanStep4Ben(this.value)" style="max-width:240px">'
         +[['vt','Vale Transporte'],['comb','Combustível (Mobilidade)'],['cesta','Cesta Básica'],['vr','Vale Refeição'],['cafe','Café da Manhã'],['todos','Todos (só Histórico)']].map(o=>'<option value="'+o[0]+'"'+(lanStep4Ben===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
         +'</select>'
         +'<span class="lan-actions__sep"></span>'
-        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()" title="Salva o histórico da competência no sistema"><i class="ti ti-lock"></i> Fechar competência</button>'
-        +'<button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()" title="VT → Via Nova; demais → Caju"><i class="ti ti-download"></i> Pagamento</button>'
-        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()" title="Arquivo de exportação para a Senior"><i class="ti ti-download"></i> Senior</button>'
-      +'</div></div>'
+        +'<button class="btn btn-success btn-sm" onclick="fecharCompetencia()"><i class="ti ti-lock"></i> Fechar competência</button>'
+        +'<button class="btn btn-primary btn-sm" id="lan-btn-export3" onclick="exportarPedidoBenef()"><i class="ti ti-download"></i> Pagamento</button>'
+        +'<button class="btn btn-warning btn-sm" onclick="exportarSeniorBenef()"><i class="ti ti-download"></i> Senior</button>'
+      +'</div>'
+      +'</div>'
+      +rodape(5,null)
       +'<div id="lan-resumo" style="margin-bottom:8px"></div>';
   }
 
@@ -2540,10 +2552,27 @@ function pgBenLancamento(){
       </div>
       ${corpo}
     </div>
-    ${(temBase && (lanStep===4||lanStep===5))?tabela:''}
+    ${(temBase && (lanStep===5||lanStep===6))?tabela:''}
    </div>`;
 }
-function lanIrPasso(n){ lanStep=n; showPage('ben-lancamento'); }
+function lanIrPasso(n){
+  // Sair do passo 2 registra os dias úteis da competência sem botão extra —
+  // "Confirmar dias úteis" era um passo a mais para dizer o óbvio.
+  if(lanStep===2 && n>2) registrarDiasUteisComp();
+  lanStep=n; showPage('ben-lancamento');
+}
+// Grava (sem perguntar) o calendário fechado da competência: total, quais
+// dias, feriados considerados, quem e quando.
+function registrarDiasUteisComp(){
+  const du=diasUteisComp(lanComp); if(!du) return;
+  const c=duComps[lanComp]||(duComps[lanComp]={excecoes:{}});
+  c.dias=du.dias;
+  c.diasDoMes=du.grade.filter(d=>d.util).map(d=>d.dia);
+  c.feriados=du.feriados.map(f=>({data:f.data,nome:f.nome,origem:f.origem}));
+  c.confirmadoEm=new Date().toISOString();
+  c.confirmadoPor=(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'';
+  salvarDUComps().catch(e=>console.error('registro dos dias úteis:',e));
+}
 function onLanStep4Ben(v){ lanStep4Ben=v; try{ atualizarBotoesExport(); }catch(e){} renderLancamento(); }
 async function lanReativarAfastado(id){
   const cLive=colaboradores.find(x=>x._id===id);
@@ -2768,17 +2797,15 @@ function renderBaseApuracaoInfo(){
     const latest=basesSalvasList[0];
     const desatualizada = latest && latest._id!==baseApuracao._id && String(latest.salvoEm||'')>String(baseApuracao.salvoEm||'');
     // Faixa em linha: selo + versao/data/qtd + acoes, tudo na mesma altura do enunciado.
-    el.innerHTML='<div class="lan-base-row">'
+    el.innerHTML='<div class="lan-base-row" style="justify-content:flex-start">'
       +'<span class="lan-base-ok"><i class="ti ti-database-import"></i> Base importada</span>'
       +'<div class="lan-base-facts">'
         +'<span>Versão <strong>'+baseApuracao.competencia+'</strong></span>'
         +'<span>'+dt+'</span>'
         +'<span><strong>'+n+'</strong> colaboradores</span>'
       +'</div>'
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
-        +'<button class="btn btn-ghost btn-sm" onclick="abrirImportarBase()" title="Recarregar outra versão da base"><i class="ti ti-refresh"></i> Trocar base</button>'
-        +'<button class="btn btn-primary btn-sm" onclick="lanIrPasso(2)">Confirmar e avançar <i class="ti ti-arrow-right"></i></button>'
-      +'</div></div>'
+      +'<button class="btn btn-ghost btn-sm" onclick="abrirImportarBase()" title="Recarregar outra versão da base"><i class="ti ti-refresh"></i> Trocar base</button>'
+      +'</div>'
       +(desatualizada?'<div class="alert alert-warning" style="margin:8px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px"><span><i class="ti ti-alert-triangle"></i> Existe uma versão mais recente ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+').</span>'
         +'<button class="btn btn-warning btn-sm" onclick="importarBaseApuracao(\''+latest._id+'\')">Usar a mais recente</button></div>':'');
   } else {
@@ -2982,7 +3009,7 @@ function getLanAtivos(){
   const q=(g('lan-q')||'').toLowerCase();
   const emp=getMs('lemp'), dep=getMs('ldep');
   let ben=getMs('lben');
-  if(lanStep===5 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
+  if(lanStep===6 && lanStep4Ben && lanStep4Ben!=='todos') ben=[lanStep4Ben];
   let f=colsApuracao().filter(c=>!STATUS_NAO_RECEBE.includes(c.status) && elegivelBeneficios(c));
   if(emp.length) f=f.filter(c=>_empresaMatch(c,emp));
   if(q) f=f.filter(c=>c.nome.toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q));
@@ -5749,7 +5776,16 @@ function abrirDetalheFerias(id){
                 <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'—'}</strong></span>
               </div>
             </div>
-            <p class="text-xs text-muted" style="margin-top:8px">A alteração vale para este colaborador em todo o sistema. Vencimento em dia/mês (o ano é gerido pelo sistema). Saldo pode ser negativo (antecipação).</p>
+            <div class="section-sep" style="margin-top:14px"><i class="ti ti-umbrella"></i> Período em gozo e dias vendidos</div>
+            <div class="form-grid cols3">
+              <div class="fg"><label>Início das férias</label><input type="date" id="ferd-inicio" value="${c.ferInicio||''}" onchange="_ferdPrevia()"></div>
+              <div class="fg"><label>Último dia de férias</label><input type="date" id="ferd-fim" value="${c.ferFim||''}" onchange="_ferdPrevia()">
+                <span class="text-xs text-muted" style="margin-top:2px">O retorno é no dia seguinte.</span></div>
+              <div class="fg"><label>Dias vendidos (abono)</label><input type="number" id="ferd-comprados" min="0" max="10" value="${fnum(c.ferDiasComprados)||0}" onchange="_ferdPrevia()">
+                <span class="text-xs text-muted" style="margin-top:2px">Limite legal: 10 dias.</span></div>
+            </div>
+            <div id="ferd-previa" class="text-xs" style="margin-top:6px"></div>
+            <p class="text-xs text-muted" style="margin-top:8px">A alteração vale para este colaborador em todo o sistema — cadastro, Controle de Férias e o cálculo dos benefícios da competência. Vencimento em dia/mês (o ano é gerido pelo sistema). Saldo pode ser negativo (antecipação).</p>
           </div>
 
           ${logHtml?`<div style="margin-top:16px"><div class="section-label" style="margin-bottom:6px">Histórico</div><div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px 10px">${logHtml}</div></div>`:''}
@@ -5774,6 +5810,7 @@ function abrirDetalheFerias(id){
   verificarAlertasFerias(id);
 }
 function ferdEdit(on){
+  if(on) setTimeout(()=>{ try{ _ferdPrevia(); }catch(e){} },30);
   const v=document.getElementById('ferd-view'), e=document.getElementById('ferd-edit');
   const fv=document.getElementById('ferd-foot-view'), fe=document.getElementById('ferd-foot-edit');
   if(v) v.style.display=on?'none':'';
@@ -5833,21 +5870,53 @@ function atualizarAnoFerd(){
   if(ano&&sel) ano.textContent=sel.value?anoAgendadoColab({ferMes:sel.value,admissao:adm}):'—';
 }
 
+// Prévia ao vivo dentro do modal: o efeito da mudança na competência aberta.
+function _ferdPrevia(){
+  const el=document.getElementById('ferd-previa'); if(!el) return;
+  const ini=document.getElementById('ferd-inicio')?.value||'';
+  const fim=document.getElementById('ferd-fim')?.value||'';
+  const comp=lanComp;
+  if(!ini||!fim){ el.innerHTML='<span class="text-muted">Sem período informado — nenhum dia de férias é descontado na competência.</span>'; return; }
+  if(fim<ini){ el.innerHTML='<span style="color:var(--red)">O último dia é anterior ao início.</span>'; return; }
+  const dias=feriasDiasUteisNaComp({ferInicio:ini,ferFim:fim},comp);
+  const du=diasUteisComp(comp);
+  const corridos=Math.round((new Date(fim)-new Date(ini))/86400000)+1;
+  el.innerHTML='<i class="ti ti-calculator"></i> '+corridos+' dias corridos · '
+    +'<strong>'+dias+'</strong> dia(s) útil(eis) dentro de '+comp
+    +(du?' · recebe benefício por <strong>'+Math.max(0,du.dias-dias)+'</strong> de '+du.dias+' dias':'');
+}
+
 async function salvarDetalheFerias(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const saldo=fnum(document.getElementById('ferd-saldo')?.value);
   const mes=document.getElementById('ferd-mes')?.value||'';
   const venc=document.getElementById('ferd-venc')?.value||'';
   const admissao=document.getElementById('ferd-admissao')?.value||'';
+  const ini=document.getElementById('ferd-inicio')?.value||'';
+  const fim=document.getElementById('ferd-fim')?.value||'';
+  const comprados=fnum(document.getElementById('ferd-comprados')?.value);
+
+  if(ini&&fim&&fim<ini){ toast('O último dia não pode ser anterior ao início.','error'); return; }
+  if((ini&&!fim)||(fim&&!ini)){ toast('Informe o início e o último dia, ou deixe os dois em branco.','error'); return; }
+  if(comprados>10 && !confirm('O abono está limitado a 10 dias por lei, e você informou '+comprados+'.\n\nGravar assim mesmo?')) return;
 
   c.ferSaldo=saldo;
   c.ferVenc=_resolveVencInput(venc, c.ferVenc);
   c.ferMes=mes;
   c.admissao=admissao||c.admissao||'';
+  c.ferInicio=ini; c.ferFim=fim;
+  c.ferDiasComprados=comprados;
 
   try{
     await fsSet('colaboradores',id,c);
-    toast('Ferias atualizadas!','success');
+    // A apuração roda sobre a base importada (um retrato), não sobre a base
+    // viva. Sem espelhar aqui, a correção não apareceria no Lançamento.
+    if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
+      const cb=baseApuracao.colaboradores.find(x=>x._id===id||(x.cpf&&c.cpf&&x.cpf===c.cpf)||(x.mat&&x.mat===c.mat));
+      if(cb){ cb.ferInicio=ini; cb.ferFim=fim; cb.ferDiasComprados=comprados;
+              cb.ferSaldo=saldo; cb.ferMes=mes; cb.ferVenc=c.ferVenc; }
+    }
+    toast('Férias atualizadas.','success');
     closeModal('modal-ferias-detalhe');
     if(currentPage==='fer-radar') renderFerRadar();
     if(currentPage==='fer-agendadas') renderFeriasAgendadas();
@@ -11763,7 +11832,8 @@ function renderFeriasConferencia(){
       +'<td style="text-align:center">'+x.duCol+'</td>'
       +'<td style="text-align:center;font-weight:600;color:var(--yellow)">'+x.diasFer+'</td>'
       +'<td style="text-align:center;font-weight:700;'+(x.dr>0?'color:var(--green)':'color:var(--text3)')+'">'+x.dr+'</td>'
-      +'<td>'+(av||'<span class="text-xs text-muted">—</span>')+'</td></tr>';
+      +'<td>'+(av||'<span class="text-xs text-muted">—</span>')+'</td>'
+      +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+x.c._id+'\')" title="Editar período, dias vendidos e agendamento"><i class="ti ti-edit"></i> Editar</button></td></tr>';
   }).join('');
   el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
     +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-umbrella"></i></span><div>'
@@ -11780,7 +11850,7 @@ function renderFeriasConferencia(){
     +'<div class="tbl-wrap" style="margin-bottom:12px"><table class="tbl"><thead><tr>'
       +'<th>Colaborador</th><th>Período no mês</th><th style="text-align:center" title="Dias vendidos (abono pecuniário)">Vendidos</th>'
       +'<th style="text-align:center">Jornada</th><th style="text-align:center">Dias de férias</th>'
-      +'<th style="text-align:center">Dias a receber</th><th>Observações</th>'
+      +'<th style="text-align:center">Dias a receber</th><th>Observações</th><th style="text-align:center">Ação</th>'
     +'</tr></thead><tbody>'+linhas+'</tbody></table></div>';
 }
 
@@ -11815,22 +11885,13 @@ function renderCalendarioDU(){
       +(d.forcado?'<span class="cal-mao"><i class="ti ti-hand-click"></i></span>':'')
       +'</div>');
   });
-  const conf=du.confirmado
-    ? '<span class="lan-base-ok"><i class="ti ti-check"></i> Confirmado'
-      +(du.confirmadoEm?' em '+new Date(du.confirmadoEm).toLocaleString('pt-BR'):'')
-      +(du.confirmadoPor?' por '+du.confirmadoPor:'')+'</span>'
-    : '<span class="badge badge--warning"><i class="ti ti-alert-triangle"></i> Não confirmado</span>';
-
-  el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
-    +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-calendar-month"></i></span><div>'
-      +'<div class="lan-step__t">Calendário de '+_duNomeMes(du.mes)+' de '+du.ano+' — '+du.dias+' dias úteis</div>'
-      +'<div class="lan-step__d">Clique num dia para alterná-lo entre útil e não útil. Use para ponte, feriado local ou trabalho em fim de semana.</div></div></div>'
-    +'<div class="lan-split-side lan-actions">'
-      +conf
-      +(du.ajustados.length?'<button class="btn btn-ghost btn-sm" onclick="duLimparAjustes()"><i class="ti ti-eraser"></i> Desfazer ajustes ('+du.ajustados.length+')</button>':'')
-      +'<button class="btn btn-success btn-sm" onclick="duConfirmarCompetencia()"><i class="ti ti-check"></i> '+(du.confirmado?'Confirmar de novo':'Confirmar dias úteis')+'</button>'
-    +'</div></div>'
-    +'<div class="cal-wrap">'
+  el.innerHTML='<div class="cal-wrap">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+      +'<div style="font-weight:700">'+_duNomeMes(du.mes)+' de '+du.ano+'</div>'
+      +(du.ajustados.length
+        ? '<button class="btn btn-ghost btn-sm" onclick="duLimparAjustes()"><i class="ti ti-eraser"></i> Desfazer '+du.ajustados.length+' ajuste(s)</button>'
+        : '')
+    +'</div>'
       +'<div class="cal-cab">'+['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>'<div>'+d+'</div>').join('')+'</div>'
       +'<div class="cal-grade">'+cels.join('')+'</div>'
       +'<div class="cal-legenda">'
@@ -11865,24 +11926,6 @@ function duLimparAjustes(){
   showPage('ben-lancamento');
 }
 
-async function duConfirmarCompetencia(){
-  const du=diasUteisComp(lanComp); if(!du){ toast('Competência inválida.','error'); return; }
-  const dias=du.grade.filter(d=>d.util).map(d=>d.dia);
-  if(!confirm('Confirmar '+du.dias+' dias úteis em '+lanComp+'?\n\nDias: '+dias.join(', ')
-     +(du.ajustados.length?'\n\nInclui '+du.ajustados.length+' dia(s) ajustado(s) à mão.':''))) return;
-  const c=duComps[lanComp]||(duComps[lanComp]={excecoes:{}});
-  c.dias=du.dias;
-  c.diasDoMes=dias;
-  c.feriados=du.feriados.map(f=>({data:f.data,nome:f.nome,origem:f.origem}));
-  c.confirmadoEm=new Date().toISOString();
-  c.confirmadoPor=(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'';
-  try{
-    await salvarDUComps();
-    setLanDU(du.dias); lanDUAutoComp=lanComp;
-    toast('Dias úteis de '+lanComp+' confirmados: '+du.dias+'.','success');
-    showPage('ben-lancamento');
-  }catch(e){ toast('Erro ao confirmar: '+e.message,'error'); }
-}
 
 // ── Passo 4: salvar a base de dias úteis da competência ───────────
 // O detalhe por colaborador (jornada, faltas, férias, extras) já vive na
