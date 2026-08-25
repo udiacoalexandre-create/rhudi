@@ -12020,33 +12020,59 @@ function renderTabelaBenef(){
   const elTot=document.getElementById('lan-total-benef');
   if(!alvo) return;
   const ben=lanStep4Ben||'vt';
-  const rotulo={vt:'Vale Transporte',comb:'Combustível',cesta:'Cesta Básica',vr:'Vale Refeição',cafe:'Café da Manhã',todos:'Todos os benefícios'}[ben]||ben;
   const du=lanDU;
-  const linhas=[]; let total=0;
+  const BENS=[['vr','Vale Refeição'],['cafe','Café'],['cesta','Cesta'],['comb','Combustível'],['vt','Vale Transporte']];
+
+  // Linhas com o valor de cada benefício por colaborador.
+  const linhas=[]; const tot={vr:0,cafe:0,cesta:0,comb:0,vt:0,todos:0};
   getLanAtivos().forEach(c=>{
     const dr=getLanDR(c.mat,du);
     const v=calcBen(c,dr,getLanDU(c.mat,du));
-    const val = ben==='todos' ? (v.vr+v.cafe+v.cesta+v.comb+v.vt) : (v[ben]||0);
-    if(val<=0) return;
-    total+=val;
-    linhas.push({c,dr,val});
+    const soma=v.vr+v.cafe+v.cesta+v.comb+v.vt;
+    BENS.forEach(([k])=>{ tot[k]+=v[k]||0; });
+    tot.todos+=soma;
+    const val = ben==='todos' ? soma : (v[ben]||0);
+    if(val>0) linhas.push({c,dr,v,soma,val});
   });
-  if(elTot) elTot.innerHTML='<div class="lan-destaque" style="margin:0">'
-    +'<span class="lan-destaque__n">'+brl(total)+'</span>'
-    +'<span class="lan-destaque__l">'+linhas.length+' colaborador'+(linhas.length!==1?'es':'')+' · '+rotulo+'</span></div>';
-  if(!linhas.length){
-    alvo.innerHTML='<div class="empty-state"><p>Ninguém recebe '+rotulo+' com os filtros atuais.</p></div>';
+  linhas.sort((a,b)=>(a.c.nome||'').localeCompare(b.c.nome||''));
+
+  if(ben==='todos'){
+    // Cabeçalho: um total por benefício.
+    if(elTot) elTot.innerHTML='<div class="lan-kpis" style="margin:0">'
+      +BENS.map(([k,rot])=>'<div class="lan-kpi"><div class="lan-kpi__l">'+rot+'</div>'
+        +'<div class="lan-kpi__v">'+brl(tot[k])+'</div></div>').join('')
+      +'<div class="lan-kpi lan-kpi--total"><div class="lan-kpi__l">Total</div>'
+        +'<div class="lan-kpi__v">'+brl(tot.todos)+'</div></div>'
+      +'</div>';
+    if(!linhas.length){ alvo.innerHTML='<div class="empty-state"><p>Nenhum colaborador com os filtros atuais.</p></div>'; return; }
+    alvo.innerHTML='<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
+      +'<th>Colaborador</th><th>Empresa</th>'
+      +BENS.map(([,rot])=>'<th style="text-align:right">'+rot+'</th>').join('')
+      +'<th style="text-align:right">Total</th></tr></thead><tbody>'
+      +linhas.map(x=>'<tr><td><div style="font-weight:500">'+x.c.nome+'</div>'
+        +'<div class="text-xs text-muted"><code style="font-size:10px">'+(x.c.mat||'—')+'</code></div></td>'
+        +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
+        +BENS.map(([k])=>'<td style="text-align:right">'+(x.v[k]>0?brl(x.v[k]):'—')+'</td>').join('')
+        +'<td style="text-align:right;font-weight:700">'+brl(x.soma)+'</td></tr>').join('')
+      +'</tbody><tfoot><tr class="total-row"><td colspan="2" style="text-align:right;font-weight:700">Total</td>'
+      +BENS.map(([k])=>'<td style="text-align:right;font-weight:700">'+brl(tot[k])+'</td>').join('')
+      +'<td style="text-align:right;font-weight:700">'+brl(tot.todos)+'</td></tr></tfoot></table></div>';
     return;
   }
+
+  const rotulo=(BENS.find(b=>b[0]===ben)||[,ben])[1];
+  if(elTot) elTot.innerHTML='<div class="lan-destaque" style="margin:0">'
+    +'<span class="lan-destaque__n">'+brl(tot[ben]||0)+'</span>'
+    +'<span class="lan-destaque__l">'+linhas.length+' colaborador'+(linhas.length!==1?'es':'')+' · '+rotulo+'</span></div>';
+  if(!linhas.length){ alvo.innerHTML='<div class="empty-state"><p>Ninguém recebe '+rotulo+' com os filtros atuais.</p></div>'; return; }
   alvo.innerHTML='<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
     +'<th>Matrícula</th><th>Nome</th><th>Empresa</th><th style="text-align:center">Dias</th><th style="text-align:right">Valor</th>'
     +'</tr></thead><tbody>'
-    +linhas.sort((a,b)=>(a.c.nome||'').localeCompare(b.c.nome||'')).map(x=>
-      '<tr><td><code style="font-size:10px">'+(x.c.mat||'—')+'</code></td>'
+    +linhas.map(x=>'<tr><td><code style="font-size:10px">'+(x.c.mat||'—')+'</code></td>'
       +'<td style="font-weight:500">'+x.c.nome+'</td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
       +'<td style="text-align:center">'+x.dr+'</td>'
       +'<td style="text-align:right;font-weight:600">'+brl(x.val)+'</td></tr>').join('')
     +'</tbody><tfoot><tr class="total-row"><td colspan="4" style="text-align:right;font-weight:700">Total</td>'
-    +'<td style="text-align:right;font-weight:700">'+brl(total)+'</td></tr></tfoot></table></div>';
+    +'<td style="text-align:right;font-weight:700">'+brl(tot[ben]||0)+'</td></tr></tfoot></table></div>';
 }
