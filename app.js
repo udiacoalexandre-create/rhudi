@@ -2789,7 +2789,8 @@ function renderBaseApuracaoInfo(){
     const desatualizada = latest && latest._id!==baseApuracao._id && String(latest.salvoEm||'')>String(baseApuracao.salvoEm||'');
     // Faixa em linha: selo + versao/data/qtd + acoes, tudo na mesma altura do enunciado.
     el.innerHTML='<div class="lan-destaque"><span class="lan-destaque__n">'+n+'</span>'
-      +'<span class="lan-destaque__l">colaboradores · versão '+baseApuracao.competencia+'</span></div>'
+      +'<span class="lan-destaque__l">colaboradores</span></div>'
+      +'<div class="text-sm" style="color:var(--text2)">Versão <strong>'+baseApuracao.competencia+'</strong> · salva em '+dt+'</div>'
       +(desatualizada?'<div class="alert alert-warning" style="margin:8px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px"><span><i class="ti ti-alert-triangle"></i> Existe uma versão mais recente ('+(latest.salvoEm?new Date(latest.salvoEm).toLocaleString('pt-BR'):'')+').</span>'
         +'<button class="btn btn-warning btn-sm" onclick="importarBaseApuracao(\''+latest._id+'\')">Usar a mais recente</button></div>':'');
   } else {
