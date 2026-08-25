@@ -6202,20 +6202,12 @@ function renderPremioWizard(){
     const base = _premioBasePop();
     const _ver=basesSalvasList[0];
     const _verDt=_ver&&_ver.salvoEm?new Date(_ver.salvoEm).toLocaleString('pt-BR'):'—';
-    const emps=[...new Set(base.map(c=>_empresaKey(c)).filter(Boolean))].sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b)));
     conteudo='<div class="lan-caixa">'
       +'<div class="lan-destaque"><span class="lan-destaque__n">'+base.length+'</span>'
         +'<span class="lan-destaque__l">colaboradores</span></div>'
       +(_ver?'<div class="text-sm" style="color:var(--text2)">Versão <strong>'+_ver.competencia+'</strong> · salva em '+_verDt+'</div>'
             :'<div class="text-sm" style="color:var(--red)">Sem versão salva em Históricos</div>')
-      +'</div>'
-      +'<div class="filter-bar filter-bar--slim">'
-        +'<div class="filter-group" style="flex:1;min-width:180px"><input type="text" id="pb-q" placeholder="Buscar nome, matrícula ou departamento..." aria-label="Buscar" oninput="renderPremioBaseTabela()"></div>'
-        +'<div class="filter-group"><select id="pb-emp" aria-label="Empresa" onchange="renderPremioBaseTabela()"><option value="">Todas as empresas</option>'+emps.map(e=>'<option value="'+e+'">'+_empresaLabel(e)+'</option>').join('')+'</select></div>'
-        +'<div class="filter-group"><select id="pb-sit" aria-label="Situação" onchange="renderPremioBaseTabela()"><option value="">Todas as situações</option><option value="trabalhando">Trabalhando</option><option value="ferias">Férias</option><option value="afastado">Afastado</option></select></div>'
-      +'</div>'
-      +'<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr><th>Matrícula</th><th>Nome</th><th>Empresa</th><th>Departamento</th><th>Situação</th><th style="text-align:center">Ação</th></tr></thead>'
-        +'<tbody id="premio-base-tbody">'+_premioBaseRows(base)+'</tbody></table></div>';
+      +'</div>';
     rodape(null,2,'Continuar',
       '<button class="btn btn-ghost" onclick="premioImportarBase()"><i class="ti ti-refresh"></i> Trocar base</button>');
 
@@ -6247,9 +6239,9 @@ function renderPremioWizard(){
         +'<div class="upload-text">Selecionar arquivo de apuração</div>'
         +'<div class="upload-sub">PDF ou Excel</div>'
       +'</div>'
-      +'<div id="premio-apuracao-preview" style="margin-top:14px"></div>'
+      +'<div id="premio-apuracao-preview" style="margin-top:14px">'+(premioState.resumoImport||'')+'</div>'
       +'</div>';
-    rodape(2, temDados?4:null, 'Continuar');
+    rodape(2, temDados?4:null, 'Ir para a análise');
 
   } else if(atual === 4){
     conteudo = renderPremioTabelaHTML(false);
@@ -6702,7 +6694,6 @@ function parsearApuracaoTexto(texto, prevEl){
   // Ler o arquivo nao é o mesmo que casar com a base: reportar os dois numeros.
   const casados = premioState.apontCasados||0;
   const semBase = premioState.apontSemBase||[];
-  const btnIr = '<button class="btn btn-primary btn-sm" onclick="premioIrPasso(4)">Ir para a análise (Passo 4) <i class="ti ti-arrow-right"></i></button>';
 
   if(casados === 0){
     // Leu o arquivo mas nenhuma matricula bateu com a base: mostrar as duas
@@ -6725,10 +6716,12 @@ function parsearApuracaoTexto(texto, prevEl){
       + '(matrícula divergente, fora da base ou demitido sem janela de prêmio): <code style="font-size:11px">'
       + semBase.slice(0,8).map(a=>a.mat).join(', ') + (semBase.length>8?', …':'') + '</code></div>'
     : '';
-  prevEl.innerHTML='<div class="alert alert-success" style="font-size:14px"><i class="ti ti-circle-check"></i> Apuração importada — <strong>'+apontamentos.length+'</strong> colaboradores lidos do arquivo, '
-    +'<strong>'+casados+'</strong> cruzados com a base ('+premioState.tabela.length+' linhas na tabela).'
-    +avisoSemBase
-    +'<div style="margin-top:8px">'+btnIr+'</div></div>';
+  const resumo='<div class="alert alert-success" style="font-size:14px"><i class="ti ti-circle-check"></i> Apuração importada — <strong>'+apontamentos.length+'</strong> colaboradores lidos, '
+    +'<strong>'+casados+'</strong> cruzados com a base.'+avisoSemBase+'</div>';
+  premioState.resumoImport=resumo;
+  prevEl.innerHTML=resumo;
+  // O avançar mora no rodapé travado: redesenha para ele aparecer.
+  try{ renderPremioWizard(); }catch(e){}
   toast(casados+' de '+apontamentos.length+' colaboradores cruzados com a base.','success');
 }
 
