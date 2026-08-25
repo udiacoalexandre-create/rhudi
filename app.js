@@ -2547,6 +2547,7 @@ function lanIrPasso(n){
   // Sair do passo 2 registra os dias úteis da competência sem botão extra —
   // "Confirmar dias úteis" era um passo a mais para dizer o óbvio.
   if(lanStep===2 && n>2) registrarDiasUteisComp();
+  if(lanStep===4 && n>4) aplicarExtrasHabituais(true);   // sem botão: aplica ao seguir
   lanStep=n; showPage('ben-lancamento');
 }
 // Grava (sem perguntar) o calendário fechado da competência: total, quais
@@ -11696,8 +11697,6 @@ function renderExtrasHabituais(){
   const linhas=extrasHabituais.map(h=>{
     const c=base.find(x=>x.mat===h.mat);
     const est=_extrasEstado(h.mat, h.dias!=null?h.dias:EXTRAS_HAB_PADRAO_DIAS);
-    const l=lancamento[h.mat]||{};
-    const jaLancado=fnum(l.extras);
     const sit=!c ? '<span class="badge badge--danger">fora da base desta apuração</span>'
       : (statusGrupo(c.status)==='ferias' ? '<span class="badge badge--warning">de férias</span>'
       : (statusGrupo(c.status)==='so_cesta' ? '<span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span>'
@@ -11710,7 +11709,6 @@ function renderExtrasHabituais(){
       +'<td>'+sit+alerta+'</td>'
       +'<td style="text-align:center"><input type="number" min="0" max="31" value="'+est.dias+'" '
         +'onchange="extrasSetDias(\''+h.mat+'\',this.value)" class="input-extras" style="width:64px"'+(est.incluir?'':' disabled')+'></td>'
-      +'<td style="text-align:center">'+(jaLancado>0?'<span class="badge badge--accent">'+jaLancado+' já lançado</span>':'<span class="text-xs text-muted">—</span>')+'</td>'
       +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="extrasRemoverDaLista(\''+h.mat+'\')" title="Tirar da lista de habituais"><i class="ti ti-trash"></i></button></td></tr>';
   }).join('');
   const marcados=extrasHabituais.filter(h=>_extrasEstado(h.mat,h.dias).incluir);
@@ -11719,18 +11717,17 @@ function renderExtrasHabituais(){
     +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-calendar-plus"></i></span><div>'
       +'<div class="lan-step__t">Dias extras habituais</div></div></div>'
     +'<div class="lan-split-side lan-actions">'
-      +'<span class="text-xs text-muted">'+marcados.length+' de '+extrasHabituais.length+' marcados · '+totalDias+' dia(s) no total</span>'
+      +'<span class="text-xs text-muted">'+marcados.length+' de '+extrasHabituais.length+' · '+totalDias+' dia(s)</span>'
       +'<button class="btn btn-ghost btn-sm" onclick="abrirAdicionarExtraHabitual()"><i class="ti ti-plus"></i> Adicionar</button>'
-      +'<button class="btn btn-primary btn-sm" onclick="aplicarExtrasHabituais()"><i class="ti ti-check"></i> Aplicar dias extras</button>'
     +'</div></div>'
     +'<div class="tbl-wrap" style="margin-bottom:12px"><table class="tbl"><thead><tr>'
       +'<th style="text-align:center;width:40px">Teve?</th><th>Colaborador</th><th>Situação</th>'
-      +'<th style="text-align:center">Dias extras</th><th style="text-align:center">Na competência</th><th style="text-align:center">Lista</th>'
+      +'<th style="text-align:center">Dias extras</th><th style="text-align:center"></th>'
     +'</tr></thead><tbody>'+linhas+'</tbody></table></div>';
 }
 
 // Grava os dias extras confirmados na competência atual.
-async function aplicarExtrasHabituais(){
+async function aplicarExtrasHabituais(silencioso){
   const base=colsApuracao();
   const aplicar=[], zerar=[];
   extrasHabituais.forEach(h=>{
@@ -11739,9 +11736,9 @@ async function aplicarExtrasHabituais(){
     if(est.incluir && est.dias>0) aplicar.push({mat:h.mat,dias:est.dias});
     else zerar.push(h.mat);
   });
-  if(!aplicar.length && !zerar.length){ toast('Nada a aplicar.','info'); return; }
+  if(!aplicar.length && !zerar.length) return;
   const desmarcadosComValor=zerar.filter(m=>fnum((lancamento[m]||{}).extras)>0);
-  if(desmarcadosComValor.length && !confirm(
+  if(!silencioso && desmarcadosComValor.length && !confirm(
       aplicar.length+' colaborador(es) receberão dias extras.\n\n'
       +desmarcadosComValor.length+' desmarcado(s) têm dias extras lançados nesta competência e serão ZERADOS.\n\nContinuar?')) return;
   try{
@@ -11758,7 +11755,7 @@ async function aplicarExtrasHabituais(){
     await b.commit();
     toast('Dias extras aplicados a '+aplicar.length+' colaborador(es)'
       +(desmarcadosComValor.length?' e zerados em '+desmarcadosComValor.length:'')+'.','success');
-    showPage('ben-lancamento');
+    if(!silencioso) showPage('ben-lancamento');
   }catch(e){ toast('Erro ao aplicar: '+e.message,'error'); }
 }
 
