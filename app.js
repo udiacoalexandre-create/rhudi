@@ -1014,7 +1014,7 @@ function afterRender(id){
   if(id==='ben-lancamento'){
     popularLanFiltros();
     lanAutoImportBase().then(imported=>{ if(imported) showPage('ben-lancamento'); else renderLancamento(); });
-    if(lanStep===2){ renderFeriasConferencia(); loadExtrasHabituais().then(renderExtrasHabituais); }
+    if(lanStep===2){ renderCalendarioDU(); renderFeriasConferencia(); loadExtrasHabituais().then(renderExtrasHabituais); }
   }
   if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
@@ -2466,7 +2466,7 @@ function pgBenLancamento(){
           +'<i class="ti ti-calendar-event"></i> '+explicaDiasUteis(_duCal)
           +(_duCal.dias!==lanDU?' — você está usando <strong>'+lanDU+'</strong>.':'')+'</div>'
         : '')
-      +'<div id="lan-ferias"></div><div id="lan-extras"></div>';
+      +'<div id="lan-calendario"></div><div id="lan-ferias"></div><div id="lan-extras"></div>';
   } else if(lanStep===3){
     corpo='<div class="lan-step lan-step--split">'
       +head(3,'Faltas e dias extras (manual)','Preencha na tabela: faltas e férias descontam, extras somam. As <strong>férias</strong> vêm automáticas da Base.')
@@ -4427,7 +4427,7 @@ function entrarBeneficios(){
   // basesSalvas fica FORA daqui: cada versão guarda uma cópia completa da base
   // (~850 KB), então baixar as 89 no login custava ~74 MB para a tela inicial,
   // que não usa nenhuma. Passou a ser carregado sob demanda, e por índice.
-  Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadFeriados()]).then(()=>{
+  Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadFeriados(),loadDUComps()]).then(()=>{
     aplicarDUAutomatico(lanComp);   // dias úteis da competência corrente
     window.__benefLoaded=true;
     switchModule('base');
@@ -11321,6 +11321,11 @@ function feriadosDoAno(ano){
   return lista.sort((a,b)=>a.data.localeCompare(b.data));
 }
 
+// Exceções e confirmação por competência: {'09/2026':{excecoes:{'2026-09-14':'nao'|'sim'},
+// dias, confirmadoPor, confirmadoEm}}. Mora em config/diasUteisComp.
+let duComps={};
+function _duExcecoes(comp){ return (duComps[comp]||{}).excecoes||{}; }
+
 // Dias úteis do mês da competência MM/AAAA, com o detalhamento da conta.
 function diasUteisComp(comp){
   const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/);
@@ -11330,14 +11335,26 @@ function diasUteisComp(comp){
   const ult=new Date(ano,mes+1,0).getDate();
   const doAno=feriadosDoAno(ano);
   const mapa={}; doAno.forEach(f=>{ mapa[f.data]=f; });
-  let uteis=0, fds=0; const feriadosUteis=[], feriadosNoFDS=[];
+  const exc=_duExcecoes(String(m[1]).padStart(2,'0')+'/'+m[2]);
+  let uteis=0, fds=0; const feriadosUteis=[], feriadosNoFDS=[], dias=[], ajustados=[];
   for(let d=1;d<=ult;d++){
     const dt=new Date(ano,mes,d), wd=dt.getDay(), s=_isoData(dt);
-    if(wd===0||wd===6){ fds++; if(mapa[s]) feriadosNoFDS.push(mapa[s]); continue; }
-    if(mapa[s]){ feriadosUteis.push(mapa[s]); continue; }
-    uteis++;
+    const fds0=(wd===0||wd===6), fer=mapa[s]||null;
+    let util = !fds0 && !fer;                       // regra padrão
+    const forcado=exc[s];                            // 'sim' | 'nao' marcado na tela
+    if(forcado==='sim') util=true;
+    if(forcado==='nao') util=false;
+    if(forcado && ((forcado==='sim')!==(!fds0&&!fer))) ajustados.push({data:s,util});
+    if(fds0) fds++;
+    if(fer){ (fds0?feriadosNoFDS:feriadosUteis).push(fer); }
+    if(util) uteis++;
+    dias.push({dia:d, data:s, wd, fds:fds0, feriado:fer, util, forcado:forcado||null});
   }
-  return {dias:uteis, totalDias:ult, fds, feriados:feriadosUteis, feriadosNoFDS, mes:mes+1, ano};
+  return {dias:uteis, totalDias:ult, fds, feriados:feriadosUteis, feriadosNoFDS,
+          mes:mes+1, ano, grade:dias, ajustados,
+          confirmado:!!(duComps[String(m[1]).padStart(2,'0')+'/'+m[2]]||{}).confirmadoEm,
+          confirmadoPor:(duComps[String(m[1]).padStart(2,'0')+'/'+m[2]]||{}).confirmadoPor,
+          confirmadoEm:(duComps[String(m[1]).padStart(2,'0')+'/'+m[2]]||{}).confirmadoEm};
 }
 // Frase curta explicando de onde veio o número.
 function explicaDiasUteis(du){
@@ -11349,10 +11366,23 @@ function explicaDiasUteis(du){
   const extra=du.feriadosNoFDS.length
     ? ' — '+du.feriadosNoFDS.map(x=>x.nome).join(', ')+' caiu no fim de semana'
     : '';
-  return du.totalDias+' dias − '+du.fds+' de fim de semana'+f+extra+' = <strong>'+du.dias+' dias úteis</strong>';
+  const aj=du.ajustados&&du.ajustados.length
+    ? ' · <strong>'+du.ajustados.length+' dia(s) ajustado(s) à mão</strong>' : '';
+  return du.totalDias+' dias − '+du.fds+' de fim de semana'+f+extra+aj+' = <strong>'+du.dias+' dias úteis</strong>';
 }
 
 // ── Carga e gravação dos feriados cadastrados ─────────────────────
+async function loadDUComps(){
+  try{
+    const snap=await window._getDoc(window._doc('config','diasUteisComp'));
+    if(snap.exists()) duComps=Object.assign({},(snap.data()||{}).comps||{});
+  }catch(e){ console.error('dias úteis por competência:',e); }
+  return duComps;
+}
+async function salvarDUComps(){
+  await fsSet('config','diasUteisComp',{comps:duComps, atualizadoEm:new Date().toISOString()});
+}
+
 async function loadFeriados(){
   try{
     const snap=await window._getDoc(window._doc('config','feriados'));
@@ -11716,4 +11746,104 @@ function renderFeriasConferencia(){
       +'<th style="text-align:center">Jornada</th><th style="text-align:center">Dias de férias</th>'
       +'<th style="text-align:center">Dias a receber</th><th>Observações</th>'
     +'</tr></thead><tbody>'+linhas+'</tbody></table></div>';
+}
+
+// ============================================================
+// CALENDÁRIO DA COMPETÊNCIA: ver e confirmar QUAIS são os dias úteis
+// ============================================================
+// Saber só o total não basta: dependendo do dia em que a pessoa entra ou sai
+// de férias, um dia a mais ou a menos muda o benefício. Aqui dá para ver o
+// mês inteiro, ajustar um dia específico (ponte, feriado local esquecido,
+// mutirão de sábado) e registrar a confirmação de quem conferiu.
+
+function _duNomeMes(m){ return ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][m-1]||''; }
+
+function renderCalendarioDU(){
+  const el=document.getElementById('lan-calendario'); if(!el) return;
+  const du=diasUteisComp(lanComp);
+  if(!du){ el.innerHTML=''; return; }
+  const primeiro=new Date(du.ano,du.mes-1,1).getDay();     // 0=domingo
+  const cels=[];
+  for(let i=0;i<primeiro;i++) cels.push('<div class="cal-cel cal-vazia"></div>');
+  du.grade.forEach(d=>{
+    const cls=['cal-cel'];
+    let titulo='';
+    if(d.util) cls.push('cal-util'); else cls.push('cal-nao');
+    if(d.feriado){ cls.push('cal-feriado'); titulo=d.feriado.nome; }
+    else if(d.fds) titulo='Fim de semana';
+    else titulo='Dia útil';
+    if(d.forcado){ cls.push('cal-forcado'); titulo+=' · ajustado à mão'; }
+    cels.push('<div class="'+cls.join(' ')+'" title="'+titulo.replace(/"/g,'')+'" onclick="duAlternarDia(\''+d.data+'\')">'
+      +'<span class="cal-num">'+d.dia+'</span>'
+      +(d.feriado?'<span class="cal-tag">'+d.feriado.nome.slice(0,14)+'</span>':'')
+      +(d.forcado?'<span class="cal-mao"><i class="ti ti-hand-click"></i></span>':'')
+      +'</div>');
+  });
+  const conf=du.confirmado
+    ? '<span class="lan-base-ok"><i class="ti ti-check"></i> Confirmado'
+      +(du.confirmadoEm?' em '+new Date(du.confirmadoEm).toLocaleString('pt-BR'):'')
+      +(du.confirmadoPor?' por '+du.confirmadoPor:'')+'</span>'
+    : '<span class="badge badge--warning"><i class="ti ti-alert-triangle"></i> Não confirmado</span>';
+
+  el.innerHTML='<div class="lan-step lan-step--split" style="margin-top:4px">'
+    +'<div class="lan-step__head"><span class="lan-step__num"><i class="ti ti-calendar-month"></i></span><div>'
+      +'<div class="lan-step__t">Calendário de '+_duNomeMes(du.mes)+' de '+du.ano+' — '+du.dias+' dias úteis</div>'
+      +'<div class="lan-step__d">Clique num dia para alterná-lo entre útil e não útil. Use para ponte, feriado local ou trabalho em fim de semana.</div></div></div>'
+    +'<div class="lan-split-side lan-actions">'
+      +conf
+      +(du.ajustados.length?'<button class="btn btn-ghost btn-sm" onclick="duLimparAjustes()"><i class="ti ti-eraser"></i> Desfazer ajustes ('+du.ajustados.length+')</button>':'')
+      +'<button class="btn btn-success btn-sm" onclick="duConfirmarCompetencia()"><i class="ti ti-check"></i> '+(du.confirmado?'Confirmar de novo':'Confirmar dias úteis')+'</button>'
+    +'</div></div>'
+    +'<div class="cal-wrap">'
+      +'<div class="cal-cab">'+['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>'<div>'+d+'</div>').join('')+'</div>'
+      +'<div class="cal-grade">'+cels.join('')+'</div>'
+      +'<div class="cal-legenda">'
+        +'<span><i class="cal-p cal-util"></i> dia útil ('+du.dias+')</span>'
+        +'<span><i class="cal-p cal-nao"></i> fim de semana ('+du.fds+')</span>'
+        +'<span><i class="cal-p cal-feriado"></i> feriado</span>'
+        +'<span><i class="cal-p cal-forcado"></i> ajustado à mão</span>'
+      +'</div>'
+    +'</div>';
+}
+
+function duAlternarDia(data){
+  const du=diasUteisComp(lanComp); if(!du) return;
+  const d=du.grade.find(x=>x.data===data); if(!d) return;
+  const padrao = !d.fds && !d.feriado;          // o que a regra diria
+  const c=duComps[lanComp]||(duComps[lanComp]={excecoes:{}});
+  c.excecoes=c.excecoes||{};
+  const novo=!d.util;
+  if(novo===padrao) delete c.excecoes[data];    // voltou ao padrão: some a exceção
+  else c.excecoes[data]= novo?'sim':'nao';
+  // o total mudou: reflete no campo e na tabela
+  const dn=diasUteisComp(lanComp);
+  setLanDU(dn.dias); lanDUAutoComp=lanComp;
+  showPage('ben-lancamento');
+}
+
+function duLimparAjustes(){
+  if(!confirm('Desfazer todos os ajustes manuais do calendário desta competência?')) return;
+  if(duComps[lanComp]) duComps[lanComp].excecoes={};
+  const dn=diasUteisComp(lanComp);
+  setLanDU(dn.dias); lanDUAutoComp=lanComp;
+  showPage('ben-lancamento');
+}
+
+async function duConfirmarCompetencia(){
+  const du=diasUteisComp(lanComp); if(!du){ toast('Competência inválida.','error'); return; }
+  const dias=du.grade.filter(d=>d.util).map(d=>d.dia);
+  if(!confirm('Confirmar '+du.dias+' dias úteis em '+lanComp+'?\n\nDias: '+dias.join(', ')
+     +(du.ajustados.length?'\n\nInclui '+du.ajustados.length+' dia(s) ajustado(s) à mão.':''))) return;
+  const c=duComps[lanComp]||(duComps[lanComp]={excecoes:{}});
+  c.dias=du.dias;
+  c.diasDoMes=dias;
+  c.feriados=du.feriados.map(f=>({data:f.data,nome:f.nome,origem:f.origem}));
+  c.confirmadoEm=new Date().toISOString();
+  c.confirmadoPor=(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'';
+  try{
+    await salvarDUComps();
+    setLanDU(du.dias); lanDUAutoComp=lanComp;
+    toast('Dias úteis de '+lanComp+' confirmados: '+du.dias+'.','success');
+    showPage('ben-lancamento');
+  }catch(e){ toast('Erro ao confirmar: '+e.message,'error'); }
 }

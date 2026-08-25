@@ -537,6 +537,28 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .ds .stats-inline .stat__label { font-size: 11px; }
 .ds .lan-step--split .stats-inline { justify-content: flex-end; }
 
+/* Calendário da competência: ver e ajustar QUAIS são os dias úteis */
+.ds .cal-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
+.ds .cal-cab { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.ds .cal-cab > div { text-align: center; font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .4px; }
+.ds .cal-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.ds .cal-cel { position: relative; min-height: 46px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 5px; cursor: pointer; transition: box-shadow .12s, transform .06s; }
+.ds .cal-cel:hover { box-shadow: 0 2px 8px rgba(15,23,42,.16); transform: translateY(-1px); }
+.ds .cal-vazia { border: none; cursor: default; background: none; }
+.ds .cal-vazia:hover { box-shadow: none; transform: none; }
+.ds .cal-num { font-size: 13px; font-weight: 700; }
+.ds .cal-util { background: var(--success-bg); border-color: var(--brand); }
+.ds .cal-util .cal-num { color: var(--brand); }
+.ds .cal-nao { background: var(--surface-soft); }
+.ds .cal-nao .cal-num { color: var(--text3); }
+.ds .cal-feriado { background: var(--red-light); border-color: var(--red); }
+.ds .cal-feriado .cal-num { color: var(--red); }
+.ds .cal-tag { display: block; font-size: 8.5px; line-height: 1.15; color: var(--red); margin-top: 1px; }
+.ds .cal-forcado { outline: 2px dashed var(--yellow); outline-offset: -2px; }
+.ds .cal-mao { position: absolute; top: 2px; right: 3px; font-size: 10px; color: var(--yellow); }
+.ds .cal-legenda { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; color: var(--text2); align-items: center; }
+.ds .cal-legenda .cal-p { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid var(--border); margin-right: 4px; vertical-align: -1px; }
+
 /* Barra de filtros baixa: sem rótulos (os botões já se nomeiam) */
 .ds .filter-bar--slim { padding: 7px 9px; margin-bottom: 8px; gap: 6px; align-items: center; }
 .ds .filter-bar--slim .filter-group { flex-direction: row; align-items: center; }
