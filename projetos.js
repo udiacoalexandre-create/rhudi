@@ -237,6 +237,57 @@ function ehMaster(){ return usuario && usuario.papel === 'master'; }
 
 // ---------- Consultas em memória ----------
 function projetoDe(id){ return projetos.find(p => p._id === id) || null; }
+// ROTINAS (tarefa que se repete)
+// -----------------------------
+// Concluir uma rotina não a manda para FINALIZADO: ela volta para NÃO
+// INICIADO já na próxima data. Assim o quadro não enche de cópias e o
+// histórico fica na conversa da própria tarefa ("concluída pela 12ª vez").
+const RECORRENCIAS = {
+  nao:       { label:'Não repete' },
+  diaria:    { label:'Todo dia' },
+  uteis:     { label:'Todo dia útil' },
+  semanal:   { label:'Toda semana' },
+  quinzenal: { label:'A cada 15 dias' },
+  mensal:    { label:'Todo mês' },
+  dias:      { label:'A cada N dias' },
+};
+function temRecorrencia(t){
+  const r = t && t.recorrencia;
+  return !!(r && r.tipo && r.tipo !== 'nao');
+}
+function textoRecorrencia(t){
+  const r = (t && t.recorrencia) || {};
+  if(!temRecorrencia(t)) return '';
+  return r.tipo === 'dias' ? 'a cada ' + (r.n || 1) + ' dia(s)'
+    : String(RECORRENCIAS[r.tipo].label).toLowerCase();
+}
+// Avança a partir da data AGENDADA (não de hoje): rotina de segunda concluída
+// na quarta continua caindo na segunda seguinte. Se a data calculada já
+// passou, segue avançando até alcançar hoje.
+function proximaOcorrencia(t){
+  const r = (t && t.recorrencia) || {};
+  const diaOriginal = Number(String(t.prazo || hoje()).slice(8, 10));
+  let d = new Date((t.prazo || hoje()) + 'T12:00:00');
+  const limite = new Date(hoje() + 'T12:00:00');
+  const passo = () => {
+    if(r.tipo === 'dias')          d.setDate(d.getDate() + Math.max(1, Number(r.n) || 1));
+    else if(r.tipo === 'diaria')   d.setDate(d.getDate() + 1);
+    else if(r.tipo === 'uteis'){ do { d.setDate(d.getDate() + 1); } while(d.getDay() === 0 || d.getDay() === 6); }
+    else if(r.tipo === 'quinzenal')d.setDate(d.getDate() + 14);
+    else if(r.tipo === 'mensal'){
+      const m = d.getMonth();
+      d.setDate(1); d.setMonth(m + 1);
+      // dia 31 em mês curto cai no último dia do mês, não vaza para o seguinte
+      const ultimo = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      d.setDate(Math.min(diaOriginal, ultimo));
+    }
+    else d.setDate(d.getDate() + 7);           // semanal é o padrão
+  };
+  let guarda = 0;
+  do { passo(); guarda++; } while(d < limite && guarda < 500);
+  return iso(d);
+}
+
 // VISIBILIDADE DO PROJETO
 // ------------------------
 //   equipe     — todo mundo com acesso à plataforma vê (o padrão, e o que
@@ -1046,6 +1097,7 @@ function cardKanban(t, podeEditar){
       ' ondragleave="saiuCard(this)" ondrop="soltarNoCard(event,\'' + t._id + '\',this)"' : '') +
     ' onclick="cliqueCard(\'' + t._id + '\',event)">' +
     '<div class="card__tit">' +
+      (temRecorrencia(t) ? '<i class="ti ti-repeat" style="color:var(--brand)"></i> ' : '') +
       (t.tipo === 'solicitacao' ? '<i class="ti ti-arrow-forward-up" style="opacity:.6"></i> ' : '') +
       esc(t.titulo) + '</div>' +
     '<div class="card__meta">' + ctx + '<span class="spacer"></span>' + indicadorConversa(t) + sinais + '</div>' +
@@ -1505,6 +1557,8 @@ function linhaTabela(t, nivel, filhas, aberto){
   // A antiga segunda linha virou sinal curto: o tipo está no ícone do ramo, o
   // responsável e as datas já têm coluna, e o risco de prazo vira um alerta.
   const marcas =
+    (temRecorrencia(t) ? '<i class="ti ti-repeat" style="color:var(--brand);flex-shrink:0" title="Rotina: ' +
+      esc(textoRecorrencia(t)) + '"></i>' : '') +
     indicadorConversa(t) +
     (fs.length ? '<span class="sub-cont" title="' + feitas + ' de ' + fs.length +
       ' sublinha(s) concluída(s)">' + feitas + '/' + fs.length + '</span>' : '') +
@@ -1648,7 +1702,8 @@ function renderPainel(){
       '<button class="icon-btn tk-tit__edit" title="Renomear" onclick="modalRenomear(\'' + t._id + '\')">' +
       '<i class="ti ti-pencil"></i></button></div>' +
     '<div class="tk-chips">' + chipStatus(t) + chipPessoa(t) +
-      chipData(t, 'prazo') + chipData(t, 'final') + chipFrente(t) + chipPai(t) + '</div>' +
+      chipData(t, 'prazo') + chipData(t, 'final') + chipFrente(t) + chipPai(t) +
+      chipRepetir(t) + '</div>' +
   '</div>' +
 
   '<div class="drawer__body">' +
@@ -1727,6 +1782,40 @@ function chipPessoa(t){
     '<i class="ti ti-chevron-down"></i></span>';
 }
 // Frente da demanda: só aparece quando o projeto tem frentes definidas.
+function chipRepetir(t){
+  if(t.tipo === 'solicitacao') return '';       // pedido não é rotina
+  const tem = temRecorrencia(t);
+  return '<span class="chip chip--plain' + (tem ? ' chip--rot' : '') +
+    '" title="' + (tem ? 'Rotina: ao concluir, volta para a próxima data' : 'Transformar em rotina') +
+    '" onclick="popRepetir(\'' + t._id + '\',event)"><i class="ti ti-repeat"></i>' +
+    (tem ? '<b>' + esc(textoRecorrencia(t)) + '</b>' +
+      (t.vezes ? ' <span class="small muted">· ' + t.vezes + 'x</span>' : '')
+     : 'não repete') +
+    ' <i class="ti ti-chevron-down"></i></span>';
+}
+function popRepetir(id, ev){
+  ev.stopPropagation();
+  const t = tarefaDe(id);
+  if(!t) return;
+  const atual = (t.recorrencia && t.recorrencia.tipo) || 'nao';
+  abrirPop(ev, '<div class="pop__lab">Repetir</div>' + Object.keys(RECORRENCIAS).map(k =>
+    '<button class="' + (atual === k ? 'pop--sel' : '') + '" onclick="fecharPop();mudarRecorrencia(\'' + id + '\',\'' + k + '\')">' +
+    '<i class="ti ti-' + (k === 'nao' ? 'circle-off' : 'repeat') + '"></i>' + RECORRENCIAS[k].label + '</button>').join(''));
+}
+async function mudarRecorrencia(id, tipo){
+  const t = tarefaDe(id);
+  if(!t) return;
+  let rec = tipo === 'nao' ? null : { tipo };
+  if(tipo === 'dias'){
+    const n = Number(prompt('Repetir a cada quantos dias?', String((t.recorrencia && t.recorrencia.n) || 7)));
+    if(!n || n < 1) return;
+    rec = { tipo:'dias', n:Math.min(365, Math.round(n)) };
+  }
+  await atualizarTarefa(id, { recorrencia:rec, atualizadoEm:new Date().toISOString() });
+  await postarMensagem(id, rec
+    ? 'Virou rotina: repete ' + textoRecorrencia({ recorrencia:rec }) + '.'
+    : 'Deixou de ser rotina.', 'sistema');
+}
 function chipFrente(t){
   const fs = frentesDe(t.projetoId);
   if(!fs.length) return '';
@@ -2252,6 +2341,8 @@ async function concluirTarefa(id){
   const pendentes = abertas(filhasDe(id));
   if(pendentes.length && !confirm('Esta tarefa tem ' + pendentes.length +
     ' sublinha(s) em aberto (subtarefa ou pedido). Concluir mesmo assim?')) return;
+  // Rotina não vai para FINALIZADO: pula para a próxima data.
+  if(temRecorrencia(t)){ await concluirRotina(t); return; }
   await atualizarTarefa(id, { status:'concluida', concluidaEm:new Date().toISOString() });
   await postarMensagem(id, 'Concluída por ' + usuario.nome + '.', 'sistema');
   await notificar(envolvidos(t), 'mensagem', 'Tarefa concluída: ' + t.titulo, t);
@@ -2269,6 +2360,27 @@ async function travarPai(filha, aviso){
   if(pai.status !== 'aguardando')
     await atualizarTarefa(pai._id, { status:'aguardando', atualizadoEm:new Date().toISOString() });
   await postarMensagem(pai._id, aviso || 'Pedido reaberto — aguardando terceiros de novo.', 'sistema');
+}
+
+// Rotina concluída: registra a volta e reprograma para a próxima data. O
+// prazo final, se existir, anda o mesmo tanto de dias.
+async function concluirRotina(t){
+  const agora = new Date().toISOString();
+  const prox = proximaOcorrencia(t);
+  const patch = { status:'a_fazer', prazo:prox, concluidaEm:null,
+                  ultimaConclusao:agora, vezes:(t.vezes || 0) + 1, atualizadoEm:agora };
+  if(t.prazoFinal && t.prazo){
+    const d = diasEntre(t.prazo, prox);
+    const f = new Date(t.prazoFinal + 'T12:00:00');
+    f.setDate(f.getDate() + d);
+    patch.prazoFinal = iso(f);
+  }
+  try{
+    await atualizarTarefa(t._id, patch);
+    await postarMensagem(t._id, 'Rotina concluída por ' + usuario.nome + ' (' + patch.vezes +
+      'ª vez). Próxima em ' + dataBR(prox) + '.', 'sistema');
+    toast('Rotina concluída. Próxima em ' + dataBR(prox) + '.', 'ok');
+  }catch(e){ toast('Erro: ' + (e && e.code || e), 'erro'); }
 }
 
 // Destrava a tarefa de quem pediu: quando não sobra nenhum pedido em aberto,
@@ -2498,6 +2610,21 @@ function opcoesFrente(projetoId, sel){
 }
 // Trocar o projeto no formulário troca a lista de frentes.
 // A caixa de acompanhamento só faz sentido quando o responsável é outra pessoa.
+function opcoesRecorrencia(sel){
+  return Object.keys(RECORRENCIAS).map(k => '<option value="' + k + '"' +
+    (k === sel ? ' selected' : '') + '>' + RECORRENCIAS[k].label + '</option>').join('');
+}
+function atualizarRecorrencia(){
+  const sel = $('t-rec'), n = $('t-rec-n');
+  if(sel && n) n.style.display = sel.value === 'dias' ? 'block' : 'none';
+}
+function lerRecorrencia(){
+  const sel = $('t-rec');
+  if(!sel || sel.value === 'nao') return null;
+  const r = { tipo:sel.value };
+  if(sel.value === 'dias') r.n = Math.max(1, Number(($('t-rec-dias') || {}).value) || 7);
+  return r;
+}
 function atualizarAcompanhar(){
   const linha = $('t-acomp-linha'), sel = $('t-resp');
   if(!linha || !sel) return;
@@ -2543,7 +2670,13 @@ function modalNovaTarefa(projetoId, frenteId){
       '<input type="checkbox" id="t-acomp" checked> Acompanhar no meu quadro</label>' +
       '<div class="ajuda">Fica em <b>aguardando terceiros</b> para você e volta para ' +
       '<b>verificar / revisar</b> quando a pessoa concluir. Desmarque para entregar de vez.</div></div>' +
-    camposPrazos(hoje(), ''),
+    camposPrazos(hoje(), '') +
+    '<div class="fg"><label>Repetir</label>' +
+      '<select id="t-rec" onchange="atualizarRecorrencia()">' + opcoesRecorrencia('nao') + '</select>' +
+      '<div id="t-rec-n" style="display:none;margin-top:8px">' +
+        '<input type="number" min="1" max="365" id="t-rec-dias" value="7" style="width:110px"> dias</div>' +
+      '<div class="ajuda">Rotina não vai para finalizado: ao concluir, ela volta para ' +
+      '<b>não iniciado</b> já na próxima data.</div></div>',
     'Criar demanda', 'salvarTarefa(null)'));
   atualizarAcompanhar();
 }
@@ -2556,7 +2689,11 @@ function modalNovaSubtarefa(paiId){
     '<div class="fg"><label>O passo</label><input id="t-titulo" placeholder="Ex.: Conferir as marcações do relógio"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' + selPessoas('t-resp', pai.responsavel, pai.projetoId) + '</div>' +
-    camposPrazos(hoje(), pai.prazoFinal || ''),
+    camposPrazos(hoje(), pai.prazoFinal || '') +
+    '<div class="fg"><label>Repetir</label>' +
+      '<select id="t-rec" onchange="atualizarRecorrencia()">' + opcoesRecorrencia('nao') + '</select>' +
+      '<div id="t-rec-n" style="display:none;margin-top:8px">' +
+        '<input type="number" min="1" max="365" id="t-rec-dias" value="7" style="width:110px"> dias</div></div>',
     'Criar subtarefa', 'salvarTarefa(\'' + paiId + '\')'));
 }
 async function salvarTarefa(paiId){
@@ -2572,6 +2709,7 @@ async function salvarTarefa(paiId){
   const agora = new Date().toISOString();
   const acompanhar = !pai && resp !== usuario.email && !!($('t-acomp') && $('t-acomp').checked);
   const base = { projetoId, frenteId, titulo, descricao, criadoPor:usuario.email,
+                 recorrencia:lerRecorrencia(),
                  criadoEm:agora, atualizadoEm:agora, ultimaMsgEm:null, lidoPor:{} };
   try{
     if(acompanhar){
