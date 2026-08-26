@@ -237,6 +237,50 @@ function ehMaster(){ return usuario && usuario.papel === 'master'; }
 
 // ---------- Consultas em memória ----------
 function projetoDe(id){ return projetos.find(p => p._id === id) || null; }
+// VISIBILIDADE DO PROJETO
+// ------------------------
+//   equipe     — todo mundo com acesso à plataforma vê (o padrão, e o que
+//                todos os projetos existentes continuam sendo)
+//   individual — o dono vê; quem tem perfil de GESTOR também (é a alçada)
+//   privado    — só o dono, nem gestor entra
+// O perfil (gestor/usuário) mora no cadastro da pessoa, campo
+// 'perfilProjetos'; o Master é gestor por definição.
+const VISIBILIDADES = {
+  equipe:     { label:'Toda a equipe',      icone:'users',     dica:'Qualquer pessoa com acesso à plataforma vê este projeto.' },
+  individual: { label:'Só eu e os gestores',icone:'user-shield', dica:'Você vê, e quem tem perfil de gestor também. Serve para o que é seu mas precisa de alçada.' },
+  privado:    { label:'Só eu',              icone:'lock',      dica:'Ninguém mais vê, nem gestor. Para o que é pessoal.' },
+};
+function visDoProjeto(p){ return (p && p.visibilidade) || 'equipe'; }
+function donoDoProjeto(p){ return (p && (p.dono || p.criadoPor)) || ''; }
+function ehGestor(u){
+  const q = u || usuario;
+  return !!(q && (q.papel === 'master' || q.perfilProjetos === 'gestor'));
+}
+function vejoProjeto(p){
+  if(!p) return false;
+  const vis = visDoProjeto(p);
+  if(vis === 'equipe') return true;
+  if(donoDoProjeto(p) === usuario.email) return true;
+  return vis === 'individual' ? ehGestor() : false;
+}
+function projetosVisiveis(){ return projetos.filter(vejoProjeto); }
+// Tarefa órfã (projeto apagado) continua aparecendo: esconder dado por
+// engano é pior que mostrar.
+function vejoTarefa(t){
+  const p = projetoDe(t.projetoId);
+  return p ? vejoProjeto(p) : true;
+}
+// Em projeto restrito, só dá para atribuir a quem enxerga o projeto —
+// senão a pessoa receberia uma tarefa de um projeto invisível para ela.
+function pessoasDoProjeto(projetoId){
+  const p = projetoDe(projetoId);
+  const vis = visDoProjeto(p);
+  if(!p || vis === 'equipe') return usuarios;
+  const dono = donoDoProjeto(p);
+  if(vis === 'privado') return usuarios.filter(u => u.email === dono);
+  return usuarios.filter(u => u.email === dono || ehGestor(u));
+}
+
 // FRENTES: subdivisões do projeto, que não são tarefa. Um projeto do comercial
 // se divide em SDR, CRÉDITO, ORÇAMENTO, e cada frente tem suas tarefas (e as
 // subtarefas delas). Ficam dentro do próprio doc do projeto — são poucas, e
@@ -420,7 +464,8 @@ async function carregarUsuario(email){
   if(!d && MASTER_BOOTSTRAP.includes(mail)) d = { email:mail, nome:mail, papel:'master', ativo:true };
   if(!d || d.ativo === false || d.papel === 'um989') return 'sem-acesso';
   if(!temProjetos(d)) return 'sem-plataforma';
-  usuario = { email:mail, nome:d.nome || mail, papel:d.papel || 'corporativo' };
+  usuario = { email:mail, nome:d.nome || mail, papel:d.papel || 'corporativo',
+              perfilProjetos:d.perfilProjetos || 'usuario' };
   return 'ok';
 }
 // Pessoas que podem receber tarefas: só quem também tem esta plataforma.
@@ -432,10 +477,13 @@ function assinarPessoas(){
       const u = d.data() || {};
       if(!temProjetos(u)) return;
       usuarios.push({ email:(u.email || d.id).toLowerCase(), nome:u.nome || d.id,
-                      papel:u.papel || '', foto:u.foto || null });
+                      papel:u.papel || '', foto:u.foto || null,
+                      perfilProjetos:u.perfilProjetos || 'usuario' });
     });
-    if(usuario && !usuarios.some(u => u.email === usuario.email))
-      usuarios.push({ email:usuario.email, nome:usuario.nome, papel:usuario.papel, foto:null });
+    const eu = usuarios.find(u => u.email === usuario.email);
+    if(eu) usuario.perfilProjetos = eu.perfilProjetos;
+    else usuarios.push({ email:usuario.email, nome:usuario.nome, papel:usuario.papel,
+                         foto:null, perfilProjetos:usuario.perfilProjetos });
     usuarios.sort((a,b) => nomeDe(a.email).localeCompare(nomeDe(b.email), 'pt-BR'));
     render();
     renderMinhaFoto();
@@ -700,13 +748,14 @@ function render(){
   else                  v.innerHTML = viewAgenda();
 }
 function renderNav(){
-  const minhas = abertas(tarefas.filter(t => t.responsavel === usuario.email));
+  const minhas = abertas(tarefas.filter(t => t.responsavel === usuario.email && vejoTarefa(t)));
   const urgentes = minhas.filter(t => ['checar','atrasada','hoje'].includes(grupoDaTarefa(t))).length;
   const itens = [
     { id:'agenda',   icone:'layout-kanban', label:'Minhas tarefas',
       count:urgentes, dica:urgentes ? urgentes + ' item(ns) pedindo ação hoje' : 'Seu quadro e sua agenda' },
     { id:'projetos', icone:'table',         label:'Projetos',
-      count:projetos.filter(p => p.status !== 'concluido').length, dica:'Projetos, frentes e demandas' },
+      count:projetosVisiveis().filter(p => p.status !== 'concluido').length,
+      dica:'Projetos, frentes e demandas' },
   ];
   $('abas').innerHTML = itens.map(i =>
     '<button class="aba' + (aba === i.id ? ' aba--on' : '') + '" title="' + esc(i.dica) + '" ' +
@@ -1034,7 +1083,7 @@ function kanbanHTML(lista, podeEditar){
 
 function viewAgenda(){
   const email = usuario.email;
-  const todas = tarefas.filter(t => t.responsavel === email);
+  const todas = tarefas.filter(t => t.responsavel === email && vejoTarefa(t));
   const emAberto = abertas(todas);
   const atrasadas = emAberto.filter(t => t.prazo && t.prazo < hoje()).length;
   const vencidos = emAberto.filter(deadlineEstourado).length;
@@ -1093,18 +1142,21 @@ function visivel(t, prof){
 }
 
 function viewProjetos(){
-  const ativos = projetos.filter(p => p.status !== 'concluido');
-  const fechados = projetos.filter(p => p.status === 'concluido');
+  const meus = projetosVisiveis();
+  const ativos = meus.filter(p => p.status !== 'concluido');
+  const fechados = meus.filter(p => p.status === 'concluido');
   const cabecalho =
     '<div class="row--between" style="margin-bottom:var(--space-4);flex-wrap:wrap">' +
       '<div><h1 class="page-title">Projetos</h1>' +
-      '<p class="page-subtitle">' + ativos.length + ' em andamento · ' + abertas(tarefas).length +
-      ' demandas em aberto</p></div>' +
-      (ehMaster() ? '<button class="icon-btn" title="Integração com o Google Drive" ' +
+      '<p class="page-subtitle">' + ativos.length + ' em andamento · ' +
+      abertas(tarefas.filter(vejoTarefa)).length + ' demandas em aberto</p></div>' +
+      (ehMaster() ? '<button class="icon-btn" title="Perfis: quem é gestor" ' +
+        'onclick="modalPerfis()"><i class="ti ti-user-shield"></i></button>' +
+        '<button class="icon-btn" title="Integração com o Google Drive" ' +
         'onclick="modalConfigDrive()"><i class="ti ti-brand-google-drive"></i></button>' : '') +
       '<button class="btn btn--primary" onclick="modalNovoProjeto()"><i class="ti ti-plus"></i> Novo projeto</button>' +
     '</div>' + barraFerramentas();
-  if(!projetos.length)
+  if(!meus.length)
     return '<div class="wrap">' + cabecalho + vazio('folder-plus', 'Nenhum projeto ainda',
       'Crie o primeiro projeto para começar a organizar as demandas da área.') + '</div>';
   const blocos = ativos.map(blocoProjeto).join('');
@@ -1174,6 +1226,11 @@ function blocoProjeto(p){
         '<i class="ti ti-chevron-' + (recolhido ? 'right' : 'down') + ' muted"></i>' + esc(p.nome) + '</button>' +
       (p.status === 'concluido' ? '<span class="badge badge--success">Concluído</span>' :
        p.status === 'pausado'   ? '<span class="badge badge--warning">Pausado</span>' : '') +
+      (visDoProjeto(p) !== 'equipe'
+        ? '<span class="selo-vis" title="' + esc(VISIBILIDADES[visDoProjeto(p)].dica) +
+          ' (dono: ' + esc(nomeDe(donoDoProjeto(p))) + ')"><i class="ti ti-' +
+          VISIBILIDADES[visDoProjeto(p)].icone + '"></i>' +
+          esc(VISIBILIDADES[visDoProjeto(p)].label) + '</span>' : '') +
       pilhaStatus(ts, pct) +
       '<span class="small muted">' + pct + '% · ' + ab.length + ' em aberto' +
         (atrasadas ? ' · <span style="color:var(--danger-text);font-weight:600">' + atrasadas + ' atrasada</span>' : '') +
@@ -1810,7 +1867,7 @@ function popPessoa(id, ev){
   ev.stopPropagation();
   const t = tarefaDe(id);
   if(!t) return;
-  abrirPop(ev, '<div class="pop__lab">Responsável</div>' + usuarios.map(u =>
+  abrirPop(ev, '<div class="pop__lab">Responsável</div>' + pessoasDoProjeto(t.projetoId).map(u =>
     '<button class="' + (t.responsavel === u.email ? 'pop--sel' : '') + '" onclick="fecharPop();mudarResponsavel(\'' + id + '\',\'' + esc(u.email) + '\')">' +
     avatar(u.email, 'avatar--sm') + esc(nomeDe(u.email)) + '</button>').join(''));
 }
@@ -2002,8 +2059,9 @@ function copiarLinkTarefa(id){
   const m = $('menu-ticket'); if(m) m.classList.remove('menu--on');
 }
 function focarCampo(id){ const e = $(id); if(e){ e.focus(); if(e.showPicker) try{ e.showPicker(); }catch(x){} } }
-function opcoesPessoa(sel){
-  return usuarios.map(u => '<option value="' + esc(u.email) + '"' + (u.email === sel ? ' selected' : '') + '>' +
+function opcoesPessoa(sel, projetoId){
+  const lista = projetoId ? pessoasDoProjeto(projetoId) : usuarios;
+  return lista.map(u => '<option value="' + esc(u.email) + '"' + (u.email === sel ? ' selected' : '') + '>' +
     esc(nomeDe(u.email)) + '</option>').join('');
 }
 
@@ -2315,8 +2373,8 @@ function moldura(titulo, corpo, botao, acao){
     '<div class="modal__foot"><button class="btn" onclick="fecharModal()">Cancelar</button>' +
     '<button class="btn btn--primary" onclick="' + acao + '">' + esc(botao) + '</button></div>';
 }
-function selPessoas(id, sel){
-  return '<select id="' + id + '">' + opcoesPessoa(sel) + '</select>';
+function selPessoas(id, sel, projetoId){
+  return '<select id="' + id + '">' + opcoesPessoa(sel, projetoId) + '</select>';
 }
 // Os dois campos de data, sempre com a explicação do que cada um significa.
 function camposPrazos(prazo, final){
@@ -2336,6 +2394,12 @@ function modalNovoProjeto(id){
       '" placeholder="Ex.: Implantação do ponto eletrônico"></div>' +
     '<div class="fg"><label>Descrição / objetivo</label><textarea id="p-desc" placeholder="O que este projeto precisa entregar">' +
       esc(p ? p.descricao : '') + '</textarea></div>' +
+    '<div class="fg"><label>Quem vê este projeto</label><select id="p-vis">' +
+      Object.keys(VISIBILIDADES).map(k => '<option value="' + k + '"' +
+        ((p ? visDoProjeto(p) : 'equipe') === k ? ' selected' : '') + '>' +
+        VISIBILIDADES[k].label + '</option>').join('') + '</select>' +
+      '<div class="ajuda">' + Object.keys(VISIBILIDADES).map(k =>
+        '<b>' + VISIBILIDADES[k].label + '</b>: ' + VISIBILIDADES[k].dica).join('<br>') + '</div></div>' +
     '<div class="fg"><label>Líder do projeto</label>' + selPessoas('p-lider', p ? p.lider : usuario.email) + '</div>' +
     '<div class="fg"><label>Pasta do projeto no Google Drive</label>' +
       '<input id="p-drive" value="' + esc(p ? (p.driveUrl || '') : '') +
@@ -2352,8 +2416,14 @@ async function salvarProjeto(id){
   if(!nome){ toast('Dê um nome ao projeto.', 'erro'); return; }
   const drive = ($('p-drive').value || '').trim();
   if(drive && !/^https?:\/\//i.test(drive)){ toast('O link da pasta precisa começar com https://', 'erro'); return; }
+  const p0 = id ? projetoDe(id) : null;
   const dados = { nome, descricao:($('p-desc').value || '').trim(),
-    lider:$('p-lider').value, status:$('p-status').value, driveUrl:drive || null,
+    status:$('p-status').value, driveUrl:drive || null,
+    visibilidade:$('p-vis').value,
+    dono: p0 ? donoDoProjeto(p0) : usuario.email,
+    lider: $('p-vis').value === 'privado'
+      ? (p0 ? donoDoProjeto(p0) : usuario.email)      // privado: o líder é o dono
+      : $('p-lider').value,
     atualizadoEm:new Date().toISOString() };
   try{
     if(id){
@@ -2434,17 +2504,27 @@ function atualizarAcompanhar(){
   linha.style.display = (sel.value && sel.value !== usuario.email) ? 'block' : 'none';
 }
 function atualizarFrentesModal(){
+  const proj = $('t-proj').value;
   const sel = $('t-frente');
-  if(sel) sel.innerHTML = opcoesFrente($('t-proj').value, '');
+  if(sel) sel.innerHTML = opcoesFrente(proj, '');
+  // Projeto restrito não aceita qualquer responsável.
+  const resp = $('t-resp');
+  if(resp){
+    const antes = resp.value;
+    resp.innerHTML = opcoesPessoa(antes, proj);
+    if(resp.value !== antes) resp.value = usuario.email;
+    atualizarAcompanhar();
+  }
 }
 function modalNovaTarefa(projetoId, frenteId){
-  if(!projetos.length){
+  if(!projetosVisiveis().length){
     toast('Crie um projeto antes de lançar demandas.');
     aba = 'projetos'; render(); modalNovoProjeto();
     return;
   }
-  const ativos = projetos.filter(p => p.status !== 'concluido');
-  const lista = ativos.length ? ativos : projetos;
+  const visiveis = projetosVisiveis();
+  const ativos = visiveis.filter(p => p.status !== 'concluido');
+  const lista = ativos.length ? ativos : visiveis;
   const projSel = projetoId || (lista[0] && lista[0]._id);
   abrirModal(moldura('Nova demanda',
     '<div class="fg"><label>Projeto</label><select id="t-proj" onchange="atualizarFrentesModal()">' + lista.map(p =>
@@ -2454,7 +2534,7 @@ function modalNovaTarefa(projetoId, frenteId){
     '<div class="fg"><label>Demanda</label><input id="t-titulo" placeholder="Ex.: Levantar as bases de horas extras de julho"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc" placeholder="Contexto, links, o que se espera de resultado"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' +
-      '<select id="t-resp" onchange="atualizarAcompanhar()">' + opcoesPessoa(usuario.email) + '</select></div>' +
+      '<select id="t-resp" onchange="atualizarAcompanhar()">' + opcoesPessoa(usuario.email, projSel) + '</select></div>' +
     // Delegar é diferente de entregar: por padrão a demanda que vai para outra
     // pessoa fica no MEU quadro como acompanhamento, em aguardando terceiros, e
     // volta para verificar quando ela concluir.
@@ -2475,7 +2555,7 @@ function modalNovaSubtarefa(paiId){
       '<div>Entra como sublinha de <b>' + esc(pai.titulo) + '</b>, na tabela do projeto.</div></div>' +
     '<div class="fg"><label>O passo</label><input id="t-titulo" placeholder="Ex.: Conferir as marcações do relógio"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc"></textarea></div>' +
-    '<div class="fg"><label>Responsável</label>' + selPessoas('t-resp', pai.responsavel) + '</div>' +
+    '<div class="fg"><label>Responsável</label>' + selPessoas('t-resp', pai.responsavel, pai.projetoId) + '</div>' +
     camposPrazos(hoje(), pai.prazoFinal || ''),
     'Criar subtarefa', 'salvarTarefa(\'' + paiId + '\')'));
 }
@@ -2557,14 +2637,15 @@ async function salvarDescricao(id){
 function modalSolicitar(id){
   const t = tarefaDe(id);
   if(!t) return;
-  const outros = usuarios.filter(u => u.email !== usuario.email);
-  const padrao = (outros[0] || usuarios[0] || {}).email;
+  const podem = pessoasDoProjeto(t.projetoId);
+  const outros = podem.filter(u => u.email !== usuario.email);
+  const padrao = (outros[0] || podem[0] || {}).email;
   abrirModal(moldura('Preciso de alguém para seguir',
     '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-info-circle"></i>' +
       '<div>Cria uma solicitação na agenda da pessoa <b>para hoje</b> (para ela ver e se programar) com o ' +
       '<b>prazo final</b> que você definir. <b>' + esc(recorta(t.titulo, 40)) +
       '</b> fica aguardando; quando ela responder, volta para você em "a checar".</div></div>' +
-    '<div class="fg"><label>De quem você precisa</label>' + selPessoas('s-quem', padrao) + '</div>' +
+    '<div class="fg"><label>De quem você precisa</label>' + selPessoas('s-quem', padrao, t.projetoId) + '</div>' +
     '<div class="fg"><label>O que você precisa dela</label><textarea id="s-texto" ' +
       'placeholder="Ex.: Preciso do parecer jurídico sobre a cláusula 4 para fechar o contrato"></textarea></div>' +
     '<div class="fg-dupla">' +
@@ -2806,6 +2887,36 @@ async function criarPastaDoProjeto(id){
     toast('Pasta criada no Drive e vinculada ao projeto.', 'ok');
   }catch(e){ toast(e.message || String(e), 'erro'); }
 }
+// Quem é gestor enxerga os projetos "individuais" dos outros — é a alçada.
+// Só o Master mexe nisso, e a escrita é no cadastro da pessoa (usuarios).
+function modalPerfis(){
+  abrirModal(moldura('Perfis em Projetos Estratégicos',
+    '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-user-shield"></i>' +
+      '<div><b>Gestor</b> enxerga também os projetos marcados como "só eu e os gestores". ' +
+      'Ninguém enxerga os projetos marcados como "só eu".</div></div>' +
+    '<div class="mini-lista">' + usuarios.map(u =>
+      '<div class="mini" style="border-left-color:' + (ehGestor(u) ? 'var(--brand)' : 'var(--border-strong)') + '">' +
+        avatar(u.email, 'avatar--sm') +
+        '<span class="mini__tit">' + esc(nomeDe(u.email)) +
+          (u.papel === 'master' ? ' <span class="small muted">(Master)</span>' : '') + '</span>' +
+        (u.papel === 'master'
+          ? '<span class="badge badge--success">Gestor</span>'
+          : '<select onchange="salvarPerfil(\'' + esc(u.email) + '\',this.value)" ' +
+            'style="height:30px;font-size:12.5px;border:1px solid var(--border);border-radius:var(--radius-sm);' +
+            'background:var(--surface);padding:0 6px">' +
+            '<option value="usuario"' + (ehGestor(u) ? '' : ' selected') + '>Usuário</option>' +
+            '<option value="gestor"' + (ehGestor(u) ? ' selected' : '') + '>Gestor</option></select>') +
+      '</div>').join('') + '</div>',
+    'Fechar', 'fecharModal()'));
+}
+async function salvarPerfil(email, perfil){
+  if(!ehMaster()){ toast('Só o Master muda perfis.', 'erro'); return; }
+  try{
+    await window._setDoc(window._doc('usuarios', email), { perfilProjetos:perfil }, { merge:true });
+    toast(nomeDe(email) + ' agora é ' + (perfil === 'gestor' ? 'gestor' : 'usuário') + '.', 'ok');
+  }catch(e){ toast('Erro: ' + (e && e.code || e), 'erro'); }
+}
+
 function modalConfigDrive(){
   const c = confDrive || {};
   abrirModal(moldura('Integração com o Google Drive',
