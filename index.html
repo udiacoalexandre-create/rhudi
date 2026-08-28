@@ -556,6 +556,17 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .ds .lan-destaque__n { font-size: 34px; font-weight: 800; color: var(--brand); line-height: 1; }
 .ds .lan-destaque__l { font-size: 14px; color: var(--text-secondary); }
 
+/* Aviso de alterações fora da versão salva da base */
+#aviso-versao { position: fixed; right: 20px; bottom: 20px; z-index: 900; display: flex;
+  align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--yellow);
+  border-left: 4px solid var(--yellow); border-radius: var(--radius); padding: 10px 12px;
+  box-shadow: 0 10px 30px rgba(15,23,42,.18); max-width: 380px; font-family: 'Inter', sans-serif; }
+#aviso-versao .av-n { font-size: 20px; font-weight: 800; color: var(--yellow); line-height: 1; }
+#aviso-versao .av-t { font-size: 12px; color: var(--text2); line-height: 1.25; }
+#aviso-versao .av-x { background: none; border: none; color: var(--text3); font-size: 18px;
+  cursor: pointer; line-height: 1; padding: 0 2px; }
+#aviso-versao .av-x:hover { color: var(--text); }
+
 /* Informação secundária vira "?" com tooltip, em vez de texto na tela */
 .ds .ajuda { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
   border-radius: 50%; background: var(--surface-soft); border: 1px solid var(--border);

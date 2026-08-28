@@ -2737,6 +2737,7 @@ async function salvarBaseComp(comp, silent){
     _bsOrdenar();
     await _bsGravarIndice();
     if(currentPage==='base-versoes') renderBasesSalvas();
+    _limparAlteracoesBase();
     if(!silent) toast('Base de '+comp+' salva ('+colaboradores.length+' colaboradores).','success');
     return true;
   }catch(e){ toast('Erro ao salvar base: '+e.message,'error'); return false; }
@@ -4369,10 +4370,13 @@ async function loadConfig(){
 
 async function fsSet(col,id,data){
   await window._setDoc(window._doc(col,id),data);
+  // Qualquer gravação de colaborador conta como alteração fora da versão.
+  if(col==='colaboradores') _marcarAlteracaoBase(id);
 }
 
 async function fsDel(col,id){
   await window._deleteDoc(window._doc(col,id));
+  if(col==='colaboradores') _marcarAlteracaoBase(id);
 }
 
 async function fsSetLan(mat,data){
@@ -4470,7 +4474,9 @@ function entrarBeneficios(){
   // basesSalvas fica FORA daqui: cada versão guarda uma cópia completa da base
   // (~850 KB), então baixar as 89 no login custava ~74 MB para a tela inicial,
   // que não usa nenhuma. Passou a ser carregado sob demanda, e por índice.
+  _carregarAlteracoesBase();
   Promise.all([loadColaboradores(),loadLancamento(),loadConfig(),loadFeriados(),loadDUComps()]).then(()=>{
+    renderAvisoVersao();
     aplicarDUAutomatico(lanComp);   // dias úteis da competência corrente
     window.__benefLoaded=true;
     switchModule('base');
@@ -12039,4 +12045,60 @@ function renderTabelaBenef(){
       +'<td style="text-align:right;font-weight:600">'+brl(x.val)+'</td></tr>').join('')
     +'</tbody><tfoot><tr class="total-row"><td colspan="4" style="text-align:right;font-weight:700">Total</td>'
     +'<td style="text-align:right;font-weight:700">'+brl(tot[ben]||0)+'</td></tr></tfoot></table></div>';
+}
+
+// ============================================================
+// ALTERAÇÕES NÃO VERSIONADAS DA BASE
+// ============================================================
+// A apuração roda sobre a VERSÃO SALVA da base, não sobre o cadastro vivo.
+// Quem edita um colaborador e não salva uma versão nova continua apurando com
+// o valor antigo — foi assim que uma cesta de 184 já corrigida saiu no
+// arquivo de pagamento. Aqui o sistema conta as alterações e oferece salvar.
+
+let alteracoesBase=new Set();
+
+function _carregarAlteracoesBase(){
+  try{ const j=JSON.parse(localStorage.getItem('rhudi_altBase')||'[]');
+       if(Array.isArray(j)) alteracoesBase=new Set(j); }catch(e){}
+}
+function _marcarAlteracaoBase(id){
+  if(!id) return;
+  alteracoesBase.add(String(id));
+  try{ localStorage.setItem('rhudi_altBase',JSON.stringify([...alteracoesBase])); }catch(e){}
+  renderAvisoVersao();
+}
+function _limparAlteracoesBase(){
+  alteracoesBase=new Set();
+  try{ localStorage.removeItem('rhudi_altBase'); }catch(e){}
+  renderAvisoVersao();
+}
+
+// Barra discreta no canto: aparece só quando há alteração pendente.
+function renderAvisoVersao(){
+  let el=document.getElementById('aviso-versao');
+  const n=alteracoesBase.size;
+  if(!n){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement('div');
+    el.id='aviso-versao';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<span class="av-n">'+n+'</span>'
+    +'<span class="av-t">alteraç'+(n===1?'ão':'ões')+' fora da versão salva</span>'
+    +'<button class="btn btn-primary btn-sm" onclick="salvarVersaoRapida()"><i class="ti ti-device-floppy"></i> Salvar versão</button>'
+    +'<button class="av-x" onclick="document.getElementById(\'aviso-versao\').remove()" title="Esconder até a próxima alteração">&times;</button>';
+}
+
+// Salva uma versão da base já com a competência do mês corrente.
+async function salvarVersaoRapida(){
+  const hoje=new Date();
+  const comp=String(hoje.getMonth()+1).padStart(2,'0')+'/'+hoje.getFullYear();
+  const nomes=[...alteracoesBase].map(id=>{
+    const c=colaboradores.find(x=>x._id===id); return c?c.nome:null;
+  }).filter(Boolean);
+  const lista=nomes.slice(0,6).join('\n  · ')+(nomes.length>6?'\n  · e mais '+(nomes.length-6):'');
+  if(!confirm('Salvar uma nova versão da base em '+comp+'?\n\n'
+    +colaboradores.length+' colaboradores. Alterados desde a última versão:\n  · '+lista)) return;
+  const ok=await salvarBaseComp(comp);
+  if(ok) _limparAlteracoesBase();
 }
