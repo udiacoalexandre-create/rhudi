@@ -142,7 +142,7 @@
 /* Botao primario verde (marca) nas telas migradas para o design system */
 .ds .btn-primary{ background:var(--brand); border-color:var(--brand); color:#fff; }
 .ds .btn-primary:hover{ background:var(--brand-hover); border-color:var(--brand-hover); }
-/* Radar de Ferias — cards do kanban (compacto/vertical) */
+/* Cards compactos do kanban de Ferias Agendadas (nasceram no Radar, que saiu) */
 .ds .rad-card{ background:#fff;border:1px solid var(--border);border-radius:8px;padding:7px 8px;cursor:pointer;transition:box-shadow .12s,border-color .12s; }
 .ds .rad-card:hover{ box-shadow:var(--shadow-md);border-color:var(--border-strong); }
 .ds .rad-card__top{ display:flex;align-items:center;gap:5px; }
@@ -151,14 +151,7 @@
 .ds .rad-saldo.neg{ color:var(--danger-text); }
 .ds .rad-venc{ font-size:11px;font-weight:700;margin-top:3px; }
 .ds .rad-agend{ font-size:10px;color:var(--text-secondary);margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap; }
-.ds .rad-tag{ font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;white-space:nowrap; }
-.ds .rad-tag--ok{ background:var(--success-bg);color:var(--success-text); }
-.ds .rad-tag--bad{ background:var(--danger-bg);color:var(--danger-text); }
-.ds .rad-tag--neu{ background:var(--accent-bg);color:var(--accent-text); }
-.ds .rad-tag--none{ background:var(--surface-soft);color:var(--text-muted); }
 /* Modal de detalhe de ferias */
-.ds .ferd-resumo{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px;background:var(--surface-soft);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px; }
-.ds .ferd-item{ display:flex;flex-direction:column;gap:4px;min-width:0; }
 .ds .ferd-lbl{ font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted); }
 .ds .ferd-val{ font-size:14px;font-weight:700;color:var(--text); }
 .ds .ferd-log{ display:flex;justify-content:space-between;gap:10px;font-size:12px;border-bottom:1px solid var(--border);padding:5px 2px; }
