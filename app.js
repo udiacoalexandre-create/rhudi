@@ -2588,41 +2588,9 @@ async function lanReativarAfastado(id){
   showPage('ben-lancamento');
 }
 
-// ── Passo 2/3: listas de férias e afastados com busca/filtro ─────
-function _lanEmpresasDe(lista){ return [...new Set(lista.map(c=>_empresaKey(c)).filter(Boolean))].sort((a,b)=>a==='PART'?1:(b==='PART'?-1:a.localeCompare(b))); }
-function _lanFiltraLista(grupo, qId, empId){
-  const q=(document.getElementById(qId)?.value||'').toLowerCase().trim();
-  const emp=document.getElementById(empId)?.value||'';
-  return colsApuracao().filter(c=>statusGrupo(c.status)===grupo).filter(c=>{
-    if(q && !((c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q))) return false;
-    if(emp && !_empresaMatch(c,[emp])) return false;
-    return true;
-  }).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-}
-function _lanFerRows(lista){
-  if(!lista.length) return '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--text-muted)">Ninguém em férias com os filtros atuais.</td></tr>';
-  return lista.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>
-    '<tr><td><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
-    +'<td class="text-sm">'+(c.depto||'—')+'</td>'
-    +'<td class="text-sm">'+_empresaLabel(_empresaKey(c))+'</td>'
-    +'<td><span class="badge badge--warning">Férias</span></td>'
-    +'<td style="text-align:right;font-weight:600">'+(c.ferDiasComprados!=null?c.ferDiasComprados:0)+'d</td>'
-    +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="abrirDetalheFerias(\''+c._id+'\')"><i class="ti ti-edit"></i> Editar</button></td></tr>'
-  ).join('');
-}
-function _lanAfaRows(lista){
-  if(!lista.length) return '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text-muted)">Ninguém afastado com os filtros atuais.</td></tr>';
-  return lista.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>
-    '<tr><td><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
-    +'<td class="text-sm">'+(c.depto||'—')+'</td>'
-    +'<td class="text-sm">'+_empresaLabel(_empresaKey(c))+'</td>'
-    +'<td><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'
-    +'<td style="text-align:center;white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="abrirEditar(\''+c._id+'\')"><i class="ti ti-edit"></i> Editar</button> '
-      +'<button class="btn btn-ghost btn-sm" onclick="lanReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button></td></tr>'
-  ).join('');
-}
-function renderLanFerList(){ const el=document.getElementById('lan-fer-tbody'); if(el) el.innerHTML=_lanFerRows(_lanFiltraLista('ferias','lf2-q','lf2-emp')); }
-function renderLanAfaList(){ const el=document.getElementById('lan-afa-tbody'); if(el) el.innerHTML=_lanAfaRows(_lanFiltraLista('so_cesta','lf3-q','lf3-emp')); }
+// As listas de férias/afastados guiadas por STATUS saíram daqui: a apuração
+// olha o PERÍODO cadastrado (ferInicio/ferFim), não o status de hoje. Quem lista
+// férias na competência é _feriasNaComp, no passo 3 do Lançamento.
 
 // ── Incluir colaborador em férias / afastados (muda base + controle férias) ──
 function abrirIncluirStatus(tipo){
