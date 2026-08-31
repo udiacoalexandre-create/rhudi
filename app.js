@@ -6028,6 +6028,122 @@ function ferCritico(c, per, hoje){
   const f=ferFaixa(per,hoje);
   return ['vencido','30d','60d','90d'].includes(f) && !c.ferMes;
 }
+// ── Extrato: cada gozo lançado dentro do período aquisitivo que ele baixou ──
+// O consumo é alocado do período mais ANTIGO para o mais novo (FIFO). Um gozo
+// pode atravessar dois períodos, e nesse caso aparece dividido.
+//
+// O que o saldo diz que foi consumido e o que está REGISTRADO em feriasPeriodos
+// não batem para quem já gozava férias antes deste controle existir. A
+// diferença aparece como "baixa anterior ao controle", em vez de sumir ou de
+// inventar datas.
+function ferExtrato(c, hoje){
+  const per=ferPeriodosAquisitivos(c,hoje);
+  if(!per) return null;
+  const eventos=_ferPeriodos(c)
+    .filter(p=>p.inicio&&p.fim)
+    .map(p=>({tipo:p.coletiva?'coletiva':'gozo', inicio:p.inicio, fim:p.fim,
+      gozados:_diasCorridos(p.inicio,p.fim), comprados:fnum(p.comprados),
+      fechado:!!p.fechadoEm}))
+    .sort((a,b)=>String(a.inicio).localeCompare(String(b.inicio)));
+  const registrado=eventos.reduce((s,e)=>s+e.gozados+e.comprados,0);
+  const inferido=Math.max(0, per.direito-per.saldo);
+  const anterior=Math.max(0, Math.min(inferido, per.direito)-registrado);
+  // Registrado além do que o saldo comporta: mostra em vez de esconder.
+  const excedeSaldo=Math.max(0, registrado-Math.min(inferido,per.direito));
+
+  const capac=per.completos.map(()=>30);
+  const linhas=per.completos.map(()=>[]);
+  let idx=0;
+  const consumir=(qtd, mk)=>{
+    let resta=qtd;
+    while(resta>0 && idx<capac.length){
+      if(capac[idx]<=0){ idx++; continue; }
+      const usa=Math.min(resta, capac[idx]);
+      capac[idx]-=usa; linhas[idx].push(mk(usa, usa<qtd)); resta-=usa;
+    }
+    return resta;
+  };
+  if(anterior>0) consumir(anterior, dias=>({tipo:'anterior',dias}));
+  eventos.forEach(e=>{
+    const tot=e.gozados+e.comprados;
+    consumir(tot, (dias,parcial)=>Object.assign({},e,{dias,parcial}));
+  });
+
+  const periodos=per.completos.map((p,i)=>({
+    ini:p.ini, fim:p.fim, limite:p.limite,
+    usado:30-capac[i], aberto:capac[i], ok:capac[i]===0,
+    vencido:_hoje0(hoje)>p.limite && capac[i]>0,
+    lancamentos:linhas[i]
+  }));
+  const somaSaldos=periodos.reduce((s,p)=>s+p.aberto,0);
+  return {per, periodos, emFormacao:per.emFormacao, anterior, registrado,
+    excedeSaldo, devendo:per.devendo, somaSaldos, saldo:per.saldo,
+    confere:somaSaldos===Math.max(0,per.saldo)};
+}
+// Uma linha do extrato, dentro do período que ela baixou.
+function _ferdLinha(l){
+  const per=(l.dias||0);
+  if(l.tipo==='anterior') return '<div class="fex-l fex-l--dim">'
+    +'<span>baixa anterior ao controle'+_ajuda('Dias que o saldo indica como já gozados, mas sem período registrado — férias tiradas antes de o sistema guardar as datas.')+'</span>'
+    +'<span class="fex-d">−'+per+'d</span></div>';
+  const dt=_ddmm(_dataLocal(l.inicio))+' → '+_ddmm(_dataLocal(l.fim));
+  const rot=l.tipo==='coletiva'?'férias coletivas':'saída → volta';
+  const comp=l.comprados?' · '+l.comprados+'d vendidos':'';
+  return '<div class="fex-l">'
+    +'<span>'+rot+' <strong>'+dt+'</strong>'+comp
+      +(l.parcial?' <span class="fex-p">(parte neste período)</span>':'')
+      +(l.fechado?'':' <span class="fex-p">(em curso)</span>')+'</span>'
+    +'<span class="fex-d">−'+per+'d</span></div>';
+}
+// O extrato inteiro: período atual em cima, encerrados descendo como histórico.
+function ferExtratoHTML(c){
+  const ex=ferExtrato(c,new Date());
+  if(!ex) return '<div class="alert alert-warning" style="font-size:12px">'
+    +'<i class="ti ti-alert-triangle"></i> Sem data de admissão, não dá para montar os períodos. '
+    +'Preencha a admissão para o controle funcionar.</div>';
+  const ano=d=>String(d.getFullYear()).slice(-2);
+  const dt=d=>_ddmm(d)+'/'+ano(d);
+  let html='';
+
+  // Período em formação: travado até fechar.
+  if(ex.emFormacao){
+    const f=ex.emFormacao;
+    html+='<div class="fex-p-box fex-p-box--trav">'
+      +'<div class="fex-h"><span class="fex-t">'+dt(f.ini)+' a '+dt(f.fim)+'</span>'
+        +'<span class="badge badge--neutral"><i class="ti ti-lock"></i> Travado</span></div>'
+      +'<div class="fex-l fex-l--dim"><span>libera em <strong>'+dt(f.fim)+'</strong>'
+        +_ajuda('Enquanto o período aquisitivo não fecha, os 30 dias não estão disponíveis. Hoje o proporcional é de '+f.proporcional+' dia(s).')
+        +'</span><span class="fex-d">'+f.proporcional+'d proporcional</span></div>'
+      +'</div>';
+  }
+
+  // Períodos fechados: o mais novo primeiro, os antigos descendo.
+  [...ex.periodos].reverse().forEach(p=>{
+    const sel = p.ok ? '<span class="badge badge--success"><i class="ti ti-check"></i> Finalizada</span>'
+      : p.vencido ? '<span class="badge badge--danger">Vencida</span>'
+      : '<span class="badge badge--warning">Em aberto</span>';
+    html+='<div class="fex-p-box'+(p.ok?' fex-p-box--ok':(p.vencido?' fex-p-box--venc':''))+'">'
+      +'<div class="fex-h"><span class="fex-t">'+dt(p.ini)+' a '+dt(p.fim)+'</span>'+sel+'</div>'
+      +'<div class="fex-sub">limite para gozar: <strong>'+dt(p.limite)+'</strong></div>'
+      +(p.lancamentos.length?p.lancamentos.map(_ferdLinha).join('')
+        :'<div class="fex-l fex-l--dim"><span>nada lançado</span><span class="fex-d">—</span></div>')
+      +'<div class="fex-tot"><span>usado '+p.usado+' de 30</span>'
+        +'<span class="fex-saldo'+(p.aberto?'':' fex-saldo--zero')+'">saldo '+p.aberto+'d</span></div>'
+      +'</div>';
+  });
+
+  if(!ex.periodos.length) html+='<div class="fex-p-box fex-p-box--trav">'
+    +'<div class="fex-sub">Nenhum período aquisitivo fechado ainda.</div></div>';
+
+  const avisos=[];
+  if(ex.devendo>0) avisos.push('Gozou <strong>'+ex.devendo+'d</strong> além do direito — '
+    +'serão abatidos do próximo período que fechar.');
+  if(ex.excedeSaldo>0) avisos.push('Há <strong>'+ex.excedeSaldo+'d</strong> registrados acima do que o saldo comporta. '
+    +'Confira o saldo na edição.');
+  return html+(avisos.length?'<div class="alert alert-warning" style="font-size:11px;margin-top:10px">'
+    +'<i class="ti ti-alert-triangle"></i> '+avisos.join('<br>')+'</div>':'');
+}
+
 // Texto curto da situação, para card e tooltip.
 function ferResumoPeriodo(per, hoje){
   if(!per) return 'sem data de admissão';
@@ -6235,11 +6351,8 @@ function abrirDetalheFerias(id,editando){
 
   document.getElementById('modal-ferias-detalhe')?.remove();
 
-  const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
   const farolVar={vermelho:'danger',laranja:'warning',amarelo:'accent',verde:'success',sem:'neutral',na:'neutral'};
   const fmt=d=>d?(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2)):'—';
-  const dd=fmt(f.vencDate);
-  const vencTxt=f.cor==='sem'?'Sem vencimento':(f.meses<0?'Venceu em '+dd:'Vence em '+dd);
   let agHtml;
   if(!c.ferMes){ agHtml='<span class="badge badge--neutral">Sem agendamento</span>'; }
   else { const ag=agendamentoStatus(c,f.vencDate);
@@ -6271,13 +6384,17 @@ function abrirDetalheFerias(id,editando){
           <div class="modal-sub" style="margin-top:0">Matrícula ${c.mat||'—'} &middot; Função: <strong>${funcaoColab(c)||'—'}</strong></div>
 
           <div id="ferd-view">
-            <div class="ferd-resumo">
-              <div class="ferd-item"><span class="ferd-lbl">Situação</span><span><span class="badge badge--${farolVar[f.cor]}">${f.label}</span></span></div>
-              <div class="ferd-item"><span class="ferd-lbl">Vencimento</span><span class="ferd-val" style="color:${corMap[f.cor]}">${vencTxt}</span></div>
-              <div class="ferd-item"><span class="ferd-lbl">Agendamento</span><span>${agHtml}</span></div>
-              <div class="ferd-item"><span class="ferd-lbl">Saldo atual</span><span class="ferd-val"${saldo<0?' style="color:var(--danger-text)"':''}>${saldo} dias</span></div>
-              <div class="ferd-item"><span class="ferd-lbl">Admissão</span><span class="ferd-val" style="font-weight:600">${admTxt}</span></div>
+            <div class="ferd-cab">
+              <div><span class="ferd-lbl">Admissão</span><span class="ferd-val">${admTxt}</span></div>
+              <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span></div>
+              <div><span class="ferd-lbl">Mês agendado</span><span>${agHtml}</span></div>
             </div>
+            <div class="ferd-acum">
+              <span class="ferd-acum__n"${saldo<0?' style="color:var(--danger-text)"':''}>${saldo}</span>
+              <span class="ferd-acum__l">dias acumulados${_ajuda('Soma dos saldos de todos os períodos abaixo. É o saldo de férias do colaborador.')}</span>
+              <span class="badge badge--${farolVar[f.cor]}" style="margin-left:auto">${f.label}</span>
+            </div>
+            ${ferExtratoHTML(c)}
           </div>
 
           <div id="ferd-edit" style="display:none">
@@ -9839,40 +9956,66 @@ async function wizFerConfirmarEntrada(id){
 // ---- Ferias coletivas ----
 function wizFerBodyColetiva(){
   const deptos=getDeptoList();
-  return wizPanel('<i class="ti ti-users-group"></i> Férias coletivas','',
-    '<p class="wiz-note" style="margin-top:0">Baixa de dias no saldo de um grupo. O saldo <strong>pode ficar negativo</strong> até o próximo vencimento.</p>'
-    +'<div class="wiz-fields" style="margin-top:0">'
-      +'<div class="wiz-field"><label>Dias a abater</label><input type="number" id="col-dias" class="wiz-num" min="0"></div>'
+  return wizPanel('<i class="ti ti-users-group"></i> Férias coletivas'
+      +_ajuda('A coletiva é um período de férias como qualquer outro: com as datas, ela entra no extrato de cada colaborador e desconta os dias no cálculo dos benefícios da competência. O saldo pode ficar negativo até o próximo período fechar.'),'',
+    '<div class="wiz-fields" style="margin-top:0">'
+      +'<div class="wiz-field"><label>Início</label><input type="date" id="col-ini" class="wiz-num" onchange="_colPrevia()"></div>'
+      +'<div class="wiz-field"><label>Último dia</label><input type="date" id="col-fim" class="wiz-num" onchange="_colPrevia()"></div>'
       +'<div class="wiz-field"><label>Escopo</label><select id="col-dep" class="wiz-sel"><option value="">Todos os ativos</option>'+deptos.map(d=>'<option value="'+d+'">Depto: '+d+'</option>').join('')+'</select></div>'
       +'<label class="wiz-item__sub" style="display:flex;align-items:center;gap:6px;height:34px"><input type="checkbox" id="col-status" style="accent-color:var(--brand)"> Mudar status para Férias</label>'
       +'<button class="btn btn-warning btn-sm" onclick="wizFerColetiva()"><i class="ti ti-users-group"></i> Aplicar</button>'
-    +'</div>');
+    +'</div>'
+    +'<div id="col-previa" class="text-xs" style="margin-top:6px"></div>');
+}
+// Prévia ao vivo: dias a abater e efeito na competência aberta.
+function _colPrevia(){
+  const el=document.getElementById('col-previa'); if(!el) return;
+  const ini=document.getElementById('col-ini')?.value||'';
+  const fim=document.getElementById('col-fim')?.value||'';
+  if(!ini||!fim){ el.innerHTML='<span class="text-muted">Informe as datas da coletiva.</span>'; return; }
+  if(fim<ini){ el.innerHTML='<span style="color:var(--red)">O último dia é anterior ao início.</span>'; return; }
+  const corridos=_diasCorridos(ini,fim);
+  const uteis=feriasDiasUteisNaComp({ferInicio:ini,ferFim:fim},lanComp);
+  el.innerHTML='<i class="ti ti-calculator"></i> <strong>'+corridos+'</strong> dias corridos a abater do saldo'
+    +(uteis?' · <strong>'+uteis+'</strong> dia(s) útil(eis) dentro de '+lanComp+' (desconta benefício)':'');
 }
 async function wizFerColetiva(){
-  const dias=Math.max(0,fnum(document.getElementById('col-dias')?.value));
-  if(!dias){ toast('Informe os dias a abater.','warning'); return; }
+  const ini=document.getElementById('col-ini')?.value||'';
+  const fim=document.getElementById('col-fim')?.value||'';
+  if(!ini||!fim){ toast('Informe o início e o último dia da coletiva.','warning'); return; }
+  if(fim<ini){ toast('O último dia não pode ser antes do início.','error'); return; }
+  const dias=_diasCorridos(ini,fim);
   const dep=document.getElementById('col-dep')?.value||'';
   const mudarStatus=!!document.getElementById('col-status')?.checked;
   let alvo=colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe' && c.elegibilidade?.ferias!==false);
   if(dep) alvo=alvo.filter(c=>(c.depto||'')===dep);
   if(!alvo.length){ toast('Nenhum colaborador no escopo.','warning'); return; }
-  if(!confirm('Aplicar férias coletivas de '+dias+' dia(s) a '+alvo.length+' colaborador(es)?'+(mudarStatus?'\nO status mudará para Férias.':''))) return;
-  const por=_wizPor(); let ok=0;
+  if(!confirm('Férias coletivas de '+_ddmm(_dataLocal(ini))+' a '+_ddmm(_dataLocal(fim))
+    +' ('+dias+' dias) para '+alvo.length+' colaborador(es)?'
+    +'\n\nO período entra no extrato de cada um e desconta os dias no cálculo dos benefícios.'
+    +(mudarStatus?'\nO status mudará para Férias.':''))) return;
+  const por=_wizPor(), quando=new Date().toISOString(); let ok=0;
   try{
     for(let i=0;i<alvo.length;i+=400){
       const chunk=alvo.slice(i,i+400); const b=window._writeBatch(window._db);
       chunk.forEach(c=>{
         const de=(c.ferSaldo!=null?c.ferSaldo:0);
         c.ferSaldo=de-dias;
+        // A coletiva é um período de férias: entra no histórico com as datas e
+        // marcada como coletiva, para o extrato e a competência a reconhecerem.
+        ferRegistrarPeriodo(c,ini,fim,0);
+        const p=_ferPeriodos(c).find(x=>x.inicio===ini&&x.fim===fim);
+        if(p){ p.coletiva=true; p.fechadoEm=p.fechadoEm||quando; }
         if(mudarStatus) c.status='Ferias';
         c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
-        c.feriasLog.push({tipo:'coletiva',dias,de,para:c.ferSaldo,em:new Date().toISOString(),por});
+        c.feriasLog.push({tipo:'coletiva',dias,inicio:ini,fim,de,para:c.ferSaldo,em:quando,por});
         b.set(window._doc('colaboradores',c._id),c);
       });
       await b.commit(); ok+=chunk.length;
     }
     toast('Férias coletivas aplicadas a '+ok+' colaborador(es).','success');
     wizFerRenderBody();
+    if(currentPage==='fer-periodos') renderFerPeriodos();
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
