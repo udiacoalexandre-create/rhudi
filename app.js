@@ -4544,14 +4544,27 @@ function feriasFechamentoPendente(c, hoje){
   if(_hoje0(hoje)<=fim) return false;
   return !!_feriasLogEntrada(c);
 }
-// Muda para Férias quem chegou no dia do início. Roda ao abrir o sistema e na
-// virada do dia. Abate o saldo na entrada, mesma regra do assistente de férias
-// (o retorno não reabate).
+// Adiantado indevidamente: está com status Férias mas o período AINDA NÃO
+// começou. Acontece com dado gravado antes desta regra e com aba já aberta
+// rodando o app.js anterior (o cache-busting só vale em recarga). Só o status
+// 'Ferias' — 'Ferias Coletiva' é decisão da empresa e não se guia por período.
+function feriasAdiantadoIndevido(c, hoje){
+  if(!c||!c.ferInicio||!c.ferFim) return false;
+  if(c.status!=='Ferias' && c.status!=='Férias') return false;
+  const ini=_dataLocal(c.ferInicio); if(!ini) return false;
+  return ini>_hoje0(hoje);
+}
+// Acerta o status pelo período, nas duas direções. Roda ao abrir o sistema e
+// na virada do dia:
+//   início chegou     → Férias, abatendo o saldo (o retorno não reabate)
+//   início ainda vem  → Trabalhando, SEM tocar no saldo (a entrada já abateu)
 async function sincronizarStatusFerias(hoje){
-  const devidas=(colaboradores||[]).filter(c=>feriasEntradaDevida(c,hoje));
-  if(!devidas.length) return [];
+  const entram=(colaboradores||[]).filter(c=>feriasEntradaDevida(c,hoje));
+  const voltam=(colaboradores||[]).filter(c=>feriasAdiantadoIndevido(c,hoje));
+  if(!entram.length && !voltam.length) return [];
   const quando=new Date().toISOString();
-  const pend=devidas.map(c=>{
+
+  const pend=entram.map(c=>{
     const novo=Object.assign({},c,{status:'Ferias'});
     if(!_feriasLogEntrada(c)){
       const g=_diasCorridos(c.ferInicio,c.ferFim);
@@ -4563,23 +4576,49 @@ async function sincronizarStatusFerias(hoje){
         {tipo:'entrada',inicio:c.ferInicio,fim:c.ferFim,gozados:g,comprados:comp,
          de,para:novo.ferSaldo,auto:true,em:quando,por:'sistema (data de início)'}]);
     }
-    return {c,novo};
-  });
+    return {c,novo,tipo:'entrou'};
+  }).concat(voltam.map(c=>{
+    const novo=Object.assign({},c,{status:'Trabalhando'});
+    const log=(Array.isArray(c.feriasLog)?c.feriasLog.slice():[]);
+    // Status Férias significa que a entrada já foi processada e o saldo já
+    // abatido. Se o log da entrada não existe (período editado depois, dado
+    // legado), grava agora SEM mexer no saldo — senão a entrada automática
+    // abateria de novo no dia do início.
+    if(!_feriasLogEntrada(c)){
+      const s=(c.ferSaldo!=null?c.ferSaldo:0);
+      log.push({tipo:'entrada',inicio:c.ferInicio,fim:c.ferFim,
+        gozados:_diasCorridos(c.ferInicio,c.ferFim),comprados:fnum(c.ferDiasComprados),
+        de:s,para:s,semAbate:true,em:quando,
+        por:'sistema (abate já aplicado fora do log)'});
+    }
+    log.push({tipo:'agendado',inicio:c.ferInicio,fim:c.ferFim,em:quando,
+      por:'sistema (início ainda não chegou)'});
+    novo.feriasLog=log;
+    return {c,novo,tipo:'voltou'};
+  }));
+
   try{
     const b=window._writeBatch(window._db);
     pend.forEach(p=>b.set(window._doc('colaboradores',p.novo._id),p.novo));
     await b.commit();
-  }catch(e){ console.warn('Entrada automática de férias falhou:',e); return []; }
+  }catch(e){ console.warn('Sincronização de férias falhou:',e); return []; }
+
   pend.forEach(p=>{
     Object.assign(p.c,p.novo);
     if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
       const cb=baseApuracao.colaboradores.find(x=>x._id===p.c._id||(x.mat&&x.mat===p.c.mat));
-      if(cb) cb.status='Ferias';
+      if(cb) cb.status=p.novo.status;
     }
   });
-  const nomes=pend.map(p=>String(p.c.nome||'').split(' ')[0]).join(', ');
-  toast(pend.length===1 ? nomes+' entrou de férias hoje.'
-                        : pend.length+' colaboradores entraram de férias: '+nomes,'info',5000);
+
+  const nomes=l=>l.map(p=>String(p.c.nome||'').split(' ')[0]).join(', ');
+  const ent=pend.filter(p=>p.tipo==='entrou'), vol=pend.filter(p=>p.tipo==='voltou');
+  const msg=[];
+  if(ent.length) msg.push(ent.length===1 ? nomes(ent)+' entrou de férias hoje'
+                                         : ent.length+' entraram de férias: '+nomes(ent));
+  if(vol.length) msg.push(vol.length===1 ? nomes(vol)+' voltou a Trabalhando (férias ainda não começaram)'
+                                         : vol.length+' voltaram a Trabalhando (férias ainda não começaram)');
+  toast(msg.join(' · ')+'.','info',6000);
   return pend.map(p=>p.c);
 }
 // Sistema aberto na virada do dia: reavalia entradas e retornos.
