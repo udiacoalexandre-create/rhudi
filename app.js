@@ -928,6 +928,7 @@ const MODULES = {
   ]},
   ferias:{pages:[
     {id:'fer-radar',icon:'<i class="ti ti-radar-2"></i>',label:'Radar de F\u00E9rias'},
+    {id:'fer-periodos',icon:'<i class="ti ti-layout-kanban"></i>',label:'Períodos e vencimentos'},
     {id:'fer-agendar',icon:'<i class="ti ti-calendar-plus"></i>',label:'Agendar F\u00E9rias',action:'abrirAgendarFerias()'},
     {id:'fer-agendadas',icon:'<i class="ti ti-calendar-event"></i>',label:'F\u00E9rias Agendadas'},
     {id:'fer-ajuste',icon:'<i class="ti ti-table-options"></i>',label:'Saldos e per\u00EDodos'},
@@ -1012,7 +1013,7 @@ function renderPage(id){
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,'base-dash':pgBaseDashboard,'ben-dash':pgBenDashboard,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
-    'fer-radar':pgFerRadar,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
+    'fer-radar':pgFerRadar,'fer-periodos':pgFerPeriodos,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
     'fer-ajuste':pgFerAjusteTabela,
     'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
     'premio-dash':pgPremioDashboard,'premio-historico':pgPremioHistorico,
@@ -1048,6 +1049,7 @@ function afterRender(id){
     else if(s==='um989') loadUM989().then(renderUM989);
     else loadConfig().then(()=>{ const set=(id,v)=>{const e=document.getElementById(id); if(e)e.value=v;}; set('cfg-val-vr',VR_PADRAO); set('cfg-val-cafe',CAFE_PADRAO); set('cfg-val-cesta',CESTA_PADRAO); set('cfg-val-premio',PREMIO_VAL); renderConfigVT(); });
   }
+  if(id==='fer-periodos'){ renderFerPeriodos(); ferAoAbrirAba(); }
   if(id==='fer-agendadas') renderFeriasAgendadas();
   if(id==='fer-ajuste') renderFerAjusteTabela();
   if(id==='fer-um989') loadUM989().then(renderUM989);
@@ -5812,6 +5814,232 @@ function _resolveVencInput(novoStr, atualIso){
   return _isoLocal(_proxVenc(+m[1],+m[2],hoje));
 }
 function _vencCampoDDMM(c){ const d=c&&c.ferVenc?_dataLocal(c.ferVenc):null; return d?_ddmm(d):''; }
+
+// ── Kanban de períodos ────────────────────────────────────────────────────
+function pgFerPeriodos(){
+  return `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+      <div><h2 class="page-title">Períodos e vencimentos</h2>
+        <p class="page-subtitle">Cada período aquisitivo tratado separadamente${_ajuda('Cada 12 meses trabalhados fecham um período de 30 dias, e há 12 meses para gozá-lo. Passado o limite, a empresa paga em dobro (CLT art. 137). As colunas são o tempo que falta para esse limite.')}</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="exportarFerPeriodos()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+        <button class="btn btn-primary" onclick="abrirAgendarFerias()"><i class="ti ti-calendar-plus"></i> Agendar férias</button>
+      </div>
+    </div>
+    <div id="fp-destaques"></div>
+    <div class="filter-bar filter-bar--slim" style="align-items:flex-end;margin-bottom:14px">
+      <div class="filter-group" style="flex:1"><label>Buscar</label>
+        <input type="text" id="fp-q" placeholder="Nome, matrícula ou departamento..." oninput="renderFerPeriodos()"></div>
+      <div class="filter-group"><label>Empresa</label>${msDropdown('fpemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:_empresaLabel(e.cod)})),'renderFerPeriodos')}</div>
+      <div class="filter-group"><label>Departamento</label>${msDropdown('fpdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerPeriodos')}</div>
+      <div class="filter-group"><label>Agendamento</label>${msDropdown('fpag','Agendamento',[{value:'sem',label:'Sem agendamento'},{value:'com',label:'Agendado'}],'renderFerPeriodos')}</div>
+      <label class="filter-group" style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="fp-crit" onchange="renderFerPeriodos()" style="accent-color:var(--red)">
+        <span style="font-size:12px;font-weight:600">Só críticos</span>
+        ${_ajuda('Crítico = a 90 dias ou menos do limite (ou já vencido) e sem férias agendadas.')}
+      </label>
+    </div>
+    <div id="fp-kanban"></div>`;
+}
+
+// Base do kanban: ativos elegíveis, com os períodos já calculados.
+function _fpBase(){
+  const hoje=new Date();
+  return colaboradoresUnicos()
+    .filter(c=>statusGrupo(c.status)!=='nao_recebe' && c.elegibilidade?.ferias!==false)
+    .map(c=>({c, per:ferPeriodosAquisitivos(c,hoje), hoje}))
+    .map(x=>Object.assign(x,{faixa:ferFaixa(x.per,x.hoje), critico:x.per&&ferCritico(x.c,x.per,x.hoje)}));
+}
+function _fpFiltrar(){
+  const q=(document.getElementById('fp-q')?.value||'').toLowerCase().trim();
+  const emp=getMs('fpemp'), dep=getMs('fpdep'), ag=getMs('fpag');
+  const soCrit=!!document.getElementById('fp-crit')?.checked;
+  return _fpBase().filter(({c,critico})=>{
+    if(soCrit && !critico) return false;
+    if(q && !((c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)
+             ||(c.depto||'').toLowerCase().includes(q))) return false;
+    if(emp.length && !_empresaMatch(c,emp)) return false;
+    if(dep.length && !dep.includes(c.depto||'')) return false;
+    if(ag.length){
+      const tem=!!c.ferMes;
+      if(ag.includes('sem') && tem) return false;
+      if(ag.includes('com') && !tem) return false;
+    }
+    return true;
+  });
+}
+function renderFerPeriodos(){
+  bindMsOutside(); updateMsCounts();
+  const lista=_fpFiltrar();
+  const dest=document.getElementById('fp-destaques');
+  const kan=document.getElementById('fp-kanban');
+  if(!kan) return;
+
+  // O que importa no topo: quantos precisam de ação, e o acumulado.
+  const criticos=lista.filter(x=>x.critico).length;
+  const vencidos=lista.filter(x=>x.faixa==='vencido').length;
+  const abertos=lista.filter(x=>x.per&&x.per.abertos.length).length;
+  const devendo=lista.filter(x=>x.per&&x.per.devendo>0);
+  const diasAbertos=lista.reduce((a,x)=>a+(x.per?x.per.abertos.reduce((s,p)=>s+p.aberto,0):0),0);
+  if(dest) dest.innerHTML='<div class="stats-inline" style="margin-bottom:12px">'
+    +'<span><strong style="color:var(--red)">'+criticos+'</strong> críticos'
+      +_ajuda('A 90 dias ou menos do limite (ou vencido) e sem férias agendadas.')+'</span>'
+    +'<span><strong>'+vencidos+'</strong> vencidos</span>'
+    +'<span><strong>'+abertos+'</strong> com período em aberto</span>'
+    +'<span><strong>'+diasAbertos+'</strong> dias acumulados'
+      +_ajuda('Soma dos dias em aberto de todos os períodos, de todos os colaboradores do filtro.')+'</span>'
+    +(devendo.length?'<span><strong style="color:var(--yellow)">'+devendo.length+'</strong> devendo dias'
+      +_ajuda('Gozaram mais do que tinham (férias coletivas, por exemplo). Os dias serão abatidos do próximo período que fechar.')+'</span>':'')
+    +'</div>';
+
+  const cols=[...FER_FAIXAS.map(f=>f.k),'folga','emdia'];
+  const html=cols.map(k=>{
+    const itens=lista.filter(x=>x.faixa===k).sort((a,b)=>{
+      const pa=a.per&&a.per.maisAntigo, pb=b.per&&b.per.maisAntigo;
+      if(pa&&pb) return pa.limite-pb.limite;
+      return (a.c.nome||'').localeCompare(b.c.nome||'');
+    });
+    if(!itens.length) return '';
+    const info=ferFaixaInfo(k);
+    return '<div class="kan-col">'
+      +'<div class="kan-col__head" style="border-top-color:'+info.cor+'">'
+        +'<span class="kan-col__t">'+info.lbl+'</span>'
+        +'<span class="kan-col__n">'+itens.length+'</span></div>'
+      +'<div class="kan-col__body">'+itens.map(_fpCard).join('')+'</div></div>';
+  }).join('');
+  kan.innerHTML=html
+    ? '<div class="kan-wrap">'+html+'</div>'
+    : '<div class="empty-state"><p>Nenhum colaborador com os filtros atuais.</p></div>';
+}
+function _fpCard({c,per,hoje,faixa,critico}){
+  const ag=c.ferMes?agendamentoLabel(c):'';
+  const p=per&&per.maisAntigo;
+  const dias=p?_diasAte(_hoje0(hoje),p.limite):null;
+  const linha2 = !per ? '<span style="color:var(--red)">sem data de admissão</span>'
+    : p ? 'limite '+_ddmm(p.limite)+'/'+String(p.limite.getFullYear()).slice(2)
+          +' · <strong>'+p.aberto+'d</strong>'
+          +(dias<0?' · <span style="color:var(--red)">'+(-dias)+'d vencido</span>'
+                  :' · '+dias+'d')
+    : (per.devendo?'<span style="color:var(--yellow)">devendo '+per.devendo+'d</span>':'em dia');
+  const nAbertos=per?per.abertos.length:0;
+  return '<div class="kan-card'+(critico?' kan-card--crit':'')+'" '
+    +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="'
+    +String(ferResumoPeriodo(per,hoje)).replace(/"/g,'&quot;')+'">'
+    +'<div class="kan-card__n">'+c.nome+'</div>'
+    +'<div class="kan-card__s">'+linha2+'</div>'
+    +'<div class="kan-card__f">'
+      +(nAbertos>1?'<span class="badge badge--warning" style="font-size:9px">'+nAbertos+' períodos</span>':'')
+      +(ag?'<span class="badge badge--neutral" style="font-size:9px">'+ag+'</span>'
+          :'<span class="badge badge--danger" style="font-size:9px">sem agendamento</span>')
+    +'</div></div>';
+}
+function exportarFerPeriodos(){
+  const lista=_fpFiltrar();
+  const rows=[['Matrícula','Nome','Departamento','Admissão','Períodos abertos','Dias em aberto',
+    'Período mais antigo','Limite para gozar','Dias até o limite','Situação','Agendamento',
+    'Devendo dias','Saldo','Crítico']];
+  lista.forEach(({c,per,hoje,faixa,critico})=>{
+    const p=per&&per.maisAntigo;
+    rows.push([c.mat||'', c.nome||'', c.depto||'', c.admissao||'',
+      per?per.abertos.length:'', per?per.abertos.reduce((s,x)=>s+x.aberto,0):'',
+      p?_isoLocal(p.ini)+' a '+_isoLocal(p.fim):'', p?_isoLocal(p.limite):'',
+      p?_diasAte(_hoje0(hoje),p.limite):'', ferFaixaInfo(faixa).lbl,
+      c.ferMes?agendamentoLabel(c):'', per?per.devendo:'',
+      (c.ferSaldo!=null?c.ferSaldo:''), critico?'SIM':'']);
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Períodos');
+  XLSX.writeFile(wb,'Ferias_Periodos_Vencimentos.xlsx');
+  toast('Excel exportado.','success');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PERÍODOS AQUISITIVOS — controle período a período, não só pelo saldo
+// ══════════════════════════════════════════════════════════════════════════
+// Cada 12 meses trabalhados fecham um período aquisitivo de 30 dias. O prazo
+// para gozar (concessivo) é de 12 meses após o fechamento; passado o limite, a
+// empresa paga em dobro (CLT art. 137).
+//
+// O saldo (ferSaldo) diz QUANTO falta gozar; ele é distribuído nos períodos do
+// mais ANTIGO para o mais novo, que é a ordem que a lei manda usar. Assim um
+// número acumulado continua existindo, mas cada período tem situação própria —
+// é o que evita "todo mundo vencendo junto".
+//
+// Saldo negativo (gozou mais do que tinha, o caso das férias coletivas) vira
+// `devendo`: dias a abater do próximo período que fechar.
+const FER_FAIXAS=[
+  {k:'vencido',lbl:'Vencido',      cor:'var(--red)',   ate:-1},
+  {k:'30d',    lbl:'≤ 30 dias',    cor:'var(--red)',   ate:30},
+  {k:'60d',    lbl:'≤ 60 dias',    cor:'var(--yellow)',ate:60},
+  {k:'90d',    lbl:'≤ 90 dias',    cor:'var(--yellow)',ate:90},
+  {k:'3a6m',   lbl:'3 a 6 meses',  cor:'var(--blue)',  ate:182},
+  {k:'6a12m',  lbl:'6 a 12 meses', cor:'var(--green)', ate:365},
+];
+function _addAnos(d,n){ const x=new Date(d); x.setFullYear(x.getFullYear()+n); return x; }
+function _diasAte(de,ate){ return Math.round((ate-de)/86400000); }
+
+// Monta os períodos aquisitivos do colaborador. Sem admissão, não há como
+// calcular — devolve null e a pessoa aparece como "sem admissão" na tela.
+function ferPeriodosAquisitivos(c, hoje){
+  if(!c || c.elegibilidade?.ferias===false) return null;
+  const adm=_dataLocal(c.admissao); if(!adm) return null;
+  const h=_hoje0(hoje);
+  const ciclos=[];
+  for(let i=0;i<80;i++){
+    const ini=_addAnos(adm,i), fim=_addAnos(adm,i+1);
+    if(fim>h){
+      ciclos.push({i,ini,fim,completo:false,limite:_addAnos(fim,1),
+        proporcional:Math.min(30,Math.max(0,Math.floor(_mesesEntre(ini,h)*2.5)))});
+      break;
+    }
+    ciclos.push({i,ini,fim,completo:true,limite:_addAnos(fim,1)});
+  }
+  const completos=ciclos.filter(p=>p.completo);
+  const direito=completos.length*30;
+  const saldo=(c.ferSaldo!=null?fnum(c.ferSaldo):0);
+  let consumir=direito-saldo;
+  const devendo=consumir>direito ? consumir-direito : 0;   // gozou além do direito
+  if(consumir<0) consumir=0;                               // saldo acima do direito
+  completos.forEach(p=>{
+    const usa=Math.min(30,Math.max(0,consumir));
+    p.usado=usa; consumir-=usa; p.aberto=30-usa; p.ok=p.aberto===0;
+  });
+  const abertos=completos.filter(p=>!p.ok);
+  return {ciclos, completos, abertos, direito, saldo, devendo,
+    maisAntigo:abertos[0]||null,
+    emFormacao:ciclos.find(p=>!p.completo)||null};
+}
+// Faixa de urgência pelo LIMITE do período aberto mais antigo.
+function ferFaixa(per, hoje){
+  const p=per&&per.maisAntigo; if(!p) return 'emdia';
+  const d=_diasAte(_hoje0(hoje), p.limite);
+  if(d<0) return 'vencido';
+  const f=FER_FAIXAS.find(x=>x.k!=='vencido' && d<=x.ate);
+  return f?f.k:'folga';
+}
+function ferFaixaInfo(k){
+  return FER_FAIXAS.find(x=>x.k===k)
+    || {k,lbl:k==='emdia'?'Em dia':(k==='folga'?'Mais de 12 meses':k),
+        cor:k==='emdia'?'var(--green)':'var(--text3)'};
+}
+// Crítico: dentro de 90 dias do limite (ou já vencido) e SEM agendamento.
+// É o cruzamento que o RH precisa ver primeiro.
+function ferCritico(c, per, hoje){
+  const f=ferFaixa(per,hoje);
+  return ['vencido','30d','60d','90d'].includes(f) && !c.ferMes;
+}
+// Texto curto da situação, para card e tooltip.
+function ferResumoPeriodo(per, hoje){
+  if(!per) return 'sem data de admissão';
+  const p=per.maisAntigo;
+  if(!p) return per.devendo ? 'em dia, devendo '+per.devendo+'d do próximo'
+                            : 'em dia — nada pendente';
+  const d=_diasAte(_hoje0(hoje), p.limite);
+  const quando = d<0 ? 'vencido há '+(-d)+' dia(s)' : 'faltam '+d+' dia(s)';
+  return p.aberto+'d em aberto do período '+_ddmm(p.ini)+'/'+p.ini.getFullYear()
+    +' a '+_ddmm(p.fim)+'/'+p.fim.getFullYear()+' · limite '
+    +_ddmm(p.limite)+'/'+p.limite.getFullYear()+' · '+quando;
+}
 
 function getFarol(c){
   // Nao se aplica - socios/consultores

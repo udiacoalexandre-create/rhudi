@@ -211,6 +211,27 @@
 #wiz-overlay .btn-primary{ background:var(--brand); border-color:var(--brand); color:#fff; }
 #wiz-overlay .btn-primary:hover{ background:var(--brand-hover); border-color:var(--brand-hover); }
 #wiz-overlay .ti{ vertical-align:-1px; }
+/* Kanban de periodos de ferias: uma coluna por faixa de urgencia. Rola na
+   horizontal dentro do proprio container, nunca no body. */
+.kan-wrap{ display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;align-items:flex-start; }
+.kan-col{ flex:0 0 214px;background:var(--surface-soft,#F8F9FB);border-radius:var(--radius);
+  border:1px solid var(--border);overflow:hidden; }
+.kan-col__head{ display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:9px 11px;border-top:3px solid var(--border);background:var(--surface);
+  border-bottom:1px solid var(--border); }
+.kan-col__t{ font-size:12px;font-weight:700;color:var(--text); }
+.kan-col__n{ font-size:12px;font-weight:700;color:var(--text-secondary);
+  background:var(--surface-soft,#F1F3F5);border-radius:20px;padding:1px 8px; }
+.kan-col__body{ padding:8px;display:flex;flex-direction:column;gap:7px;max-height:62vh;overflow-y:auto; }
+.kan-card{ background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:8px 10px;cursor:pointer;transition:border-color .15s,box-shadow .15s; }
+.kan-card:hover{ border-color:var(--brand);box-shadow:var(--shadow-sm); }
+.kan-card--crit{ border-left:3px solid var(--red); }
+.kan-card__n{ font-size:12px;font-weight:600;color:var(--text);line-height:1.25;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.kan-card__s{ font-size:11px;color:var(--text-secondary);margin-top:3px; }
+.kan-card__f{ display:flex;gap:4px;flex-wrap:wrap;margin-top:5px; }
+@media (max-width:700px){ .kan-col{ flex:0 0 88vw; } }
 /* Casca do assistente: cabecalho fixo, corpo rolavel, RODAPE TRAVADO embaixo —
    mesmo esqueleto do Lancamento Mensal, para os botoes nunca mudarem de lugar. */
 #wiz-overlay .wiz-card{ background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;
