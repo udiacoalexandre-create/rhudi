@@ -4583,10 +4583,11 @@ async function sincronizarStatusFerias(hoje){
   return pend.map(p=>p.c);
 }
 // Sistema aberto na virada do dia: reavalia entradas e retornos.
-let _ferDiaRef='';
+let _ferDiaRef='', _ferRelogio=null;
 function iniciarRelogioFerias(){
+  if(_ferRelogio) return;                 // initApp pode rodar de novo (re-auth)
   _ferDiaRef=_isoLocal(new Date());
-  setInterval(()=>{
+  _ferRelogio=setInterval(()=>{
     const hoje=_isoLocal(new Date());
     if(hoje===_ferDiaRef) return;
     _ferDiaRef=hoje;
