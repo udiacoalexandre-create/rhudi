@@ -909,7 +909,8 @@ async function excluirColab(id,nome){
 const MODULES = {
   base:{pages:[
     {id:'base-lista',icon:'<i class="ti ti-users"></i>',label:'Colaboradores'},
-    {id:'base-atualizar',icon:'<i class="ti ti-refresh"></i>',label:'Atualizar Base',action:'abrirAtualizarBase()'},
+    // Atualizar Base saiu do menu: é uma AÇÃO, não uma página. Fica só no botão
+    // do alto da aba Colaboradores, onde a pessoa já está olhando a base.
     {id:'base-versoes',icon:'<i class="ti ti-database"></i>',label:'Históricos'},
     {id:'base-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
     // Ferramenta de diagnóstico da integração: morava na aba Dashboard, que
@@ -927,6 +928,7 @@ const MODULES = {
   ]},
   ferias:{pages:[
     {id:'fer-radar',icon:'<i class="ti ti-radar-2"></i>',label:'Radar de F\u00E9rias'},
+    {id:'fer-agendar',icon:'<i class="ti ti-calendar-plus"></i>',label:'Agendar F\u00E9rias',action:'abrirAgendarFerias()'},
     {id:'fer-agendadas',icon:'<i class="ti ti-calendar-event"></i>',label:'F\u00E9rias Agendadas'},
     {id:'fer-ajuste',icon:'<i class="ti ti-table-options"></i>',label:'Saldos e per\u00EDodos'},
     {id:'fer-um989',icon:'<i class="ti ti-users"></i>',label:'F\u00E9rias UM989'},
@@ -1036,7 +1038,7 @@ function afterRender(id){
   if(id==='base-versoes') loadBasesSalvas(true).then(renderBasesSalvas);
   if(id==='ben-historico') renderHistorico();
   if(id==='folha-view') setTimeout(()=>renderFolhaView(), 50);
-  if(id==='fer-radar') renderFerRadar();
+  if(id==='fer-radar'){ renderFerRadar(); ferAoAbrirAba(); }
   if(id==='base-dash') renderBaseDashboard();
   if(id==='ben-dash') renderBenDashboard();
   if(id==='config-main'){
@@ -4555,12 +4557,10 @@ function entrarBeneficios(){
     aplicarDUAutomatico(lanComp);   // dias úteis da competência corrente
     window.__benefLoaded=true;
     switchModule('base');
-    // Primeiro entra quem chegou no dia do início, depois pergunta os retornos:
-    // quem entrou automático e já passou do último dia cai no mesmo modal.
-    sincronizarStatusFerias(new Date()).then(()=>{
-      checarRetornosFeriasBoot();
-      iniciarRelogioFerias();
-    });
+    // O status ainda é acertado no login (o Lançamento depende dele), mas quem
+    // PERGUNTA o retorno é a aba Controle de Férias — ver ferAoAbrirAba. Cobrar
+    // isso de quem entrou para mexer em benefícios só atrapalhava.
+    sincronizarStatusFerias(new Date()).then(()=>iniciarRelogioFerias());
   });
 }
 
@@ -4700,14 +4700,86 @@ function iniciarRelogioFerias(){
     if(hoje===_ferDiaRef) return;
     _ferDiaRef=hoje;
     sincronizarStatusFerias(new Date()).then(()=>{
-      checarRetornosFeriasBoot();
+      if(currentPage==='fer-radar') checarRetornosFeriasBoot();
       if(currentPage==='base-lista' && typeof renderColabList==='function') renderColabList();
     });
   }, 15*60*1000);
 }
 
-// Ao abrir o sistema: se há colaboradores com o retorno de férias vencido,
-// abre um MODAL pedindo para confirmar se tiraram as férias (→ Trabalhando).
+// ── Abertura da aba Controle de Férias ───────────────────────────────────
+// Férias saiu do assistente de Atualizar Base: é aqui que o RH trabalha o
+// assunto, então é aqui que o sistema cobra o que está pendente. Ao entrar:
+// credita os aniversários de admissão (+30) e, se alguém já deveria ter
+// voltado, abre o pop-up de confirmação do retorno.
+let _ferAbaFeita=false;
+async function ferAoAbrirAba(){
+  if(_ferAbaFeita) return;      // uma vez por sessão; o pop-up não deve insistir
+  _ferAbaFeita=true;
+  try{
+    const res=await aplicarAniversariosFerias();
+    if(res && res.credited) toast('+'+res.dias+' dias creditados a '+res.credited
+      +' colaborador'+(res.credited>1?'es':'')+' por aniversário de admissão.','info',6000);
+    if(typeof renderFerRadar==='function' && currentPage==='fer-radar') renderFerRadar();
+  }catch(e){ console.warn('aniversários de férias:',e); }
+  try{ await sincronizarStatusFerias(new Date()); }catch(e){}
+  checarRetornosFeriasBoot();
+}
+
+// Agendar férias: escolhe o colaborador e cai na ficha de férias dele, onde o
+// período de gozo e os dias vendidos gravam direto no cadastro — que é de onde
+// o Lançamento tira os dias de benefício.
+function abrirAgendarFerias(){
+  document.getElementById('modal-agendar-fer')?.remove();
+  const cands=colaboradoresUnicos()
+    .filter(c=>statusGrupo(c.status)!=='nao_recebe' && c.elegibilidade?.ferias!==false)
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const linha=c=>{
+    const sel=feriasSeloAgendado(c);
+    const per=(c.ferInicio&&c.ferFim)
+      ? '<span class="text-xs" style="color:var(--text2)">'+_ddmm(_dataLocal(c.ferInicio))
+        +'→'+_ddmm(_dataLocal(c.ferFim))+'</span>' : '';
+    return '<div class="incl-row" onclick="_agendarFerias(\''+c._id+'\')" '
+      +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 11px;'
+      +'border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
+      +'data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'">'
+      +'<div style="min-width:0"><div style="font-weight:600">'+c.nome+'</div>'
+      +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'
+      +(c.depto?' · '+c.depto:'')+'</div></div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+per+sel
+      +'<span class="text-xs text-muted">'+(c.ferSaldo!=null?c.ferSaldo+'d':'—')+'</span>'
+      +'<i class="ti ti-chevron-right" style="color:var(--text3)"></i></div></div>';
+  };
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="modal-overlay ds open" id="modal-agendar-fer" data-dynamic="1" '
+    +'onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:620px">'
+    +'<div class="modal-title">Agendar férias'
+      +_ajuda('Escolha o colaborador. Na ficha você informa o período de gozo e os dias vendidos — '
+             +'isso grava no cadastro dele e passa a valer no cálculo dos benefícios da competência.')+'</div>'
+    +'<input type="text" id="agf-q" placeholder="Buscar nome, matrícula ou departamento..." '
+      +'oninput="_filtrarAgendarFerias()" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);'
+      +'border-radius:var(--radius-sm);font-size:14px;margin:12px 0">'
+    +'<div id="agf-lista" style="max-height:54vh;overflow:auto">'
+      +(cands.map(linha).join('')||'<div class="empty-state"><p>Nenhum colaborador elegível a férias.</p></div>')
+    +'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" '
+      +'onclick="document.getElementById(\'modal-agendar-fer\').remove()">Fechar</button></div>'
+    +'</div></div>');
+  setTimeout(()=>document.getElementById('agf-q')?.focus(),50);
+}
+function _filtrarAgendarFerias(){
+  const q=(document.getElementById('agf-q')?.value||'').toLowerCase();
+  document.querySelectorAll('#agf-lista .incl-row').forEach(r=>{
+    r.style.display=(!q||(r.dataset.busca||'').includes(q))?'':'none';
+  });
+}
+function _agendarFerias(id){
+  document.getElementById('modal-agendar-fer')?.remove();
+  abrirDetalheFerias(id,true);   // abre direto em edição, no período de gozo
+}
+
+// Se há colaboradores com o retorno de férias vencido, abre um MODAL pedindo
+// para confirmar se tiraram as férias (→ Trabalhando).
 function checarRetornosFeriasBoot(){
   try{
     const hoje=new Date();
@@ -5576,7 +5648,14 @@ function exportarFolhaExcel(){
 // ════════════════════════════════════════════════════════════════
 function pgFerRadar(){
   return `
-    <div class="page-header"><h2 class="page-title">Radar de Férias</h2><p class="page-subtitle">Vencimento e agendamento de férias por colaborador. Cada coluna é um estágio de vencimento; o número no topo é o total.</p></div>
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+      <div><h2 class="page-title">Radar de Férias</h2>
+        <p class="page-subtitle">Vencimento e agendamento por colaborador${_ajuda('Cada coluna é um estágio de vencimento; o número no topo é o total. A bolinha compara o agendamento com o limite da dobra.')}</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="abrirAssistenteFerias('entrada')">Mais opções${_ajuda('Entrada em lote pelo mês agendado, retornos, férias coletivas e ajuste de saldo com justificativa.')}</button>
+        <button class="btn btn-primary" onclick="abrirAgendarFerias()"><i class="ti ti-calendar-plus"></i> Agendar férias</button>
+      </div>
+    </div>
     <div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">
       <div class="filter-group" style="flex:1"><label>Buscar</label>
         <input type="text" id="rq" placeholder="Nome, matrícula, depto ou função..." oninput="renderFerRadar()"></div>
@@ -8865,22 +8944,26 @@ async function consultarVagaFerias(funcao, depto){
 // ============================================================
 // ASSISTENTE: ATUALIZAR BASE (passo a passo)
 // ============================================================
+// Atualizar Base não é um passo a passo: são três coisas independentes, e quem
+// abre já sabe qual quer. Vira um menu de 3 escolhas. Férias saiu daqui — mora
+// em Controle de Férias, que é onde o RH trabalha o assunto.
 const WIZ_STEPS=[
-  {id:'contratacoes', label:'Contratações', icon:'<i class="ti ti-user-plus"></i>'},
-  {id:'demissoes',    label:'Demissões',    icon:'<i class="ti ti-user-minus"></i>'},
-  {id:'afastados',    label:'Afastados',    icon:'<i class="ti ti-first-aid-kit"></i>'},
-  {id:'ferias',       label:'Férias',       icon:'<i class="ti ti-umbrella"></i>'},
+  {id:'contratacoes', label:'Contratação', icon:'<i class="ti ti-user-plus"></i>'},
+  {id:'demissoes',    label:'Demissão',    icon:'<i class="ti ti-user-minus"></i>'},
+  {id:'afastados',    label:'Afastamento', icon:'<i class="ti ti-first-aid-kit"></i>'},
 ];
 const WIZ_META={
-  contratacoes:'Adicione novos colaboradores, individualmente ou em lote.',
-  demissoes:'Selecione quem foi desligado — o status muda para Demitido.',
-  afastados:'Reative quem voltou e registre novos afastamentos.',
-  ferias:'Retornos, entradas do mês, férias coletivas e ajustes de saldo.',
+  contratacoes:'Individual ou por planilha.',
+  demissoes:'Muda o status para Demitido.',
+  afastados:'Afastar ou tirar de afastamento.',
 };
+// Férias usa a mesma casca, mas é aberta pela aba Controle de Férias — não
+// aparece no menu de Atualizar Base.
+const WIZ_FER_STEP={id:'ferias', label:'Férias', icon:'<i class="ti ti-umbrella"></i>'};
 let wizState=null;
 
 function abrirAtualizarBase(){
-  wizState={idx:0, mode:'intro', contMode:'menu',
+  wizState={acao:null, contMode:'menu', afaModo:null,
     demSel:new Set(), afaReSel:new Set(), afaAddSel:new Set(),
     rev:{}, doneDem:[], doneAfa:[], contBaseline:null,
     demConfirmar:false, afaConfirmar:null, afaMotivo:'',
@@ -8889,23 +8972,37 @@ function abrirAtualizarBase(){
   if(!document.getElementById('wiz-overlay')){
     const ov=document.createElement('div');
     ov.id='wiz-overlay';
-    ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto';
+    ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:24px';
     document.body.appendChild(ov);
   }
+  renderWizard();
+}
+// Assistente de FÉRIAS: mesma casca, aberto pela aba Controle de Férias.
+// Entradas em lote pelo mês agendado, retornos, coletivas e ajuste de saldo.
+function abrirAssistenteFerias(tab){
+  abrirAtualizarBase();
+  wizState.soFerias=true;
+  wizState.acao='ferias';
+  wizState.ferTab=tab||'entrada';
   renderWizard();
 }
 function fecharWizard(concluido){
   document.getElementById('wiz-overlay')?.remove();
   wizState=null;
   if(currentPage==='base-lista') renderColabList();
-  if(concluido) toast('Atualização da base concluída!','success');
+  if(currentPage==='fer-radar' && typeof renderFerRadar==='function') renderFerRadar();
+  if(concluido) toast('Base atualizada.','success');
 }
-function wizSeguir(){ wizState.mode='work'; wizState.contMode='menu'; renderWizard(); }
-function wizPular(){ wizAvancar(); }
-function wizAvancar(){
-  if(wizState.idx < WIZ_STEPS.length-1){ wizState.idx++; wizState.mode='intro'; renderWizard(); }
-  else { wizState.mode='fim'; renderWizard(); }
+// Escolhe a ação no menu inicial; null volta ao menu.
+function wizEscolher(id){
+  wizState.acao=id; wizState.contMode='menu'; wizState.afaModo=null;
+  wizState.demConfirmar=false; wizState.afaConfirmar=null;
+  wizState.rev={};
+  renderWizard();
 }
+function wizVoltarMenu(){ wizEscolher(null); }
+// Modo do afastamento: 'reativar' (tirar de afastamento) ou 'afastar'.
+function wizAfaModo(m){ wizState.afaModo=m; wizState.afaConfirmar=null; renderWizard(); }
 function wizContModo(m){ wizState.contMode=m; renderWizard(); }
 function wizToggle(setName,id){
   const s=wizState[setName]; if(s.has(id)) s.delete(id); else s.add(id);
@@ -8931,90 +9028,76 @@ function wizSearchHTML(id,ph){
 
 function renderWizard(){
   const ov=document.getElementById('wiz-overlay'); if(!ov||!wizState) return;
-  const step=WIZ_STEPS[wizState.idx];
-  const stepper=WIZ_STEPS.map((s,i)=>{
-    const done=(wizState.mode==='fim')||i<wizState.idx, cur=wizState.mode!=='fim'&&i===wizState.idx;
-    const bg=(cur||done)?'var(--brand)':'#E5E7EB';
-    const col=(cur||done)?'#fff':'#6B7280';
-    return '<div style="display:flex;align-items:center;gap:6px">'
-      +'<div style="width:28px;height:28px;border-radius:50%;background:'+bg+';color:'+col+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">'+(done?'✓':(i+1))+'</div>'
-      +'<span style="font-size:12px;font-weight:'+(cur?'700':'500')+';color:'+(cur?'var(--text)':'var(--text2)')+'">'+s.label+'</span>'
-      +(i<WIZ_STEPS.length-1?'<span style="width:20px;height:2px;background:'+(done?'var(--brand)':'#E5E7EB')+';margin:0 2px"></span>':'')
-      +'</div>';
-  }).join('');
-  const body = wizState.mode==='intro' ? wizIntroHTML(step) : (wizState.mode==='fim' ? wizFinalizarHTML() : wizWorkHTML(step));
-  ov.innerHTML='<div class="ds" style="background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;margin:auto">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:15px 22px;background:var(--brand);color:#fff">'
-      +'<div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-refresh"></i> Atualizar Base'
-        +(wizState.mode==='work'?'<span style="opacity:.85;font-weight:500;font-size:14px"> · '+step.label+'</span>':'')+'</div>'
-      +'<button onclick="fecharWizard(false)" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">&times;</button>'
+  const step = wizState.acao==='ferias' ? WIZ_FER_STEP
+             : (WIZ_STEPS.find(s=>s.id===wizState.acao)||null);
+  const body = step ? wizWorkHTML(step) : wizMenuHTML();
+  const titulo = wizState.soFerias
+    ? '<i class="ti ti-umbrella"></i> Férias'
+    : '<i class="ti ti-refresh"></i> Atualizar Base';
+  // Mesmo esqueleto do Lançamento: conteúdo rola, rodapé fica travado embaixo,
+  // Voltar à esquerda e ação principal à direita, sempre no mesmo lugar.
+  ov.innerHTML='<div class="ds wiz-card">'
+    +'<div class="wiz-card__head">'
+      +'<div class="wiz-card__t">'+titulo
+        +(step&&!wizState.soFerias?'<span class="wiz-card__sub"> · '+step.label+'</span>':'')+'</div>'
+      +'<button onclick="fecharWizard(false)" title="Fechar" class="wiz-card__x">&times;</button>'
     +'</div>'
-    +'<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:14px 22px;border-bottom:1px solid var(--border);background:var(--surface2,#F8F9FB)">'+stepper+'</div>'
-    +'<div style="padding:22px;max-height:66vh;overflow-y:auto">'+body+'</div>'
+    +'<div class="wiz-card__body">'+body+'</div>'
+    +'<div class="wiz-card__foot">'+wizRodape(step)+'</div>'
     +'</div>';
-  if(wizState.mode==='work'){
+  if(step){
     if(step.id==='contratacoes'){
       if(!wizState.contBaseline) wizState.contBaseline=new Set(colaboradores.map(c=>c._id));
       if(wizState.contMode==='individual'){ try{ initDeptoAutocomplete('f'); initFormDisplay('f'); }catch(e){} }
     }
     if(step.id==='demissoes' && !wizState.rev.demissoes && !wizState.demConfirmar) wizRenderDemList();
-    if(step.id==='afastados' && !wizState.rev.afastados && !wizState.afaConfirmar){ wizRenderAfaReList(); wizRenderAfaDefList(); wizRenderAfaAddList(); }
-    if(step.id==='ferias'){
-      if(!wizState.ferAnivDone){ wizState.ferAnivDone=true; wizRodarAniversarios(); }
-      wizFerRenderBody();
+    if(step.id==='afastados' && !wizState.afaConfirmar && !wizState.rev.afastados){
+      if(wizState.afaModo==='reativar'){ wizRenderAfaReList(); wizRenderAfaDefList(); }
+      if(wizState.afaModo==='afastar'){ wizRenderAfaAddList(); }
     }
+    if(step.id==='ferias') wizFerRenderBody();
   }
 }
 
-function wizIntroHTML(step){
-  return '<div style="text-align:center;padding:26px 10px">'
-    +'<div class="wiz-intro-ic">'+step.icon+'</div>'
-    +'<h3 class="wiz-intro-title">Etapa: '+step.label+'</h3>'
-    +'<p class="wiz-intro-sub">'+WIZ_META[step.id]+'</p>'
-    +'<p class="wiz-intro-q">Deseja seguir com esta etapa ou pular para a próxima?</p>'
-    +'<div class="wiz-actions" style="justify-content:center">'
-      +'<button class="btn btn-ghost" onclick="wizPular()">Pular etapa</button>'
-      +'<button class="btn btn-primary" onclick="wizSeguir()">Seguir &raquo;</button>'
-    +'</div></div>';
+// Menu inicial: as três coisas que se faz na base, uma escolha por clique.
+function wizMenuHTML(){
+  const card=s=>'<button class="wiz-optcard" onclick="wizEscolher(\''+s.id+'\')">'
+    +'<span class="wiz-optcard__ic">'+s.icon+'</span>'
+    +'<span><span class="wiz-optcard__t">'+s.label+'</span>'
+    +'<span class="wiz-optcard__d">'+WIZ_META[s.id]+'</span></span></button>';
+  return '<p class="wiz-q" style="margin-top:0">O que você quer atualizar?</p>'
+    +'<div class="wiz-opts wiz-opts--3">'+WIZ_STEPS.map(card).join('')+'</div>';
 }
-function wizFooter(){
-  const ultima = wizState.idx===WIZ_STEPS.length-1;
-  return '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:6px;padding-top:16px;border-top:1px solid var(--border)">'
-    +'<button class="btn btn-ghost" onclick="fecharWizard(false)">Salvar e encerrar</button>'
-    +'<button class="btn btn-primary" onclick="wizAvancar()">'+(ultima?'Concluir':'Salvar e seguir &raquo;')+'</button>'
-    +'</div>';
+
+// Rodapé travado. Cada ação já grava na base ao confirmar, então não há botão
+// de salvar aqui: quem lembra de guardar uma VERSÃO da base é o aviso do canto
+// (renderAvisoVersao), que aparece sozinho quando há alteração pendente.
+function wizRodape(step){
+  if(!step) return '<span></span>'
+    +'<button class="btn btn-ghost" onclick="fecharWizard(false)">Fechar</button>';
+  const voltar = wizVoltarAlvo(step);
+  return '<button class="btn btn-ghost" onclick="'+voltar+'"><i class="ti ti-arrow-left"></i> Voltar</button>'
+    +'<button class="btn btn-primary" onclick="fecharWizard(true)"><i class="ti ti-check"></i> Concluir</button>';
 }
-function wizFinalizarHTML(){
-  const now=new Date(); const anoAtual=now.getFullYear();
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const mesSel='<select id="wiz-fim-mes" class="wiz-sel">'+meses.map((m,i)=>'<option value="'+String(i+1).padStart(2,'0')+'" '+(i===now.getMonth()?'selected':'')+'>'+m+'</option>').join('')+'</select>';
-  const anoSel='<select id="wiz-fim-ano" class="wiz-sel">'+[anoAtual-1,anoAtual,anoAtual+1].map(a=>'<option value="'+a+'" '+(a===anoAtual?'selected':'')+'>'+a+'</option>').join('')+'</select>';
-  return '<div style="text-align:center;padding:8px 10px 4px"><div class="wiz-intro-ic"><i class="ti ti-circle-check"></i></div>'
-    +'<h3 class="wiz-intro-title">Atualização concluída!</h3>'
-    +'<p class="wiz-intro-sub">Escolha a competência e salve esta versão da base — ela ficará disponível na aba <strong>Bases Salvas</strong>.</p></div>'
-    + wizPanel('<i class="ti ti-device-floppy"></i> Salvar base','',
-        '<div class="wiz-fields" style="margin-top:0">'
-        +'<div class="wiz-field"><label>Mês (competência)</label>'+mesSel+'</div>'
-        +'<div class="wiz-field"><label>Ano</label>'+anoSel+'</div>'
-        +'<div class="wiz-field"><label>Registros</label><div class="wiz-val">'+colaboradores.length+' colaboradores</div></div>'
-        +'</div>')
-    + '<div class="wiz-actions" style="justify-content:flex-end;border-top:1px solid var(--border);padding-top:16px">'
-    + '<button class="btn btn-ghost" onclick="fecharWizard(false)">Encerrar sem salvar</button>'
-    + '<button class="btn btn-primary" onclick="wizSalvarBaseFinal()"><i class="ti ti-device-floppy"></i> Salvar base</button></div>';
+// Voltar respeita onde a pessoa está: submenu → menu da ação → menu inicial.
+function wizVoltarAlvo(step){
+  // Aberto pela aba de Férias: não existe menu de base atrás, Voltar fecha.
+  if(wizState.soFerias) return 'fecharWizard(false)';
+  if(step.id==='contratacoes' && wizState.contMode!=='menu') return "wizContModo('menu')";
+  if(step.id==='afastados'){
+    if(wizState.afaConfirmar) return 'wizAfaAddMais()';
+    if(wizState.afaModo) return 'wizAfaModo(null)';
+  }
+  if(step.id==='demissoes' && wizState.demConfirmar) return 'wizDemAddMais()';
+  return 'wizVoltarMenu()';
 }
-async function wizSalvarBaseFinal(){
-  const mes=document.getElementById('wiz-fim-mes')?.value||'';
-  const ano=document.getElementById('wiz-fim-ano')?.value||'';
-  const ok=await salvarBaseComp(mes+'/'+ano, true);
-  if(ok){ fecharWizard(false); toast('Base de '+mes+'/'+ano+' salva em Bases Salvas.','success'); }
-}
+   // o rodapé é travado; nada inline
 function wizWorkHTML(step){
-  let inner='';
-  if(step.id==='contratacoes') inner=wizContratacoesHTML();
-  else if(step.id==='demissoes') inner=wizDemissoesHTML();
-  else if(step.id==='afastados') inner=wizAfastadosHTML();
-  else if(step.id==='ferias') inner=wizFeriasHTML();
-  return '<p class="wiz-desc">'+WIZ_META[step.id]+'</p>'+inner+wizFooter();
+  if(step.id==='contratacoes') return wizContratacoesHTML();
+  if(step.id==='demissoes')    return wizDemissoesHTML();
+  if(step.id==='afastados')    return wizAfastadosHTML();
+  if(step.id==='ferias')       return wizFeriasHTML();
+  return '';
 }
 
 function wizRow(setName,c){
@@ -9169,20 +9252,47 @@ async function wizDemitir(){
 function wizAfastadosHTML(){
   if(wizState.rev.afastados) return wizRevHTML('afastados');
   if(wizState.afaConfirmar) return wizAfaConfirmHTML(wizState.afaConfirmar);
-  const opts=STATUS_SO_CESTA.map(s=>'<option value="'+s+'">'+getStatusInfo(s).label+'</option>').join('');
-  const p1=wizPanel('<i class="ti ti-arrow-back-up"></i> Tirar de afastamento','<span id="wiz-afare-count" class="wiz-pill"></span>',
-      wizSearchHTML('wiz-afare-q','Buscar afastado...')
+
+  // Antes de qualquer lista, a pergunta: está afastando ou tirando?
+  if(!wizState.afaModo){
+    const nAfa=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='so_cesta'
+      && _statusKey(c.status)!=='AFASTADO DEFINITIVO').length;
+    return '<p class="wiz-q" style="margin-top:0">O que você quer fazer?</p>'
+      +'<div class="wiz-opts">'
+      +'<button class="wiz-optcard" onclick="wizAfaModo(\'afastar\')">'
+        +'<span class="wiz-optcard__ic"><i class="ti ti-first-aid-kit"></i></span>'
+        +'<span><span class="wiz-optcard__t">Afastar</span>'
+        +'<span class="wiz-optcard__d">Buscar o colaborador e escolher o motivo.</span></span></button>'
+      +'<button class="wiz-optcard" onclick="wizAfaModo(\'reativar\')">'
+        +'<span class="wiz-optcard__ic"><i class="ti ti-arrow-back-up"></i></span>'
+        +'<span><span class="wiz-optcard__t">Tirar de afastamento</span>'
+        +'<span class="wiz-optcard__d">'+(nAfa?nAfa+' afastado(s) hoje':'ninguém afastado hoje')+'</span></span></button>'
+      +'</div>';
+  }
+
+  if(wizState.afaModo==='reativar'){
+    return '<div class="wiz-destaque"><span id="wiz-afare-total">—</span>'
+        +'<span class="wiz-destaque__l">afastados hoje</span></div>'
+      + wizSearchHTML('wiz-afare-q','Buscar afastado...')
       +'<div id="wiz-afare-list" class="wiz-list wiz-list--scroll"></div>'
-      +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'reativar\')">Revisar <i class="ti ti-arrow-right"></i></button></div>');
-  const pdef=wizPanel('<i class="ti ti-lock"></i> Afastados definitivos','<span id="wiz-afadef-count" class="wiz-pill"></span>',
-      '<p class="wiz-note" style="margin:0 0 8px">Apartados: não entram em "Tirar de afastamento". Para mudar o status de um deles, edite na Base.</p>'
-      +'<div id="wiz-afadef-list" class="wiz-list wiz-list--scroll"></div>');
-  const p2=wizPanel('<i class="ti ti-first-aid-kit"></i> Adicionar afastamento','<span id="wiz-afaadd-count" class="wiz-pill"></span>',
-      '<div class="wiz-fields" style="margin:0 0 12px"><div class="wiz-field"><label>Motivo</label><select id="wiz-afa-status" class="wiz-sel">'+opts+'</select></div></div>'
-      +wizSearchHTML('wiz-afaadd-q','Buscar quem afastar...')
-      +'<div id="wiz-afaadd-list" class="wiz-list wiz-list--scroll"></div>'
-      +'<div class="wiz-actions" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'afastar\')">Revisar <i class="ti ti-arrow-right"></i></button></div>');
-  return p1+pdef+p2;
+      +'<div class="wiz-actions" style="justify-content:flex-end">'
+        +'<button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'reativar\')">'
+        +'Revisar selecionados <i class="ti ti-arrow-right"></i></button></div>'
+      + wizPanel('<i class="ti ti-lock"></i> Afastados definitivos'
+          + _ajuda('Apartados de propósito: não voltam por aqui. Para mudar o status de um deles, edite na Base de Colaboradores.'),
+          '<span id="wiz-afadef-count" class="wiz-pill"></span>',
+          '<div id="wiz-afadef-list" class="wiz-list wiz-list--scroll"></div>');
+  }
+
+  const opts=STATUS_SO_CESTA.map(s=>'<option value="'+s+'">'+getStatusInfo(s).label+'</option>').join('');
+  return '<div class="wiz-fields" style="margin:0 0 12px">'
+      +'<div class="wiz-field"><label>Motivo do afastamento</label>'
+      +'<select id="wiz-afa-status" class="wiz-sel">'+opts+'</select></div></div>'
+    + wizSearchHTML('wiz-afaadd-q','Buscar quem afastar...')
+    +'<div id="wiz-afaadd-list" class="wiz-list wiz-list--scroll"></div>'
+    +'<div class="wiz-actions" style="justify-content:flex-end">'
+      +'<button class="btn btn-primary btn-sm" onclick="wizAfaRevisar(\'afastar\')">'
+      +'Revisar selecionados <i class="ti ti-arrow-right"></i></button></div>';
 }
 // Lista (apartada, somente leitura) dos afastados definitivos.
 function wizRenderAfaDefList(){
@@ -9196,10 +9306,12 @@ function wizRenderAfaDefList(){
 function wizRenderAfaReList(){
   const cont=document.getElementById('wiz-afare-list'); if(!cont) return;
   const q=(document.getElementById('wiz-afare-q')?.value||'').toLowerCase().trim();
-  let lista=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='so_cesta' && _statusKey(c.status)!=='AFASTADO DEFINITIVO');
+  const todos=colaboradoresUnicos().filter(c=>statusGrupo(c.status)==='so_cesta' && _statusKey(c.status)!=='AFASTADO DEFINITIVO');
+  let lista=todos;
   if(q) lista=lista.filter(c=>wizBusca(c,q));
   lista=lista.sort((a,b)=>a.nome.localeCompare(b.nome));
   cont.innerHTML = lista.length ? lista.map(c=>wizRow('afaReSel',c)).join('') : '<div class="wiz-empty">Ninguém afastado no momento.</div>';
+  const tot=document.getElementById('wiz-afare-total'); if(tot) tot.textContent=todos.length;
   wizUpdSelCount('afaRe');
 }
 function wizRenderAfaAddList(){
@@ -9263,12 +9375,11 @@ async function wizAfastar(){
 
 // ── ETAPA 4: FERIAS ──────────────────────────────────────────────
 function wizFeriasHTML(){
-  const tab=wizState.ferTab||'retorno';
+  const tab=wizState.ferTab||'entrada';
   const big=(id,icon,label)=>'<button class="wiz-tab'+(tab===id?' wiz-tab--active':'')+'" onclick="wizFerTab(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
   const sec=(id,icon,label)=>'<button class="wiz-secbtn'+(tab===id?' wiz-secbtn--active':'')+'" onclick="wizFerTab(\''+id+'\')"><i class="ti ti-'+icon+'"></i> '+label+'</button>';
-  return '<div id="wiz-fer-aniv"></div>'
-    +'<div class="wiz-fer-nav">'
-      +'<div class="wiz-tabs">'+big('retorno','arrow-back-up','Retorno de férias')+big('entrada','umbrella','Entrada de férias')+'</div>'
+  return '<div class="wiz-fer-nav">'
+      +'<div class="wiz-tabs">'+big('entrada','umbrella','Entrada em lote')+big('retorno','arrow-back-up','Retorno')+'</div>'
       +'<div class="wiz-fer-sec">'+sec('coletiva','users-group','Coletivas')+sec('ajuste','adjustments-horizontal','Ajuste de saldo')+'</div>'
     +'</div>'
     +'<div id="wiz-fer-body"></div>';
@@ -9276,7 +9387,7 @@ function wizFeriasHTML(){
 function wizFerTab(t){ wizState.ferTab=t; renderWizard(); }
 function wizFerRenderBody(){
   const body=document.getElementById('wiz-fer-body'); if(!body) return;
-  const tab=wizState.ferTab||'retorno';
+  const tab=wizState.ferTab||'entrada';
   if(tab==='retorno'){ body.innerHTML=wizFerBodyRetorno(); wizFerRenderRetList(); }
   else if(tab==='entrada'){ body.innerHTML=wizFerBodyEntrada(); wizFerRenderEntList(); }
   else if(tab==='coletiva') body.innerHTML=wizFerBodyColetiva();
@@ -9334,16 +9445,6 @@ async function aplicarAniversariosFerias(){
     await fsSet('config','feriasAniv',{ultimaData:hojeISO});
   }catch(e){ return {erro:e.message}; }
   return {credited:mudou, dias:totalDias};
-}
-async function wizRodarAniversarios(){
-  const el=document.getElementById('wiz-fer-aniv');
-  if(el) el.innerHTML='<div class="wiz-note">Verificando aniversários de admissão (+30)…</div>';
-  const res=await aplicarAniversariosFerias();
-  if(!el) return;
-  if(res.baseline) el.innerHTML='<div class="alert alert-info" style="margin-bottom:12px">Controle de aniversários inicializado. A partir de agora, cada <strong>aniversário de admissão</strong> credita <strong>+30 dias</strong> ao saldo automaticamente.</div>';
-  else if(res.erro) el.innerHTML='<div class="alert alert-error" style="margin-bottom:12px">Não foi possível verificar aniversários: '+res.erro+'</div>';
-  else if(res.credited){ el.innerHTML='<div class="alert alert-success" style="margin-bottom:12px"><i class="ti ti-gift"></i> <strong>+'+res.dias+'</strong> dias creditados a <strong>'+res.credited+'</strong> colaborador(es) por aniversário.</div>'; if(currentPage==='fer-radar'){ try{ renderFerRadar(); }catch(e){} } }
-  else el.innerHTML='<div class="wiz-note"><i class="ti ti-check" style="color:var(--brand)"></i> Aniversários em dia — nenhum crédito pendente.</div>';
 }
 
 // ---- Retorno ----

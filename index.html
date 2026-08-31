@@ -211,6 +211,24 @@
 #wiz-overlay .btn-primary{ background:var(--brand); border-color:var(--brand); color:#fff; }
 #wiz-overlay .btn-primary:hover{ background:var(--brand-hover); border-color:var(--brand-hover); }
 #wiz-overlay .ti{ vertical-align:-1px; }
+/* Casca do assistente: cabecalho fixo, corpo rolavel, RODAPE TRAVADO embaixo —
+   mesmo esqueleto do Lancamento Mensal, para os botoes nunca mudarem de lugar. */
+#wiz-overlay .wiz-card{ background:var(--surface,#fff);border-radius:16px;max-width:940px;width:100%;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column;max-height:88vh;overflow:hidden; }
+#wiz-overlay .wiz-card__head{ display:flex;justify-content:space-between;align-items:center;
+  padding:15px 22px;background:var(--brand);color:#fff;flex-shrink:0; }
+#wiz-overlay .wiz-card__t{ font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px; }
+#wiz-overlay .wiz-card__sub{ opacity:.85;font-weight:500;font-size:14px; }
+#wiz-overlay .wiz-card__x{ background:transparent;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1; }
+#wiz-overlay .wiz-card__body{ padding:22px;flex:1;overflow-y:auto;min-height:120px; }
+#wiz-overlay .wiz-card__foot{ display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:14px 22px;border-top:1px solid var(--border);background:var(--surface2,#F8F9FB);flex-shrink:0; }
+#wiz-overlay .wiz-card__foot .btn{ min-width:150px;justify-content:center; }
+#wiz-overlay .wiz-opts--3 .wiz-optcard{ min-width:190px; }
+/* Numero que importa em destaque, o resto discreto */
+#wiz-overlay .wiz-destaque{ font-size:34px;font-weight:700;color:var(--text);line-height:1;
+  margin:0 0 14px;display:flex;align-items:baseline;gap:8px; }
+#wiz-overlay .wiz-destaque__l{ font-size:13px;font-weight:500;color:var(--text-secondary); }
 /* Layout interno das etapas do assistente */
 #wiz-overlay .wiz-head{ display:flex;align-items:center;gap:12px;margin-bottom:18px; }
 #wiz-overlay .wiz-head__chip{ width:42px;height:42px;border-radius:11px;background:var(--success-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0; }
