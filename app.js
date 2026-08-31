@@ -4698,14 +4698,21 @@ function iniciarRelogioFerias(){
 // voltado, abre o pop-up de confirmação do retorno.
 let _ferAbaFeita=false;
 async function ferAoAbrirAba(){
-  if(_ferAbaFeita) return;      // uma vez por sessão; o pop-up não deve insistir
-  _ferAbaFeita=true;
-  try{
-    const res=await aplicarAniversariosFerias();
-    if(res && res.credited) toast('+'+res.dias+' dias creditados a '+res.credited
-      +' colaborador'+(res.credited>1?'es':'')+' por aniversário de admissão.','info',6000);
-    if(currentPage==='fer-periodos') renderFerPeriodos();
-  }catch(e){ console.warn('aniversários de férias:',e); }
+  // Aniversários: uma vez por sessão. É gravação, e rodar a cada visita à aba
+  // só geraria leitura repetida (a rotina já é idempotente pela data).
+  if(!_ferAbaFeita){
+    _ferAbaFeita=true;
+    try{
+      const res=await aplicarAniversariosFerias();
+      if(res && res.credited) toast('+'+res.dias+' dias creditados a '+res.credited
+        +' colaborador'+(res.credited>1?'es':'')+' por aniversário de admissão.','info',6000);
+      if(currentPage==='fer-periodos') renderFerPeriodos();
+    }catch(e){ console.warn('aniversários de férias:',e); }
+  }
+  // A pergunta do retorno vem a CADA vez que a aba é aberta, até alguém
+  // confirmar. Várias pessoas usam o sistema e nem sempre quem entra é quem
+  // confirma — quem não é responsável clica em "Confirmar depois" e o aviso
+  // volta na próxima vez que a aba for aberta.
   try{ await sincronizarStatusFerias(new Date()); }catch(e){}
   checarRetornosFeriasBoot();
 }
@@ -4767,6 +4774,7 @@ function _agendarFerias(id){
 // para confirmar se tiraram as férias (→ Trabalhando).
 function checarRetornosFeriasBoot(){
   try{
+    if(document.getElementById('modal-retornos')) return;   // já está na tela
     const hoje=new Date();
     const pend=(colaboradores||[]).filter(c=>feriasSituacao(c,hoje)==='retorno_pendente'
                                           || feriasFechamentoPendente(c,hoje));
@@ -4784,17 +4792,29 @@ function abrirModalRetornosFerias(pend){
   const html='<div class="modal-overlay open" id="modal-retornos" data-dynamic="1">'
     +'<div class="modal" style="max-width:560px">'
     +'<div class="modal-title"><i class="ti ti-umbrella"></i> Retorno de férias vencido</div>'
-    +'<div class="modal-sub">'+pend.length+' colaborador'+(pend.length>1?'es já deveriam ter voltado':' já deveria ter voltado')+' de férias. Confirme quem <strong>tirou</strong> as férias (volta a Trabalhando) ou marque quem <strong>não</strong> tirou (cancela o período e devolve o saldo).</div>'
+    +'<div class="modal-sub">'+pend.length+' colaborador'+(pend.length>1?'es já deveriam ter voltado':' já deveria ter voltado')
+      +' de férias. Confirme quem <strong>tirou</strong> (volta a Trabalhando) ou quem <strong>não</strong> tirou '
+      +'(cancela o período e devolve o saldo).<br>'
+      +'<span class="text-xs" style="color:var(--text2)">Não é você quem confirma? Clique em '
+      +'<strong>Confirmar depois</strong> — o aviso volta na próxima vez que esta aba abrir.</span></div>'
     +'<div style="max-height:50vh;overflow:auto;margin:12px 0">'+rows+'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="mrSelTodos(true)">Todos</button><button class="btn btn-ghost btn-sm" onclick="mrSelTodos(false)">Nenhum</button></div>'
     +'<div class="modal-footer" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
-    +'<button class="btn btn-ghost" onclick="document.getElementById(\'modal-retornos\').remove()">Depois</button>'
-    +'<span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="confirmarRetornosModal(true)">Não tiraram</button>'
+    +'<button class="btn btn-ghost" onclick="adiarRetornosFerias()">'
+      +'<i class="ti ti-clock"></i> Confirmar depois</button>'
+    +'<span style="display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn btn-ghost" onclick="confirmarRetornosModal(true)">Não tiraram</button>'
     +'<button class="btn btn-primary" onclick="confirmarRetornosModal(false)"><i class="ti ti-check"></i> Confirmar retorno</button></span>'
     +'</div></div></div>';
   document.body.insertAdjacentHTML('beforeend',html);
 }
 function mrSelTodos(v){ document.querySelectorAll('#modal-retornos [id^="mr-"]').forEach(cb=>cb.checked=v); }
+// Quem abriu a aba mas não é quem confirma: sai sem decidir nada, e o aviso
+// volta na próxima vez que a aba de férias for aberta.
+function adiarRetornosFerias(){
+  document.getElementById('modal-retornos')?.remove();
+  toast('Sem problema — vou perguntar de novo na próxima vez que esta aba abrir.','info',5000);
+}
 async function confirmarRetornosModal(naoTirou){
   const checks=document.querySelectorAll('#modal-retornos [id^="mr-"]:checked');
   if(!checks.length){ toast('Selecione ao menos um colaborador.','warning'); return; }
