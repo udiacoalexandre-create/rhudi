@@ -6039,17 +6039,32 @@ function ferCritico(c, per, hoje){
 function ferExtrato(c, hoje){
   const per=ferPeriodosAquisitivos(c,hoje);
   if(!per) return null;
-  const eventos=_ferPeriodos(c)
-    .filter(p=>p.inicio&&p.fim)
-    .map(p=>({tipo:p.coletiva?'coletiva':'gozo', inicio:p.inicio, fim:p.fim,
+  // Períodos conhecidos: o histórico MAIS o que está no cadastro agora. O slot
+  // entra aqui porque um período agendado é informação do extrato — foi o caso
+  // de quem agendou antes de o histórico existir.
+  const brutos=_ferPeriodos(c).filter(p=>p.inicio&&p.fim).slice();
+  if(c.ferInicio && c.ferFim && !brutos.some(p=>p.inicio===c.ferInicio && p.fim===c.ferFim)){
+    brutos.push({inicio:c.ferInicio, fim:c.ferFim, comprados:fnum(c.ferDiasComprados)});
+  }
+  const h0=_hoje0(hoje);
+  const eventos=brutos.map(p=>{
+    const ini=_dataLocal(p.inicio), fim=_dataLocal(p.fim);
+    // realizado = já terminou ou foi fechado · em curso · programado (ainda vem)
+    const quando = p.fechadoEm || (fim&&fim<h0) ? 'realizado'
+                 : (ini&&ini>h0 ? 'programado' : 'emcurso');
+    return {tipo:p.coletiva?'coletiva':'gozo', inicio:p.inicio, fim:p.fim, quando,
       gozados:_diasCorridos(p.inicio,p.fim), comprados:fnum(p.comprados),
-      fechado:!!p.fechadoEm}))
-    .sort((a,b)=>String(a.inicio).localeCompare(String(b.inicio)));
+      fechado:!!p.fechadoEm};
+  }).sort((a,b)=>String(a.inicio).localeCompare(String(b.inicio)));
   const registrado=eventos.reduce((s,e)=>s+e.gozados+e.comprados,0);
+  const feitos=eventos.filter(e=>e.quando!=='programado')
+    .reduce((s,e)=>s+e.gozados+e.comprados,0);
   const inferido=Math.max(0, per.direito-per.saldo);
   const anterior=Math.max(0, Math.min(inferido, per.direito)-registrado);
-  // Registrado além do que o saldo comporta: mostra em vez de esconder.
-  const excedeSaldo=Math.max(0, registrado-Math.min(inferido,per.direito));
+  // Só dias JÁ GOZADOS acima do que o saldo comporta é sinal de saldo errado.
+  // Dias programados podem legitimamente ainda não estar abatidos no saldo — a
+  // divergência aparece no chip "saldo no cadastro", não como alerta.
+  const excedeSaldo=Math.max(0, feitos-Math.min(inferido,per.direito));
 
   const capac=per.completos.map(()=>30);
   const linhas=per.completos.map(()=>[]);
@@ -6069,12 +6084,18 @@ function ferExtrato(c, hoje){
     consumir(tot, (dias,parcial)=>Object.assign({},e,{dias,parcial}));
   });
 
-  const periodos=per.completos.map((p,i)=>({
-    ini:p.ini, fim:p.fim, limite:p.limite,
-    usado:30-capac[i], aberto:capac[i], ok:capac[i]===0,
-    vencido:_hoje0(hoje)>p.limite && capac[i]>0,
-    lancamentos:linhas[i]
-  }));
+  const periodos=per.completos.map((p,i)=>{
+    const L=linhas[i];
+    const prog=L.filter(l=>l.quando==='programado').reduce((s,l)=>s+l.dias,0);
+    const feito=L.filter(l=>l.quando!=='programado').reduce((s,l)=>s+l.dias,0);
+    const fechado=capac[i]===0;
+    return {ini:p.ini, fim:p.fim, limite:p.limite,
+      usado:30-capac[i], aberto:capac[i], programado:prog, realizado:feito,
+      ok:fechado && prog===0,                 // fechado só com dias já gozados
+      programada:fechado && prog>0,           // fechado, mas parte ainda vem
+      vencido:_hoje0(hoje)>p.limite && capac[i]>0,
+      lancamentos:L};
+  });
   const somaSaldos=periodos.reduce((s,p)=>s+p.aberto,0);
   return {per, periodos, emFormacao:per.emFormacao, anterior, registrado,
     excedeSaldo, devendo:per.devendo, somaSaldos, saldo:per.saldo,
@@ -6089,15 +6110,41 @@ function _ferdLinha(l){
   const dt=_ddmm(_dataLocal(l.inicio))+' → '+_ddmm(_dataLocal(l.fim));
   const rot=l.tipo==='coletiva'?'férias coletivas':'saída → volta';
   const comp=l.comprados?' · '+l.comprados+'d vendidos':'';
-  return '<div class="fex-l">'
-    +'<span>'+rot+' <strong>'+dt+'</strong>'+comp
-      +(l.parcial?' <span class="fex-p">(parte neste período)</span>':'')
-      +(l.fechado?'':' <span class="fex-p">(em curso)</span>')+'</span>'
+  const sel = l.quando==='programado'
+      ? ' <span class="badge badge--accent" style="font-size:9px">programado</span>'
+    : l.quando==='emcurso'
+      ? ' <span class="badge badge--warning" style="font-size:9px">em curso</span>' : '';
+  return '<div class="fex-l'+(l.quando==='programado'?' fex-l--prog':'')+'">'
+    +'<span>'+rot+' <strong>'+dt+'</strong>'+comp+sel
+      +(l.parcial?' <span class="fex-p">(parte neste período)</span>':'')+'</span>'
     +'<span class="fex-d">−'+per+'d</span></div>';
 }
+// Bloco do acumulado: o número grande é a SOMA dos saldos dos períodos, que é
+// o que sobra de verdade. O que está programado e o saldo gravado no cadastro
+// aparecem ao lado — quando divergem, é sinal de saldo desatualizado, e isso
+// tem de ficar visível.
+function ferAcumuladoHTML(c, ex){
+  if(!ex) return '';
+  const prog=ex.periodos.reduce((s,p)=>s+p.programado,0);
+  const disp=ex.somaSaldos;
+  const chips=[];
+  if(prog) chips.push('<span class="badge badge--accent">'+prog+'d programados'
+    +_ajuda('Dias já com data marcada: saem quando as férias acontecerem.')+'</span>');
+  if(ex.saldo!==disp) chips.push('<span class="badge badge--warning">saldo no cadastro: '+ex.saldo+'d'
+    +_ajuda('O cadastro guarda '+ex.saldo+'d, mas os períodos somam '+disp+'d disponíveis'
+      +(prog?' ('+prog+'d já programados)':'')
+      +'. Confira o saldo na edição — a diferença vem de lançamentos anteriores a este controle.')+'</span>');
+  return '<div class="ferd-acum">'
+    +'<span class="ferd-acum__n"'+(disp<0?' style="color:var(--danger-text)"':'')+'>'+disp+'</span>'
+    +'<span class="ferd-acum__l">dias disponíveis'
+      +_ajuda('Soma dos saldos de todos os períodos abaixo. Dias programados já estão fora desta conta.')
+    +'</span>'
+    +(chips.length?'<span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">'+chips.join('')+'</span>':'')
+    +'</div>';
+}
 // O extrato inteiro: período atual em cima, encerrados descendo como histórico.
-function ferExtratoHTML(c){
-  const ex=ferExtrato(c,new Date());
+function ferExtratoHTML(c, exPronto){
+  const ex=exPronto||ferExtrato(c,new Date());
   if(!ex) return '<div class="alert alert-warning" style="font-size:12px">'
     +'<i class="ti ti-alert-triangle"></i> Sem data de admissão, não dá para montar os períodos. '
     +'Preencha a admissão para o controle funcionar.</div>';
@@ -6120,14 +6167,18 @@ function ferExtratoHTML(c){
   // Períodos fechados: o mais novo primeiro, os antigos descendo.
   [...ex.periodos].reverse().forEach(p=>{
     const sel = p.ok ? '<span class="badge badge--success"><i class="ti ti-check"></i> Finalizada</span>'
+      : p.programada ? '<span class="badge badge--accent"><i class="ti ti-calendar-check"></i> Programada</span>'
       : p.vencido ? '<span class="badge badge--danger">Vencida</span>'
       : '<span class="badge badge--warning">Em aberto</span>';
-    html+='<div class="fex-p-box'+(p.ok?' fex-p-box--ok':(p.vencido?' fex-p-box--venc':''))+'">'
+    const cls = p.ok?' fex-p-box--ok' : p.programada?' fex-p-box--prog'
+              : p.vencido?' fex-p-box--venc' : '';
+    html+='<div class="fex-p-box'+cls+'">'
       +'<div class="fex-h"><span class="fex-t">'+dt(p.ini)+' a '+dt(p.fim)+'</span>'+sel+'</div>'
       +'<div class="fex-sub">limite para gozar: <strong>'+dt(p.limite)+'</strong></div>'
       +(p.lancamentos.length?p.lancamentos.map(_ferdLinha).join('')
         :'<div class="fex-l fex-l--dim"><span>nada lançado</span><span class="fex-d">—</span></div>')
-      +'<div class="fex-tot"><span>usado '+p.usado+' de 30</span>'
+      +'<div class="fex-tot"><span>usado '+p.usado+' de 30'
+        +(p.programado?' <span class="fex-p">('+p.programado+'d programados)</span>':'')+'</span>'
         +'<span class="fex-saldo'+(p.aberto?'':' fex-saldo--zero')+'">saldo '+p.aberto+'d</span></div>'
       +'</div>';
   });
@@ -6351,8 +6402,8 @@ function abrirDetalheFerias(id,editando){
 
   document.getElementById('modal-ferias-detalhe')?.remove();
 
-  const farolVar={vermelho:'danger',laranja:'warning',amarelo:'accent',verde:'success',sem:'neutral',na:'neutral'};
   const fmt=d=>d?(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2)):'—';
+  const _ferdEx=ferExtrato(c,new Date());   // calcula uma vez: acumulado + extrato
   let agHtml;
   if(!c.ferMes){ agHtml='<span class="badge badge--neutral">Sem agendamento</span>'; }
   else { const ag=agendamentoStatus(c,f.vencDate);
@@ -6389,12 +6440,8 @@ function abrirDetalheFerias(id,editando){
               <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span></div>
               <div><span class="ferd-lbl">Mês agendado</span><span>${agHtml}</span></div>
             </div>
-            <div class="ferd-acum">
-              <span class="ferd-acum__n"${saldo<0?' style="color:var(--danger-text)"':''}>${saldo}</span>
-              <span class="ferd-acum__l">dias acumulados${_ajuda('Soma dos saldos de todos os períodos abaixo. É o saldo de férias do colaborador.')}</span>
-              <span class="badge badge--${farolVar[f.cor]}" style="margin-left:auto">${f.label}</span>
-            </div>
-            ${ferExtratoHTML(c)}
+            ${ferAcumuladoHTML(c,_ferdEx)}
+            ${ferExtratoHTML(c,_ferdEx)}
           </div>
 
           <div id="ferd-edit" style="display:none">
