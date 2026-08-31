@@ -833,7 +833,10 @@ async function salvarColabModal(){
     dados.ferDiasComprados=r.comprados;
     dados.ferSaldo=saldoAtual - r.gozados - r.comprados - r.faltas;
     const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
-    log.push({tipo:'entrada', inicio:r.inicio, fim:r.fim, mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, faltas:r.faltas, em:new Date().toISOString()});
+    log.push({tipo:'entrada', inicio:r.inicio, fim:r.fim, mes:r.mes, ano:r.ano,
+      gozados:r.gozados, comprados:r.comprados, faltas:r.faltas,
+      de:saldoAtual, para:dados.ferSaldo,
+      em:new Date().toISOString(), por:_ferQuem()});
     dados.feriasLog=log;
     dados.feriasPeriodos=_ferPeriodos(colaboradores[idx]);
     ferRegistrarPeriodo(dados, r.inicio, r.fim, r.comprados,
@@ -6028,6 +6031,107 @@ function ferCritico(c, per, hoje){
   const f=ferFaixa(per,hoje);
   return ['vencido','30d','60d','90d'].includes(f) && !c.ferMes;
 }
+// ══════════════════════════════════════════════════════════════════════════
+// AUDITORIA DE FÉRIAS — quem mexeu, quando e o que mudou
+// ══════════════════════════════════════════════════════════════════════════
+// Editar saldo, período ou agendamento não deixava rastro: o histórico só
+// registrava os eventos de negócio (entrada, retorno, coletiva). Agora toda
+// alteração de campo grava uma linha 'edicao' com o antes e o depois, o
+// usuário e o horário — é o que permite responder "quem mudou isso" depois.
+const FER_CAMPOS_AUDIT={
+  ferSaldo:'saldo', ferVenc:'vencimento', ferMes:'mês de agendamento',
+  ferAno:'ano do agendamento', admissao:'admissão', ferInicio:'início das férias',
+  ferFim:'último dia de férias', ferDiasComprados:'dias vendidos',
+  status:'status', ferDiasGozados:'dias gozados'
+};
+function _ferQuem(){
+  return (usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'(usuário não identificado)';
+}
+function _ferValTxt(campo,v){
+  if(v===''||v==null) return '—';
+  if(campo==='ferInicio'||campo==='ferFim'||campo==='admissao'||campo==='ferVenc'){
+    const d=_dataLocal(v); return d?_ddmm(d)+'/'+d.getFullYear():String(v);
+  }
+  return String(v);
+}
+// Compara o estado ANTES com o colaborador já alterado e grava o que mudou.
+// Devolve as mudanças (vazio = nada a registrar).
+function ferLogEdicao(c, antes, origem){
+  if(!c||!antes) return [];
+  const mud=[];
+  Object.keys(FER_CAMPOS_AUDIT).forEach(k=>{
+    const de=antes[k], para=c[k];
+    const iguais = (de===para) || (de==null&&para==='') || (de===''&&para==null)
+      || (fnum(de)===fnum(para) && de!=='' && para!=='' && de!=null && para!=null
+          && !isNaN(parseFloat(de)) && !isNaN(parseFloat(para)));
+    if(!iguais) mud.push({campo:k, rotulo:FER_CAMPOS_AUDIT[k],
+      de:_ferValTxt(k,de), para:_ferValTxt(k,para)});
+  });
+  if(!mud.length) return [];
+  c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  c.feriasLog.push({tipo:'edicao', mudancas:mud, origem:origem||'',
+    em:new Date().toISOString(), por:_ferQuem()});
+  return mud;
+}
+// Cada linha do histórico virada em: ação (para auditoria) e o que foi feito.
+function ferLogDescreve(l){
+  const n=x=>(x==null?'—':String(x));
+  if(l.tipo==='edicao'){
+    const txt=(l.mudancas||[]).map(m=>m.rotulo+': '+m.de+' → '+m.para).join(' · ');
+    return {acao:'Edição', cls:'accent', o:txt||'sem alteração'};
+  }
+  if(l.tipo==='entrada') return {acao:'Inclusão', cls:'success',
+    o:'férias '+(l.inicio?_ferValTxt('ferInicio',l.inicio)+' a '+_ferValTxt('ferFim',l.fim):'(sem período)')
+      +' · '+n(l.gozados)+'d gozados'+(l.comprados?' · '+l.comprados+'d vendidos':'')
+      +(l.para!=null?' · saldo '+n(l.de)+' → '+n(l.para):'')};
+  if(l.tipo==='retorno') return {acao:'Baixa', cls:'neutral',
+    o:'retorno'+(l.inicio?' de '+_ferValTxt('ferInicio',l.inicio)+' a '+_ferValTxt('ferFim',l.fim):'')
+      +(l.gozados!=null?' · '+n(l.gozados)+'d gozados':'')
+      +(l.para!=null?' · saldo '+n(l.de)+' → '+n(l.para):'')};
+  if(l.tipo==='cancelado') return {acao:'Exclusão', cls:'danger',
+    o:'período '+(l.inicio?_ferValTxt('ferInicio',l.inicio)+' a '+_ferValTxt('ferFim',l.fim):'')
+      +' cancelado (não tirou) · saldo devolvido'};
+  if(l.tipo==='coletiva') return {acao:'Inclusão', cls:'success',
+    o:'férias coletivas'+(l.inicio?' '+_ferValTxt('ferInicio',l.inicio)+' a '+_ferValTxt('ferFim',l.fim):'')
+      +' · −'+n(l.dias)+'d · saldo '+n(l.de)+' → '+n(l.para)};
+  if(l.tipo==='aniversario') return {acao:'Inclusão', cls:'success',
+    o:'+'+n(l.dias||30)+'d por aniversário de admissão · saldo '+n(l.de)+' → '+n(l.para)};
+  if(l.tipo==='ajuste_manual') return {acao:'Edição', cls:'accent',
+    o:'saldo '+n(l.de)+' → '+n(l.para)+(l.justificativa?' · '+l.justificativa:'')};
+  if(l.tipo==='agendado') return {acao:'Edição', cls:'accent',
+    o:'voltou a Trabalhando — as férias de '
+      +_ferValTxt('ferInicio',l.inicio)+' ainda não começaram'};
+  return {acao:l.tipo||'—', cls:'neutral',
+    o:n(l.gozados)+'d gozados'+(l.comprados?' · '+l.comprados+'d vendidos':'')};
+}
+// Histórico completo: data e hora, quem fez, o que fez e o que mudou.
+function ferHistoricoHTML(c){
+  const log=Array.isArray(c.feriasLog)?c.feriasLog:[];
+  if(!log.length) return '';
+  const linhas=log.slice().reverse().map(l=>{
+    const d=l.em?new Date(l.em):null;
+    const quando=d&&!isNaN(d)
+      ? d.toLocaleDateString('pt-BR')+' <span class="fhi-h">'
+        +d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</span>'
+      : ((l.mes||'—')+'/'+(l.ano||''));
+    const q=ferLogDescreve(l);
+    const quem=l.por||'(não registrado)';
+    return '<tr>'
+      +'<td class="fhi-q">'+quando+'</td>'
+      +'<td><span class="badge badge--'+q.cls+'" style="font-size:9px">'+q.acao+'</span></td>'
+      +'<td class="fhi-o">'+q.o+'</td>'
+      +'<td class="fhi-u" title="'+String(quem).replace(/"/g,'&quot;')+'">'+quem+'</td>'
+      +'</tr>';
+  }).join('');
+  return '<div style="margin-top:16px">'
+    +'<div class="section-label" style="margin-bottom:6px">Histórico'
+      +_ajuda('Toda inclusão, edição e exclusão de férias fica registrada com data, hora e usuário.')
+    +'</div>'
+    +'<div class="fhi-wrap"><table class="fhi"><thead><tr>'
+      +'<th>Quando</th><th>Ação</th><th>O que foi feito</th><th>Quem</th>'
+    +'</tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
+}
+
 // ── Extrato: cada gozo lançado dentro do período aquisitivo que ele baixou ──
 // O consumo é alocado do período mais ANTIGO para o mais novo (FIFO). Um gozo
 // pode atravessar dois períodos, e nesse caso aparece dividido.
@@ -6412,17 +6516,6 @@ function abrirDetalheFerias(id,editando){
     agHtml='<strong>'+agendamentoLabel(c)+'</strong> <span class="badge badge--'+bcls+'">'+blbl+'</span>'; }
   const saldo=(c.ferSaldo!=null?c.ferSaldo:30);
   const admTxt=fmt(_dataLocal(c.admissao));
-  const logHtml=(Array.isArray(c.feriasLog)&&c.feriasLog.length)?c.feriasLog.slice().reverse().map(l=>{
-    const quando=l.em?new Date(l.em).toLocaleDateString('pt-BR'):((l.mes||'—')+'/'+(l.ano||''));
-    let desc;
-    if(l.tipo==='aniversario') desc='+'+(l.dias||30)+'d (aniversário de admissão) → '+l.para+'d';
-    else if(l.tipo==='retorno') desc='Retorno · '+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+' → '+l.para+'d';
-    else if(l.tipo==='entrada') desc='Entrada · '+(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'');
-    else if(l.tipo==='coletiva') desc='Coletivas · −'+(l.dias||0)+'d → '+l.para+'d';
-    else if(l.tipo==='ajuste_manual') desc='Ajuste manual · '+l.de+' → '+l.para+'d'+(l.justificativa?' ('+l.justificativa+')':'');
-    else desc=(l.gozados||0)+'d gozados'+(l.comprados?' · '+l.comprados+'d comprados':'')+(l.faltas?' · '+l.faltas+'d faltas':'');
-    return '<div class="ferd-log"><span style="white-space:nowrap">'+quando+'</span><span class="text-muted" style="text-align:right">'+desc+(l.por?' · '+l.por:'')+'</span></div>';
-  }).join(''):'';
 
   const html=`
     <div class="modal-overlay ds" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
@@ -6438,7 +6531,7 @@ function abrirDetalheFerias(id,editando){
             <div class="ferd-cab">
               <div><span class="ferd-lbl">Admissão</span><span class="ferd-val">${admTxt}</span></div>
               <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span></div>
-              <div><span class="ferd-lbl">Mês agendado</span><span>${agHtml}</span></div>
+              <div><span class="ferd-lbl">Mês de agendamento</span><span>${agHtml}</span></div>
             </div>
             ${ferAcumuladoHTML(c,_ferdEx)}
             ${ferExtratoHTML(c,_ferdEx)}
@@ -6470,7 +6563,7 @@ function abrirDetalheFerias(id,editando){
             <p class="text-xs text-muted" style="margin-top:8px">A alteração vale para este colaborador em todo o sistema — cadastro, Controle de Férias e o cálculo dos benefícios da competência. Vencimento em dia/mês (o ano é gerido pelo sistema). Saldo pode ser negativo (antecipação).</p>
           </div>
 
-          ${logHtml?`<div style="margin-top:16px"><div class="section-label" style="margin-bottom:6px">Histórico</div><div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:4px 10px">${logHtml}</div></div>`:''}
+          ${ferHistoricoHTML(c)}
           <div id="ferd-alertas" style="margin-top:10px"></div>
 
           <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
@@ -6616,6 +6709,7 @@ async function salvarDetalheFerias(id){
   if(comprados>10 && !confirm('O abono está limitado a 10 dias por lei, e você informou '+comprados+'.\n\nGravar assim mesmo?')) return;
 
   const antIni=c.ferInicio, antFim=c.ferFim;
+  const antes=Object.assign({},c);          // retrato para a auditoria
   c.ferSaldo=saldo;
   c.ferVenc=_resolveVencInput(venc, c.ferVenc);
   c.ferMes=mes;
@@ -6623,6 +6717,7 @@ async function salvarDetalheFerias(id){
   c.ferInicio=ini; c.ferFim=fim;
   c.ferDiasComprados=comprados;
   ferRegistrarPeriodo(c,ini,fim,comprados,antIni,antFim);
+  ferLogEdicao(c, antes, 'ficha de férias');
 
   try{
     await fsSet('colaboradores',id,c);
@@ -13033,6 +13128,7 @@ async function faSalvar(id,campo,valor){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const antes=c[campo];
   const antIni=c.ferInicio, antFim=c.ferFim;
+  const retrato=Object.assign({},c);        // retrato para a auditoria
   if(campo==='ferSaldo')            c.ferSaldo = (valor===''?null:fnum(valor));
   else if(campo==='ferVenc')        c.ferVenc  = _resolveVencInput(valor, c.ferVenc);
   else if(campo==='ferDiasComprados') c.ferDiasComprados = fnum(valor);
@@ -13045,6 +13141,7 @@ async function faSalvar(id,campo,valor){
   if(campo==='ferInicio'||campo==='ferFim'||campo==='ferDiasComprados'){
     ferRegistrarPeriodo(c,c.ferInicio,c.ferFim,c.ferDiasComprados,antIni,antFim);
   }
+  ferLogEdicao(c, retrato, 'saldos e períodos');
   try{
     await fsSet('colaboradores',id,c);
     if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){

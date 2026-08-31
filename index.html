@@ -222,6 +222,19 @@
   border-radius:var(--radius-sm);padding:9px 12px;margin-bottom:8px;background:var(--surface); }
 .ds .fex-p-box--ok{ border-left-color:var(--green); }
 .ds .fex-p-box--venc{ border-left-color:var(--red); }
+/* Historico de ferias com trilha de auditoria: quando, acao, o que, quem */
+.ds .fhi-wrap{ max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius); }
+.ds table.fhi{ width:100%;border-collapse:collapse;font-size:11.5px; }
+.ds table.fhi th{ position:sticky;top:0;background:var(--surface-soft,#F8F9FB);
+  text-align:left;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text-muted);padding:6px 9px;border-bottom:1px solid var(--border);white-space:nowrap; }
+.ds table.fhi td{ padding:6px 9px;border-bottom:1px solid var(--border);vertical-align:top; }
+.ds table.fhi tr:last-child td{ border-bottom:none; }
+.ds .fhi-q{ white-space:nowrap;font-variant-numeric:tabular-nums; }
+.ds .fhi-h{ color:var(--text-muted);font-size:10.5px; }
+.ds .fhi-o{ color:var(--text); }
+.ds .fhi-u{ color:var(--text-secondary);max-width:150px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap; }
 .ds .fex-p-box--prog{ border-left-color:var(--accent,#6366F1); }
 .ds .fex-p-box--trav{ border-left-color:var(--text3);background:var(--surface-soft,#F8F9FB); }
 .ds .fex-l--prog{ color:var(--text-secondary); }
