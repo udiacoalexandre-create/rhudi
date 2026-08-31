@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Udiaço — Comercial</title>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc,
+           deleteDoc, onSnapshot, query, where, orderBy, writeBatch }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+  // Mesmo projeto Firebase do rhudi: os logins da equipe (Auth) e o controle de
+  // acesso (coleção 'usuarios') são compartilhados. Aqui só as coleções são novas.
+  const firebaseConfig = {
+    apiKey:"AIzaSyDUD4CDg3zaZh9dM4_RXuxRmY9bV0YZAok",
+    authDomain:"udiaco-beneficios.firebaseapp.com",
+    projectId:"udiaco-beneficios",
+    storageBucket:"udiaco-beneficios.firebasestorage.app",
+    messagingSenderId:"27505050059",
+    appId:"1:27505050059:web:1aa59e7b14bdc7b796364e"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app), auth = getAuth(app);
+
+  window._auth = auth;
+  window._col  = n => collection(db, n);
+  window._doc  = (c, i) => doc(db, c, i);
+  window._getDoc = getDoc;  window._getDocs = getDocs;
+  window._addDoc = addDoc;  window._setDoc = setDoc;  window._updateDoc = updateDoc;
+  window._deleteDoc = deleteDoc;
+  window._onSnapshot = onSnapshot;
+  window._query = query; window._where = where; window._orderBy = orderBy;
+  window._batch = () => writeBatch(db);
+  window._signIn = (e, p) => signInWithEmailAndPassword(auth, e, p);
+  window._resetSenha = e => sendPasswordResetEmail(auth, e);
+  window._signOut = () => signOut(auth);
+  window._onAuthStateChanged = onAuthStateChanged;
+  window._firebaseReady = true;
+  window.dispatchEvent(new Event('firebaseReady'));
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<!-- Sistema de design da Udiaço (o mesmo do rhudi e do Projetos) -->
+<link rel="stylesheet" href="udiaco-design-system.css">
+
+<style>
+/* ============================================================
+   COMERCIAL — painéis de BI para teste e controle das demandas
+   de tecnologia com a empresa parceira.
+   Tokens vêm do udiaco-design-system.css. Aqui só a camada visual.
+   Regra da casa: pouca informação na tela, o número que importa em
+   destaque, explicação em "?" no hover, e os botões sempre no mesmo
+   lugar (rodapé travado nos modais).
+   ============================================================ */
+*{ box-sizing:border-box }
+html,body{ margin:0; padding:0; min-height:100% }
+button{ font-family:inherit }
+a{ color:var(--accent); text-decoration:none }
+:root{
+  --brand:        #047857;   /* verde Udiaço */
+  --brand-escuro: #065f46;
+  --cm-alta:      #b91c1c;
+  --cm-media:     #b45309;
+  --cm-baixa:     #0f766e;
+  --cm-fila:      #64748b;
+  --cm-andamento: #2563eb;
+  --cm-entregue:  #15803d;
+  --cm-pausada:   #7c3aed;
+}
+
+/* ---------- LOGIN ---------- */
+.login{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:var(--space-6);
+  background:radial-gradient(1200px 500px at 20% -10%, #d1fae5 0%, transparent 60%),
+             linear-gradient(160deg,#ecfdf5 0%,var(--page-bg) 45%) }
+.login__card{ width:100%; max-width:390px; background:var(--surface); border:1px solid var(--border);
+  border-radius:18px; box-shadow:0 12px 40px rgba(15,23,42,.10); padding:var(--space-8) }
+.login__logo{ width:46px; height:46px; border-radius:13px; background:var(--brand); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:23px;
+  box-shadow:0 6px 16px rgba(4,120,87,.35) }
+.erro{ display:none; background:var(--danger-bg,#fef2f2); color:var(--danger-text,#991b1b);
+  border:1px solid #fecaca; border-radius:10px; padding:10px 12px; font-size:13px; margin-bottom:var(--space-4) }
+
+/* ---------- CASCA ---------- */
+.topbar{ display:flex; align-items:center; gap:var(--space-4); padding:12px var(--space-6);
+  background:var(--brand); color:#fff; position:sticky; top:0; z-index:50 }
+.topbar__brand{ display:flex; align-items:center; gap:9px; font-weight:700; font-size:16px; white-space:nowrap }
+.topbar__logo{ width:30px; height:30px; border-radius:9px; background:rgba(255,255,255,.18);
+  display:flex; align-items:center; justify-content:center; font-size:17px }
+.spacer{ flex:1 }
+.abas{ display:flex; gap:4px }
+.aba{ background:transparent; border:none; color:rgba(255,255,255,.78); font-size:13px; font-weight:600;
+  padding:7px 13px; border-radius:9px; cursor:pointer; display:flex; align-items:center; gap:6px }
+.aba:hover{ background:rgba(255,255,255,.12); color:#fff }
+.aba--on{ background:rgba(255,255,255,.2); color:#fff }
+.icon-btn{ background:rgba(255,255,255,.14); border:none; color:#fff; width:32px; height:32px;
+  border-radius:9px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center }
+.icon-btn:hover{ background:rgba(255,255,255,.26) }
+.conteudo{ max-width:1280px; margin:0 auto; padding:var(--space-6) }
+.pg-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+  flex-wrap:wrap; margin-bottom:var(--space-5) }
+.pg-tit{ font-size:20px; font-weight:700; color:var(--text); margin:0 }
+.pg-sub{ font-size:13px; color:var(--text-secondary); margin:3px 0 0 }
+.acoes{ display:flex; gap:8px; flex-wrap:wrap }
+
+/* explicação secundária: "?" com tooltip, nunca parágrafo na tela */
+.ajuda{ display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+  border-radius:50%; background:var(--surface-soft,#eef1f4); color:var(--text-secondary);
+  font-size:10px; font-weight:700; cursor:help; margin-left:5px; vertical-align:1px }
+
+/* números do topo */
+.stats{ display:flex; gap:20px; flex-wrap:wrap; margin-bottom:var(--space-5) }
+.stat__n{ font-size:28px; font-weight:700; line-height:1; color:var(--text) }
+.stat__l{ font-size:11.5px; color:var(--text-secondary); margin-top:3px }
+
+/* ---------- PAINÉIS ---------- */
+.pn-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px }
+.pn-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius,12px);
+  padding:15px; display:flex; flex-direction:column; gap:8px; cursor:pointer;
+  transition:border-color .15s, box-shadow .15s }
+.pn-card:hover{ border-color:var(--brand); box-shadow:0 6px 18px rgba(15,23,42,.08) }
+.pn-card__ic{ width:38px; height:38px; border-radius:10px; background:#d1fae5; color:var(--brand);
+  display:flex; align-items:center; justify-content:center; font-size:20px }
+.pn-card__t{ font-size:14px; font-weight:600; color:var(--text); line-height:1.3 }
+.pn-card__d{ font-size:12px; color:var(--text-secondary); line-height:1.4; flex:1 }
+.pn-card__f{ display:flex; justify-content:space-between; align-items:center; gap:8px;
+  font-size:10.5px; color:var(--text-muted); border-top:1px solid var(--border); padding-top:8px }
+.pn-acts{ display:flex; gap:4px }
+.pn-acts button{ background:transparent; border:none; color:var(--text-muted); cursor:pointer;
+  font-size:14px; padding:2px 4px; border-radius:6px }
+.pn-acts button:hover{ background:var(--surface-soft,#eef1f4); color:var(--text) }
+
+/* visualizador em tela cheia */
+.visor{ position:fixed; inset:0; z-index:200; background:var(--page-bg,#f8fafc); display:flex; flex-direction:column }
+.visor__bar{ display:flex; align-items:center; gap:12px; padding:10px var(--space-5);
+  background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0 }
+.visor__t{ font-weight:700; font-size:14px; color:var(--text) }
+.visor__f{ flex:1; border:none; width:100%; background:#fff }
+
+/* área de upload */
+.solta{ border:2px dashed var(--border); border-radius:var(--radius,12px); padding:24px 16px;
+  text-align:center; cursor:pointer; background:var(--surface-soft,#f8fafc) }
+.solta:hover,.solta--on{ border-color:var(--brand); background:#ecfdf5 }
+.solta__ic{ font-size:28px; color:var(--brand) }
+
+/* ---------- DEMANDAS ---------- */
+.filtros{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:var(--space-4) }
+.fg{ display:flex; flex-direction:column; gap:4px }
+.fg label{ font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--text-muted) }
+.fg input,.fg select,.fg textarea{ font-family:inherit; font-size:13px; padding:7px 10px;
+  border:1px solid var(--border); border-radius:9px; background:var(--surface); color:var(--text) }
+.fg input:focus,.fg select:focus,.fg textarea:focus{ outline:none; border-color:var(--brand) }
+.tbl-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius,12px);
+  background:var(--surface) }
+table.dm{ width:100%; border-collapse:collapse; font-size:12.5px }
+table.dm th{ text-align:left; font-size:10px; font-weight:700; letter-spacing:.04em;
+  text-transform:uppercase; color:var(--text-muted); padding:10px 12px;
+  border-bottom:1px solid var(--border); white-space:nowrap; background:var(--surface-soft,#f8fafc) }
+table.dm td{ padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top }
+table.dm tr:last-child td{ border-bottom:none }
+table.dm tr.clicavel{ cursor:pointer }
+table.dm tr.clicavel:hover td{ background:var(--surface-soft,#f8fafc) }
+.pill{ display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700;
+  padding:2px 8px; border-radius:20px; color:#fff; white-space:nowrap }
+.prazo-venc{ color:var(--cm-alta); font-weight:700 }
+.prazo-perto{ color:var(--cm-media); font-weight:700 }
+
+/* ---------- MODAL com rodapé travado ---------- */
+.mod{ position:fixed; inset:0; z-index:300; background:rgba(15,23,42,.55);
+  display:flex; align-items:center; justify-content:center; padding:20px }
+.mod__cx{ background:var(--surface); border-radius:16px; width:100%; max-width:620px;
+  max-height:88vh; display:flex; flex-direction:column; overflow:hidden;
+  box-shadow:0 20px 60px rgba(0,0,0,.3) }
+.mod__h{ display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:14px 20px; background:var(--brand); color:#fff; flex-shrink:0 }
+.mod__h b{ font-size:15px }
+.mod__x{ background:transparent; border:none; color:#fff; font-size:22px; cursor:pointer; line-height:1 }
+.mod__b{ padding:20px; overflow-y:auto; flex:1 }
+.mod__f{ display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:13px 20px; border-top:1px solid var(--border); background:var(--surface-soft,#f8fafc);
+  flex-shrink:0 }
+.mod__f .btn{ min-width:140px; justify-content:center }
+.grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px }
+@media (max-width:620px){ .grid2{ grid-template-columns:1fr } }
+
+/* histórico de auditoria */
+.hist{ max-height:200px; overflow:auto; border:1px solid var(--border); border-radius:10px }
+table.hist-t{ width:100%; border-collapse:collapse; font-size:11.5px }
+table.hist-t th{ position:sticky; top:0; background:var(--surface-soft,#f8fafc); text-align:left;
+  font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--text-muted); padding:6px 9px; border-bottom:1px solid var(--border) }
+table.hist-t td{ padding:6px 9px; border-bottom:1px solid var(--border); vertical-align:top }
+.vazio{ text-align:center; padding:40px 20px; color:var(--text-secondary) }
+.vazio__ic{ font-size:36px; color:var(--border-strong,#cbd5e1); margin-bottom:8px }
+
+/* toast */
+#toast{ position:fixed; bottom:20px; right:20px; padding:12px 18px; border-radius:10px;
+  font-size:13px; font-weight:500; opacity:0; transform:translateY(8px); transition:all .25s;
+  z-index:400; pointer-events:none; max-width:360px; box-shadow:0 10px 30px rgba(0,0,0,.18); color:#fff }
+#toast.show{ opacity:1; transform:translateY(0) }
+#toast.ok{ background:var(--brand) } #toast.erro{ background:#b91c1c }
+#toast.aviso{ background:#b45309 } #toast.info{ background:#2563eb }
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div class="login" id="tela-login" style="display:none">
+  <div class="login__card">
+    <div class="row" style="display:flex;align-items:center;gap:12px;margin-bottom:var(--space-5)">
+      <div class="login__logo"><i class="ti ti-chart-pie"></i></div>
+      <div>
+        <div style="font-weight:600;font-size:16px">Comercial</div>
+        <div class="small muted" style="font-size:12px;color:var(--text-secondary)">Udiaço</div>
+      </div>
+    </div>
+    <div class="erro" id="login-erro"></div>
+    <div class="fg" style="margin-bottom:var(--space-4)">
+      <label for="login-email">E-mail</label>
+      <input type="email" id="login-email" autocomplete="username" placeholder="nome@udiaco.com.br">
+    </div>
+    <div class="fg" style="margin-bottom:var(--space-5)">
+      <label for="login-senha">Senha</label>
+      <input type="password" id="login-senha" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn btn--primary" id="btn-entrar" style="width:100%;justify-content:center">Entrar</button>
+    <div style="text-align:center;margin-top:var(--space-4)">
+      <a href="#" id="link-reset" style="font-size:12px">Esqueci minha senha</a>
+    </div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="tela-app" style="display:none">
+  <div class="topbar">
+    <div class="topbar__brand">
+      <div class="topbar__logo"><i class="ti ti-chart-pie"></i></div>
+      <span>Comercial</span>
+    </div>
+    <div class="abas" id="abas"></div>
+    <span class="spacer"></span>
+    <span id="quem" style="font-size:12px;opacity:.85"></span>
+    <button class="icon-btn" id="btn-portal" title="Voltar ao portal"><i class="ti ti-apps"></i></button>
+    <button class="icon-btn" id="btn-sair" title="Sair"><i class="ti ti-logout"></i></button>
+  </div>
+  <div class="conteudo" id="view"></div>
+</div>
+
+<div id="toast"></div>
+<div id="camada"></div>
+
+<!-- Cache-busting: carrega sempre a versao mais recente do comercial.js -->
+<script>document.write('<scr'+'ipt src="comercial.js?v='+Date.now()+'"></scr'+'ipt>');</script>
+</body>
+</html>

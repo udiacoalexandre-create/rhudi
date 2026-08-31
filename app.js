@@ -150,6 +150,7 @@ const PLATAFORMAS = {
   rh:           {label:'Sistema de RH',         padrao:true},
   treinamentos: {label:'Treinamentos',          padrao:true},
   projetos:     {label:'Projetos Estratégicos', padrao:false},
+  comercial:    {label:'Comercial',             padrao:false},
 };
 function temPlataforma(chave, usr){
   const u = usr || usuarioAtual;
@@ -4498,6 +4499,15 @@ function mostrarPortal(){
         +'<div class="hc-tit">Projetos Estratégicos</div>'
         +'<div class="hc-desc">Projetos, tarefas, prazos e solicitações entre a equipe.</div>'
         +'<div class="hc-cta hc-cta--purple">Acessar <i class="ti ti-arrow-right"></i></div></div>');
+    }
+    if(temPlataforma('comercial')){
+      // Comercial: painéis de BI para teste e o controle das demandas de
+      // tecnologia tocadas pela empresa parceira.
+      tiles.push('<div class="home-card" onclick="window.location.href=\'comercial.html\'">'
+        +'<div class="hc-ico"><i class="ti ti-chart-pie"></i></div>'
+        +'<div class="hc-tit">Comercial</div>'
+        +'<div class="hc-desc">Painéis de BI para teste e as demandas de tecnologia com a parceira.</div>'
+        +'<div class="hc-cta"><i class="ti ti-arrow-right"></i> Acessar</div></div>');
     }
     if(!tiles.length){
       tiles.push('<div class="home-card" style="cursor:default">'

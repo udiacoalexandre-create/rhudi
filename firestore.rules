@@ -111,6 +111,17 @@ service cloud.firestore {
       allow write: if isMaster();
     }
 
+    // ── Comercial (comercial.html) ────────────────────────────
+    // Mesmo login do RH, plataforma própria: só o Master e quem ele marcou em
+    // 'Comercial'. Guarda os painéis de BI de teste (metadados + o HTML em
+    // pedaços) e as demandas de tecnologia com a empresa parceira.
+    function podeComercial() {
+      return temPlataforma('comercial') && !isUM989();
+    }
+    match /cm_paineis/{id}      { allow read, write: if podeComercial(); }
+    match /cm_painel_dados/{id} { allow read, write: if podeComercial(); }
+    match /cm_demandas/{id}     { allow read, write: if podeComercial(); }
+
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {
       allow read, write: if false;
