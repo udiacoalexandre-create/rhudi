@@ -835,13 +835,21 @@ async function salvarColabModal(){
     const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
     log.push({tipo:'entrada', inicio:r.inicio, fim:r.fim, mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, faltas:r.faltas, em:new Date().toISOString()});
     dados.feriasLog=log;
+    dados.feriasPeriodos=_ferPeriodos(colaboradores[idx]);
+    ferRegistrarPeriodo(dados, r.inicio, r.fim, r.comprados,
+                        colaboradores[idx].ferInicio, colaboradores[idx].ferFim);
     // Férias que só começam depois: continua trabalhando até a data chegar.
     if(_dataLocal(r.inicio)>_hoje0()){
       dados.status=statusAnterior||'Trabalhando';
       toast('Férias agendadas para '+_ddmm(_dataLocal(r.inicio))+' — entra automaticamente no dia.','info',5000);
     }
   } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
-    // Saiu de férias: zera comprados e limpa o período.
+    // Saiu de férias: guarda o período no histórico (a competência daquele mês
+    // precisa dele) e limpa o slot.
+    const antigo=Object.assign({},colaboradores[idx],
+      {feriasPeriodos:_ferPeriodos(colaboradores[idx])});
+    ferFecharPeriodo(antigo);
+    dados.feriasPeriodos=_ferPeriodos(antigo);
     dados.ferDiasComprados=0;
     dados.ferInicio='';
     dados.ferFim='';
@@ -2378,9 +2386,98 @@ function feriasLancamento(mat, du){
 // (preserva o comportamento antigo de nao pagar VR cheio a quem esta de ferias).
 function feriasDiasUteisAuto(c, comp, du){
   if(!c || c.elegibilidade?.ferias===false) return 0;
-  if(c.ferInicio && c.ferFim) return feriasDiasUteisNaComp(c, comp);
+  if((c.ferInicio && c.ferFim) || _ferPeriodos(c).length) return feriasDiasUteisTotalComp(c, comp);
   if(c.status==='Ferias'||c.status==='Férias') return fnum(du);
   return 0;
+}
+
+// ── Histórico de períodos de férias no cadastro ───────────────────────────
+// ferInicio/ferFim é UM slot: guarda o período corrente e é limpo quando o
+// retorno é confirmado. Depois disso o cadastro não sabia mais responder o que
+// houve naquele mês — e a apuração da competência é exatamente essa pergunta.
+// Cada período passa a ir também para feriasPeriodos, e é de lá que o cálculo
+// do mês soma os dias. A lista nasce vazia: competências antigas não mudam.
+function _ferPeriodos(c){ return c && Array.isArray(c.feriasPeriodos) ? c.feriasPeriodos : []; }
+function _ferChave(ini,fim){ return String(ini||'')+'|'+String(fim||''); }
+
+// Registra o período no histórico. `antigo*` é o que estava no slot antes: se
+// vier preenchido e ainda estiver aberto, a entrada é SUBSTITUÍDA em vez de
+// duplicada. É o que evita contar duas vezes um período que foi só remarcado
+// (o caso de quem tem 01/09→20/09 corrigido para 11/09→30/09).
+function ferRegistrarPeriodo(c, ini, fim, comprados, antigoIni, antigoFim){
+  if(!c) return [];
+  const lista=_ferPeriodos(c).slice();
+  if(antigoIni && antigoFim && _ferChave(antigoIni,antigoFim)!==_ferChave(ini,fim)){
+    const k=_ferChave(antigoIni,antigoFim);
+    const i=lista.findIndex(p=>_ferChave(p.inicio,p.fim)===k && !p.fechadoEm);
+    if(i>=0) lista.splice(i,1);
+  }
+  if(ini && fim){
+    const k=_ferChave(ini,fim);
+    const i=lista.findIndex(p=>_ferChave(p.inicio,p.fim)===k);
+    if(i<0) lista.push({inicio:ini,fim:fim,comprados:fnum(comprados)});
+    else lista[i]=Object.assign({},lista[i],{comprados:fnum(comprados)});
+  }
+  c.feriasPeriodos=lista;
+  return lista;
+}
+// Retorno confirmado: as férias aconteceram. Marca no histórico ANTES de o slot
+// ser limpo, senão a informação do mês se perde.
+function ferFecharPeriodo(c, quando){
+  if(!c || !c.ferInicio || !c.ferFim) return;
+  const em=quando||new Date().toISOString();
+  const k=_ferChave(c.ferInicio,c.ferFim);
+  const lista=_ferPeriodos(c).slice();
+  const i=lista.findIndex(p=>_ferChave(p.inicio,p.fim)===k);
+  if(i>=0) lista[i]=Object.assign({},lista[i],{fechadoEm:em});
+  else lista.push({inicio:c.ferInicio,fim:c.ferFim,comprados:fnum(c.ferDiasComprados),fechadoEm:em});
+  c.feriasPeriodos=lista;
+}
+// "Não tirou": as férias não aconteceram, então saem do histórico também.
+function ferCancelarPeriodo(c){
+  if(!c || !c.ferInicio || !c.ferFim) return;
+  const k=_ferChave(c.ferInicio,c.ferFim);
+  c.feriasPeriodos=_ferPeriodos(c).filter(p=>_ferChave(p.inicio,p.fim)!==k);
+}
+// Períodos que tocam a competência (slot + histórico), para telas e avisos.
+function ferPeriodosNaComp(c, comp){
+  const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/); if(!m) return [];
+  const mes=+m[1]-1, ano=+m[2];
+  const mIni=new Date(ano,mes,1), mFim=new Date(ano,mes+1,0);
+  const vistos=new Set(), out=[];
+  const add=(ini,fim,fechadoEm)=>{
+    const k=_ferChave(ini,fim);
+    if(!ini||!fim||vistos.has(k)) return;
+    const a=_dataLocal(ini), b=_dataLocal(fim);
+    if(!a||!b||b<mIni||a>mFim) return;
+    vistos.add(k); out.push({inicio:ini,fim:fim,fechadoEm:fechadoEm||''});
+  };
+  if(c.ferInicio&&c.ferFim) add(c.ferInicio,c.ferFim,'');
+  _ferPeriodos(c).forEach(p=>add(p.inicio,p.fim,p.fechadoEm));
+  return out;
+}
+// Dias úteis de férias na competência somando slot + histórico, contando cada
+// dia UMA vez (dois períodos podem se sobrepor numa correção).
+function feriasDiasUteisTotalComp(c, comp){
+  const ps=ferPeriodosNaComp(c, comp);
+  if(!ps.length) return 0;
+  if(ps.length===1) return feriasDiasUteisNaComp({ferInicio:ps[0].inicio,ferFim:ps[0].fim}, comp);
+  const m=String(comp||'').match(/^(\d{1,2})\/(\d{4})$/); if(!m) return 0;
+  const mes=+m[1]-1, ano=+m[2];
+  const mIni=new Date(ano,mes,1), mFim=new Date(ano,mes+1,0);
+  const feriados={}; (typeof feriadosDoAno==='function'?feriadosDoAno(ano):[]).forEach(f=>{feriados[f.data]=1;});
+  const dias=new Set();
+  ps.forEach(p=>{
+    const ini=_dataLocal(p.inicio), fim=_dataLocal(p.fim); if(!ini||!fim) return;
+    const a=ini>mIni?ini:mIni, b=fim<mFim?fim:mFim;
+    const d=new Date(a);
+    while(d<=b){
+      const wd=d.getDay(), iso=_isoData(d);
+      if(wd!==0&&wd!==6&&!feriados[iso]) dias.add(iso);
+      d.setDate(d.getDate()+1);
+    }
+  });
+  return dias.size;
 }
 
 // ============================================================
@@ -2901,8 +2998,10 @@ async function retornarColabsFerias(naoTirou){
       const ult=[...log].reverse().find(l=>l.tipo==='entrada');
       if(ult) c.ferSaldo=fnum(c.ferSaldo)+fnum(ult.gozados)+fnum(ult.comprados)+fnum(ult.faltas);
       log.push({tipo:'cancelado', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+      ferCancelarPeriodo(c);          // n\u00E3o aconteceu: sai do hist\u00F3rico
     } else {
       log.push({tipo:'retorno', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+      ferFecharPeriodo(c);            // aconteceu: fica no hist\u00F3rico da compet\u00EAncia
     }
     c.feriasLog=log;
     c.ferInicio=''; c.ferFim=''; c.ferDiasComprados=0;
@@ -4534,6 +4633,7 @@ async function sincronizarStatusFerias(hoje){
 
   const pend=entram.map(c=>{
     const novo=Object.assign({},c,{status:'Ferias'});
+    ferRegistrarPeriodo(novo,c.ferInicio,c.ferFim,c.ferDiasComprados);
     if(!_feriasLogEntrada(c)){
       const g=_diasCorridos(c.ferInicio,c.ferFim);
       const comp=fnum(c.ferDiasComprados);
@@ -4547,6 +4647,7 @@ async function sincronizarStatusFerias(hoje){
     return {c,novo,tipo:'entrou'};
   }).concat(voltam.map(c=>{
     const novo=Object.assign({},c,{status:'Trabalhando'});
+    ferRegistrarPeriodo(novo,c.ferInicio,c.ferFim,c.ferDiasComprados);
     const log=(Array.isArray(c.feriasLog)?c.feriasLog.slice():[]);
     // Status Férias significa que a entrada já foi processada e o saldo já
     // abatido. Se o log da entrada não existe (período editado depois, dado
@@ -4649,8 +4750,10 @@ async function confirmarRetornosModal(naoTirou){
       const ult=[...log].reverse().find(l=>l.tipo==='entrada');
       if(ult) c.ferSaldo=fnum(c.ferSaldo)+fnum(ult.gozados)+fnum(ult.comprados)+fnum(ult.faltas);
       log.push({tipo:'cancelado', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+      ferCancelarPeriodo(c);          // não aconteceu: sai do histórico
     } else {
       log.push({tipo:'retorno', inicio:c.ferInicio||'', fim:c.ferFim||'', em:new Date().toISOString(), por:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''});
+      ferFecharPeriodo(c);            // aconteceu: fica no histórico da competência
     }
     c.feriasLog=log; c.ferInicio=''; c.ferFim=''; c.ferDiasComprados=0;
     b.set(window._doc('colaboradores',c._id),c); n++;
@@ -6041,12 +6144,14 @@ async function salvarDetalheFerias(id){
   if((ini&&!fim)||(fim&&!ini)){ toast('Informe o início e o último dia, ou deixe os dois em branco.','error'); return; }
   if(comprados>10 && !confirm('O abono está limitado a 10 dias por lei, e você informou '+comprados+'.\n\nGravar assim mesmo?')) return;
 
+  const antIni=c.ferInicio, antFim=c.ferFim;
   c.ferSaldo=saldo;
   c.ferVenc=_resolveVencInput(venc, c.ferVenc);
   c.ferMes=mes;
   c.admissao=admissao||c.admissao||'';
   c.ferInicio=ini; c.ferFim=fim;
   c.ferDiasComprados=comprados;
+  ferRegistrarPeriodo(c,ini,fim,comprados,antIni,antFim);
 
   try{
     await fsSet('colaboradores',id,c);
@@ -9320,6 +9425,7 @@ async function wizFerConfirmarRetorno(id){
   c.status='Trabalhando';
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
   c.feriasLog.push({tipo:'retorno',inicio:c.ferInicio||'',fim:c.ferFim||'',gozados:g,comprados:comp,de,para:c.ferSaldo,ferMes:c.ferMes,em:new Date().toISOString(),por:_wizPor()});
+  ferFecharPeriodo(c);                 // guarda no histórico antes de limpar o slot
   c.ferInicio=''; c.ferFim=''; c.ferDiasComprados=0;   // fecha o período
   try{
     await fsSet('colaboradores',id,c);
@@ -9383,9 +9489,11 @@ async function wizFerConfirmarEntrada(id){
   // muda sozinho no dia (sincronizarStatusFerias). O saldo já abate aqui, e o
   // log de entrada impede que a entrada automática abata de novo.
   const futuro=_dataLocal(inicio)>_hoje0();
+  const antIni=c.ferInicio, antFim=c.ferFim;
   c.ferInicio=inicio; c.ferFim=fim; c.ferDiasGozados=g; c.ferDiasComprados=comp;
   c.ferSaldo=de-g-comp;                      // abate na ENTRADA (período conhecido)
   if(!futuro) c.status='Ferias';
+  ferRegistrarPeriodo(c,inicio,fim,comp,antIni,antFim);
   const d=_dataLocal(inicio); if(d && !c.ferMes) c.ferMes=MESES_FER[d.getMonth()];
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
   c.feriasLog.push({tipo:'entrada',inicio,fim,gozados:g,comprados:comp,de,para:c.ferSaldo,em:new Date().toISOString(),por:_wizPor()});
@@ -11911,23 +12019,32 @@ function _feriasNaComp(comp){
   const du=lanDU;
   return colsApuracao().filter(c=>{
     if(STATUS_NAO_RECEBE.includes(c.status) || !elegivelBeneficios(c)) return false;
-    const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim);
-    if(ini&&fim) return !(fim<mIni || ini>mFim);            // período toca o mês
+    // Período no cadastro OU no histórico (quem já voltou continua contando na
+    // competência do mês em que esteve de férias).
+    if(ferPeriodosNaComp(c,comp).length) return true;
+    if(c.ferInicio&&c.ferFim) return false;                  // tem período, mas fora do mês
     return statusGrupo(c.status)==='ferias';                 // status sem período
   }).map(c=>{
-    const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim);
+    // O período exibido é o que toca o mês — pode vir do cadastro (em curso) ou
+    // do histórico (quem já voltou), e é o mesmo que o cálculo usa.
+    const pers=ferPeriodosNaComp(c,comp);
+    const p=pers[0]||null;
+    const ini=p?_dataLocal(p.inicio):null, fim=p?_dataLocal(p.fim):null;
+    const doHistorico=!!(p && p.fechadoEm);
     const duCol=getLanDU(c.mat,du);
     const diasFer=feriasLancamento(c.mat,duCol);
     const manual=(()=>{ const l=lancamento[c.mat]||{}; return !(l.ferias===undefined||l.ferias===null||l.ferias===''); })();
     const avisos=[];
     if(!ini||!fim) avisos.push({t:'danger',txt:'sem período cadastrado — o sistema está descontando o mês inteiro'});
     else {
+      if(doHistorico) avisos.push({t:'info',txt:'já retornou — período guardado no histórico'});
+      if(pers.length>1) avisos.push({t:'info',txt:pers.length+' períodos no mês'});
       if(ini<mIni||fim>mFim) avisos.push({t:'info',txt:'período atravessa o mês'});
       if(fnum(c.ferDiasComprados)>10) avisos.push({t:'warning',txt:'dias comprados acima de 10 (limite do abono)'});
     }
     if(manual) avisos.push({t:'info',txt:'dias de férias informados à mão'});
     return {c, ini, fim, duCol, diasFer, dr:Math.max(0,duCol-diasFer-fnum((lancamento[c.mat]||{}).faltas)+fnum((lancamento[c.mat]||{}).extras)),
-            comprados:fnum(c.ferDiasComprados), avisos, manual};
+            comprados:fnum(p?p.comprados:c.ferDiasComprados), avisos, manual, doHistorico, pers};
   }).sort((a,b)=>(a.c.nome||'').localeCompare(b.c.nome||''));
 }
 
@@ -12396,6 +12513,7 @@ function renderFerAjusteLista(){
 async function faSalvar(id,campo,valor){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const antes=c[campo];
+  const antIni=c.ferInicio, antFim=c.ferFim;
   if(campo==='ferSaldo')            c.ferSaldo = (valor===''?null:fnum(valor));
   else if(campo==='ferVenc')        c.ferVenc  = _resolveVencInput(valor, c.ferVenc);
   else if(campo==='ferDiasComprados') c.ferDiasComprados = fnum(valor);
@@ -12404,6 +12522,9 @@ async function faSalvar(id,campo,valor){
   if(c.ferInicio&&c.ferFim&&c.ferFim<c.ferInicio){
     toast('A saída não pode ser anterior à entrada.','error');
     c[campo]=antes; renderFerAjusteLista(); return;
+  }
+  if(campo==='ferInicio'||campo==='ferFim'||campo==='ferDiasComprados'){
+    ferRegistrarPeriodo(c,c.ferInicio,c.ferFim,c.ferDiasComprados,antIni,antFim);
   }
   try{
     await fsSet('colaboradores',id,c);
