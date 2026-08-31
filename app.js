@@ -835,6 +835,11 @@ async function salvarColabModal(){
     const log=Array.isArray(colaboradores[idx].feriasLog)?colaboradores[idx].feriasLog.slice():[];
     log.push({tipo:'entrada', inicio:r.inicio, fim:r.fim, mes:r.mes, ano:r.ano, gozados:r.gozados, comprados:r.comprados, faltas:r.faltas, em:new Date().toISOString()});
     dados.feriasLog=log;
+    // Férias que só começam depois: continua trabalhando até a data chegar.
+    if(_dataLocal(r.inicio)>_hoje0()){
+      dados.status=statusAnterior||'Trabalhando';
+      toast('Férias agendadas para '+_ddmm(_dataLocal(r.inicio))+' — entra automaticamente no dia.','info',5000);
+    }
   } else if(!ehFer(dados.status) && ehFer(statusAnterior)){
     // Saiu de férias: zera comprados e limpa o período.
     dados.ferDiasComprados=0;
@@ -1379,7 +1384,7 @@ function renderColabList(){
     <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
     <td class="text-xs text-muted">${c.admissao||'\u2014'}</td>
     <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
-    <td>${dsStatusBadge(c.status)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
+    <td>${dsStatusBadge(c.status)}${feriasSeloAgendado(c)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
     <td>${dsTipoBadge(c.filtro||'OK')}</td>
     <td>${dsElegTags(c)}</td>
     <td class="text-sm">${fnum(c.vr)>0?brl(c.vr):'\u2014'}</td>
@@ -4483,8 +4488,113 @@ function entrarBeneficios(){
     aplicarDUAutomatico(lanComp);   // dias úteis da competência corrente
     window.__benefLoaded=true;
     switchModule('base');
-    checarRetornosFeriasBoot();
+    // Primeiro entra quem chegou no dia do início, depois pergunta os retornos:
+    // quem entrou automático e já passou do último dia cai no mesmo modal.
+    sincronizarStatusFerias(new Date()).then(()=>{
+      checarRetornosFeriasBoot();
+      iniciarRelogioFerias();
+    });
   });
+}
+
+// ── Férias por DATA: entra sozinho, volta com confirmação ────────────────
+// O período (ferInicio→ferFim) é quem manda no status. Cadastrar um período
+// futuro NÃO tira ninguém do trabalho: no dia do início o sistema muda para
+// Férias sozinho, e quando o último dia passa ele pergunta se voltou.
+function _hoje0(d){ const r=d||new Date(); return new Date(r.getFullYear(),r.getMonth(),r.getDate()); }
+
+// Período agendado que ainda não começou — vira o selo "férias dd/mm" na lista,
+// para dar a certeza de que o agendamento está gravado mesmo com o status
+// ainda em Trabalhando.
+function feriasEntradaFutura(c, hoje){
+  if(!c||!c.ferInicio||!c.ferFim) return null;
+  if(statusGrupo(c.status)!=='trabalhando') return null;
+  const ini=_dataLocal(c.ferInicio);
+  return (ini && ini>_hoje0(hoje)) ? ini : null;
+}
+function feriasSeloAgendado(c){
+  const ini=feriasEntradaFutura(c);
+  return ini ? ' <span class="badge badge--neutral" title="Entra em férias automaticamente nesta data">férias '+_ddmm(ini)+'</span>' : '';
+}
+// Entrada DEVIDA: o início já chegou, o último dia ainda não passou e a pessoa
+// consta trabalhando. Afastado e demitido não entram automaticamente. Período
+// já encerrado também não — senão uma correção histórica lançada na tela
+// Saldos e períodos colocaria alguém de férias no passado.
+function feriasEntradaDevida(c, hoje){
+  if(!c||!c.ferInicio||!c.ferFim) return false;
+  if(statusGrupo(c.status)!=='trabalhando') return false;
+  const ini=_dataLocal(c.ferInicio), fim=_dataLocal(c.ferFim);
+  if(!ini||!fim) return false;
+  const h=_hoje0(hoje);
+  return h>=ini && h<=fim;
+}
+// Log de entrada DESTE período. É o que evita abater o saldo duas vezes quando
+// a entrada foi confirmada à mão antes de a data chegar.
+function _feriasLogEntrada(c){
+  return (Array.isArray(c.feriasLog)?c.feriasLog:[])
+    .find(l=>l.tipo==='entrada' && l.inicio===c.ferInicio && l.fim===c.ferFim) || null;
+}
+// Fechamento pendente: a entrada está registrada, o último dia passou e a
+// pessoa continua Trabalhando — ninguém abriu o sistema durante as férias, e o
+// período nunca foi fechado. Precisa da mesma confirmação de retorno.
+function feriasFechamentoPendente(c, hoje){
+  if(!c||!c.ferInicio||!c.ferFim) return false;
+  if(statusGrupo(c.status)!=='trabalhando') return false;
+  const fim=_dataLocal(c.ferFim); if(!fim) return false;
+  if(_hoje0(hoje)<=fim) return false;
+  return !!_feriasLogEntrada(c);
+}
+// Muda para Férias quem chegou no dia do início. Roda ao abrir o sistema e na
+// virada do dia. Abate o saldo na entrada, mesma regra do assistente de férias
+// (o retorno não reabate).
+async function sincronizarStatusFerias(hoje){
+  const devidas=(colaboradores||[]).filter(c=>feriasEntradaDevida(c,hoje));
+  if(!devidas.length) return [];
+  const quando=new Date().toISOString();
+  const pend=devidas.map(c=>{
+    const novo=Object.assign({},c,{status:'Ferias'});
+    if(!_feriasLogEntrada(c)){
+      const g=_diasCorridos(c.ferInicio,c.ferFim);
+      const comp=fnum(c.ferDiasComprados);
+      const de=(c.ferSaldo!=null?c.ferSaldo:0);
+      novo.ferDiasGozados=g;
+      novo.ferSaldo=de-g-comp;
+      novo.feriasLog=(Array.isArray(c.feriasLog)?c.feriasLog.slice():[]).concat([
+        {tipo:'entrada',inicio:c.ferInicio,fim:c.ferFim,gozados:g,comprados:comp,
+         de,para:novo.ferSaldo,auto:true,em:quando,por:'sistema (data de início)'}]);
+    }
+    return {c,novo};
+  });
+  try{
+    const b=window._writeBatch(window._db);
+    pend.forEach(p=>b.set(window._doc('colaboradores',p.novo._id),p.novo));
+    await b.commit();
+  }catch(e){ console.warn('Entrada automática de férias falhou:',e); return []; }
+  pend.forEach(p=>{
+    Object.assign(p.c,p.novo);
+    if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
+      const cb=baseApuracao.colaboradores.find(x=>x._id===p.c._id||(x.mat&&x.mat===p.c.mat));
+      if(cb) cb.status='Ferias';
+    }
+  });
+  const nomes=pend.map(p=>String(p.c.nome||'').split(' ')[0]).join(', ');
+  toast(pend.length===1 ? nomes+' entrou de férias hoje.'
+                        : pend.length+' colaboradores entraram de férias: '+nomes,'info',5000);
+  return pend.map(p=>p.c);
+}
+// Sistema aberto na virada do dia: reavalia entradas e retornos.
+let _ferDiaRef='';
+function iniciarRelogioFerias(){
+  _ferDiaRef=_isoLocal(new Date());
+  setInterval(()=>{
+    const hoje=_isoLocal(new Date());
+    if(hoje===_ferDiaRef) return;
+    _ferDiaRef=hoje;
+    sincronizarStatusFerias(new Date()).then(()=>{
+      checarRetornosFeriasBoot();
+      if(currentPage==='base-lista' && typeof renderColabList==='function') renderColabList();
+    });
+  }, 15*60*1000);
 }
 
 // Ao abrir o sistema: se há colaboradores com o retorno de férias vencido,
@@ -4492,7 +4602,8 @@ function entrarBeneficios(){
 function checarRetornosFeriasBoot(){
   try{
     const hoje=new Date();
-    const pend=(colaboradores||[]).filter(c=>feriasSituacao(c,hoje)==='retorno_pendente');
+    const pend=(colaboradores||[]).filter(c=>feriasSituacao(c,hoje)==='retorno_pendente'
+                                          || feriasFechamentoPendente(c,hoje));
     if(pend.length) abrirModalRetornosFerias(pend);
   }catch(e){}
 }
@@ -5939,6 +6050,8 @@ async function salvarDetalheFerias(id){
               cb.ferSaldo=saldo; cb.ferMes=mes; cb.ferVenc=c.ferVenc; }
     }
     toast('Férias atualizadas.','success');
+    // Período que já começou entra em Férias na hora; futuro fica agendado.
+    await sincronizarStatusFerias(new Date());
     closeModal('modal-ferias-detalhe');
     if(currentPage==='fer-radar') renderFerRadar();
     if(currentPage==='fer-agendadas') renderFeriasAgendadas();
@@ -9258,8 +9371,13 @@ async function wizFerConfirmarEntrada(id){
   if(fim<inicio){ toast('O término não pode ser antes do início.','error'); return; }
   const g=_diasCorridos(inicio,fim);
   const de=(c.ferSaldo!=null?c.ferSaldo:0);
+  // Início futuro: fica agendado e a pessoa continua trabalhando — o status
+  // muda sozinho no dia (sincronizarStatusFerias). O saldo já abate aqui, e o
+  // log de entrada impede que a entrada automática abata de novo.
+  const futuro=_dataLocal(inicio)>_hoje0();
   c.ferInicio=inicio; c.ferFim=fim; c.ferDiasGozados=g; c.ferDiasComprados=comp;
-  c.ferSaldo=de-g-comp; c.status='Ferias';   // abate na ENTRADA (período conhecido)
+  c.ferSaldo=de-g-comp;                      // abate na ENTRADA (período conhecido)
+  if(!futuro) c.status='Ferias';
   const d=_dataLocal(inicio); if(d && !c.ferMes) c.ferMes=MESES_FER[d.getMonth()];
   c.feriasLog=Array.isArray(c.feriasLog)?c.feriasLog:[];
   c.feriasLog.push({tipo:'entrada',inicio,fim,gozados:g,comprados:comp,de,para:c.ferSaldo,em:new Date().toISOString(),por:_wizPor()});
@@ -9267,7 +9385,9 @@ async function wizFerConfirmarEntrada(id){
     await fsSet('colaboradores',id,c);
     wizState.entFeitos.add(id);
     const row=document.getElementById('ent-row-'+id); if(row) row.outerHTML=wizFerConfirmedRow(c,'entrada');
-    toast(c.nome+' entrou de Férias ('+g+' dias gozados, '+comp+' comprados).','success');
+    toast(futuro
+      ? c.nome+': férias agendadas para '+_ddmm(_dataLocal(inicio))+' — entra automaticamente no dia.'
+      : c.nome+' entrou de Férias ('+g+' dias gozados, '+comp+' comprados).','success',5000);
   }catch(e){ toast('Erro: '+e.message,'error'); }
 }
 
@@ -12284,6 +12404,9 @@ async function faSalvar(id,campo,valor){
       if(cb) cb[campo]=c[campo];
     }
     toast(c.nome.split(' ')[0]+': '+campo.replace('fer','')+' atualizado.','success');
+    // Período em curso entra em Férias na hora. Período passado não mexe no
+    // status — esta tela também serve para lançar histórico.
+    if(campo==='ferInicio'||campo==='ferFim') await sincronizarStatusFerias(new Date());
     renderFerAjusteLista();
   }catch(e){ c[campo]=antes; toast('Erro: '+e.message,'error'); renderFerAjusteLista(); }
 }
