@@ -56,6 +56,12 @@ function dataHora(iso){
   if(!d || isNaN(d)) return '—';
   return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
 }
+// DD/MM: na tabela o ano é sempre o corrente e só ocupava largura. O ano
+// completo continua no histórico e no CSV, onde a data é registro.
+function soDataCurta(iso){
+  const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3]+'/'+m[2] : '—';
+}
 function soData(iso){
   const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? m[3]+'/'+m[2]+'/'+m[1] : '—';
@@ -676,7 +682,7 @@ function alternarSprint(chave){
 // os blocos.
 // Demanda em 'auto' fica com toda a folga; as fixas foram apertadas ao mínimo
 // legível para sobrar largura para o título caber em UMA linha.
-const DM_COLS=['auto','58px','122px','128px','116px','82px','100px','40px'];
+const DM_COLS=['auto','58px','86px','128px','116px','62px','100px','40px'];
 const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
 const dmCabecalho='<thead><tr>'
   +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
@@ -742,6 +748,24 @@ function ligarBalao(){
 }
 
 // Entrega estimada trocada na própria linha, como o status.
+// Troca o texto pelo seletor nativo e já abre o calendário. Se a pessoa sair
+// sem escolher, a célula volta a ser texto — daí a espera: o 'change' do
+// seletor chega depois do 'blur' em alguns navegadores.
+function editarPrazo(ev, id){
+  if(ev) ev.stopPropagation();
+  const alvo=ev&&ev.currentTarget;
+  const td=alvo&&alvo.closest?alvo.closest('td'):null;
+  const d=demandas.find(x=>x._id===id);
+  if(!td||!d) return;
+  td.innerHTML='<input type="date" class="dt-sel" value="'+esc(d.prazo||'')+'" '
+    +'onclick="event.stopPropagation()" '
+    +'onchange="event.stopPropagation();mudarPrazo(\''+id+'\',this.value)" '
+    +'onblur="setTimeout(pintarDemandas,250)">';
+  const inp=td.querySelector('input');
+  if(!inp) return;
+  inp.focus();
+  if(inp.showPicker) try{ inp.showPicker(); }catch(e){}
+}
 async function mudarPrazo(id, iso){
   const d=demandas.find(x=>x._id===id);
   if(!d || (d.prazo||'')===(iso||'')) return;
@@ -852,8 +876,7 @@ function _itensPublicos(){
       status:sInfo(d.status).v, entrada:d.entrada||'', prazo:d.prazo||''}));
 }
 function _retratoDemandas(){
-  return { tipo:'demandas', titulo:'Demandas de tecnologia',
-    descricao:'Udiaço · projetos de tecnologia com a empresa parceira',
+  return { tipo:'demandas', titulo:'Projeto Dev&Co', descricao:'',
     cadencia:sprintModo, status:STATUS, itens:_itensPublicos(),
     atualizadoEm:agora() };
 }
@@ -963,18 +986,17 @@ function viewDemandas(){
   const opt=(arr,sel,vazio)=>'<option value="">'+vazio+'</option>'
     +arr.map(o=>'<option value="'+esc(o.v)+'"'+(sel===o.v?' selected':'')+'>'+esc(o.l)+'</option>').join('');
   return '<div class="pg-head">'
-      +'<div><h2 class="pg-tit">Demandas de tecnologia</h2>'
-      +'<p class="pg-sub">Projetos com a empresa parceira'
+      +'<div><h2 class="pg-tit pg-tit--sm">Projeto Dev&amp;Co'
         +ajuda('Cada linha é uma demanda: o que foi pedido, quem pediu, a prioridade e o prazo de entrega. '
-              +'Toda alteração fica registrada com data, hora e usuário.')+'</p></div>'
+              +'Toda alteração fica registrada com data, hora e usuário.')+'</h2></div>'
       +'<div class="acoes">'
-        +'<button class="btn" onclick="modalCompartilharDemandas()" '
+        +'<button class="btn btn--sm" onclick="modalCompartilharDemandas()" '
           +'title="'+(demPub?'Link de leitura ativo':'Compartilhar por link')+'">'
           +'<i class="ti ti-'+(demPub?'world-share':'share')+'"'
           +(demPub?' style="color:var(--brand)"':'')+'></i> Compartilhar</button>'
-        +'<button class="btn" onclick="exportarDemandas()">'
+        +'<button class="btn btn--sm" onclick="exportarDemandas()">'
         +'<i class="ti ti-file-spreadsheet"></i> CSV</button>'
-        +'<button class="btn btn--primary" onclick="modalDemanda(null)">'
+        +'<button class="btn btn--primary btn--sm" onclick="modalDemanda(null)">'
         +'<i class="ti ti-plus"></i> Nova demanda</button></div></div>'
     +'<div class="stats" id="dm-stats"></div>'
     +'<div class="filtros">'
@@ -1152,13 +1174,13 @@ function pintarDemandas(){
             +'placeholder="—" title="Mudar a prioridade" '
             +'onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarPrio(\''+d._id+'\',this.value)"></td>'
-          +'<td><input type="date" class="dt-sel'+(cls?' '+cls:'')+'" '
-            +'value="'+esc(d.prazo||'')+'" title="Mudar a entrega estimada" '
-            +'onclick="event.stopPropagation()" '
-            +'onchange="event.stopPropagation();mudarPrazo(\''+d._id+'\',this.value)">'
+          +'<td><span class="dt-txt'+(cls?' '+cls:'')+(d.prazo?'':' dt-txt--vazio')+'" '
+            +'title="Clique para mudar a entrega estimada" '
+            +'onclick="editarPrazo(event,\''+d._id+'\')">'
+            +(d.prazo?soDataCurta(d.prazo):'—')+'</span>'
             +(d.prazo&&!entregue&&n!==null
               ? '<div class="dt-obs '+(cls||'')+'">'
-                +(n<0?(-n)+'d além da estimativa':(n===0?'estimada para hoje':'faltam '+n+'d'))+'</div>'
+                +(n<0?(-n)+'d além':(n===0?'é hoje':'faltam '+n+'d'))+'</div>'
               : '')+'</td>'
           +'<td><select class="st-sel" style="background:'+sInfo(d.status).cor+'" '
             +'title="Mudar o status" onclick="event.stopPropagation()" '
@@ -1170,7 +1192,7 @@ function pintarDemandas(){
             +'title="Quem pediu — escolha da lista ou digite um nome novo" '
             +'onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'solicitante\',this.value)"></td>'
-          +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
+          +'<td style="color:var(--text-secondary);white-space:nowrap">'+soDataCurta(d.entrada)+'</td>'
           +'<td><input type="text" class="tx-sel" list="dl-area" maxlength="60" '
             +'value="'+esc(d.area||'')+'" placeholder="—" '
             +'title="Área — escolha da lista ou digite uma nova" '
