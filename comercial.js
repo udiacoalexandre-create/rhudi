@@ -597,13 +597,19 @@ function prioNum(v){
   return isFinite(n)?n:9999;
 }
 const STATUS=[
-  {v:'fila',      l:'Na fila',      cor:'var(--cm-fila)'},
-  {v:'andamento', l:'Em andamento', cor:'var(--cm-andamento)'},
-  {v:'pausada',   l:'Pausada',      cor:'var(--cm-pausada)'},
-  {v:'entregue',  l:'Entregue',     cor:'var(--cm-entregue)'},
+  {v:'nao_iniciado',   l:'Não iniciado',      cor:'var(--cm-fila)'},
+  {v:'desenvolvimento',l:'Em desenvolvimento',cor:'var(--cm-andamento)'},
+  {v:'pausado',        l:'Pausado Udiaço',    cor:'var(--cm-pausada)'},
+  {v:'validacao',      l:'Validação Udiaço',  cor:'var(--cm-validacao)'},
+  {v:'entregue',       l:'Entregue',          cor:'var(--cm-entregue)'},
 ];
+// Nomes antigos, para o dado gravado antes desta troca continuar legível caso
+// alguma demanda escape da migração.
+const STATUS_ANTIGO={fila:'nao_iniciado', andamento:'desenvolvimento', pausada:'pausado'};
 
-const sInfo=v=>STATUS.find(s=>s.v===v)||{v,l:v||'—',cor:'var(--cm-fila)'};
+const sInfo=v=>STATUS.find(s=>s.v===v)
+  || STATUS.find(s=>s.v===STATUS_ANTIGO[v])
+  || {v,l:v||'—',cor:'var(--cm-fila)'};
 const pill=(txt,cor)=>'<span class="pill" style="background:'+cor+'">'+esc(txt)+'</span>';
 
 // ── Sprints ───────────────────────────────────────────────────────────────
@@ -961,7 +967,7 @@ function pintarDemandas(){
           +'<td><select class="st-sel" style="background:'+sInfo(d.status).cor+'" '
             +'title="Mudar o status" onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarStatus(\''+d._id+'\',this.value)">'
-            +STATUS.map(o=>'<option value="'+o.v+'"'+(d.status===o.v?' selected':'')+'>'
+            +STATUS.map(o=>'<option value="'+o.v+'"'+(sInfo(d.status).v===o.v?' selected':'')+'>'
               +o.l+'</option>').join('')+'</select></td>'
           +'<td><input type="text" class="tx-sel" list="dl-solic" maxlength="80" '
             +'value="'+esc(d.solicitante||'')+'" placeholder="—" '
@@ -1021,7 +1027,7 @@ function modalDemanda(id){
         +'</label><input type="date" id="dm-entrada" value="'+esc(d?d.entrada:'')+'"></div>'
       +'<div class="fg"><label>Entrega estimada</label><input type="date" id="dm-prazo" '
         +'value="'+esc(d?d.prazo:'')+'"></div>'
-      +'<div class="fg"><label>Status</label><select id="dm-f-status">'+sel(STATUS,d?d.status:'fila')+'</select></div>'
+      +'<div class="fg"><label>Status</label><select id="dm-f-status">'+sel(STATUS,d?d.status:'nao_iniciado')+'</select></div>'
     +'</div>'
     +'<div class="fg" style="margin-top:12px"><label>Descritivo'
       +ajuda('O texto completo como veio da planilha. A demanda acima é o resumo.')
@@ -1049,7 +1055,7 @@ async function salvarDemanda(id){
     prioridade:($('dm-f-prio').value||'').trim(),
     entrada:$('dm-entrada').value||'',
     prazo:$('dm-prazo').value||'',
-    status:$('dm-f-status').value||'fila',
+    status:$('dm-f-status').value||'nao_iniciado',
   };
   if(!dep.titulo){ toast('Diga qual é a demanda.','aviso'); return; }
   if(!dep.solicitante){ toast('Informe quem pediu.','aviso'); return; }
