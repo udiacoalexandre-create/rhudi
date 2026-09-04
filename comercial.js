@@ -682,12 +682,17 @@ function alternarSprint(chave){
 // os blocos.
 // Demanda em 'auto' fica com toda a folga; as fixas foram apertadas ao mínimo
 // legível para sobrar largura para o título caber em UMA linha.
-const DM_COLS=['auto','58px','86px','128px','116px','62px','100px','40px'];
+// Cada coluna fixa tem de caber o PROPRIO cabecalho, senao o titulo dela
+// invade a coluna vizinha. Por isso 'Prioridade' virou 'Prio.' e 'Entrega
+// estimada' virou 'Entrega': o nome inteiro fica no title, ao passar o mouse.
+const DM_COLS=['auto','46px','66px','128px','116px','62px','100px','40px'];
 const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
 const dmCabecalho='<thead><tr>'
-  +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
-  +'<th>Entrega estimada</th><th>Status</th><th>Quem pediu</th>'
-  +'<th>Entrada</th><th>Área</th><th style="text-align:center">Editar</th>'
+  +'<th>Demanda</th>'
+  +'<th style="text-align:center" title="Prioridade">Prio.</th>'
+  +'<th title="Entrega estimada pela parceira">Entrega</th>'
+  +'<th>Status</th><th>Quem pediu</th><th>Entrada</th><th>Área</th>'
+  +'<th style="text-align:center" title="Editar"><i class="ti ti-pencil"></i></th>'
   +'</tr></thead>';
 
 // Status trocado na própria linha, sem abrir a demanda. Grava e registra na
@@ -1164,6 +1169,11 @@ function pintarDemandas(){
         // Título longo cabe em uma linha só cortado; o balão é o jeito de ler
         // o resto. 55 caracteres é o ponto em que a coluna começa a cortar.
         const mostraBalao=temDesc || String(d.titulo||'').length>55;
+        // Uma linha por demanda: quantos dias faltam nao vira segunda linha,
+        // fica na cor da data e no title. O panorama esta nos indicadores.
+        const obs = entregue||n===null ? ''
+          : (n<0?(-n)+' dias além da estimativa'
+            : (n===0?'estimada para hoje':'faltam '+n+' dias'));
         return '<tr class="clicavel"'+(entregue?' style="opacity:.62"':'')
           +' onclick="modalDemanda(\''+d._id+'\')">'
           +'<td class="dm-tit">'
@@ -1175,13 +1185,9 @@ function pintarDemandas(){
             +'onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarPrio(\''+d._id+'\',this.value)"></td>'
           +'<td><span class="dt-txt'+(cls?' '+cls:'')+(d.prazo?'':' dt-txt--vazio')+'" '
-            +'title="Clique para mudar a entrega estimada" '
+            +'title="'+(obs?obs+' — c':'C')+'lique para mudar a entrega estimada" '
             +'onclick="editarPrazo(event,\''+d._id+'\')">'
-            +(d.prazo?soDataCurta(d.prazo):'—')+'</span>'
-            +(d.prazo&&!entregue&&n!==null
-              ? '<div class="dt-obs '+(cls||'')+'">'
-                +(n<0?(-n)+'d além':(n===0?'é hoje':'faltam '+n+'d'))+'</div>'
-              : '')+'</td>'
+            +(d.prazo?soDataCurta(d.prazo):'—')+'</span></td>'
           +'<td><select class="st-sel" style="background:'+sInfo(d.status).cor+'" '
             +'title="Mudar o status" onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarStatus(\''+d._id+'\',this.value)">'

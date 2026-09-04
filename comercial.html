@@ -181,14 +181,15 @@ a{ color:var(--accent); text-decoration:none }
 table.dm{ width:100%; border-collapse:collapse; font-size:12.5px }
 table.dm th{ text-align:left; font-size:9.5px; font-weight:700; letter-spacing:.04em;
   text-transform:uppercase; color:var(--text-muted); padding:6px 9px;
-  border-bottom:1px solid var(--border); white-space:nowrap; background:var(--surface-soft,#f8fafc) }
+  border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; background:var(--surface-soft,#f8fafc) }
 table.dm td{ padding:5px 9px; border-bottom:1px solid var(--border); vertical-align:middle }
 table.dm tr:last-child td{ border-bottom:none }
 table.dm tr.clicavel{ cursor:pointer }
 table.dm tr.clicavel:hover td{ background:var(--surface-soft,#f8fafc) }
 /* Larguras fixas: com uma tabela por sprint, sem isto cada bloco calcularia a
    sua largura e as colunas não se alinhariam entre os blocos. */
-table.dm--fixa{ table-layout:fixed; min-width:820px }
+table.dm--fixa{ table-layout:fixed; min-width:780px }
 table.dm--fixa td{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 /* Titulo em UMA linha: o que nao cabe vira reticencias, e o texto inteiro
    aparece no balao ao passar o mouse. */
