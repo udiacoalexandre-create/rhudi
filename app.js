@@ -7849,6 +7849,42 @@ async function processarAfastadosPremio(event){
   else reader.readAsBinaryString(file);
 }
 
+// O PDF do HRAP001 sai com o texto FATIADO: o tempo '024:30' vem em dois
+// pedaços ('024:3' e '0'), e o rótulo 'Total Colaborador:' vem letra por
+// letra. Juntar tudo com espaço — como se fazia — virava '024:3 0', que não
+// casa com nenhum formato de tempo: o import lia matrícula e nome, e nenhuma
+// divergência de ponto.
+// Aqui os pedaços são remontados por posição: mesma linha (y), da esquerda
+// para a direita, e o espaço só entra quando existe espaço de verdade entre
+// um pedaço e o seguinte. Assim cada situação apurada volta a ser uma linha
+// 'código descrição tempo'.
+function _apuTextoDaPagina(items){
+  const linhas=new Map();
+  (items||[]).forEach(it=>{
+    const tr=it&&it.transform; if(!tr) return;
+    const x=tr[4], y=tr[5];
+    if(typeof x!=='number' || typeof y!=='number') return;
+    // y com uma casa: o rótulo da esquerda e a linha da situação ficam a
+    // menos de 1pt de distância e não podem ser fundidos.
+    const k=y.toFixed(1);
+    if(!linhas.has(k)) linhas.set(k,[]);
+    linhas.get(k).push({x, w:(typeof it.width==='number'?it.width:0), s:String(it.str||'')});
+  });
+  return [...linhas.entries()]
+    .sort((a,b)=>parseFloat(b[0])-parseFloat(a[0]))      // de cima para baixo
+    .map(([,its])=>{
+      its.sort((a,b)=>a.x-b.x);
+      let txt='', fim=null;
+      its.forEach(o=>{
+        if(fim!=null && o.x-fim>1) txt+=' ';
+        txt+=o.s;
+        fim=o.x+o.w;
+      });
+      return txt.trim();
+    })
+    .filter(Boolean).join('\n');
+}
+
 // ── Processar PDF de apuração ────────────────────────────────────
 function processarApuracaoPremio(event){
   const file = event.target.files[0]; if(!file) return;
@@ -7870,13 +7906,17 @@ function processarApuracaoPremio(event){
         const loadingTask = pdfjsLib.getDocument({data: new Uint8Array(arrayBuf)});
         const pdf = await loadingTask.promise;
 
+        let textoPlano = '';
         for(let p=1; p<=pdf.numPages; p++){
           const page = await pdf.getPage(p);
           const content = await page.getTextContent();
-          // Juntar items mantendo espacamento
-          const pageText = content.items.map(item=>item.str).join(' ');
-          textoCompleto += pageText + '\n';
+          textoCompleto += _apuTextoDaPagina(content.items) + '\n';
+          textoPlano    += content.items.map(item=>item.str).join(' ') + '\n';
         }
+        // Reserva: se o PDF não trouxer posição utilizável, cai no modo antigo
+        // em vez de dizer que não achou ninguém.
+        if(!/\d{4}\.\d{4}/.test(textoCompleto) && /\d{4}\.\d{4}/.test(textoPlano))
+          textoCompleto = textoPlano;
 
         // PDF sem camada de texto: acontece quando o relatorio foi impresso por
         // "Microsoft Print to PDF" (ou similar) desenhando as letras como
@@ -7932,6 +7972,7 @@ function _apuDiag(texto, titulo){
     ['Outros N.N com ponto',             /\b\d{2,6}\.\d{2,6}\b/g],
     ['C\u00f3digos 014/015/101/103...',       /\b(?:014|015|020|064|101|103|107|108)\b/g],
     ['Tempo 000:00 (esperado)',          /\b\d{3}:\d{2}\b/g],
+    ['Tempo fatiado "000:0 0"',           /\b\d{3}:\d\s+\d\b/g],
     ['Tempo 0:00 ou 00:00',              /(?<!\d)\d{1,2}:\d{2}\b/g],
   ];
   const linhas=sondas.map(s=>{
@@ -7978,9 +8019,50 @@ function _apuCopiarDiag(btn){
   navigator.clipboard.writeText(txt).then(()=>toast('Diagn\u00f3stico copiado.','success')).catch(()=>toast('N\u00e3o foi poss\u00edvel copiar.','error'));
 }
 
+// O relatório fecha com um bloco 'Total Geral' que repete cada código com o
+// somatório do arquivo inteiro. O fatiamento por matrícula vai até o fim do
+// texto, então esse bloco caía DENTRO do último colaborador e dobrava os
+// números dele — 104h de atraso no lugar de 40min. Aqui ele é separado, e
+// de quebra serve de conferência do que foi lido.
+function _apuSepararTotais(texto){
+  const linhas=String(texto).split(/\r?\n/);
+  const ehSituacao=l=>/^\s*(?:014|015|020|064|101|103|107|108)\b/.test(l);
+  const g=linhas.findIndex(l=>/^\s*Total\s+Geral/i.test(l));
+  if(g<0) return {corpo:texto, totais:null};
+  // O código que abre o bloco fica na linha ANTERIOR ao rótulo (é a ordem em
+  // que o PDF desenha), então recua enquanto ainda for linha de situação.
+  let ini=g;
+  while(ini>0 && ehSituacao(linhas[ini-1])) ini--;
+  const totais={};
+  // No rodapé o total passa de 999 horas, daí \d{2,4} — no corpo continua
+  // valendo só o formato de 3 dígitos.
+  const re=/\b(014|015|020|064|101|103|107|108)\b[^0-9]{0,40}?(\d{2,4}:\d{2})/g;
+  const rodape=linhas.slice(ini).join(' ');
+  let m; while((m=re.exec(rodape))!==null){
+    const campo=APURACAO_MAP[m[1]];
+    if(campo && totais[campo]==null) totais[campo]=hhmm2min(m[2]);
+  }
+  return {corpo:linhas.slice(0,ini).join('\n'),
+    totais:Object.keys(totais).length?totais:null};
+}
+
+// Conferência: o somatório do que foi lido tem de bater com o Total Geral que
+// o próprio relatório imprime. É o que pega leitura pela metade ou repetida.
+function _apuConferirTotais(apontamentos, totais){
+  if(!totais) return null;
+  const linhas=Object.entries(totais).map(([campo,esperado])=>{
+    const lido=apontamentos.reduce((a,x)=>a+(fnum(x[campo])||0),0);
+    return {campo, esperado, lido, dif:lido-esperado};
+  });
+  return {linhas, ok:linhas.every(l=>l.dif===0)};
+}
+
 function parsearApuracaoTexto(texto, prevEl){
-  // Normalizar espacos
-  texto = texto.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+  // O rodapé de totais sai ANTES de achatar o texto: ele é identificado por
+  // linha, e depois do achatamento não há mais linha.
+  const _sep = _apuSepararTotais(texto);
+  const totaisRelatorio = _sep.totais;
+  texto = String(_sep.corpo).replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
 
   const resultado = {};
   const MAP = {'014':'atestado','015':'faltas','020':'aHoras','064':'aNoturno',
@@ -8099,9 +8181,24 @@ function parsearApuracaoTexto(texto, prevEl){
       + '(matrícula divergente, fora da base ou demitido sem janela de prêmio): <code style="font-size:11px">'
       + semBase.slice(0,8).map(a=>a.mat).join(', ') + (semBase.length>8?', …':'') + '</code></div>'
     : '';
-  const resumo='<div class="alert alert-success" style="font-size:14px"><i class="ti ti-circle-check"></i> Apuração importada — <strong>'+apontamentos.length+'</strong> colaboradores lidos, '
+  // Conferência contra o Total Geral do próprio relatório: é o que pega
+  // leitura pela metade, linha repetida ou bloco lido duas vezes.
+  const conf = _apuConferirTotais(apontamentos, totaisRelatorio);
+  const confHTML = !conf
+    ? '<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">'
+      +'O arquivo não traz o bloco <strong>Total Geral</strong>, então não houve como conferir o somatório.</div>'
+    : conf.ok
+      ? '<div style="margin-top:8px;font-size:12px"><i class="ti ti-circle-check"></i> '
+        +'Somatório <strong>confere</strong> com o Total Geral do relatório nos '+conf.linhas.length+' códigos.</div>'
+      : '<div style="margin-top:8px;font-size:12px"><i class="ti ti-alert-triangle"></i> '
+        +'<strong>Somatório não confere</strong> com o Total Geral do relatório: '
+        +conf.linhas.filter(l=>l.dif!==0).map(l=>l.campo+' lido '+min2str(l.lido)
+          +' contra '+min2str(l.esperado)+' do relatório').join('; ')+'.</div>';
+  const resumo='<div class="alert alert-'+(conf&&!conf.ok?'warning':'success')+'" style="font-size:14px">'
+    +'<i class="ti ti-'+(conf&&!conf.ok?'alert-triangle':'circle-check')+'"></i> Apuração importada — '
+    +'<strong>'+apontamentos.length+'</strong> colaboradores lidos, '
     +'<strong>'+casados+'</strong> cruzados com a base, <strong>'+comApont+'</strong> com ocorrência de ponto.'
-    +avisoSemBase+'</div>';
+    +confHTML+avisoSemBase+'</div>';
   premioState.resumoImport=resumo;
   prevEl.innerHTML=resumo;
   // O avançar mora no rodapé travado: redesenha para ele aparecer.
