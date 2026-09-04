@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Link não listado: não deve aparecer em busca nem ser rastreado. -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Painel — Udiaço</title>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // Página PÚBLICA: não faz login. Só consegue ler cm_publico/{token} e
+  // cm_publico_dados/{token}__{n}, e só com 'get' — as regras não permitem
+  // listar nada. Sem o token do link, não há o que buscar.
+  const app = initializeApp({
+    apiKey:"AIzaSyDUD4CDg3zaZh9dM4_RXuxRmY9bV0YZAok",
+    authDomain:"udiaco-beneficios.firebaseapp.com",
+    projectId:"udiaco-beneficios",
+    storageBucket:"udiaco-beneficios.firebasestorage.app",
+    messagingSenderId:"27505050059",
+    appId:"1:27505050059:web:1aa59e7b14bdc7b796364e"
+  });
+  const db = getFirestore(app);
+  window._pub = {
+    get: (col, id) => getDoc(doc(db, col, id))
+  };
+  window.dispatchEvent(new Event('pronto'));
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;font-family:'Inter',system-ui,sans-serif;background:#f8fafc;color:#0f172a}
+#tudo{height:100%;display:flex;flex-direction:column}
+.barra{display:flex;align-items:center;gap:12px;padding:11px 20px;background:#047857;color:#fff;flex-shrink:0}
+.marca{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+.marca__logo{width:26px;height:26px;border-radius:8px;background:rgba(255,255,255,.2);
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.tit{font-weight:600;font-size:14px}
+.sub{font-size:11.5px;opacity:.85}
+.esp{flex:1}
+.selo{font-size:10.5px;background:rgba(255,255,255,.18);padding:3px 9px;border-radius:20px;white-space:nowrap}
+#quadro{flex:1;min-height:0}
+iframe{border:none;width:100%;height:100%;background:#fff;display:block}
+.centro{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;padding:30px;text-align:center}
+.centro h1{font-size:17px;margin:0}
+.centro p{font-size:13px;color:#64748b;margin:0;max-width:420px;line-height:1.5}
+.spin{width:26px;height:26px;border:3px solid #d1fae5;border-top-color:#047857;border-radius:50%;
+  animation:gira .8s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+.rodape{font-size:10.5px;color:#94a3b8;text-align:center;padding:7px;flex-shrink:0;
+  border-top:1px solid #e2e8f0;background:#fff}
+</style>
+</head>
+<body>
+<div id="tudo">
+  <div class="barra">
+    <div class="marca"><div class="marca__logo">U</div><span>Udiaço</span></div>
+    <div>
+      <div class="tit" id="p-tit">Painel</div>
+      <div class="sub" id="p-sub"></div>
+    </div>
+    <span class="esp"></span>
+    <span class="selo">Dados de teste</span>
+  </div>
+  <div class="centro" id="estado">
+    <div class="spin"></div>
+    <p>Carregando o painel...</p>
+  </div>
+  <div id="quadro" style="display:none"></div>
+  <div class="rodape">Painel de demonstração da Udiaço · dados fictícios</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+function estado(titulo, texto){
+  $('quadro').style.display='none';
+  const e=$('estado');
+  e.style.display='flex';
+  e.innerHTML='<h1>'+titulo+'</h1><p>'+texto+'</p>';
+}
+function b64ParaBytes(b64){
+  const s=atob(b64), a=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++) a[i]=s.charCodeAt(i);
+  return a;
+}
+async function descomprimir(b64, gzip){
+  if(!gzip) return decodeURIComponent(escape(atob(b64)));
+  if(typeof DecompressionStream!=='function')
+    throw new Error('navegador sem suporte a gzip');
+  const ds=new DecompressionStream('gzip');
+  const w=ds.writable.getWriter();
+  w.write(b64ParaBytes(b64)); w.close();
+  return await new Response(ds.readable).text();
+}
+async function abrir(){
+  const token=(new URLSearchParams(location.search).get('p')||'').trim();
+  if(!/^[a-z0-9]{16,64}$/i.test(token)){
+    estado('Link inválido','Confira se o endereço foi copiado por inteiro.');
+    return;
+  }
+  try{
+    const snap=await window._pub.get('cm_publico', token);
+    if(!snap.exists()){
+      estado('Painel não encontrado',
+        'O link pode ter expirado ou o compartilhamento foi desativado por quem publicou.');
+      return;
+    }
+    const p=snap.data()||{};
+    document.title=(p.titulo||'Painel')+' — Udiaço';
+    $('p-tit').textContent=p.titulo||'Painel';
+    $('p-sub').textContent=p.descricao||'';
+    const partes=[];
+    for(let i=0;i<(p.chunks||0);i++){
+      const s=await window._pub.get('cm_publico_dados', token+'__'+i);
+      if(!s.exists()) throw new Error('arquivo incompleto');
+      partes.push((s.data()||{}).p||'');
+    }
+    const html=await descomprimir(partes.join(''), !!p.gzip);
+    $('estado').style.display='none';
+    const q=$('quadro');
+    q.style.display='block';
+    // sandbox SEM allow-same-origin: o painel roda os scripts dele e não
+    // alcança nada deste domínio.
+    q.innerHTML='<iframe sandbox="allow-scripts allow-popups allow-forms" title="'
+      +(p.titulo||'Painel').replace(/"/g,'&quot;')+'"></iframe>';
+    q.querySelector('iframe').srcdoc=html;
+  }catch(e){
+    estado('Não foi possível abrir o painel', String(e&&e.message||e));
+  }
+}
+if(window._pub) abrir(); else window.addEventListener('pronto', abrir, {once:true});
+</script>
+</body>
+</html>

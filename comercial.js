@@ -12,6 +12,11 @@
 const COL_PAINEL = 'cm_paineis';        // metadados do painel (leve, para a lista)
 const COL_DADOS  = 'cm_painel_dados';  // o HTML em pedaços (pesado, lido só ao abrir)
 const COL_DEM    = 'cm_demandas';
+// Compartilhamento público: uma CÓPIA do painel sob um token aleatório. É a
+// cópia que fica legível sem login — o painel privado continua fechado, e o id
+// dele não abre nada. Assim o segredo é o link, e só o link.
+const COL_PUB    = 'cm_publico';
+const COL_PUBDAD = 'cm_publico_dados';
 
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
 
@@ -98,6 +103,17 @@ function picar(txt){
   const out=[];
   for(let i=0;i<txt.length;i+=CHUNK) out.push(txt.slice(i,i+CHUNK));
   return out;
+}
+// Token do link público: 32 caracteres de aleatoriedade real (crypto), não
+// Math.random. É ele que protege o painel, então precisa ser impossível de
+// adivinhar ou de chegar por tentativa.
+function novoToken(){
+  const b=new Uint8Array(16);
+  (window.crypto||crypto).getRandomValues(b);
+  return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function linkPublico(token){
+  return location.origin+location.pathname.replace(/[^/]*$/,'')+'painel.html?p='+token;
 }
 
 // ── Auditoria ─────────────────────────────────────────────────────────────
@@ -229,8 +245,13 @@ function viewPaineis(){
     +'<div class="pn-card__t">'+esc(p.titulo||'(sem título)')+'</div>'
     +'<div class="pn-card__d">'+esc(p.descricao||'')+'</div>'
     +'<div class="pn-card__f">'
-      +'<span>'+tamanho(p.bytes)+' · '+dataHora(p.atualizadoEm)+'</span>'
+      +'<span>'+tamanho(p.bytes)+' · '+dataHora(p.atualizadoEm)
+        +(p.token?' · <span style="color:var(--brand);font-weight:700">público</span>':'')+'</span>'
       +'<span class="pn-acts">'
+        +'<button title="'+(p.token?'Link público ativo':'Compartilhar por link')+'" '
+          +'onclick="event.stopPropagation();modalCompartilhar(\''+p._id+'\')">'
+          +'<i class="ti ti-'+(p.token?'world-share':'share')+'"'
+          +(p.token?' style="color:var(--brand)"':'')+'></i></button>'
         +'<button title="Editar título e descrição" onclick="event.stopPropagation();editarPainel(\''+p._id+'\')"><i class="ti ti-pencil"></i></button>'
         +'<button title="Substituir o arquivo" onclick="event.stopPropagation();trocarArquivo(\''+p._id+'\')"><i class="ti ti-upload"></i></button>'
         +'<button title="Excluir painel" onclick="event.stopPropagation();excluirPainel(\''+p._id+'\')"><i class="ti ti-trash"></i></button>'
@@ -349,6 +370,13 @@ async function salvarPainel(id, modo){
     meta.historico=logDem(p?p.historico:[], p?'Edição':'Inclusão', mud);
     if(!p){ meta.criadoEm=agora(); meta.criadoPor=quem(); }
     await window._setDoc(window._doc(COL_PAINEL, docId), Object.assign({}, p||{}, meta));
+
+    // Painel com link público ativo: a cópia pública tem de acompanhar, senão
+    // quem abre pelo link continua vendo a versão velha.
+    if(p && p.token){
+      prog('Atualizando a cópia pública...');
+      await atualizarPublico(Object.assign({}, p, meta, {_id:docId}), !!arq);
+    }
     fecharMod();
     toast(p?'Painel atualizado.':'Painel publicado.','ok');
   }catch(e){
@@ -363,12 +391,157 @@ async function apagarPedacos(id, n){
 }
 async function excluirPainel(id){
   const p=paineis.find(x=>x._id===id); if(!p) return;
-  if(!confirm('Excluir o painel "'+(p.titulo||'')+'"?\n\nO arquivo é apagado e não dá para desfazer.')) return;
+  if(!confirm('Excluir o painel "'+(p.titulo||'')+'"?\n\nO arquivo é apagado e não dá para desfazer.'
+    +(p.token?'\nO link público para de funcionar.':''))) return;
   try{
+    if(p.token) await apagarPublico(p.token, p.chunks||0);   // não deixa cópia pública órfã
     await apagarPedacos(id, p.chunks||0);
     await window._deleteDoc(window._doc(COL_PAINEL, id));
     toast('Painel excluído.','ok');
   }catch(e){ toast('Erro ao excluir: '+e.message,'erro'); }
+}
+
+// ── Compartilhar por link público ─────────────────────────────────────────
+function modalCompartilhar(id){
+  const p=paineis.find(x=>x._id===id); if(!p) return;
+  const on=!!p.token;
+  const link=on?linkPublico(p.token):'';
+  $('camada').innerHTML='<div class="mod" id="mod-sh">'
+    +'<div class="mod__cx" style="max-width:560px"><div class="mod__h"><b>Compartilhar painel</b>'
+      +'<button class="mod__x" onclick="fecharMod()">&times;</button></div>'
+    +'<div class="mod__b">'
+    +'<div style="font-weight:600;font-size:14px;margin-bottom:2px">'+esc(p.titulo||'')+'</div>'
+    +'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">'+esc(p.descricao||'')+'</div>'
+    +(on
+      ? '<div class="fg"><label>Link público'
+          +ajuda('Quem tiver este link abre o painel sem login. O endereço é o segredo: '
+                +'ele tem 32 caracteres aleatórios e não aparece em buscas.')+'</label>'
+        +'<div style="display:flex;gap:8px">'
+          +'<input type="text" id="sh-link" readonly value="'+esc(link)+'" '
+            +'style="flex:1;font-size:12px" onclick="this.select()">'
+          +'<button class="btn btn--primary" onclick="copiarLink()"><i class="ti ti-copy"></i> Copiar</button>'
+        +'</div></div>'
+        +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+          +'<a class="btn" href="'+esc(link)+'" target="_blank" rel="noopener">'
+            +'<i class="ti ti-external-link"></i> Abrir como visitante</a>'
+          +'<button class="btn" onclick="renovarLink(\''+id+'\')">'
+            +'<i class="ti ti-refresh"></i> Gerar novo link</button>'
+        +'</div>'
+        +'<div style="margin-top:14px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;'
+          +'border-radius:10px;font-size:12px;color:#92400e">'
+          +'<i class="ti ti-alert-triangle"></i> Qualquer pessoa com o link vê este painel, '
+          +'sem login. Publicado em '+dataHora(p.publicadoEm)+' por '+esc(p.publicadoPor||'—')+'.'
+        +'</div>'
+      : '<p style="font-size:13px;color:var(--text-secondary);margin:0 0 4px">'
+        +'Gera um endereço que qualquer pessoa abre <strong>sem login</strong>, com uma cópia '
+        +'deste painel. Use só com dados fictícios.</p>'
+        +'<p style="font-size:12px;color:var(--text-muted);margin:0">'
+        +'O painel privado continua fechado, e dá para desativar o link quando quiser.</p>')
+    +'<div id="sh-prog" style="margin-top:10px;font-size:12px"></div>'
+    +'</div>'
+    +'<div class="mod__f">'
+    +(on?'<button class="btn" style="color:var(--cm-alta)" onclick="despublicar(\''+id+'\')">'
+          +'<i class="ti ti-world-off"></i> Desativar link</button>'
+        :'<span></span>')
+    +'<span style="display:flex;gap:8px"><button class="btn" onclick="fecharMod()">Fechar</button>'
+    +(on?'':'<button class="btn btn--primary" id="sh-ok" onclick="publicar(\''+id+'\')">'
+          +'<i class="ti ti-world"></i> Gerar link público</button>')
+    +'</span></div></div></div>';
+}
+function copiarLink(){
+  const el=$('sh-link'); if(!el) return;
+  el.select();
+  const txt=el.value;
+  const ok=()=>toast('Link copiado.','ok');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(ok, ()=>{ document.execCommand('copy'); ok(); });
+  } else { document.execCommand('copy'); ok(); }
+}
+// Publica: copia os pedaços do painel sob o token e cria o documento público
+// com os metadados. Só a cópia é legível sem login.
+async function publicar(id, tokenAntigo){
+  const p=paineis.find(x=>x._id===id); if(!p) return;
+  const btn=$('sh-ok'); if(btn) btn.disabled=true;
+  const prog=m=>{ const e=$('sh-prog'); if(e) e.innerHTML=m; };
+  try{
+    const token=novoToken();
+    prog('<i class="ti ti-loader"></i> Preparando a cópia pública...');
+    for(let i=0;i<(p.chunks||0);i+=1){
+      const s=await window._getDoc(window._doc(COL_DADOS, id+'__'+i));
+      if(!s.exists()) throw new Error('pedaço '+(i+1)+' do arquivo não encontrado');
+      await window._setDoc(window._doc(COL_PUBDAD, token+'__'+i), {p:(s.data()||{}).p||''});
+      prog('Copiando pedaço '+(i+1)+' de '+p.chunks+'...');
+    }
+    await window._setDoc(window._doc(COL_PUB, token), {
+      painel:id, titulo:p.titulo||'', descricao:p.descricao||'',
+      chunks:p.chunks||0, gzip:!!p.gzip, bytes:p.bytes||0,
+      publicadoEm:agora(), publicadoPor:quem()
+    });
+    // Link novo entra no ar antes de o antigo sair, para não ficar um instante
+    // sem nada funcionando quando é renovação.
+    if(tokenAntigo) await apagarPublico(tokenAntigo, p.chunks||0);
+    const mud=[{rotulo:'link público', de:tokenAntigo?'link anterior':'—',
+      para:tokenAntigo?'novo link gerado':'ativado'}];
+    await window._setDoc(window._doc(COL_PAINEL, id), Object.assign({}, p, {
+      token, publicadoEm:agora(), publicadoPor:quem(),
+      historico:logDem(p.historico, tokenAntigo?'Edição':'Inclusão', mud,
+        tokenAntigo?'link público renovado (o anterior deixou de funcionar)':'link público ativado')
+    }));
+    toast(tokenAntigo?'Link novo gerado. O anterior parou de funcionar.':'Link público criado.','ok');
+    modalCompartilhar(id);
+  }catch(e){
+    prog('');
+    toast('Erro ao publicar: '+e.message,'erro');
+    if($('sh-ok')) $('sh-ok').disabled=false;
+  }
+}
+// async e devolvendo a promessa: quem chama precisa saber quando terminou,
+// senão a tela se redesenha antes de a troca do link estar gravada.
+async function renovarLink(id){
+  const p=paineis.find(x=>x._id===id); if(!p) return;
+  if(!confirm('Gerar um link novo para "'+(p.titulo||'')+'"?\n\n'
+    +'O link atual para de funcionar na hora. Use isto se o endereço vazou.')) return;
+  return publicar(id, p.token);
+}
+async function despublicar(id){
+  const p=paineis.find(x=>x._id===id); if(!p || !p.token) return;
+  if(!confirm('Desativar o link público de "'+(p.titulo||'')+'"?\n\n'
+    +'Quem tiver o endereço deixa de conseguir abrir. O painel continua aqui.')) return;
+  try{
+    await apagarPublico(p.token, p.chunks||0);
+    const semToken=Object.assign({}, p);
+    delete semToken.token; delete semToken.publicadoEm; delete semToken.publicadoPor;
+    semToken.historico=logDem(p.historico,'Exclusão',
+      [{rotulo:'link público', de:'ativo', para:'—'}], 'link público desativado');
+    await window._setDoc(window._doc(COL_PAINEL, id), semToken);
+    fecharMod();
+    toast('Link público desativado.','ok');
+  }catch(e){ toast('Erro ao desativar: '+e.message,'erro'); }
+}
+async function apagarPublico(token, chunks){
+  // Apaga com folga: se o painel encolheu, ainda há pedaços de antes.
+  for(let i=0;i<Math.max(chunks,1)+40;i+=1){
+    try{ await window._deleteDoc(window._doc(COL_PUBDAD, token+'__'+i)); }catch(e){}
+  }
+  try{ await window._deleteDoc(window._doc(COL_PUB, token)); }catch(e){}
+}
+// Reflete no link público o que mudou no painel: sempre os metadados, e os
+// pedaços só quando o arquivo foi trocado.
+async function atualizarPublico(p, arquivoNovo){
+  if(!p || !p.token) return;
+  if(arquivoNovo){
+    for(let i=0;i<(p.chunks||0);i+=1){
+      const s=await window._getDoc(window._doc(COL_DADOS, p._id+'__'+i));
+      if(!s.exists()) throw new Error('pedaço '+(i+1)+' não encontrado');
+      await window._setDoc(window._doc(COL_PUBDAD, p.token+'__'+i), {p:(s.data()||{}).p||''});
+    }
+  }
+  await window._setDoc(window._doc(COL_PUB, p.token), {
+    painel:p._id, titulo:p.titulo||'', descricao:p.descricao||'',
+    chunks:p.chunks||0, gzip:!!p.gzip, bytes:p.bytes||0,
+    publicadoEm:p.publicadoEm||agora(), publicadoPor:p.publicadoPor||quem(),
+    atualizadoEm:agora(), atualizadoPor:quem()
+  });
 }
 
 // Abre o painel em tela cheia, dentro de um iframe ISOLADO: sandbox sem

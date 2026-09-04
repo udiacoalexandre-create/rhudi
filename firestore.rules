@@ -122,6 +122,17 @@ service cloud.firestore {
     match /cm_painel_dados/{id} { allow read, write: if podeComercial(); }
     match /cm_demandas/{id}     { allow read, write: if podeComercial(); }
 
+    // Painel compartilhado por link público (painel.html?p=<token>).
+    // Quem publica é só o Comercial; quem LÊ é qualquer um que tenha o link.
+    // O token é o id destes documentos: 32 caracteres aleatórios, e é ele o
+    // segredo — o id do painel privado não abre nada aqui.
+    //
+    // 'get' e não 'read': get libera buscar UM documento pelo id conhecido,
+    // list libera varrer a coleção. Sem list, não há como descobrir os tokens
+    // dos outros painéis nem enumerar o que está publicado.
+    match /cm_publico/{token}       { allow get: if true; allow write: if podeComercial(); }
+    match /cm_publico_dados/{parte} { allow get: if true; allow write: if podeComercial(); }
+
     // ── Qualquer outra coleção: negado ────────────────────────
     match /{document=**} {
       allow read, write: if false;
