@@ -16,6 +16,10 @@ const COL_DEM    = 'cm_demandas';
 // cópia que fica legível sem login — o painel privado continua fechado, e o id
 // dele não abre nada. Assim o segredo é o link, e só o link.
 const COL_PUB    = 'cm_publico';
+// O link das DEMANDAS é diferente do painel de BI: o painel é um arquivo
+// parado, e a lista muda toda hora. Então o retrato público é reescrito a
+// cada alteração — quem abre o link vê o quadro de agora.
+const CFG_DEM_PUB= 'cm_config';
 const COL_PUBDAD = 'cm_publico_dados';
 
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
@@ -221,8 +225,13 @@ function assinarDados(){
   }, e=>toast('Erro ao ler painéis: '+e.message,'erro')));
   unsubs.push(window._onSnapshot(window._col(COL_DEM), snap=>{
     demandas=[]; snap.forEach(d=>demandas.push(Object.assign({_id:d.id}, d.data())));
+    // Qualquer alteração — daqui, de outra aba ou da importação em lote —
+    // reescreve o retrato público. Assim não preciso lembrar de chamar isso em
+    // cada caminho de gravação.
+    atualizarDemPub();
     if(aba==='demandas') render();
   }, e=>toast('Erro ao ler demandas: '+e.message,'erro')));
+  assinarDemPub();
 }
 
 // ── Casca ─────────────────────────────────────────────────────────────────
@@ -646,7 +655,9 @@ function sprintTitulo(sp){
   const f=d=>String(d.getDate()).padStart(2,'0')+' '+MES3[d.getMonth()];
   return f(sp.ini)+' a '+f(sp.fim);
 }
-function irSprintModo(m){ sprintModo=m; pintarDemandas(); }
+function irSprintModo(m){ sprintModo=m; pintarDemandas();
+  // A cadência é escolha de quem opera; o link público mostra a mesma.
+  atualizarDemPub(); }
 // Sprint encerrada não deve competir por atenção com a que está rodando: fica
 // recolhida atrás de um toque, sem sair da tela.
 let verEncerradas=false;
@@ -816,6 +827,135 @@ async function mudarStatus(id, novo){
   }catch(e){ toast('Erro ao mudar o status: '+e.message,'erro'); pintarDemandas(); }
 }
 
+// ── Link público de leitura das demandas ─────────────────────────────────
+let demPub = null;      // {token, publicadoEm, publicadoPor} ou null
+let _pubTimer = null;
+
+function assinarDemPub(){
+  unsubs.push(window._onSnapshot(window._doc(CFG_DEM_PUB,'demandasPublicas'), snap=>{
+    demPub = snap.exists() ? (snap.data()||null) : null;
+    if(demPub && !demPub.token) demPub=null;
+    if(aba==='demandas') render();
+  }, ()=>{}));
+}
+// Retrato público: só o que se lê na tela, nada de histórico de auditoria.
+// Guarda o dado CRU e a cadência escolhida; quem agrupa em sprints é a
+// página pública, usando o 'hoje' de quem está olhando. Se o retrato
+// trouxesse 'sprint atual' já resolvido, ele envelheceria sozinho nos dias
+// em que ninguém mexe em nenhuma demanda.
+function _itensPublicos(){
+  return demandas.slice()
+    .sort((a,b)=>(a.titulo||'').localeCompare(b.titulo||''))
+    .map(d=>({titulo:d.titulo||'', descricao:d.descricao||'',
+      solicitante:d.solicitante||'', area:d.area||'',
+      prioridade:(d.prioridade===''||d.prioridade==null)?'':d.prioridade,
+      status:sInfo(d.status).v, entrada:d.entrada||'', prazo:d.prazo||''}));
+}
+function _retratoDemandas(){
+  return { tipo:'demandas', titulo:'Demandas de tecnologia',
+    descricao:'Udiaço · projetos de tecnologia com a empresa parceira',
+    cadencia:sprintModo, status:STATUS, itens:_itensPublicos(),
+    atualizadoEm:agora() };
+}
+// Reescreve o retrato. Espera um instante para não gravar uma vez por tecla
+// quando várias linhas mudam em sequência.
+function atualizarDemPub(){
+  if(!demPub || !demPub.token) return;
+  clearTimeout(_pubTimer);
+  _pubTimer=setTimeout(async()=>{
+    try{
+      await window._setDoc(window._doc(COL_PUB, demPub.token), _retratoDemandas());
+    }catch(e){ console.warn('retrato público:',e); }
+  }, 900);
+}
+async function publicarDemandas(tokenAntigo){
+  const token=novoToken();
+  try{
+    await window._setDoc(window._doc(COL_PUB, token), _retratoDemandas());
+    await window._setDoc(window._doc(CFG_DEM_PUB,'demandasPublicas'), {
+      token, publicadoEm:agora(), publicadoPor:quem()
+    });
+    if(tokenAntigo) await window._deleteDoc(window._doc(COL_PUB, tokenAntigo));
+    toast(tokenAntigo?'Link novo gerado. O anterior parou de funcionar.'
+                     :'Link público de leitura criado.','ok');
+    modalCompartilharDemandas();
+  }catch(e){ toast('Erro ao publicar: '+e.message,'erro'); }
+}
+async function renovarLinkDemandas(){
+  if(!demPub) return;
+  if(!confirm('Gerar um link novo?\n\nO atual para de funcionar na hora. '
+    +'Use isto se o endereço vazou.')) return;
+  return publicarDemandas(demPub.token);
+}
+async function despublicarDemandas(){
+  if(!demPub) return;
+  if(!confirm('Desativar o link público das demandas?\n\n'
+    +'Quem tiver o endereço deixa de conseguir abrir.')) return;
+  try{
+    await window._deleteDoc(window._doc(COL_PUB, demPub.token));
+    await window._deleteDoc(window._doc(CFG_DEM_PUB,'demandasPublicas'));
+    fecharMod();
+    toast('Link público desativado.','ok');
+  }catch(e){ toast('Erro ao desativar: '+e.message,'erro'); }
+}
+function linkPublicoDemandas(){
+  return demPub ? location.origin+location.pathname.replace(/[^/]*$/,'')
+    +'demandas.html?p='+demPub.token : '';
+}
+function modalCompartilharDemandas(){
+  const on=!!demPub;
+  const link=on?linkPublicoDemandas():'';
+  $('camada').innerHTML='<div class="mod" id="mod-shd">'
+    +'<div class="mod__cx" style="max-width:560px"><div class="mod__h">'
+      +'<b>Compartilhar as demandas</b>'
+      +'<button class="mod__x" onclick="fecharMod()">&times;</button></div>'
+    +'<div class="mod__b">'
+    +(on
+      ? '<div class="fg"><label>Link de leitura'
+          +ajuda('Quem abre vê o quadro atual, sem login e sem poder alterar nada. '
+                +'O retrato é reescrito a cada mudança feita aqui.')+'</label>'
+        +'<div style="display:flex;gap:8px">'
+          +'<input type="text" id="shd-link" readonly value="'+esc(link)+'" '
+            +'style="flex:1;font-size:12px" onclick="this.select()">'
+          +'<button class="btn btn--primary" onclick="copiarLinkDemandas()">'
+          +'<i class="ti ti-copy"></i> Copiar</button></div></div>'
+        +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+          +'<a class="btn" href="'+esc(link)+'" target="_blank" rel="noopener">'
+            +'<i class="ti ti-external-link"></i> Abrir como visitante</a>'
+          +'<button class="btn" onclick="renovarLinkDemandas()">'
+            +'<i class="ti ti-refresh"></i> Gerar novo link</button></div>'
+        +'<div style="margin-top:14px;padding:10px 12px;background:#fffbeb;'
+          +'border:1px solid #fde68a;border-radius:10px;font-size:12px;color:#92400e">'
+          +'<i class="ti ti-alert-triangle"></i> Qualquer pessoa com o link vê as '
+          +demandas.length+' demandas, sem login. Só leitura: editar continua sendo '
+          +'apenas por aqui. Publicado em '+dataHora(demPub.publicadoEm)
+          +' por '+esc(demPub.publicadoPor||'—')+'.</div>'
+      : '<p style="font-size:13px;color:var(--text-secondary);margin:0 0 4px">'
+        +'Gera um endereço que qualquer pessoa abre <strong>sem login</strong> para '
+        +'acompanhar as demandas. <strong>Só leitura</strong> — editar continua '
+        +'sendo apenas por aqui.</p>'
+        +'<p style="font-size:12px;color:var(--text-muted);margin:0">'
+        +'O quadro publicado se atualiza sozinho a cada mudança, e o histórico de '
+        +'quem alterou o quê não vai junto.</p>')
+    +'</div>'
+    +'<div class="mod__f">'
+    +(on?'<button class="btn" style="color:var(--cm-alta)" onclick="despublicarDemandas()">'
+          +'<i class="ti ti-world-off"></i> Desativar link</button>':'<span></span>')
+    +'<span style="display:flex;gap:8px">'
+      +'<button class="btn" onclick="fecharMod()">Fechar</button>'
+      +(on?'':'<button class="btn btn--primary" onclick="publicarDemandas()">'
+          +'<i class="ti ti-world"></i> Gerar link de leitura</button>')
+    +'</span></div></div></div>';
+}
+function copiarLinkDemandas(){
+  const el=$('shd-link'); if(!el) return;
+  el.select();
+  const ok=()=>toast('Link copiado.','ok');
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(el.value).then(ok,()=>{document.execCommand('copy');ok();});
+  else { document.execCommand('copy'); ok(); }
+}
+
 function viewDemandas(){
   const solicitantes=[...new Set(demandas.map(d=>d.solicitante||'').filter(Boolean))].sort();
   const prios=[...new Set(demandas.map(d=>d.prioridade).filter(v=>v!==''&&v!=null))]
@@ -827,7 +967,12 @@ function viewDemandas(){
       +'<p class="pg-sub">Projetos com a empresa parceira'
         +ajuda('Cada linha é uma demanda: o que foi pedido, quem pediu, a prioridade e o prazo de entrega. '
               +'Toda alteração fica registrada com data, hora e usuário.')+'</p></div>'
-      +'<div class="acoes"><button class="btn" onclick="exportarDemandas()">'
+      +'<div class="acoes">'
+        +'<button class="btn" onclick="modalCompartilharDemandas()" '
+          +'title="'+(demPub?'Link de leitura ativo':'Compartilhar por link')+'">'
+          +'<i class="ti ti-'+(demPub?'world-share':'share')+'"'
+          +(demPub?' style="color:var(--brand)"':'')+'></i> Compartilhar</button>'
+        +'<button class="btn" onclick="exportarDemandas()">'
         +'<i class="ti ti-file-spreadsheet"></i> CSV</button>'
         +'<button class="btn btn--primary" onclick="modalDemanda(null)">'
         +'<i class="ti ti-plus"></i> Nova demanda</button></div></div>'

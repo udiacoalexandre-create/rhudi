@@ -112,6 +112,12 @@ async function abrir(){
       return;
     }
     const p=snap.data()||{};
+    // A lista de demandas divide esta coleção pública com os painéis de BI.
+    // Se o link cair aqui, manda para a página dela em vez de dar erro.
+    if(p.tipo==='demandas'){
+      location.replace('demandas.html?p='+encodeURIComponent(token));
+      return;
+    }
     document.title=(p.titulo||'Painel')+' — Udiaço';
     $('p-tit').textContent=p.titulo||'Painel';
     $('p-sub').textContent=p.descricao||'';

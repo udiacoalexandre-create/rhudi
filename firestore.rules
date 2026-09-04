@@ -125,8 +125,15 @@ service cloud.firestore {
     match /cm_paineis/{id}      { allow read, write: if podeComercial(); }
     match /cm_painel_dados/{id} { allow read, write: if podeComercial(); }
     match /cm_demandas/{id}     { allow read, write: if podeComercial(); }
+    // Configuração da plataforma. Hoje guarda um doc só: qual token está
+    // publicando a lista de demandas. Fica FORA de cm_publico — é o segredo
+    // do link, não pode ser lido sem login.
+    match /cm_config/{id}       { allow read, write: if podeComercial(); }
 
-    // Painel compartilhado por link público (painel.html?p=<token>).
+    // Compartilhado por link público: painel de BI (painel.html?p=<token>) e o
+    // quadro de demandas (demandas.html?p=<token>), que é um RETRATO reescrito
+    // a cada alteração — o dado vivo em cm_demandas, com a auditoria de quem
+    // alterou o quê, continua fechado.
     // Quem publica é só o Comercial; quem LÊ é qualquer um que tenha o link.
     // O token é o id destes documentos: 32 caracteres aleatórios, e é ele o
     // segredo — o id do painel privado não abre nada aqui.
