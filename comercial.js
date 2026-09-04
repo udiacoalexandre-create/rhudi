@@ -690,6 +690,27 @@ function moverDesc(ev){
 function esconderDesc(){
   const b=$('balao'); if(b) b.classList.remove('balao--on');
 }
+// Delegação no documento em vez de onmouseenter no elemento: atributo inline
+// de mouseenter não é suportado de forma consistente, e a tabela é redesenhada
+// a cada mudança — assim o hover continua valendo sem religar nada.
+function ligarBalao(){
+  const alvo=e=>{
+    const t=e.target;
+    return t && t.closest ? t.closest('[data-desc]') : null;
+  };
+  document.addEventListener('mouseover', e=>{
+    const el=alvo(e);
+    if(el) mostrarDesc(e, el.getAttribute('data-desc'));
+  });
+  document.addEventListener('mouseout', e=>{
+    if(alvo(e)) esconderDesc();
+  });
+  document.addEventListener('mousemove', e=>{
+    const b=$('balao');
+    if(!b || !b.classList.contains('balao--on')) return;   // barato quando fechado
+    if(alvo(e)) moverDesc(e); else esconderDesc();
+  });
+}
 
 // Entrega estimada trocada na própria linha, como o status.
 async function mudarPrazo(id, iso){
@@ -864,10 +885,7 @@ function pintarDemandas(){
         return '<tr class="clicavel"'+(entregue?' style="opacity:.62"':'')
           +' onclick="modalDemanda(\''+d._id+'\')">'
           +'<td style="font-weight:600;min-width:240px">'
-            +'<span'+(temDesc?' class="tem-desc"'
-              +' onmouseenter="mostrarDesc(event,\''+d._id+'\')"'
-              +' onmousemove="moverDesc(event)"'
-              +' onmouseleave="esconderDesc()"':'')+'>'
+            +'<span'+(temDesc?' class="tem-desc" data-desc="'+d._id+'"':'')+'>'
             +esc(d.titulo||'(sem título)')+'</span></td>'
           +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
             +prioTxt(d.prioridade)+'</td>'
@@ -1017,6 +1035,7 @@ function iniciar(){
   $('btn-sair').onclick=async()=>{ await window._signOut(); location.reload(); };
   $('btn-portal').onclick=()=>{ location.href='index.html'; };
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') fecharMod(); });
+  ligarBalao();
   window._onAuthStateChanged(window._auth, async user=>{
     if(!user){ mostrarLogin(); return; }
     const r=await carregarUsuario(user.email);
