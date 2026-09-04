@@ -939,6 +939,7 @@ const MODULES = {
   ]},
   premio:{pages:[
     {id:'premio-main',icon:'<i class="ti ti-trophy"></i>',label:'Premio Assiduidade'},
+    {id:'rv-main',icon:'<i class="ti ti-target-arrow"></i>',label:'Remuneração Variável'},
     {id:'premio-historico',icon:'<i class="ti ti-history"></i>',label:'Histórico'},
     {id:'premio-dash',icon:'<i class="ti ti-chart-bar"></i>',label:'Dashboard'},
   ]},
@@ -1012,7 +1013,7 @@ function showPage(id){
 
 function renderPage(id){
   const pages={
-    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'base-versoes':pgBaseVersoes,'premio-main':pgPremioAssiduidade,
+    'base-lista':pgBaseLista,'base-sync':pgBaseSync,'base-carga':pgBaseCarga,'base-import':pgBaseImport,'base-defpara':pgBaseDePara,'base-novo':pgBaseNovo,'base-atualizacao':pgBaseAtualizacao,'base-versoes':pgBaseVersoes,'premio-main':pgPremioAssiduidade,'rv-main':pgRemVariavel,
     'ben-lancamento':pgBenLancamento,'ben-importar':pgBenImportar,
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,'base-dash':pgBaseDashboard,'ben-dash':pgBenDashboard,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
@@ -1056,6 +1057,7 @@ function afterRender(id){
   if(id==='fer-ajuste') renderFerAjusteTabela();
   if(id==='fer-um989') loadUM989().then(renderUM989);
   if(id==='premio-main') afterRenderPremio();
+  if(id==='rv-main') afterRenderRV();
   if(id==='premio-dash') afterRenderPremioDash();
   if(id==='premio-historico') renderPremioHistorico();
   if(id==='usuarios') renderUsuarios();
@@ -6668,6 +6670,579 @@ async function salvarDetalheFerias(id){
     if(currentPage==='fer-agendadas') renderFeriasAgendadas();
     if(currentPage==='ben-lancamento') showPage('ben-lancamento');
   }catch(e){ toast('Erro: '+e.message,'error'); }
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// REMUNERAÇÃO VARIÁVEL
+// ════════════════════════════════════════════════════════════════
+// Prêmio por atingimento de meta, pago pelo Caju como os outros benefícios.
+// O valor não é proporcional ao percentual: são FAIXAS declaradas pelo RH.
+// A tabela abaixo é o que manda — mudar aqui muda o cálculo, e nada é
+// interpolado, porque a regra da Udiaço não é linear (0,5 vale 85 e 1 vale 270).
+const RV_FAIXAS = [
+  {p:0,   v:0},
+  {p:0.5, v:85},
+  {p:1,   v:270},
+];
+const RV_COL = 'remVariavel';        // uma competência por documento
+
+let rvState = {
+  passo: 1,
+  competencia: '',      // "9/2026"
+  fechado: false,
+  pessoas: [],          // {mat,nome,cpf,empresa,depto,percentual}
+};
+
+const rvFaixa = p => RV_FAIXAS.find(f => f.p === fnum(p));
+// Valor da pessoa. Percentual fora das faixas não vale nada até alguém
+// declarar a faixa — melhor pagar zero e aparecer na tela do que inventar.
+function rvValor(pessoa){
+  const f = rvFaixa(pessoa && pessoa.percentual);
+  return f ? f.v : 0;
+}
+function rvTotal(){ return (rvState.pessoas||[]).reduce((a,p)=>a+rvValor(p),0); }
+function rvComValor(){ return (rvState.pessoas||[]).filter(p=>rvValor(p)>0); }
+function rvSemPercentual(){
+  return (rvState.pessoas||[]).filter(p=>p.percentual===''||p.percentual==null).length;
+}
+
+// ── Página ──────────────────────────────────────────────────────
+function pgRemVariavel(){
+  return `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+      <div><h2 class="page-title">Remuneração Variável</h2>
+        <p class="page-subtitle">Prêmio por atingimento de meta${_ajuda('O valor vem de faixas fixas: '
+          + RV_FAIXAS.map(f=>_rvPct(f.p)+' = '+brl(f.v)).join(' · ')
+          + '. Percentual fora dessas faixas não gera valor.')}</p></div>
+      <div id="rv-tabs" style="flex:1;display:flex;justify-content:flex-end"></div>
+    </div>
+    <div class="bl-page">
+      <div class="lan-conteudo" id="rv-conteudo"></div>
+      <div id="rv-rodape"></div>
+    </div>`;
+}
+function _rvPct(p){ return (fnum(p)*100).toLocaleString('pt-BR',{maximumFractionDigits:0})+'%'; }
+function afterRenderRV(){ renderRV(); }
+function rvIrPasso(n){ rvState.passo=n; renderRV(); }
+
+const RV_PASSOS = [
+  {n:1, label:'Base'},
+  {n:2, label:'Competência'},
+  {n:3, label:'Colaboradores'},
+  {n:4, label:'Percentuais'},
+  {n:5, label:'Fechar'},
+];
+
+function renderRV(){
+  const el = document.getElementById('rv-conteudo'); if(!el) return;
+  const atual = rvState.passo;
+  const curIdx = RV_PASSOS.findIndex(p=>p.n===atual);
+  const barra = '<div class="lan-tabs">'
+    + RV_PASSOS.map((p,i)=>{
+        const cls = p.n===atual ? ' lan-tab--active' : (i<curIdx ? ' lan-tab--done' : '');
+        const num = i<curIdx ? '<i class="ti ti-check"></i>' : p.n;
+        const pode = i<=curIdx;
+        return '<button class="lan-tab'+cls+'" '
+          +(pode?'onclick="rvIrPasso('+p.n+')"':'disabled style="opacity:.45;cursor:default"')+'>'
+          +'<span class="lan-tab__n">'+num+'</span> '+p.label+'</button>';
+      }).join('')
+    + '</div>';
+
+  let rodapeHtml='';
+  const rodape=(prev,next,rotulo,btnEsq,btnDir)=>rodapeHtml='<div class="lan-rodape">'
+    +(btnEsq||(prev?'<button class="btn btn-ghost" onclick="rvIrPasso('+prev+')"><i class="ti ti-arrow-left"></i> Voltar</button>':'<span style="min-width:150px"></span>'))
+    +'<div class="lan-rodape__meio"></div>'
+    +(btnDir||(next?'<button class="btn btn-primary" onclick="rvIrPasso('+next+')">'+(rotulo||'Continuar')+' <i class="ti ti-arrow-right"></i></button>':'<span style="min-width:150px"></span>'))
+    +'</div>';
+
+  let conteudo='';
+
+  // ── 1. Base ──
+  if(atual===1){
+    const base=_rvBasePop();
+    const ver=basesSalvasList[0];
+    const verDt=ver&&ver.salvoEm?new Date(ver.salvoEm).toLocaleString('pt-BR'):'—';
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-destaque"><span class="lan-destaque__n">'+base.length+'</span>'
+        +'<span class="lan-destaque__l">colaboradores</span></div>'
+      +(ver?'<div class="text-sm" style="color:var(--text2)">Versão <strong>'+ver.competencia+'</strong> · salva em '+verDt+'</div>'
+           :'<div class="text-sm" style="color:var(--red)">Sem versão salva em Históricos</div>')
+      +'</div>';
+    rodape(null,2,'Continuar',
+      '<button class="btn btn-ghost" onclick="rvTrocarBase()"><i class="ti ti-refresh"></i> Trocar base</button>');
+
+  // ── 2. Competência ──
+  } else if(atual===2){
+    const anoAtual=new Date().getFullYear();
+    const anos=[anoAtual-1,anoAtual,anoAtual+1];
+    const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto',
+      'Setembro','Outubro','Novembro','Dezembro'];
+    const [mSel,aSel]=(rvState.competencia||'').split('/');
+    const mAtual=mSel?+mSel:new Date().getMonth()+1;
+    const aAtualSel=aSel?+aSel:anoAtual;
+    conteudo='<div class="lan-caixa">'
+      +'<div class="form-grid cols2">'
+        +'<div class="fg"><label>Mês</label><select id="rv-mes">'
+          +meses.map((m,i)=>'<option value="'+(i+1)+'"'+((i+1)===mAtual?' selected':'')+'>'+m+'</option>').join('')
+        +'</select></div>'
+        +'<div class="fg"><label>Ano</label><select id="rv-ano">'
+          +anos.map(a=>'<option value="'+a+'"'+(a===aAtualSel?' selected':'')+'>'+a+'</option>').join('')
+        +'</select></div>'
+      +'</div>'
+      +(rvState.competencia?'<div class="text-sm" style="margin-top:10px;color:var(--text2)">'
+        +'Competência aberta: <strong>'+rvState.competencia+'</strong>'
+        +(rvState.pessoas.length?' · '+rvState.pessoas.length+' colaborador(es)':'')+'</div>':'')
+      +'</div>';
+    rodape(1,null,null,null,
+      '<button class="btn btn-primary" onclick="rvDefinirComp()">Continuar <i class="ti ti-arrow-right"></i></button>');
+
+  // ── 3. Colaboradores ──
+  } else if(atual===3){
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-destaque"><span class="lan-destaque__n">'+rvState.pessoas.length+'</span>'
+        +'<span class="lan-destaque__l">colaboradores nesta competência'
+        +_ajuda('Suba a planilha com a lista inicial (uma coluna de matrícula ou CPF) e depois ajuste um a um.')
+        +'</span></div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'
+        +'<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'rv-file\').click()">'
+          +'<i class="ti ti-file-spreadsheet"></i> Subir planilha</button>'
+        +'<input type="file" id="rv-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="rvImportarPlanilha(event)">'
+        +'<button class="btn btn-ghost btn-sm" onclick="rvAbrirIncluir()"><i class="ti ti-user-plus"></i> Adicionar</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="rvBaixarModelo()"><i class="ti ti-download"></i> Modelo</button>'
+      +'</div>'
+      +'<div id="rv-import-aviso" style="margin-top:10px"></div>'
+      +'</div>'
+      +'<div id="rv-lista-pessoas"></div>';
+    rodape(2,4,'Continuar');
+
+  // ── 4. Percentuais ──
+  } else if(atual===4){
+    const sem=rvSemPercentual();
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-destaque"><span class="lan-destaque__n">'+brl(rvTotal())+'</span>'
+        +'<span class="lan-destaque__l">total a pagar</span></div>'
+      +'<div class="stats-inline">'
+        +'<span><strong>'+rvComValor().length+'</strong> com valor</span>'
+        +'<span><strong>'+rvState.pessoas.length+'</strong> na lista</span>'
+        +(sem?'<span><strong style="color:var(--yellow)">'+sem+'</strong> sem percentual'
+          +_ajuda('Sem percentual informado o valor fica em zero e a pessoa não entra no arquivo do Caju.')+'</span>':'')
+      +'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+        +RV_FAIXAS.map(f=>'<button class="btn btn-ghost btn-sm" onclick="rvAplicarTodos('+f.p+')">'
+          +'Todos '+_rvPct(f.p)+'</button>').join('')
+      +'</div>'
+      +'</div>'
+      +'<div id="rv-lista-pct"></div>';
+    rodape(3,5,'Continuar');
+
+  // ── 5. Fechar ──
+  } else {
+    const comValor=rvComValor();
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-destaque"><span class="lan-destaque__n">'+brl(rvTotal())+'</span>'
+        +'<span class="lan-destaque__l">total de '+(rvState.competencia||'—')+'</span></div>'
+      +'<div class="stats-inline">'
+        +'<span><strong>'+comValor.length+'</strong> recebem</span>'
+        +'<span><strong>'+(rvState.pessoas.length-comValor.length)+'</strong> em zero</span>'
+        +(rvState.fechado?'<span><strong style="color:var(--green)">competência fechada</strong></span>':'')
+      +'</div></div>'
+      +'<div id="rv-lista-fim"></div>';
+    rodape(4,null,null,null,
+      '<span style="display:flex;gap:8px;flex-wrap:wrap">'
+      +(rvState.fechado
+        ? '<button class="btn btn-ghost" onclick="rvNovaCompetencia()"><i class="ti ti-refresh"></i> Nova competência</button>'
+          +'<button class="btn btn-ghost" onclick="rvExportarExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>'
+          +'<button class="btn btn-success" onclick="rvExportarCaju()"><i class="ti ti-download"></i> CSV Caju ('+comValor.length+')</button>'
+        : '<button class="btn btn-ghost" onclick="rvExportarExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>'
+          +'<button class="btn btn-success" onclick="rvFecharCompetencia()"><i class="ti ti-lock"></i> Fechar '+(rvState.competencia||'')+'</button>')
+      +'</span>');
+  }
+
+  const tabsEl=document.getElementById('rv-tabs');
+  if(tabsEl){ tabsEl.innerHTML=barra; el.innerHTML=conteudo; }
+  else el.innerHTML=barra+conteudo;
+  const rodEl=document.getElementById('rv-rodape');
+  if(rodEl) rodEl.innerHTML=rodapeHtml;
+
+  if(atual===3) rvRenderPessoas();
+  if(atual===4) rvRenderPct();
+  if(atual===5) rvRenderFim();
+}
+
+// População elegível: mesma regra do prêmio (fora demitidos e N/A).
+function _rvBasePop(){
+  return colaboradoresUnicos().filter(c=>statusGrupo(c.status)!=='nao_recebe'
+    && _statusKey(c.status)!=='INATIVO');
+}
+function rvTrocarBase(){ showPage('base-versoes'); }
+function rvDefinirComp(){
+  const m=document.getElementById('rv-mes')?.value;
+  const a=document.getElementById('rv-ano')?.value;
+  if(!m||!a){ toast('Escolha o mês e o ano.','warning'); return; }
+  const nova=m+'/'+a;
+  if(rvState.competencia && rvState.competencia!==nova && rvState.pessoas.length
+     && !confirm('Trocar de '+rvState.competencia+' para '+nova+'?\n\n'
+       +'Os '+rvState.pessoas.length+' colaboradores e os percentuais desta tela serão descartados.')) return;
+  if(rvState.competencia!==nova){ rvState.pessoas=[]; rvState.fechado=false; }
+  rvState.competencia=nova;
+  rvCarregar().then(()=>rvIrPasso(3));
+}
+
+// ── Colaboradores da competência ────────────────────────────────
+function rvRenderPessoas(){
+  const el=document.getElementById('rv-lista-pessoas'); if(!el) return;
+  if(!rvState.pessoas.length){
+    el.innerHTML='<div class="empty-state"><p>Nenhum colaborador ainda. '
+      +'Suba a planilha com a lista inicial ou use <strong>Adicionar</strong>.</p></div>';
+    return;
+  }
+  const lista=rvState.pessoas.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+    +'<th>Colaborador</th><th>Empresa</th><th>Departamento</th>'
+    +'<th style="text-align:center">Remover</th>'
+    +'</tr></thead><tbody>'
+    +lista.map(p=>'<tr>'
+      +'<td><div style="font-weight:500">'+p.nome+'</div>'
+        +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
+      +'<td class="text-sm">'+_empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro}))+'</td>'
+      +'<td class="text-sm" style="color:var(--text2)">'+(p.depto||'—')+'</td>'
+      +'<td style="text-align:center"><button class="btn btn-ghost btn-sm" '
+        +'onclick="rvRemover(\''+p.mat+'\')" title="Tirar desta competência">'
+        +'<i class="ti ti-trash"></i></button></td>'
+      +'</tr>').join('')
+    +'</tbody></table></div>'
+    +'<div class="text-xs text-muted" style="margin-top:6px">'+lista.length+' colaborador(es)</div>';
+}
+function rvRemover(mat){
+  const p=rvState.pessoas.find(x=>x.mat===mat); if(!p) return;
+  if(rvState.fechado){ toast('Competência fechada. Abra uma nova para alterar.','warning'); return; }
+  rvState.pessoas=rvState.pessoas.filter(x=>x.mat!==mat);
+  rvSalvar();
+  renderRV();
+  toast(String(p.nome).split(' ')[0]+' saiu desta competência.','success');
+}
+// Adicionar: busca na base e inclui quem ainda não está na lista.
+function rvAbrirIncluir(){
+  if(rvState.fechado){ toast('Competência fechada. Abra uma nova para alterar.','warning'); return; }
+  document.getElementById('modal-rv-inc')?.remove();
+  const jaTem=new Set(rvState.pessoas.map(p=>p.mat));
+  const cands=_rvBasePop().filter(c=>c.mat && !jaTem.has(c.mat))
+    .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const rows=cands.map(c=>'<div class="incl-row" onclick="rvIncluir(\''+c.mat+'\')" '
+    +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;'
+    +'border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
+    +'data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'">'
+    +'<div><div style="font-weight:600">'+c.nome+'</div>'
+    +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'
+    +(c.depto?' · '+c.depto:'')+'</div></div>'
+    +'<span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('');
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="modal-overlay ds open" id="modal-rv-inc" data-dynamic="1" '
+    +'onclick="if(event.target===this)this.remove()">'
+    +'<div class="modal" style="max-width:560px"><div class="modal-title">Adicionar colaborador</div>'
+    +'<input type="text" id="rvinc-q" placeholder="Buscar nome, matrícula ou departamento..." '
+      +'oninput="rvFiltrarIncluir()" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);'
+      +'border-radius:var(--radius-sm);font-size:14px;margin:12px 0">'
+    +'<div id="rvinc-lista" style="max-height:52vh;overflow:auto">'
+      +(rows||'<div class="empty-state"><p>Todos os elegíveis já estão na lista.</p></div>')+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-ghost" '
+      +'onclick="document.getElementById(\'modal-rv-inc\').remove()">Fechar</button></div>'
+    +'</div></div>');
+  setTimeout(()=>document.getElementById('rvinc-q')?.focus(),50);
+}
+function rvFiltrarIncluir(){
+  const q=(document.getElementById('rvinc-q')?.value||'').toLowerCase();
+  document.querySelectorAll('#rvinc-lista .incl-row').forEach(r=>{
+    r.style.display=(!q||(r.dataset.busca||'').includes(q))?'':'none';
+  });
+}
+function rvIncluir(mat){
+  const c=_rvBasePop().find(x=>x.mat===mat); if(!c) return;
+  if(rvState.pessoas.some(p=>p.mat===mat)){ toast('Já está na lista.','info'); return; }
+  rvState.pessoas.push(_rvPessoaDe(c,''));
+  rvSalvar();
+  document.getElementById('modal-rv-inc')?.remove();
+  renderRV();
+  toast(String(c.nome).split(' ')[0]+' incluído.','success');
+}
+function _rvPessoaDe(c, percentual){
+  return {mat:c.mat||'', nome:c.nome||'', cpf:(c.cpf||'').replace(/\D/g,''),
+    depto:c.depto||'', filtro:c.filtro||'', percentual:(percentual===0||percentual)?percentual:''};
+}
+
+// ── Planilha da lista inicial ───────────────────────────────────
+// Casa por MATRÍCULA ou CPF contra a base. Um percentual na planilha é
+// aproveitado quando bate com uma das faixas.
+function rvBaixarModelo(){
+  const rows=[['Matricula','CPF','Nome (conferencia)','Percentual'],
+    ['10001149','','JULIA SANTOS FERNANDES','1'],
+    ['','12345678901','','0,5']];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:14},{wch:16},{wch:34},{wch:12}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Colaboradores');
+  XLSX.writeFile(wb,'Modelo_Remuneracao_Variavel.xlsx');
+  toast('Modelo baixado. Preencha matrícula OU CPF.','success');
+}
+function rvImportarPlanilha(ev){
+  const arq=ev.target.files&&ev.target.files[0];
+  ev.target.value='';
+  if(!arq) return;
+  if(rvState.fechado){ toast('Competência fechada. Abra uma nova para alterar.','warning'); return; }
+  const fr=new FileReader();
+  fr.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const linhas=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+      _rvAplicarPlanilha(linhas);
+    }catch(err){ toast('Não foi possível ler a planilha: '+err.message,'error'); }
+  };
+  fr.readAsArrayBuffer(arq);
+}
+function _rvAplicarPlanilha(linhas){
+  if(!linhas || !linhas.length){ toast('Planilha vazia.','warning'); return; }
+  const norm=s=>String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().replace(/[^a-z]/g,'');
+  // Acha o cabeçalho: primeira linha que tenha matricula ou cpf
+  let iCab=-1, cab=[];
+  for(let i=0;i<Math.min(linhas.length,10);i++){
+    const c=(linhas[i]||[]).map(norm);
+    if(c.some(x=>x.includes('matricula')||x==='mat'||x.includes('cpf'))){ iCab=i; cab=c; break; }
+  }
+  if(iCab<0){ toast('Não achei coluna de Matrícula nem de CPF na planilha.','error'); return; }
+  const acha=(...alvos)=>cab.findIndex(c=>alvos.some(a=>c.includes(a)));
+  const iMat=acha('matricula','mat'), iCpf=acha('cpf'), iPct=acha('percentual','percent','atingimento','meta');
+
+  const base=_rvBasePop();
+  const porMat={}, porCpf={};
+  base.forEach(c=>{
+    if(c.mat) porMat[_normMatDigits(c.mat)]=c;
+    const d=(c.cpf||'').replace(/\D/g,''); if(d) porCpf[d]=c;
+  });
+
+  const achados=[], naoAchados=[], repetidos=[];
+  const vistos=new Set();
+  linhas.slice(iCab+1).forEach((l,n)=>{
+    if(!l || !l.some(x=>x!=null&&String(x).trim()!=='')) return;
+    const matBruta=iMat>=0?_normMatDigits(l[iMat]):'';
+    const cpfBruto=iCpf>=0?String(l[iCpf]==null?'':l[iCpf]).replace(/\D/g,''):'';
+    const c = (matBruta&&porMat[matBruta]) || (cpfBruto&&porCpf[cpfBruto]) || null;
+    const ref=matBruta||cpfBruto||('linha '+(iCab+n+2));
+    if(!c){ naoAchados.push(ref); return; }
+    if(vistos.has(c.mat)){ repetidos.push(c.nome); return; }
+    vistos.add(c.mat);
+    // percentual da planilha: aceita 0,5 / 0.5 / 50% / 50
+    let pct='';
+    if(iPct>=0 && l[iPct]!=null && String(l[iPct]).trim()!==''){
+      let v=String(l[iPct]).trim().replace('%','').replace(',','.');
+      let num=Number(v);
+      if(isFinite(num)){
+        if(num>1) num=num/100;                 // 50 e 100 vêm como percentual cheio
+        if(rvFaixa(num)) pct=num;
+      }
+    }
+    achados.push(_rvPessoaDe(c,pct));
+  });
+
+  if(!achados.length){
+    _rvAviso('<div class="alert alert-error" style="font-size:12px"><i class="ti ti-alert-triangle"></i> '
+      +'Nenhuma linha casou com a base. Confira se a coluna traz a matrícula ou o CPF '
+      +'de colaboradores ativos.</div>');
+    return;
+  }
+  rvState.pessoas=achados;
+  rvSalvar();
+  renderRV();
+  const partes=['<strong>'+achados.length+'</strong> colaborador(es) na lista'];
+  const comPct=achados.filter(p=>p.percentual!=='').length;
+  if(comPct) partes.push(comPct+' já com percentual');
+  if(naoAchados.length) partes.push('<strong>'+naoAchados.length+'</strong> não encontrado(s) na base: '
+    +naoAchados.slice(0,8).join(', ')+(naoAchados.length>8?'…':''));
+  if(repetidos.length) partes.push(repetidos.length+' repetido(s) na planilha, contados uma vez');
+  _rvAviso('<div class="alert alert-'+(naoAchados.length?'warning':'success')+'" style="font-size:12px">'
+    +'<i class="ti ti-'+(naoAchados.length?'alert-triangle':'circle-check')+'"></i> '
+    +partes.join(' · ')+'</div>');
+}
+function _rvAviso(html){
+  const el=document.getElementById('rv-import-aviso');
+  if(el) el.innerHTML=html;
+}
+
+// ── Percentuais e valores ───────────────────────────────────────
+function rvRenderPct(){
+  const el=document.getElementById('rv-lista-pct'); if(!el) return;
+  if(!rvState.pessoas.length){
+    el.innerHTML='<div class="empty-state"><p>Sem colaboradores. Volte ao passo anterior.</p></div>';
+    return;
+  }
+  const lista=rvState.pessoas.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const trava=rvState.fechado?' disabled':'';
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+    +'<th>Colaborador</th><th>Departamento</th>'
+    +'<th style="text-align:center">Atingimento da meta</th>'
+    +'<th style="text-align:right">Valor</th>'
+    +'</tr></thead><tbody>'
+    +lista.map(p=>{
+      const v=rvValor(p);
+      return '<tr>'
+      +'<td><div style="font-weight:500">'+p.nome+'</div>'
+        +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
+      +'<td class="text-sm" style="color:var(--text2)">'+(p.depto||'—')+'</td>'
+      +'<td style="text-align:center"><select onchange="rvSetPct(\''+p.mat+'\',this.value)"'+trava
+        +' style="min-width:110px">'
+        +'<option value=""'+(p.percentual===''||p.percentual==null?' selected':'')+'>—</option>'
+        +RV_FAIXAS.map(f=>'<option value="'+f.p+'"'+(fnum(p.percentual)===f.p&&p.percentual!==''?' selected':'')+'>'
+          +_rvPct(f.p)+'</option>').join('')
+      +'</select></td>'
+      +'<td style="text-align:right;font-weight:700;'+(v>0?'color:var(--green)':'color:var(--text3)')+'">'
+        +brl(v)+'</td>'
+      +'</tr>';
+    }).join('')
+    +'</tbody><tfoot><tr style="background:var(--surface-soft,#f8fafc);font-weight:700">'
+      +'<td colspan="3" style="padding:10px 12px">Total de '+(rvState.competencia||'—')+'</td>'
+      +'<td style="text-align:right;padding:10px 12px;color:var(--green)">'+brl(rvTotal())+'</td>'
+    +'</tr></tfoot></table></div>';
+}
+function rvSetPct(mat, valor){
+  if(rvState.fechado){ toast('Competência fechada.','warning'); return; }
+  const p=rvState.pessoas.find(x=>x.mat===mat); if(!p) return;
+  p.percentual = valor===''?'':fnum(valor);
+  rvSalvar();
+  renderRV();
+}
+function rvAplicarTodos(p){
+  if(rvState.fechado){ toast('Competência fechada.','warning'); return; }
+  if(!rvState.pessoas.length){ toast('Sem colaboradores na lista.','warning'); return; }
+  if(!confirm('Marcar '+_rvPct(p)+' para todos os '+rvState.pessoas.length+' colaboradores?')) return;
+  rvState.pessoas.forEach(x=>{ x.percentual=p; });
+  rvSalvar();
+  renderRV();
+  toast(_rvPct(p)+' aplicado a '+rvState.pessoas.length+' colaborador(es).','success');
+}
+
+// ── Fechamento ──────────────────────────────────────────────────
+function rvRenderFim(){
+  const el=document.getElementById('rv-lista-fim'); if(!el) return;
+  const lista=rvState.pessoas.slice()
+    .sort((a,b)=>rvValor(b)-rvValor(a)||(a.nome||'').localeCompare(b.nome||''));
+  if(!lista.length){ el.innerHTML='<div class="empty-state"><p>Sem colaboradores.</p></div>'; return; }
+  el.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr>'
+    +'<th>Colaborador</th><th>Empresa</th><th style="text-align:center">Atingimento</th>'
+    +'<th style="text-align:right">Valor</th></tr></thead><tbody>'
+    +lista.map(p=>{
+      const v=rvValor(p);
+      return '<tr'+(v>0?'':' style="opacity:.6"')+'>'
+      +'<td><div style="font-weight:500">'+p.nome+'</div>'
+        +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
+      +'<td class="text-sm">'+_empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro}))+'</td>'
+      +'<td style="text-align:center">'+(p.percentual===''||p.percentual==null?'—':_rvPct(p.percentual))+'</td>'
+      +'<td style="text-align:right;font-weight:700;'+(v>0?'color:var(--green)':'')+'">'+brl(v)+'</td>'
+      +'</tr>';
+    }).join('')
+    +'</tbody><tfoot><tr style="background:var(--surface-soft,#f8fafc);font-weight:700">'
+      +'<td colspan="3" style="padding:10px 12px">Total</td>'
+      +'<td style="text-align:right;padding:10px 12px;color:var(--green)">'+brl(rvTotal())+'</td>'
+    +'</tr></tfoot></table></div>';
+}
+async function rvFecharCompetencia(){
+  if(!rvState.competencia){ toast('Defina a competência primeiro.','warning'); return; }
+  const comValor=rvComValor();
+  if(!comValor.length && !confirm('Nenhum colaborador com valor. Fechar assim mesmo?')) return;
+  const sem=rvSemPercentual();
+  if(sem && !confirm(sem+' colaborador(es) sem percentual informado vão ficar em zero.\n\nFechar '
+    +rvState.competencia+' assim?')) return;
+  rvState.fechado=true;
+  try{
+    await rvSalvar();
+    await rvGravarHistorico();
+    toast('Competência '+rvState.competencia+' fechada. Total '+brl(rvTotal())+'.','success');
+  }catch(e){ rvState.fechado=false; toast('Erro ao fechar: '+e.message,'error'); }
+  renderRV();
+}
+function rvNovaCompetencia(){
+  if(!confirm('Abrir uma nova competência?\n\nA de '+rvState.competencia
+    +' fica salva e some desta tela.')) return;
+  rvState={passo:2, competencia:'', fechado:false, pessoas:[]};
+  renderRV();
+}
+
+// ── Exportações ─────────────────────────────────────────────────
+// CSV do Caju, mesmo formato dos outros benefícios (Auxílio Alimentação).
+function rvExportarCaju(){
+  const comValor=rvComValor();
+  if(!comValor.length){ toast('Ninguém com valor para exportar.','error'); return; }
+  const NL=String.fromCharCode(10);
+  const linhas=[CAJU_CSV_HEADER];
+  comValor.forEach(p=>{
+    const cpf=(p.cpf||'').replace(/\D/g,'').padStart(11,'0');
+    linhas.push([cpf,p.mat||'',fmtValCaju(rvValor(p)),'0','0','0','0','0','0','0','0','0','0'].join(';'));
+  });
+  _baixarCsvBom(linhas.join(NL),
+    'Remuneracao_Variavel_Caju_'+String(rvState.competencia).replace('/','_')+'.csv');
+  toast('CSV do Caju exportado: '+comValor.length+' colaborador(es), '+brl(rvTotal())+'.','success');
+}
+function rvExportarExcel(){
+  if(!rvState.pessoas.length){ toast('Sem dados para exportar.','error'); return; }
+  const rows=[['Competência: '+(rvState.competencia||'—')],
+    ['Matrícula','Nome','CPF','Empresa','Departamento','Atingimento','Valor'],
+    ...rvState.pessoas.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''))
+      .map(p=>[p.mat||'',p.nome||'',p.cpf||'',
+        _empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro})), p.depto||'',
+        (p.percentual===''||p.percentual==null)?'':_rvPct(p.percentual), rvValor(p)]),
+    [],['','','','','','Total',rvTotal()]];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:34},{wch:14},{wch:14},{wch:20},{wch:13},{wch:12}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Remuneração Variável');
+  XLSX.writeFile(wb,'Remuneracao_Variavel_'+String(rvState.competencia).replace('/','_')+'.xlsx');
+  toast('Excel exportado.','success');
+}
+
+// ── Persistência ────────────────────────────────────────────────
+// Uma competência por documento, para poder reabrir depois sem perder nada.
+function _rvDocId(){ return String(rvState.competencia||'').replace('/','_'); }
+async function rvSalvar(){
+  if(!rvState.competencia) return;
+  try{
+    await fsSet(RV_COL,_rvDocId(),{
+      competencia:rvState.competencia,
+      fechado:!!rvState.fechado,
+      pessoas:rvState.pessoas,
+      total:rvTotal(),
+      faixas:RV_FAIXAS,
+      atualizadoEm:new Date().toISOString(),
+      atualizadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''
+    });
+  }catch(e){ toast('Não foi possível salvar: '+e.message,'error'); throw e; }
+}
+async function rvCarregar(){
+  if(!rvState.competencia) return;
+  try{
+    const snap=await window._getDoc(window._doc(RV_COL,_rvDocId()));
+    if(snap.exists()){
+      const d=snap.data()||{};
+      rvState.pessoas=Array.isArray(d.pessoas)?d.pessoas:[];
+      rvState.fechado=!!d.fechado;
+    }
+  }catch(e){ /* sem documento ainda: começa vazio */ }
+}
+// Entra no Histórico junto com os outros fechamentos.
+async function rvGravarHistorico(){
+  const comValor=rvComValor();
+  await fsSet('historico','rv_'+_rvDocId(),{
+    modulo:'remVariavel',
+    beneficioLabel:'Remuneração Variável',
+    competencia:rvState.competencia,
+    total:rvTotal(),
+    qtd:comValor.length,
+    qtdLista:rvState.pessoas.length,
+    fechadoEm:new Date().toISOString(),
+    fechadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'',
+    detalhe:comValor.map(p=>({mat:p.mat,nome:p.nome,cpf:p.cpf,
+      percentual:p.percentual,valor:rvValor(p)}))
+  });
 }
 
 // ════════════════════════════════════════════════════════════════

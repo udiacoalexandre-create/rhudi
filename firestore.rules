@@ -74,6 +74,10 @@ service cloud.firestore {
     // Férias UM989: apenas o Master e o papel UM989.
     match /um989/{id}         { allow read, write: if isMaster() || isUM989(); }
 
+    // Remuneração Variável: uma competência por documento (lista de
+    // colaboradores, percentual de atingimento e valor apurado).
+    match /remVariavel/{id} { allow read, write: if isAuthorized() && !isUM989(); }
+
     // Log de exclusões (justificativas de quem excluiu do histórico).
     match /logsExclusao/{id}  { allow read, write: if isAuthorized() && !isUM989(); }
 
