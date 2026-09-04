@@ -121,7 +121,7 @@ function linkPublico(token){
 // hora, usuário e o que mudou. É o que permite responder "quem mexeu nisso".
 const CAMPOS_DEM = {titulo:'demanda', descricao:'descrição', solicitante:'quem pediu',
   area:'área', prioridade:'prioridade', status:'status', entrada:'entrada da demanda',
-  prazo:'entrega estimada', parceira:'responsável na parceira', obs:'observação'};
+  prazo:'entrega estimada', obs:'observação'};
 
 function diffDem(antes, depois){
   const mud=[];
@@ -585,23 +585,25 @@ async function abrirPainel(id){
 // ══════════════════════════════════════════════════════════════════════════
 // DEMANDAS DE TECNOLOGIA (empresa parceira)
 // ══════════════════════════════════════════════════════════════════════════
-const PRIOS=[
-  {v:'alta',  l:'Alta',  cor:'var(--cm-alta)'},
-  {v:'media', l:'Média', cor:'var(--cm-media)'},
-  {v:'baixa', l:'Baixa', cor:'var(--cm-baixa)'},
-];
+// Prioridade é o número que a parceira usa na planilha (coluna T), não um
+// nível traduzido: 0, 1, 2, 4, 10... e em muitas linhas vem vazio. Guardar o
+// número evita inventar uma escala que a planilha não declara.
+function prioTxt(v){ return (v===''||v==null) ? '—' : String(v); }
+function prioNum(v){ const n=Number(v); return isFinite(n)?n:9999; }   // vazio no fim
 const STATUS=[
   {v:'fila',      l:'Na fila',      cor:'var(--cm-fila)'},
   {v:'andamento', l:'Em andamento', cor:'var(--cm-andamento)'},
   {v:'pausada',   l:'Pausada',      cor:'var(--cm-pausada)'},
   {v:'entregue',  l:'Entregue',     cor:'var(--cm-entregue)'},
 ];
-const pInfo=v=>PRIOS.find(p=>p.v===v)||{v,l:v||'—',cor:'var(--cm-fila)'};
+
 const sInfo=v=>STATUS.find(s=>s.v===v)||{v,l:v||'—',cor:'var(--cm-fila)'};
 const pill=(txt,cor)=>'<span class="pill" style="background:'+cor+'">'+esc(txt)+'</span>';
 
 function viewDemandas(){
   const solicitantes=[...new Set(demandas.map(d=>d.solicitante||'').filter(Boolean))].sort();
+  const prios=[...new Set(demandas.map(d=>d.prioridade).filter(v=>v!==''&&v!=null))]
+    .sort((a,b)=>prioNum(a)-prioNum(b)).map(v=>({v:String(v),l:String(v)}));
   const opt=(arr,sel,vazio)=>'<option value="">'+vazio+'</option>'
     +arr.map(o=>'<option value="'+esc(o.v)+'"'+(sel===o.v?' selected':'')+'>'+esc(o.l)+'</option>').join('');
   return '<div class="pg-head">'
@@ -618,7 +620,7 @@ function viewDemandas(){
       +'<div class="fg" style="flex:1;min-width:180px"><label>Buscar</label>'
         +'<input type="text" id="dm-q" placeholder="Demanda, quem pediu, área..." value="'+esc(filtroDem.q)+'" oninput="filtrarDem()"></div>'
       +'<div class="fg"><label>Prioridade</label><select id="dm-prio" onchange="filtrarDem()">'
-        +opt(PRIOS, filtroDem.prio, 'Todas')+'</select></div>'
+        +opt(prios, filtroDem.prio, 'Todas')+'</select></div>'
       +'<div class="fg"><label>Status</label><select id="dm-status" onchange="filtrarDem()">'
         +opt(STATUS, filtroDem.status, 'Todos')+'</select></div>'
       +'<div class="fg"><label>Quem pediu</label><select id="dm-solic" onchange="filtrarDem()">'
@@ -634,11 +636,11 @@ function filtrarDem(){
 }
 function demandasFiltradas(){
   return demandas.filter(d=>{
-    if(filtroDem.prio && d.prioridade!==filtroDem.prio) return false;
+    if(filtroDem.prio && String(d.prioridade)!==filtroDem.prio) return false;
     if(filtroDem.status && d.status!==filtroDem.status) return false;
     if(filtroDem.solic && d.solicitante!==filtroDem.solic) return false;
     if(filtroDem.q){
-      const alvo=[d.titulo,d.descricao,d.solicitante,d.area,d.parceira].join(' ').toLowerCase();
+      const alvo=[d.titulo,d.descricao,d.solicitante,d.area].join(' ').toLowerCase();
       if(!alvo.includes(filtroDem.q)) return false;
     }
     return true;
@@ -648,8 +650,7 @@ function demandasFiltradas(){
     if(ea!==eb) return ea-eb;
     const pa=a.prazo||'9999', pb=b.prazo||'9999';
     if(pa!==pb) return pa<pb?-1:1;
-    const ordem={alta:0,media:1,baixa:2};
-    return (ordem[a.prioridade]??3)-(ordem[b.prioridade]??3);
+    return prioNum(a.prioridade)-prioNum(b.prioridade);
   });
 }
 function pintarDemandas(){
@@ -664,8 +665,9 @@ function pintarDemandas(){
       ['<span style="color:var(--cm-alta)">'+atrasadas.length+'</span>','com prazo vencido',
         'Prazo de entrega já passou e a demanda não está como Entregue.'],
       ['<span style="color:var(--cm-media)">'+semana.length+'</span>','vencem em 7 dias',''],
-      ['<span style="color:var(--text)">'+abertas.filter(d=>d.prioridade==='alta').length+'</span>',
-        'prioridade alta',''],
+      ['<span style="color:var(--text)">'+abertas.filter(d=>!d.prazo).length+'</span>',
+        'sem prazo definido',
+        'Sem entrega estimada na planilha: não entram na conta de vencidas nem de 7 dias.'],
     ].map(([n,l,h])=>'<div><div class="stat__n">'+n+'</div>'
       +'<div class="stat__l">'+l+(h?ajuda(h):'')+'</div></div>').join('');
   }
@@ -677,8 +679,9 @@ function pintarDemandas(){
     return;
   }
   el.innerHTML='<div class="tbl-wrap"><table class="dm"><thead><tr>'
-    +'<th>Demanda</th><th>Quem pediu</th><th>Área</th><th>Prioridade</th>'
-    +'<th>Entrada</th><th>Entrega estimada</th><th>Status</th><th>Parceira</th>'
+    +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
+    +'<th>Entrega estimada</th><th>Status</th><th>Quem pediu</th>'
+    +'<th>Entrada</th><th>Área</th><th>Descritivo</th>'
     +'</tr></thead><tbody>'
     +lista.map(d=>{
       const n=diasAte(d.prazo);
@@ -688,17 +691,18 @@ function pintarDemandas(){
         ? soData(d.prazo)+(entregue||n===null?'':' <span style="font-size:10.5px">('
             +(n<0?(-n)+'d atrasado':(n===0?'hoje':n+'d'))+')</span>')
         : '—';
+      const desc=String(d.descricao||'');
       return '<tr class="clicavel" onclick="modalDemanda(\''+d._id+'\')">'
-        +'<td><div style="font-weight:600">'+esc(d.titulo||'(sem título)')+'</div>'
-          +(d.descricao?'<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">'
-            +esc(String(d.descricao).slice(0,110))+(String(d.descricao).length>110?'…':'')+'</div>':'')+'</td>'
-        +'<td>'+esc(d.solicitante||'—')+'</td>'
-        +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
-        +'<td>'+pill(pInfo(d.prioridade).l, pInfo(d.prioridade).cor)+'</td>'
-        +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
+        +'<td style="font-weight:600;min-width:220px">'+esc(d.titulo||'(sem título)')+'</td>'
+        +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
+          +prioTxt(d.prioridade)+'</td>'
         +'<td class="'+cls+'">'+quando+'</td>'
         +'<td>'+pill(sInfo(d.status).l, sInfo(d.status).cor)+'</td>'
-        +'<td style="color:var(--text-secondary)">'+esc(d.parceira||'—')+'</td>'
+        +'<td>'+esc(d.solicitante||'—')+'</td>'
+        +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
+        +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
+        +'<td style="color:var(--text-secondary);font-size:11px;max-width:260px">'
+          +(desc?esc(desc.slice(0,80))+(desc.length>80?'…':''):'—')+'</td>'
         +'</tr>';
     }).join('')+'</tbody></table></div>'
     +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px">'
@@ -715,24 +719,26 @@ function modalDemanda(id){
     +'<div class="fg" style="margin-bottom:12px"><label>Demanda</label>'
       +'<input type="text" id="dm-tit" maxlength="120" placeholder="O que foi pedido" '
       +'value="'+esc(d?d.titulo:'')+'"></div>'
-    +'<div class="fg" style="margin-bottom:12px"><label>Descrição</label>'
-      +'<textarea id="dm-desc" rows="3" placeholder="Detalhe do que precisa ser entregue">'
-      +esc(d?d.descricao:'')+'</textarea></div>'
     +'<div class="grid2" style="margin-bottom:12px">'
       +'<div class="fg"><label>Quem pediu</label><input type="text" id="dm-solic" maxlength="80" '
         +'placeholder="Nome de quem solicitou" value="'+esc(d?d.solicitante:'')+'"></div>'
       +'<div class="fg"><label>Área</label><input type="text" id="dm-area" maxlength="60" '
         +'placeholder="Ex.: Comercial, Diretoria" value="'+esc(d?d.area:'')+'"></div>'
-      +'<div class="fg"><label>Prioridade</label><select id="dm-f-prio">'+sel(PRIOS,d?d.prioridade:'media')+'</select></div>'
+      +'<div class="fg"><label>Prioridade'
+        +ajuda('O número que a parceira usa na planilha (coluna T). Vazio = sem prioridade definida.')
+        +'</label><input type="number" id="dm-f-prio" step="1" placeholder="—" '
+        +'value="'+esc(d&&d.prioridade!=null?d.prioridade:'')+'"></div>'
       +'<div class="fg"><label>Entrada da demanda'
         +ajuda('Quando o pedido chegou. É o que permite ver há quanto tempo a demanda está aberta.')
         +'</label><input type="date" id="dm-entrada" value="'+esc(d?d.entrada:'')+'"></div>'
       +'<div class="fg"><label>Entrega estimada</label><input type="date" id="dm-prazo" '
         +'value="'+esc(d?d.prazo:'')+'"></div>'
       +'<div class="fg"><label>Status</label><select id="dm-f-status">'+sel(STATUS,d?d.status:'fila')+'</select></div>'
-      +'<div class="fg"><label>Responsável na parceira</label><input type="text" id="dm-parc" '
-        +'maxlength="80" placeholder="Quem cuida do lado deles" value="'+esc(d?d.parceira:'')+'"></div>'
     +'</div>'
+    +'<div class="fg" style="margin-top:12px"><label>Descritivo'
+      +ajuda('O texto completo como veio da planilha. A demanda acima é o resumo.')
+      +'</label><textarea id="dm-desc" rows="6" placeholder="Texto completo da demanda">'
+      +esc(d?d.descricao:'')+'</textarea></div>'
     +(d?'<div style="margin-top:14px"><div class="fg" style="margin-bottom:6px"><label>Histórico'
         +ajuda('Toda inclusão, edição e exclusão fica registrada com data, hora e usuário.')+'</label></div>'
       +'<div class="hist">'+histHTML(d.historico)+'</div></div>':'')
@@ -752,11 +758,10 @@ async function salvarDemanda(id){
     descricao:($('dm-desc').value||'').trim(),
     solicitante:($('dm-solic').value||'').trim(),
     area:($('dm-area').value||'').trim(),
-    prioridade:$('dm-f-prio').value||'media',
+    prioridade:($('dm-f-prio').value||'').trim(),
     entrada:$('dm-entrada').value||'',
     prazo:$('dm-prazo').value||'',
     status:$('dm-f-status').value||'fila',
-    parceira:($('dm-parc').value||'').trim(),
   };
   if(!dep.titulo){ toast('Diga qual é a demanda.','aviso'); return; }
   if(!dep.solicitante){ toast('Informe quem pediu.','aviso'); return; }
@@ -788,11 +793,11 @@ async function excluirDemanda(id){
 }
 function exportarDemandas(){
   const lista=demandasFiltradas();
-  const cab=['Demanda','Descrição','Quem pediu','Área','Prioridade','Entrada da demanda',
-    'Entrega estimada','Status','Responsável na parceira','Criada em','Criada por',
+  const cab=['Demanda','Prioridade','Entrega estimada','Status','Quem pediu',
+    'Entrada da demanda','Área','Descritivo','Criada em','Criada por',
     'Última alteração','Por'];
-  const linhas=lista.map(d=>[d.titulo||'', d.descricao||'', d.solicitante||'', d.area||'',
-    pInfo(d.prioridade).l, d.entrada||'', d.prazo||'', sInfo(d.status).l, d.parceira||'',
+  const linhas=lista.map(d=>[d.titulo||'', prioTxt(d.prioridade), d.prazo||'',
+    sInfo(d.status).l, d.solicitante||'', d.entrada||'', d.area||'', d.descricao||'',
     dataHora(d.criadoEm), d.criadoPor||'', dataHora(d.atualizadoEm), d.atualizadoPor||'']);
   const csv=[cab].concat(linhas)
     .map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\r\n');
