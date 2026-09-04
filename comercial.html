@@ -223,6 +223,14 @@ table.dm--fixa td:first-child{ white-space:normal; overflow:visible; text-overfl
   white-space:pre-wrap; opacity:0; pointer-events:none; transition:opacity .12s;
   left:-9999px; top:-9999px }
 .balao--on{ opacity:1 }
+/* Quem pediu e Area: lista de sugestoes, mas aceita valor novo */
+.tx-sel{ font-family:inherit; font-size:12px; width:100%; padding:3px 5px;
+  border:1px solid transparent; border-radius:7px; background:transparent;
+  color:var(--text); cursor:pointer; text-overflow:ellipsis }
+.tx-sel:hover{ border-color:var(--border); background:var(--surface) }
+.tx-sel:focus{ outline:none; border-color:var(--brand); background:var(--surface);
+  cursor:text; text-overflow:clip }
+.tx-sel::placeholder{ color:var(--text-muted) }
 /* Prioridade editavel na propria linha: numero livre, vem da planilha */
 .pr-sel{ font-family:inherit; font-size:13px; font-weight:700; text-align:center;
   font-variant-numeric:tabular-nums; width:100%; padding:3px 2px;

@@ -727,6 +727,38 @@ async function mudarPrazo(id, iso){
   }catch(e){ toast('Erro ao mudar a entrega: '+e.message,'erro'); pintarDemandas(); }
 }
 
+// Quem pediu e Área: lista com o que já existe MAIS a opção de digitar um
+// valor novo. É datalist com input, não select: select só deixaria escolher o
+// que já foi usado, e área nova aparece toda hora.
+async function mudarTexto(id, campo, valor){
+  const d=demandas.find(x=>x._id===id);
+  if(!d) return;
+  const novo=String(valor==null?'':valor).trim();
+  if(campo==='solicitante' && !novo){
+    toast('Quem pediu não pode ficar em branco.','aviso');
+    pintarDemandas(); return;
+  }
+  if(String(d[campo]||'')===novo) return;
+  const mud=[{campo, rotulo:CAMPOS_DEM[campo]||campo, de:d[campo]||'—', para:novo||'—'}];
+  try{
+    await window._setDoc(window._doc(COL_DEM,id), Object.assign({}, d, {
+      [campo]:novo, atualizadoEm:agora(), atualizadoPor:quem(),
+      historico:logDem(d.historico,'Edição',mud)
+    }));
+    toast(String(d.titulo||'').slice(0,26)+': '+(CAMPOS_DEM[campo]||campo)+' '+(novo||'em branco')+'.','ok');
+  }catch(e){ toast('Erro ao salvar: '+e.message,'erro'); pintarDemandas(); }
+}
+// Sugestões: o que já existe na base, sem repetir e em ordem.
+function _dmSugestoes(campo){
+  return [...new Set(demandas.map(d=>String(d[campo]||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b));
+}
+function _dmDatalists(){
+  const um=(id,campo)=>'<datalist id="'+id+'">'
+    +_dmSugestoes(campo).map(v=>'<option value="'+esc(v)+'"></option>').join('')+'</datalist>';
+  return um('dl-solic','solicitante')+um('dl-area','area');
+}
+
 // Prioridade trocada na própria linha. É um número livre (vem da coluna T da
 // planilha da parceira), então é campo numérico e não lista: 0, 1, 2, 4, 10 —
 // e em branco quando ela não definiu.
@@ -931,9 +963,17 @@ function pintarDemandas(){
             +'onchange="event.stopPropagation();mudarStatus(\''+d._id+'\',this.value)">'
             +STATUS.map(o=>'<option value="'+o.v+'"'+(d.status===o.v?' selected':'')+'>'
               +o.l+'</option>').join('')+'</select></td>'
-          +'<td>'+esc(d.solicitante||'—')+'</td>'
+          +'<td><input type="text" class="tx-sel" list="dl-solic" maxlength="80" '
+            +'value="'+esc(d.solicitante||'')+'" placeholder="—" '
+            +'title="Quem pediu — escolha da lista ou digite um nome novo" '
+            +'onclick="event.stopPropagation()" '
+            +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'solicitante\',this.value)"></td>'
           +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
-          +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
+          +'<td><input type="text" class="tx-sel" list="dl-area" maxlength="60" '
+            +'value="'+esc(d.area||'')+'" placeholder="—" '
+            +'title="Área — escolha da lista ou digite uma nova" '
+            +'onclick="event.stopPropagation()" '
+            +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'area\',this.value)"></td>'
           +'<td style="text-align:center"><button class="btn-ed" title="Editar esta demanda" '
             +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\')">'
             +'<i class="ti ti-pencil"></i></button></td>'
@@ -952,7 +992,7 @@ function pintarDemandas(){
       +(verEncerradas?'<div class="enc-corpo">'+passadas.map(bloco).join('')+'</div>':'')
     : '';
 
-  el.innerHTML=demais.map(bloco).join('')+encHtml
+  el.innerHTML=_dmDatalists()+demais.map(bloco).join('')+encHtml
     +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:10px">'
     +lista.length+' de '+demandas.length+' demanda(s) em '+ordenadas.length+' sprint(s)</div>';
 }
