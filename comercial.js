@@ -939,7 +939,7 @@ function modalDemanda(id){
       +'<input type="text" id="dm-tit" maxlength="120" placeholder="O que foi pedido" '
       +'value="'+esc(d?d.titulo:'')+'"></div>'
     +'<div class="grid2" style="margin-bottom:12px">'
-      +'<div class="fg"><label>Quem pediu</label><input type="text" id="dm-solic" maxlength="80" '
+      +'<div class="fg"><label>Quem pediu</label><input type="text" id="dm-f-solic" maxlength="80" '
         +'placeholder="Nome de quem solicitou" value="'+esc(d?d.solicitante:'')+'"></div>'
       +'<div class="fg"><label>Área</label><input type="text" id="dm-area" maxlength="60" '
         +'placeholder="Ex.: Comercial, Diretoria" value="'+esc(d?d.area:'')+'"></div>'
@@ -975,7 +975,7 @@ async function salvarDemanda(id){
   const dep={
     titulo:($('dm-tit').value||'').trim(),
     descricao:($('dm-desc').value||'').trim(),
-    solicitante:($('dm-solic').value||'').trim(),
+    solicitante:($('dm-f-solic').value||'').trim(),
     area:($('dm-area').value||'').trim(),
     prioridade:($('dm-f-prio').value||'').trim(),
     entrada:$('dm-entrada').value||'',
