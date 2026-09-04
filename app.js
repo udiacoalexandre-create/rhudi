@@ -6827,6 +6827,9 @@ function renderRV(){
         +'<span><strong>'+rvState.pessoas.length+'</strong> na lista</span>'
         +(sem?'<span><strong style="color:var(--yellow)">'+sem+'</strong> sem percentual'
           +_ajuda('Sem percentual informado o valor fica em zero e a pessoa não entra no arquivo do Caju.')+'</span>':'')
+        +(()=>{ const f=(rvState.pessoas||[]).filter(_rvForaDaPop).length;
+          return f?'<span><strong style="color:var(--red)">'+f+'</strong> demitido/afastado'
+            +_ajuda('Estão na lista porque você os incluiu. Confira se devem receber nesta competência.')+'</span>':''; })()
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
         +RV_FAIXAS.map(f=>'<button class="btn btn-ghost btn-sm" onclick="rvAplicarTodos('+f.p+')">'
@@ -6903,7 +6906,7 @@ function rvRenderPessoas(){
     +'<th style="text-align:center">Remover</th>'
     +'</tr></thead><tbody>'
     +lista.map(p=>'<tr>'
-      +'<td><div style="font-weight:500">'+p.nome+'</div>'
+      +'<td><div style="font-weight:500">'+p.nome+_rvSeloStatus(p)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro}))+'</td>'
       +'<td class="text-sm" style="color:var(--text2)">'+(p.depto||'—')+'</td>'
@@ -6927,13 +6930,15 @@ function rvAbrirIncluir(){
   if(rvState.fechado){ toast('Competência fechada. Abra uma nova para alterar.','warning'); return; }
   document.getElementById('modal-rv-inc')?.remove();
   const jaTem=new Set(rvState.pessoas.map(p=>p.mat));
-  const cands=_rvBasePop().filter(c=>c.mat && !jaTem.has(c.mat))
+  // Base inteira: quem está demitido ou afastado também pode ter atingido meta
+  // no mês. O status aparece no item, e a decisão é do RH.
+  const cands=colaboradoresUnicos().filter(c=>c.mat && !jaTem.has(c.mat))
     .sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   const rows=cands.map(c=>'<div class="incl-row" onclick="rvIncluir(\''+c.mat+'\')" '
     +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;'
     +'border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
     +'data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'">'
-    +'<div><div style="font-weight:600">'+c.nome+'</div>'
+    +'<div><div style="font-weight:600">'+c.nome+_rvSeloStatus(c)+'</div>'
     +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'
     +(c.depto?' · '+c.depto:'')+'</div></div>'
     +'<span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('');
@@ -6958,7 +6963,7 @@ function rvFiltrarIncluir(){
   });
 }
 function rvIncluir(mat){
-  const c=_rvBasePop().find(x=>x.mat===mat); if(!c) return;
+  const c=colaboradoresUnicos().find(x=>x.mat===mat); if(!c) return;
   if(rvState.pessoas.some(p=>p.mat===mat)){ toast('Já está na lista.','info'); return; }
   rvState.pessoas.push(_rvPessoaDe(c,''));
   rvSalvar();
@@ -6968,7 +6973,21 @@ function rvIncluir(mat){
 }
 function _rvPessoaDe(c, percentual){
   return {mat:c.mat||'', nome:c.nome||'', cpf:(c.cpf||'').replace(/\D/g,''),
-    depto:c.depto||'', filtro:c.filtro||'', percentual:(percentual===0||percentual)?percentual:''};
+    depto:c.depto||'', filtro:c.filtro||'', status:c.status||'',
+    percentual:(percentual===0||percentual)?percentual:''};
+}
+// Quem está fora da população que normalmente recebe benefício (demitido, N/A,
+// afastado). Não é motivo para descartar da lista — é motivo para AVISAR.
+function _rvForaDaPop(p){
+  const g=statusGrupo(p&&p.status);
+  return g==='nao_recebe' || g==='so_cesta';
+}
+function _rvSeloStatus(p){
+  if(!_rvForaDaPop(p)) return '';
+  const g=statusGrupo(p.status);
+  return ' <span class="badge badge--'+(g==='nao_recebe'?'danger':'warning')+'" '
+    +'style="font-size:9px" title="Status na base de colaboradores">'
+    +(getStatusInfo(p.status).label||p.status)+'</span>';
 }
 
 // ── Planilha da lista inicial ───────────────────────────────────
@@ -7015,7 +7034,10 @@ function _rvAplicarPlanilha(linhas){
   const acha=(...alvos)=>cab.findIndex(c=>alvos.some(a=>c.includes(a)));
   const iMat=acha('matricula','mat'), iCpf=acha('cpf'), iPct=acha('percentual','percent','atingimento','meta');
 
-  const base=_rvBasePop();
+  // Casa contra a base INTEIRA, não só contra quem é elegível: se o RH colocou
+  // a pessoa na planilha, ela entra na lista e o status aparece na tela. Antes
+  // um demitido era descartado e o aviso dizia 'não encontrado', que é falso.
+  const base=colaboradoresUnicos();
   const porMat={}, porCpf={};
   base.forEach(c=>{
     if(c.mat) porMat[_normMatDigits(c.mat)]=c;
@@ -7058,11 +7080,17 @@ function _rvAplicarPlanilha(linhas){
   const partes=['<strong>'+achados.length+'</strong> colaborador(es) na lista'];
   const comPct=achados.filter(p=>p.percentual!=='').length;
   if(comPct) partes.push(comPct+' já com percentual');
+  const fora=achados.filter(_rvForaDaPop);
+  if(fora.length) partes.push('<strong>'+fora.length+'</strong> com status que normalmente não recebe, '
+    +'incluído(s) para você decidir: '
+    +fora.slice(0,6).map(p=>p.nome+' ('+(getStatusInfo(p.status).label||p.status)+')').join(', ')
+    +(fora.length>6?'…':''));
   if(naoAchados.length) partes.push('<strong>'+naoAchados.length+'</strong> não encontrado(s) na base: '
     +naoAchados.slice(0,8).join(', ')+(naoAchados.length>8?'…':''));
   if(repetidos.length) partes.push(repetidos.length+' repetido(s) na planilha, contados uma vez');
-  _rvAviso('<div class="alert alert-'+(naoAchados.length?'warning':'success')+'" style="font-size:12px">'
-    +'<i class="ti ti-'+(naoAchados.length?'alert-triangle':'circle-check')+'"></i> '
+  const alerta=(naoAchados.length||fora.length)?'warning':'success';
+  _rvAviso('<div class="alert alert-'+alerta+'" style="font-size:12px">'
+    +'<i class="ti ti-'+(alerta==='warning'?'alert-triangle':'circle-check')+'"></i> '
     +partes.join(' · ')+'</div>');
 }
 function _rvAviso(html){
@@ -7087,7 +7115,7 @@ function rvRenderPct(){
     +lista.map(p=>{
       const v=rvValor(p);
       return '<tr>'
-      +'<td><div style="font-weight:500">'+p.nome+'</div>'
+      +'<td><div style="font-weight:500">'+p.nome+_rvSeloStatus(p)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
       +'<td class="text-sm" style="color:var(--text2)">'+(p.depto||'—')+'</td>'
       +'<td style="text-align:center"><select onchange="rvSetPct(\''+p.mat+'\',this.value)"'+trava
@@ -7134,7 +7162,7 @@ function rvRenderFim(){
     +lista.map(p=>{
       const v=rvValor(p);
       return '<tr'+(v>0?'':' style="opacity:.6"')+'>'
-      +'<td><div style="font-weight:500">'+p.nome+'</div>'
+      +'<td><div style="font-weight:500">'+p.nome+_rvSeloStatus(p)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro}))+'</td>'
       +'<td style="text-align:center">'+(p.percentual===''||p.percentual==null?'—':_rvPct(p.percentual))+'</td>'
