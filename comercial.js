@@ -636,6 +636,18 @@ function sprintTitulo(sp){
   return f(sp.ini)+' a '+f(sp.fim);
 }
 function irSprintModo(m){ sprintModo=m; pintarDemandas(); }
+// Sprint encerrada não deve competir por atenção com a que está rodando: fica
+// recolhida atrás de um toque, sem sair da tela.
+let verEncerradas=false;
+function alternarEncerradas(){ verEncerradas=!verEncerradas; pintarDemandas(); }
+// Cada sprint também recolhe sozinha, para a pessoa esconder o que já resolveu
+// sem perder a visão do todo. Guarda quem está FECHADA, então sprint nova
+// nasce aberta.
+let spFechadas=new Set();
+function alternarSprint(chave){
+  if(spFechadas.has(chave)) spFechadas.delete(chave); else spFechadas.add(chave);
+  pintarDemandas();
+}
 
 // Uma tabela por sprint só alinha se as larguras forem declaradas: com
 // table-layout fixo e o mesmo colgroup, a coluna cai no mesmo lugar em todos
@@ -758,8 +770,18 @@ function pintarDemandas(){
   });
   const ordenadas=[...grupos.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
   const hojeISO=new Date().toISOString().slice(0,10);
+  const dISO=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // Onde cada sprint entra na tela
+  const fase=g=>{
+    if(!g.sp) return 'sem';
+    if(dISO(g.sp.fim) < hojeISO) return 'passada';
+    if(dISO(g.sp.ini) > hojeISO) return 'futura';
+    return 'atual';
+  };
+  const passadas=[], demais=[];
+  ordenadas.forEach(e=>{ (fase(e[1])==='passada'?passadas:demais).push(e); });
 
-  el.innerHTML=ordenadas.map(([chave,g])=>{
+  const bloco=([chave,g])=>{
     // Dentro da sprint: prioridade primeiro (menor número na frente, vazio no
     // fim), e entre iguais a entrega mais próxima.
     const itens=g.itens.slice().sort((a,b)=>{
@@ -767,14 +789,28 @@ function pintarDemandas(){
       if(p) return p;
       return String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
     });
-    const vencida=g.sp && g.sp.fim.toISOString().slice(0,10)<hojeISO;
+    const f=fase(g);
     const abertas=itens.filter(d=>d.status!=='entregue').length;
-    return '<div class="sp-bloco">'
-      +'<div class="sp-cab'+(vencida?' sp-cab--venc':'')+(g.sp?'':' sp-cab--sem')+'">'
+    // Quanto falta para a sprint atual fechar — é o que dá noção de urgência.
+    const restam = f==='atual' ? Math.round((g.sp.fim-hoje0())/86400000)+1 : null;
+    const selo = f==='atual'   ? '<span class="sp-selo sp-selo--atual">Sprint atual'
+                                  +(restam!=null?' · '+(restam===1?'último dia':'faltam '+restam+' dias'):'')+'</span>'
+               : f==='futura'  ? '<span class="sp-selo">a seguir</span>'
+               : f==='passada' ? '<span class="sp-selo sp-selo--enc">encerrada</span>'
+               : '<span class="sp-selo sp-selo--sem">sem data na planilha</span>';
+    const fechada=spFechadas.has(chave);
+    return '<div class="sp-bloco'+(f==='atual'?' sp-bloco--atual':'')+'">'
+      +'<div class="sp-cab sp-cab--'+f+'" onclick="alternarSprint(\''+chave+'\')" '
+        +'title="'+(fechada?'Abrir':'Recolher')+' esta sprint">'
+        +'<i class="ti ti-chevron-'+(fechada?'right':'down')+' sp-seta"></i>'
         +'<span class="sp-tit">'+esc(sprintTitulo(g.sp))+'</span>'
-        +'<span class="sp-n">'+itens.length+(abertas!==itens.length?' · '+abertas+' em aberto':'')+'</span>'
+        +selo
+        +'<span style="flex:1"></span>'
+        +'<span class="sp-n">'+abertas+' em aberto'
+          +(abertas!==itens.length?' <span style="opacity:.7">de '+itens.length+'</span>':'')+'</span>'
       +'</div>'
-      +'<div class="tbl-wrap"><table class="dm dm--fixa">'+dmColgroup+dmCabecalho+'<tbody>'
+      +(fechada?''
+      : '<div class="tbl-wrap"><table class="dm dm--fixa">'+dmColgroup+dmCabecalho+'<tbody>'
       +itens.map(d=>{
         const n=diasAte(d.prazo);
         const entregue=d.status==='entregue';
@@ -806,9 +842,22 @@ function pintarDemandas(){
             +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\')">'
             +'<i class="ti ti-pencil"></i></button></td>'
           +'</tr>';
-      }).join('')+'</tbody></table></div></div>';
-  }).join('')
-    +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:8px">'
+      }).join('')+'</tbody></table></div>')
+    +'</div>';
+  };
+
+  const nEnc=passadas.reduce((a,[,g])=>a+g.itens.length,0);
+  const encHtml = passadas.length
+    ? '<button class="enc-tg" onclick="alternarEncerradas()">'
+        +'<i class="ti ti-chevron-'+(verEncerradas?'down':'right')+'"></i> '
+        +passadas.length+' sprint'+(passadas.length>1?'s':'')+' encerrada'+(passadas.length>1?'s':'')
+        +' · '+nEnc+' demanda'+(nEnc>1?'s':'')
+        +'<span class="enc-tg__x">'+(verEncerradas?'esconder':'mostrar')+'</span></button>'
+      +(verEncerradas?'<div class="enc-corpo">'+passadas.map(bloco).join('')+'</div>':'')
+    : '';
+
+  el.innerHTML=demais.map(bloco).join('')+encHtml
+    +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:10px">'
     +lista.length+' de '+demandas.length+' demanda(s) em '+ordenadas.length+' sprint(s)</div>';
 }
 

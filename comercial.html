@@ -180,16 +180,40 @@ table.dm--fixa td:first-child{ white-space:normal; overflow:visible; text-overfl
   padding:2px 8px; border-radius:20px; color:#fff; white-space:nowrap }
 .prazo-venc{ color:var(--cm-alta); font-weight:700 }
 .prazo-perto{ color:var(--cm-media); font-weight:700 }
-/* Blocos de sprint: uma tabela por janela de entrega */
-.sp-bloco{ margin-bottom:18px }
-.sp-cab{ display:flex; align-items:center; gap:10px; padding:7px 12px; margin-bottom:6px;
-  background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--cm-andamento);
-  border-radius:9px }
-.sp-cab--venc{ border-left-color:var(--cm-alta) }
-.sp-cab--sem{ border-left-color:var(--border-strong,#cbd5e1); background:var(--surface-soft,#f8fafc) }
+/* Blocos de sprint: uma tabela por janela de entrega. O que esta rodando agora
+   ganha peso visual; o que ja fechou sai do caminho. */
+.sp-bloco{ margin-bottom:16px }
+.sp-bloco--atual{ margin-bottom:24px }
+.sp-cab{ display:flex; align-items:center; gap:9px; padding:8px 12px; margin-bottom:6px;
+  background:var(--surface); border:1px solid var(--border);
+  border-left:3px solid var(--border-strong,#cbd5e1); border-radius:9px }
+.sp-cab--atual{ border-left-color:var(--brand); border-color:#a7f3d0; background:#f0fdf9;
+  padding:10px 12px }
+.sp-cab--atual .sp-tit{ font-size:15px }
+.sp-cab--futura{ border-left-color:var(--cm-andamento) }
+.sp-cab--passada{ border-left-color:var(--border-strong,#cbd5e1); opacity:.75 }
+.sp-cab--sem{ border-left-style:dashed; background:var(--surface-soft,#f8fafc) }
+.sp-cab{ cursor:pointer }
+.sp-cab:hover{ border-color:var(--brand) }
+.sp-seta{ font-size:14px; color:var(--text-muted); flex-shrink:0 }
+.sp-cab--atual .sp-seta{ color:var(--brand) }
 .sp-tit{ font-size:13px; font-weight:700; color:var(--text) }
 .sp-n{ font-size:11px; font-weight:600; color:var(--text-secondary);
-  background:var(--surface-soft,#f1f3f5); border-radius:20px; padding:1px 9px }
+  background:var(--surface-soft,#f1f3f5); border-radius:20px; padding:2px 9px; white-space:nowrap }
+.sp-selo{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+  color:var(--text-muted); background:var(--surface-soft,#f1f3f5); border-radius:20px; padding:2px 8px;
+  white-space:nowrap }
+.sp-selo--atual{ background:var(--brand); color:#fff }
+.sp-selo--enc{ opacity:.8 }
+.sp-selo--sem{ background:transparent; border:1px dashed var(--border-strong,#cbd5e1) }
+/* Encerradas: uma linha só, e o conteudo abre sob demanda */
+.enc-tg{ display:flex; align-items:center; gap:8px; width:100%; margin:22px 0 8px;
+  padding:9px 12px; background:var(--surface-soft,#f8fafc); border:1px dashed var(--border);
+  border-radius:9px; cursor:pointer; font-family:inherit; font-size:12px; font-weight:600;
+  color:var(--text-secondary) }
+.enc-tg:hover{ border-color:var(--brand); color:var(--brand) }
+.enc-tg__x{ margin-left:auto; font-size:11px; font-weight:600; text-decoration:underline }
+.enc-corpo{ opacity:.8 }
 /* Nome com descritivo: o tracejado avisa que tem texto no hover */
 .tem-desc{ border-bottom:1px dashed var(--border-strong,#cbd5e1); cursor:help }
 .btn-ed{ background:transparent; border:1px solid var(--border); border-radius:7px;
