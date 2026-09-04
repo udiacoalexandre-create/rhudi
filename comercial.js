@@ -30,6 +30,10 @@ let aba = 'paineis';
 let paineis = [], demandas = [];
 let unsubs = [];
 let filtroDem = {q:'', prio:'', status:'', solic:''};
+// Concluídas ficam na tela por padrão e somem só quando a pessoa pede. O total
+// de Entregue nos indicadores conta sempre, então esconder não faz nada
+// desaparecer sem rastro.
+let ocultarEntregues = false;
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -836,11 +840,22 @@ function viewDemandas(){
         +'</select></div>'
       +'<div class="fg"><label>Quem pediu</label><select id="dm-solic" onchange="filtrarDem()">'
         +opt(solicitantes.map(s=>({v:s,l:s})), filtroDem.solic, 'Todos')+'</select></div>'
+      +'<label class="oc-sw" title="Mostrar ou esconder as entregues">'
+        +'<input type="checkbox" id="dm-oc"'+(ocultarEntregues?' checked':'')+' '
+        +'onchange="alternarEntregues()">'
+        +'<span>Ocultar concluídas</span>'
+        +ajuda('Esconde as demandas com status Entregue. O total de Entregue nos '
+              +'indicadores continua contando todas.')
+      +'</label>'
     +'</div>'
     +'<div id="dm-lista"></div>';
 }
 // Clique no total de um status: liga o filtro daquele status e sincroniza o
 // seletor, para a tela não mostrar duas verdades diferentes.
+function alternarEntregues(){
+  ocultarEntregues=!ocultarEntregues;
+  pintarDemandas();
+}
 function filtrarPorStatus(v){
   filtroDem.status=v||'';
   const sel=$('dm-status'); if(sel) sel.value=filtroDem.status;
@@ -854,6 +869,7 @@ function filtrarDem(){
 }
 function demandasFiltradas(){
   return demandas.filter(d=>{
+    if(ocultarEntregues && d.status==='entregue') return false;
     if(filtroDem.prio && String(d.prioridade)!==filtroDem.prio) return false;
     if(filtroDem.status && d.status!==filtroDem.status) return false;
     if(filtroDem.solic && d.solicitante!==filtroDem.solic) return false;

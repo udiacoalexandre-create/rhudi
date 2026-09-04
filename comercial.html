@@ -182,6 +182,11 @@ table.dm--fixa td:first-child{ white-space:normal; overflow:visible; text-overfl
   padding:2px 8px; border-radius:20px; color:#fff; white-space:nowrap }
 .prazo-venc{ color:var(--cm-alta); font-weight:700 }
 .prazo-perto{ color:var(--cm-media); font-weight:700 }
+/* Interruptor de mostrar/ocultar concluidas */
+.oc-sw{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  color:var(--text-secondary); cursor:pointer; padding-bottom:7px; white-space:nowrap }
+.oc-sw:hover{ color:var(--text) }
+.oc-sw input{ width:15px; height:15px; accent-color:var(--brand); cursor:pointer }
 /* Totais por status: retrato do quadro, e cada um filtra ao clicar */
 .st-tot{ display:flex; gap:7px; flex-wrap:wrap; margin:-6px 0 var(--space-5) }
 .st-tot__b{ display:inline-flex; align-items:center; gap:6px; font-family:inherit;
