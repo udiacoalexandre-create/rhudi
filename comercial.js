@@ -637,6 +637,32 @@ function sprintTitulo(sp){
 }
 function irSprintModo(m){ sprintModo=m; pintarDemandas(); }
 
+// Uma tabela por sprint só alinha se as larguras forem declaradas: com
+// table-layout fixo e o mesmo colgroup, a coluna cai no mesmo lugar em todos
+// os blocos.
+const DM_COLS=['auto','92px','150px','156px','150px','104px','128px','64px'];
+const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
+const dmCabecalho='<thead><tr>'
+  +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
+  +'<th>Entrega estimada</th><th>Status</th><th>Quem pediu</th>'
+  +'<th>Entrada</th><th>Área</th><th style="text-align:center">Editar</th>'
+  +'</tr></thead>';
+
+// Status trocado na própria linha, sem abrir a demanda. Grava e registra na
+// auditoria como qualquer edição.
+async function mudarStatus(id, novo){
+  const d=demandas.find(x=>x._id===id);
+  if(!d || d.status===novo) return;
+  const mud=[{campo:'status', rotulo:'status', de:sInfo(d.status).l, para:sInfo(novo).l}];
+  try{
+    await window._setDoc(window._doc(COL_DEM,id), Object.assign({}, d, {
+      status:novo, atualizadoEm:agora(), atualizadoPor:quem(),
+      historico:logDem(d.historico,'Edição',mud)
+    }));
+    toast(esc(d.titulo||'').slice(0,30)+': '+sInfo(novo).l+'.','ok');
+  }catch(e){ toast('Erro ao mudar o status: '+e.message,'erro'); pintarDemandas(); }
+}
+
 function viewDemandas(){
   const solicitantes=[...new Set(demandas.map(d=>d.solicitante||'').filter(Boolean))].sort();
   const prios=[...new Set(demandas.map(d=>d.prioridade).filter(v=>v!==''&&v!=null))]
@@ -748,11 +774,7 @@ function pintarDemandas(){
         +'<span class="sp-tit">'+esc(sprintTitulo(g.sp))+'</span>'
         +'<span class="sp-n">'+itens.length+(abertas!==itens.length?' · '+abertas+' em aberto':'')+'</span>'
       +'</div>'
-      +'<div class="tbl-wrap"><table class="dm"><thead><tr>'
-        +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
-        +'<th>Entrega estimada</th><th>Status</th><th>Quem pediu</th>'
-        +'<th>Entrada</th><th>Área</th><th style="text-align:center">Editar</th>'
-      +'</tr></thead><tbody>'
+      +'<div class="tbl-wrap"><table class="dm dm--fixa">'+dmColgroup+dmCabecalho+'<tbody>'
       +itens.map(d=>{
         const n=diasAte(d.prazo);
         const entregue=d.status==='entregue';
@@ -772,7 +794,11 @@ function pintarDemandas(){
           +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
             +prioTxt(d.prioridade)+'</td>'
           +'<td class="'+cls+'">'+quando+'</td>'
-          +'<td>'+pill(sInfo(d.status).l, sInfo(d.status).cor)+'</td>'
+          +'<td><select class="st-sel" style="background:'+sInfo(d.status).cor+'" '
+            +'title="Mudar o status" onclick="event.stopPropagation()" '
+            +'onchange="event.stopPropagation();mudarStatus(\''+d._id+'\',this.value)">'
+            +STATUS.map(o=>'<option value="'+o.v+'"'+(d.status===o.v?' selected':'')+'>'
+              +o.l+'</option>').join('')+'</select></td>'
           +'<td>'+esc(d.solicitante||'—')+'</td>'
           +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
           +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
