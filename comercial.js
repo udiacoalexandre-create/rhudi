@@ -120,16 +120,17 @@ function linkPublico(token){
 // Mesma regra do RH: toda inclusão, edição e exclusão fica registrada com data,
 // hora, usuário e o que mudou. É o que permite responder "quem mexeu nisso".
 const CAMPOS_DEM = {titulo:'demanda', descricao:'descrição', solicitante:'quem pediu',
-  area:'área', prioridade:'prioridade', status:'status', prazo:'prazo de entrega',
-  parceira:'responsável na parceira', obs:'observação'};
+  area:'área', prioridade:'prioridade', status:'status', entrada:'entrada da demanda',
+  prazo:'entrega estimada', parceira:'responsável na parceira', obs:'observação'};
 
 function diffDem(antes, depois){
   const mud=[];
   Object.keys(CAMPOS_DEM).forEach(k=>{
     const de=antes?antes[k]:undefined, para=depois[k];
     if((de||'')===(para||'')) return;
+    const dt = k==='prazo'||k==='entrada';
     mud.push({campo:k, rotulo:CAMPOS_DEM[k],
-      de:k==='prazo'?soData(de):(de||'—'), para:k==='prazo'?soData(para):(para||'—')});
+      de:dt?(de?soData(de):'—'):(de||'—'), para:dt?(para?soData(para):'—'):(para||'—')});
   });
   return mud;
 }
@@ -677,7 +678,7 @@ function pintarDemandas(){
   }
   el.innerHTML='<div class="tbl-wrap"><table class="dm"><thead><tr>'
     +'<th>Demanda</th><th>Quem pediu</th><th>Área</th><th>Prioridade</th>'
-    +'<th>Prazo de entrega</th><th>Status</th><th>Parceira</th>'
+    +'<th>Entrada</th><th>Entrega estimada</th><th>Status</th><th>Parceira</th>'
     +'</tr></thead><tbody>'
     +lista.map(d=>{
       const n=diasAte(d.prazo);
@@ -694,6 +695,7 @@ function pintarDemandas(){
         +'<td>'+esc(d.solicitante||'—')+'</td>'
         +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
         +'<td>'+pill(pInfo(d.prioridade).l, pInfo(d.prioridade).cor)+'</td>'
+        +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
         +'<td class="'+cls+'">'+quando+'</td>'
         +'<td>'+pill(sInfo(d.status).l, sInfo(d.status).cor)+'</td>'
         +'<td style="color:var(--text-secondary)">'+esc(d.parceira||'—')+'</td>'
@@ -722,7 +724,10 @@ function modalDemanda(id){
       +'<div class="fg"><label>Área</label><input type="text" id="dm-area" maxlength="60" '
         +'placeholder="Ex.: Comercial, Diretoria" value="'+esc(d?d.area:'')+'"></div>'
       +'<div class="fg"><label>Prioridade</label><select id="dm-f-prio">'+sel(PRIOS,d?d.prioridade:'media')+'</select></div>'
-      +'<div class="fg"><label>Prazo de entrega</label><input type="date" id="dm-prazo" '
+      +'<div class="fg"><label>Entrada da demanda'
+        +ajuda('Quando o pedido chegou. É o que permite ver há quanto tempo a demanda está aberta.')
+        +'</label><input type="date" id="dm-entrada" value="'+esc(d?d.entrada:'')+'"></div>'
+      +'<div class="fg"><label>Entrega estimada</label><input type="date" id="dm-prazo" '
         +'value="'+esc(d?d.prazo:'')+'"></div>'
       +'<div class="fg"><label>Status</label><select id="dm-f-status">'+sel(STATUS,d?d.status:'fila')+'</select></div>'
       +'<div class="fg"><label>Responsável na parceira</label><input type="text" id="dm-parc" '
@@ -748,6 +753,7 @@ async function salvarDemanda(id){
     solicitante:($('dm-solic').value||'').trim(),
     area:($('dm-area').value||'').trim(),
     prioridade:$('dm-f-prio').value||'media',
+    entrada:$('dm-entrada').value||'',
     prazo:$('dm-prazo').value||'',
     status:$('dm-f-status').value||'fila',
     parceira:($('dm-parc').value||'').trim(),
@@ -782,10 +788,11 @@ async function excluirDemanda(id){
 }
 function exportarDemandas(){
   const lista=demandasFiltradas();
-  const cab=['Demanda','Descrição','Quem pediu','Área','Prioridade','Prazo de entrega',
-    'Status','Responsável na parceira','Criada em','Criada por','Última alteração','Por'];
+  const cab=['Demanda','Descrição','Quem pediu','Área','Prioridade','Entrada da demanda',
+    'Entrega estimada','Status','Responsável na parceira','Criada em','Criada por',
+    'Última alteração','Por'];
   const linhas=lista.map(d=>[d.titulo||'', d.descricao||'', d.solicitante||'', d.area||'',
-    pInfo(d.prioridade).l, d.prazo||'', sInfo(d.status).l, d.parceira||'',
+    pInfo(d.prioridade).l, d.entrada||'', d.prazo||'', sInfo(d.status).l, d.parceira||'',
     dataHora(d.criadoEm), d.criadoPor||'', dataHora(d.atualizadoEm), d.atualizadoPor||'']);
   const csv=[cab].concat(linhas)
     .map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\r\n');
