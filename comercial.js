@@ -727,6 +727,32 @@ async function mudarPrazo(id, iso){
   }catch(e){ toast('Erro ao mudar a entrega: '+e.message,'erro'); pintarDemandas(); }
 }
 
+// Prioridade trocada na própria linha. É um número livre (vem da coluna T da
+// planilha da parceira), então é campo numérico e não lista: 0, 1, 2, 4, 10 —
+// e em branco quando ela não definiu.
+async function mudarPrio(id, valor){
+  const d=demandas.find(x=>x._id===id);
+  if(!d) return;
+  const txt=String(valor==null?'':valor).trim().replace(',','.');
+  let novo;
+  if(txt===''){ novo=''; }
+  else {
+    const n=Number(txt);
+    if(!isFinite(n) || n<0){ toast('Prioridade tem de ser um número.','aviso'); pintarDemandas(); return; }
+    novo=n;
+  }
+  if(String(d.prioridade==null?'':d.prioridade)===String(novo)){ return; }
+  const mud=[{campo:'prioridade', rotulo:'prioridade',
+    de:prioTxt(d.prioridade), para:prioTxt(novo)}];
+  try{
+    await window._setDoc(window._doc(COL_DEM,id), Object.assign({}, d, {
+      prioridade:novo, atualizadoEm:agora(), atualizadoPor:quem(),
+      historico:logDem(d.historico,'Edição',mud)
+    }));
+    toast(String(d.titulo||'').slice(0,28)+': prioridade '+prioTxt(novo)+'.','ok');
+  }catch(e){ toast('Erro ao mudar a prioridade: '+e.message,'erro'); pintarDemandas(); }
+}
+
 async function mudarStatus(id, novo){
   const d=demandas.find(x=>x._id===id);
   if(!d || d.status===novo) return;
@@ -887,8 +913,11 @@ function pintarDemandas(){
           +'<td style="font-weight:600;min-width:240px">'
             +'<span'+(temDesc?' class="tem-desc" data-desc="'+d._id+'"':'')+'>'
             +esc(d.titulo||'(sem título)')+'</span></td>'
-          +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
-            +prioTxt(d.prioridade)+'</td>'
+          +'<td><input type="number" class="pr-sel" step="1" min="0" '
+            +'value="'+(d.prioridade===''||d.prioridade==null?'':esc(d.prioridade))+'" '
+            +'placeholder="—" title="Mudar a prioridade" '
+            +'onclick="event.stopPropagation()" '
+            +'onchange="event.stopPropagation();mudarPrio(\''+d._id+'\',this.value)"></td>'
           +'<td><input type="date" class="dt-sel'+(cls?' '+cls:'')+'" '
             +'value="'+esc(d.prazo||'')+'" title="Mudar a entrega estimada" '
             +'onclick="event.stopPropagation()" '

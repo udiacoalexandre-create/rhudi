@@ -223,6 +223,19 @@ table.dm--fixa td:first-child{ white-space:normal; overflow:visible; text-overfl
   white-space:pre-wrap; opacity:0; pointer-events:none; transition:opacity .12s;
   left:-9999px; top:-9999px }
 .balao--on{ opacity:1 }
+/* Prioridade editavel na propria linha: numero livre, vem da planilha */
+.pr-sel{ font-family:inherit; font-size:13px; font-weight:700; text-align:center;
+  font-variant-numeric:tabular-nums; width:100%; padding:3px 2px;
+  border:1px solid transparent; border-radius:7px; background:transparent;
+  color:var(--text); cursor:pointer; -moz-appearance:textfield }
+.pr-sel::-webkit-outer-spin-button,.pr-sel::-webkit-inner-spin-button{
+  -webkit-appearance:none; margin:0 }
+.pr-sel:hover{ border-color:var(--border); background:var(--surface) }
+.pr-sel:focus{ outline:none; border-color:var(--brand); background:var(--surface);
+  -moz-appearance:number-input }
+.pr-sel:focus::-webkit-outer-spin-button,.pr-sel:focus::-webkit-inner-spin-button{
+  -webkit-appearance:auto }
+.pr-sel::placeholder{ color:var(--text-muted); font-weight:400 }
 /* Entrega estimada editavel na propria linha */
 .dt-sel{ font-family:inherit; font-size:11.5px; padding:3px 5px; width:100%;
   border:1px solid transparent; border-radius:7px; background:transparent;
