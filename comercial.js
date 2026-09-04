@@ -663,7 +663,9 @@ function alternarSprint(chave){
 // Uma tabela por sprint só alinha se as larguras forem declaradas: com
 // table-layout fixo e o mesmo colgroup, a coluna cai no mesmo lugar em todos
 // os blocos.
-const DM_COLS=['auto','92px','150px','156px','150px','104px','128px','64px'];
+// Demanda em 'auto' fica com toda a folga; as fixas foram apertadas ao mínimo
+// legível para sobrar largura para o título caber em UMA linha.
+const DM_COLS=['auto','58px','122px','128px','116px','82px','100px','40px'];
 const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
 const dmCabecalho='<thead><tr>'
   +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
@@ -683,7 +685,12 @@ function balao(){
 }
 function mostrarDesc(ev, id){
   const d=demandas.find(x=>x._id===id);
-  const txt=d && String(d.descricao||'').trim();
+  if(!d) return;
+  // O título fica em UMA linha na tabela e pode ser cortado, então o balão
+  // traz o título inteiro e, embaixo, o descritivo quando houver.
+  const tit=String(d.titulo||'').trim();
+  const desc=String(d.descricao||'').trim();
+  const txt=[tit, desc].filter(Boolean).join(String.fromCharCode(10,10));
   if(!txt) return;
   const b=balao();
   b.textContent=txt;                       // textContent: nada de HTML da planilha
@@ -897,9 +904,11 @@ function pintarDemandas(){
     const dentro=(a,b)=>abertas.filter(d=>{ const n=diasAte(d.prazo);
       return n!==null && n>=a && n<=b; }).length;
     const passou=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n<0; }).length;
-    const num=(n,l,h,cor)=>'<div><div class="stat__n"'+(cor?' style="color:'+cor+'"':'')+'>'+n+'</div>'
-      +'<div class="stat__l">'+l+(h?ajuda(h):'')+'</div></div>';
-    st.innerHTML='<div class="stats">'
+    // número e rótulo na mesma linha: ocupa metade da altura do formato antigo
+    const num=(n,l,h,cor)=>'<div class="stat1">'
+      +'<span class="stat1__n"'+(cor?' style="color:'+cor+'"':'')+'>'+n+'</span>'
+      +'<span class="stat1__l">'+l+(h?ajuda(h):'')+'</span></div>';
+    st.innerHTML='<div class="stats stats--slim">'
       +num(demandas.length,'tickets no total',
         'Todas as demandas cadastradas, entregues incluídas. Em aberto hoje: '+abertas.length+'.')
       +num(dentro(0,7),'estimadas em 7 dias','Entrega estimada de hoje até 7 dias, sem contar as entregues.')
@@ -908,9 +917,8 @@ function pintarDemandas(){
         'A entrega estimada pela parceira já passou e a demanda não está como Entregue. '
         +'É estimativa, não prazo contratado: se ela reestimou, atualize a data na linha.',
         'var(--cm-alta)'):'')
-      +'</div>'
       // Retrato por status, clicável: vira filtro sem precisar do seletor.
-      +'<div class="st-tot">'
+      +'<span class="stats__sep"></span>'
       +STATUS.map(o=>{
         const n=demandas.filter(d=>sInfo(d.status).v===o.v).length;
         const on=filtroDem.status===o.v;
@@ -986,10 +994,13 @@ function pintarDemandas(){
         const cls = entregue||n===null ? '' : (n<0?'prazo-venc':(n<=7?'prazo-perto':''));
         // Descritivo no hover do nome: o texto completo sem ocupar coluna.
         const temDesc=!!String(d.descricao||'').trim();
+        // Título longo cabe em uma linha só cortado; o balão é o jeito de ler
+        // o resto. 55 caracteres é o ponto em que a coluna começa a cortar.
+        const mostraBalao=temDesc || String(d.titulo||'').length>55;
         return '<tr class="clicavel"'+(entregue?' style="opacity:.62"':'')
           +' onclick="modalDemanda(\''+d._id+'\')">'
-          +'<td style="font-weight:600;min-width:240px">'
-            +'<span'+(temDesc?' class="tem-desc" data-desc="'+d._id+'"':'')+'>'
+          +'<td class="dm-tit">'
+            +'<span'+(mostraBalao?' class="tem-desc" data-desc="'+d._id+'"':'')+'>'
             +esc(d.titulo||'(sem título)')+'</span></td>'
           +'<td><input type="number" class="pr-sel" step="1" min="0" '
             +'value="'+(d.prioridade===''||d.prioridade==null?'':esc(d.prioridade))+'" '
