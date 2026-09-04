@@ -685,7 +685,10 @@ function alternarSprint(chave){
 // Cada coluna fixa tem de caber o PROPRIO cabecalho, senao o titulo dela
 // invade a coluna vizinha. Por isso 'Prioridade' virou 'Prio.' e 'Entrega
 // estimada' virou 'Entrega': o nome inteiro fica no title, ao passar o mouse.
-const DM_COLS=['auto','46px','66px','128px','116px','62px','100px','40px'];
+// 'Quem pediu' e 'Área' precisam caber o conteudo, nao só o cabeçalho: são
+// nome de pessoa e nome de setor, e cortados não servem para nada. A folga
+// sai da Demanda, que tem o balão para o texto inteiro.
+const DM_COLS=['auto','46px','66px','128px','176px','62px','148px','40px'];
 const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
 const dmCabecalho='<thead><tr>'
   +'<th>Demanda</th>'
@@ -1003,7 +1006,7 @@ function viewDemandas(){
         +'<i class="ti ti-file-spreadsheet"></i> CSV</button>'
         +'<button class="btn btn--primary btn--sm" onclick="modalDemanda(null)">'
         +'<i class="ti ti-plus"></i> Nova demanda</button></div></div>'
-    +'<div class="stats" id="dm-stats"></div>'
+    +'<div id="dm-stats"></div>'
     +'<div class="filtros">'
       +'<div class="fg" style="flex:1;min-width:180px"><label>Buscar</label>'
         +'<input type="text" id="dm-q" placeholder="Demanda, quem pediu, área..." value="'+esc(filtroDem.q)+'" oninput="filtrarDem()"></div>'
