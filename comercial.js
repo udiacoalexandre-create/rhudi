@@ -589,7 +589,13 @@ async function abrirPainel(id){
 // nível traduzido: 0, 1, 2, 4, 10... e em muitas linhas vem vazio. Guardar o
 // número evita inventar uma escala que a planilha não declara.
 function prioTxt(v){ return (v===''||v==null) ? '—' : String(v); }
-function prioNum(v){ const n=Number(v); return isFinite(n)?n:9999; }   // vazio no fim
+// Vazio vai para o FIM. Sem o teste explícito, Number('') daria 0 e a
+// prioridade em branco passaria na frente da mais urgente.
+function prioNum(v){
+  if(v===''||v==null) return 9999;
+  const n=Number(v);
+  return isFinite(n)?n:9999;
+}
 const STATUS=[
   {v:'fila',      l:'Na fila',      cor:'var(--cm-fila)'},
   {v:'andamento', l:'Em andamento', cor:'var(--cm-andamento)'},
@@ -599,6 +605,37 @@ const STATUS=[
 
 const sInfo=v=>STATUS.find(s=>s.v===v)||{v,l:v||'—',cor:'var(--cm-fila)'};
 const pill=(txt,cor)=>'<span class="pill" style="background:'+cor+'">'+esc(txt)+'</span>';
+
+// ── Sprints ───────────────────────────────────────────────────────────────
+// A planilha não traz sprint, só a entrega estimada. Então a sprint é uma
+// JANELA sobre essa data, e a cadência é escolhida na tela — assim não sou eu
+// chutando se a Udiaço trabalha em semana, quinzena ou mês.
+let sprintModo='quinzenal';
+const SPRINT_DIAS={semanal:7, quinzenal:14};
+const SEG_REF=new Date(2026,0,5);        // 05/01/2026, uma segunda-feira
+function _dl(iso){ const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m?new Date(+m[1],+m[2]-1,+m[3]):null; }
+function sprintDe(iso){
+  const d=_dl(iso); if(!d) return null;
+  if(sprintModo==='mensal'){
+    const ini=new Date(d.getFullYear(),d.getMonth(),1);
+    const fim=new Date(d.getFullYear(),d.getMonth()+1,0);
+    return {ini,fim,chave:ini.getFullYear()+'-'+String(ini.getMonth()+1).padStart(2,'0')};
+  }
+  const n=SPRINT_DIAS[sprintModo]||14;
+  const bloco=Math.floor(Math.round((d-SEG_REF)/86400000)/n);
+  const ini=new Date(SEG_REF); ini.setDate(SEG_REF.getDate()+bloco*n);
+  const fim=new Date(ini);     fim.setDate(ini.getDate()+n-1);
+  return {ini,fim,chave:ini.getFullYear()+'-'+String(ini.getMonth()+1).padStart(2,'0')+'-'+String(ini.getDate()).padStart(2,'0')};
+}
+const MES3=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+function sprintTitulo(sp){
+  if(!sp) return 'Sem prazo definido';
+  if(sprintModo==='mensal') return MES3[sp.ini.getMonth()]+'/'+sp.ini.getFullYear();
+  const f=d=>String(d.getDate()).padStart(2,'0')+' '+MES3[d.getMonth()];
+  return f(sp.ini)+' a '+f(sp.fim);
+}
+function irSprintModo(m){ sprintModo=m; pintarDemandas(); }
 
 function viewDemandas(){
   const solicitantes=[...new Set(demandas.map(d=>d.solicitante||'').filter(Boolean))].sort();
@@ -623,6 +660,12 @@ function viewDemandas(){
         +opt(prios, filtroDem.prio, 'Todas')+'</select></div>'
       +'<div class="fg"><label>Status</label><select id="dm-status" onchange="filtrarDem()">'
         +opt(STATUS, filtroDem.status, 'Todos')+'</select></div>'
+      +'<div class="fg"><label>Sprint'
+        +ajuda('A planilha não traz sprint, só a entrega estimada. Escolha a cadência que a Udiaço usa e as demandas se agrupam nessas janelas.')
+        +'</label><select onchange="irSprintModo(this.value)">'
+        +['semanal','quinzenal','mensal'].map(m=>'<option value="'+m+'"'
+          +(sprintModo===m?' selected':'')+'>'+m.charAt(0).toUpperCase()+m.slice(1)+'</option>').join('')
+        +'</select></div>'
       +'<div class="fg"><label>Quem pediu</label><select id="dm-solic" onchange="filtrarDem()">'
         +opt(solicitantes.map(s=>({v:s,l:s})), filtroDem.solic, 'Todos')+'</select></div>'
     +'</div>'
@@ -678,35 +721,69 @@ function pintarDemandas(){
         :'Nenhuma demanda ainda. Clique em <strong>Nova demanda</strong>.')+'</p></div>';
     return;
   }
-  el.innerHTML='<div class="tbl-wrap"><table class="dm"><thead><tr>'
-    +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
-    +'<th>Entrega estimada</th><th>Status</th><th>Quem pediu</th>'
-    +'<th>Entrada</th><th>Área</th><th>Descritivo</th>'
-    +'</tr></thead><tbody>'
-    +lista.map(d=>{
-      const n=diasAte(d.prazo);
-      const entregue=d.status==='entregue';
-      const cls = entregue||n===null ? '' : (n<0?'prazo-venc':(n<=7?'prazo-perto':''));
-      const quando = d.prazo
-        ? soData(d.prazo)+(entregue||n===null?'':' <span style="font-size:10.5px">('
-            +(n<0?(-n)+'d atrasado':(n===0?'hoje':n+'d'))+')</span>')
-        : '—';
-      const desc=String(d.descricao||'');
-      return '<tr class="clicavel" onclick="modalDemanda(\''+d._id+'\')">'
-        +'<td style="font-weight:600;min-width:220px">'+esc(d.titulo||'(sem título)')+'</td>'
-        +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
-          +prioTxt(d.prioridade)+'</td>'
-        +'<td class="'+cls+'">'+quando+'</td>'
-        +'<td>'+pill(sInfo(d.status).l, sInfo(d.status).cor)+'</td>'
-        +'<td>'+esc(d.solicitante||'—')+'</td>'
-        +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
-        +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
-        +'<td style="color:var(--text-secondary);font-size:11px;max-width:260px">'
-          +(desc?esc(desc.slice(0,80))+(desc.length>80?'…':''):'—')+'</td>'
-        +'</tr>';
-    }).join('')+'</tbody></table></div>'
-    +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px">'
-    +lista.length+' de '+demandas.length+' demanda(s)</div>';
+  // Agrupa pela sprint da entrega estimada. Quem não tem prazo vai para um
+  // grupo no fim — são a maioria hoje, e esconder isso seria pior.
+  const grupos=new Map();
+  lista.forEach(d=>{
+    const sp=sprintDe(d.prazo);
+    const k=sp?sp.chave:'zz-sem-prazo';
+    if(!grupos.has(k)) grupos.set(k,{sp, itens:[]});
+    grupos.get(k).itens.push(d);
+  });
+  const ordenadas=[...grupos.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
+  const hojeISO=new Date().toISOString().slice(0,10);
+
+  el.innerHTML=ordenadas.map(([chave,g])=>{
+    // Dentro da sprint: prioridade primeiro (menor número na frente, vazio no
+    // fim), e entre iguais a entrega mais próxima.
+    const itens=g.itens.slice().sort((a,b)=>{
+      const p=prioNum(a.prioridade)-prioNum(b.prioridade);
+      if(p) return p;
+      return String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+    });
+    const vencida=g.sp && g.sp.fim.toISOString().slice(0,10)<hojeISO;
+    const abertas=itens.filter(d=>d.status!=='entregue').length;
+    return '<div class="sp-bloco">'
+      +'<div class="sp-cab'+(vencida?' sp-cab--venc':'')+(g.sp?'':' sp-cab--sem')+'">'
+        +'<span class="sp-tit">'+esc(sprintTitulo(g.sp))+'</span>'
+        +'<span class="sp-n">'+itens.length+(abertas!==itens.length?' · '+abertas+' em aberto':'')+'</span>'
+      +'</div>'
+      +'<div class="tbl-wrap"><table class="dm"><thead><tr>'
+        +'<th>Demanda</th><th style="text-align:center">Prioridade</th>'
+        +'<th>Entrega estimada</th><th>Status</th><th>Quem pediu</th>'
+        +'<th>Entrada</th><th>Área</th><th style="text-align:center">Editar</th>'
+      +'</tr></thead><tbody>'
+      +itens.map(d=>{
+        const n=diasAte(d.prazo);
+        const entregue=d.status==='entregue';
+        const cls = entregue||n===null ? '' : (n<0?'prazo-venc':(n<=7?'prazo-perto':''));
+        const quando = d.prazo
+          ? soData(d.prazo)+(entregue||n===null?'':' <span style="font-size:10.5px">('
+              +(n<0?(-n)+'d atrasado':(n===0?'hoje':n+'d'))+')</span>')
+          : '—';
+        // Descritivo no hover do nome: o texto completo sem ocupar coluna.
+        const desc=String(d.descricao||'').trim();
+        const tip=desc?esc(desc).replace(/\n/g,'&#10;'):'';
+        return '<tr class="clicavel"'+(entregue?' style="opacity:.62"':'')
+          +' onclick="modalDemanda(\''+d._id+'\')">'
+          +'<td style="font-weight:600;min-width:240px">'
+            +'<span'+(tip?' title="'+tip+'" class="tem-desc"':'')+'>'
+            +esc(d.titulo||'(sem título)')+'</span></td>'
+          +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
+            +prioTxt(d.prioridade)+'</td>'
+          +'<td class="'+cls+'">'+quando+'</td>'
+          +'<td>'+pill(sInfo(d.status).l, sInfo(d.status).cor)+'</td>'
+          +'<td>'+esc(d.solicitante||'—')+'</td>'
+          +'<td style="color:var(--text-secondary);white-space:nowrap">'+(d.entrada?soData(d.entrada):'—')+'</td>'
+          +'<td style="color:var(--text-secondary)">'+esc(d.area||'—')+'</td>'
+          +'<td style="text-align:center"><button class="btn-ed" title="Editar esta demanda" '
+            +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\')">'
+            +'<i class="ti ti-pencil"></i></button></td>'
+          +'</tr>';
+      }).join('')+'</tbody></table></div></div>';
+  }).join('')
+    +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:8px">'
+    +lista.length+' de '+demandas.length+' demanda(s) em '+ordenadas.length+' sprint(s)</div>';
 }
 
 function modalDemanda(id){

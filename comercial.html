@@ -169,6 +169,21 @@ table.dm tr.clicavel:hover td{ background:var(--surface-soft,#f8fafc) }
   padding:2px 8px; border-radius:20px; color:#fff; white-space:nowrap }
 .prazo-venc{ color:var(--cm-alta); font-weight:700 }
 .prazo-perto{ color:var(--cm-media); font-weight:700 }
+/* Blocos de sprint: uma tabela por janela de entrega */
+.sp-bloco{ margin-bottom:18px }
+.sp-cab{ display:flex; align-items:center; gap:10px; padding:7px 12px; margin-bottom:6px;
+  background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--cm-andamento);
+  border-radius:9px }
+.sp-cab--venc{ border-left-color:var(--cm-alta) }
+.sp-cab--sem{ border-left-color:var(--border-strong,#cbd5e1); background:var(--surface-soft,#f8fafc) }
+.sp-tit{ font-size:13px; font-weight:700; color:var(--text) }
+.sp-n{ font-size:11px; font-weight:600; color:var(--text-secondary);
+  background:var(--surface-soft,#f1f3f5); border-radius:20px; padding:1px 9px }
+/* Nome com descritivo: o tracejado avisa que tem texto no hover */
+.tem-desc{ border-bottom:1px dashed var(--border-strong,#cbd5e1); cursor:help }
+.btn-ed{ background:transparent; border:1px solid var(--border); border-radius:7px;
+  color:var(--text-secondary); cursor:pointer; font-size:13px; padding:3px 7px; line-height:1 }
+.btn-ed:hover{ border-color:var(--brand); color:var(--brand); background:#ecfdf5 }
 
 /* ---------- MODAL com rodapé travado ---------- */
 .mod{ position:fixed; inset:0; z-index:300; background:rgba(15,23,42,.55);
