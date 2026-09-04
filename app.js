@@ -7944,10 +7944,33 @@ function _apuDiag(texto, titulo){
   return '<div class="card" style="margin-top:10px"><div class="card-title" style="color:var(--red)">'+(titulo||'Diagn\u00f3stico da leitura')+'</div>'
     +'<div class="text-xs text-muted" style="margin-bottom:6px">'+texto.length.toLocaleString('pt-BR')+' caracteres extra\u00eddos. Formatos encontrados no texto:</div>'
     +linhas
+    +_apuAmostraCodigos(texto)
     +'<div class="text-xs text-muted" style="margin:10px 0 4px">Primeiros 1.200 caracteres extra\u00eddos:</div>'
     +'<pre style="font-size:10px;background:#F9FAFB;padding:10px;border-radius:6px;overflow:auto;max-height:220px;white-space:pre-wrap">'+amostra+'</pre>'
     +'<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="_apuCopiarDiag(this)"><i class="ti ti-copy"></i> Copiar diagn\u00f3stico</button>'
     +'</div>';
+}
+// O diagnóstico dizia QUANTOS códigos existem, não COMO eles aparecem. Sem
+// ver o trecho em volta, não há como saber por que o par código+tempo não
+// foi extraído — se falta o tempo, se ele vem em outro formato ou se tem um
+// número (quantidade) no meio.
+function _apuAmostraCodigos(texto){
+  const codigos=Object.keys(APURACAO_MAP);
+  const linhas=codigos.map(cod=>{
+    const i=texto.search(new RegExp('\\b'+cod+'\\b'));
+    if(i<0) return '';
+    const ini=Math.max(0,i-12);
+    const trecho=texto.substring(ini, i+90).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    // o mesmo par que o import procura, para dizer se casaria ou não
+    const casa=new RegExp('\\b'+cod+'\\b[^0-9]{0,50}?(\\d{3}:\\d{2})').test(texto.substring(i,i+200));
+    return '<div style="padding:3px 0;border-bottom:1px dashed var(--border)">'
+      +'<div style="font-size:11px"><strong>'+cod+'</strong> ('+APURACAO_MAP[cod]+') '
+      +(casa?'<span style="color:var(--green)">tempo lido</span>'
+            :'<span style="color:var(--red)">tempo NÃO lido</span>')+'</div>'
+      +'<pre style="font-size:10px;margin:2px 0 0;white-space:pre-wrap">'+trecho+'</pre></div>';
+  }).filter(Boolean).join('');
+  if(!linhas) return '<div class="text-xs text-muted">Nenhum dos códigos 014/015/020/064/101/103/107/108 aparece no texto.</div>';
+  return '<div class="text-xs text-muted" style="margin:10px 0 4px">Como cada código aparece no arquivo:</div>'+linhas;
 }
 function _apuCopiarDiag(btn){
   const card=btn.closest('.card'); if(!card) return;
@@ -8032,6 +8055,22 @@ function parsearApuracaoTexto(texto, prevEl){
     return;
   }
 
+  // Ler a matrícula e o nome não é ler o PONTO. Se nenhum tempo saiu do
+  // arquivo, a apuração inteira fica zerada — e isso não pode passar como
+  // sucesso, senão o prêmio é calculado como se ninguém tivesse ocorrência.
+  const CAMPOS_APU = Object.values(APURACAO_MAP);
+  const _minDe = a => CAMPOS_APU.reduce((t,k)=>t+(fnum(a[k])||0), 0);
+  const comApont = apontamentos.filter(a=>_minDe(a)>0).length;
+  if(comApont === 0){
+    prevEl.innerHTML='<div class="alert alert-warning" style="font-size:14px"><i class="ti ti-alert-triangle"></i> '
+      +'Li <strong>'+apontamentos.length+'</strong> colaboradores, mas <strong>nenhum tempo de ponto</strong> '
+      +'foi extraído — atraso, falta, atestado e abono sairiam todos zerados. '
+      +'A apuração <strong>não</strong> foi importada, para o prêmio não ser calculado como se não houvesse ocorrência.</div>'
+      +_apuDiag(texto,'Diagnóstico da leitura — nomes lidos, tempos não');
+    toast('Nenhum tempo de ponto foi lido do arquivo.','error');
+    return;
+  }
+
   premioState.apontamentos = apontamentos;
   montarTabelaPremio();
 
@@ -8061,7 +8100,8 @@ function parsearApuracaoTexto(texto, prevEl){
       + semBase.slice(0,8).map(a=>a.mat).join(', ') + (semBase.length>8?', …':'') + '</code></div>'
     : '';
   const resumo='<div class="alert alert-success" style="font-size:14px"><i class="ti ti-circle-check"></i> Apuração importada — <strong>'+apontamentos.length+'</strong> colaboradores lidos, '
-    +'<strong>'+casados+'</strong> cruzados com a base.'+avisoSemBase+'</div>';
+    +'<strong>'+casados+'</strong> cruzados com a base, <strong>'+comApont+'</strong> com ocorrência de ponto.'
+    +avisoSemBase+'</div>';
   premioState.resumoImport=resumo;
   prevEl.innerHTML=resumo;
   // O avançar mora no rodapé travado: redesenha para ele aparecer.
