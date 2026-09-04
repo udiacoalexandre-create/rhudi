@@ -662,6 +662,50 @@ const dmCabecalho='<thead><tr>'
 
 // Status trocado na própria linha, sem abrir a demanda. Grava e registra na
 // auditoria como qualquer edição.
+// O title nativo não serve aqui: atrasa para aparecer, trunca texto longo (um
+// descritivo tem 1076 caracteres) e ignora quebra de linha. Balão próprio.
+function balao(){
+  let b=$('balao');
+  if(!b){ b=document.createElement('div'); b.id='balao'; b.className='balao';
+    document.body.appendChild(b); }
+  return b;
+}
+function mostrarDesc(ev, id){
+  const d=demandas.find(x=>x._id===id);
+  const txt=d && String(d.descricao||'').trim();
+  if(!txt) return;
+  const b=balao();
+  b.textContent=txt;                       // textContent: nada de HTML da planilha
+  b.classList.add('balao--on');
+  moverDesc(ev);
+}
+function moverDesc(ev){
+  const b=$('balao'); if(!b || !b.classList.contains('balao--on')) return;
+  const m=14;
+  const l=Math.min(ev.clientX+m, window.innerWidth-b.offsetWidth-m);
+  const acima=ev.clientY+b.offsetHeight+m > window.innerHeight;
+  b.style.left=Math.max(m,l)+'px';
+  b.style.top=(acima ? Math.max(m, ev.clientY-b.offsetHeight-m) : ev.clientY+m)+'px';
+}
+function esconderDesc(){
+  const b=$('balao'); if(b) b.classList.remove('balao--on');
+}
+
+// Entrega estimada trocada na própria linha, como o status.
+async function mudarPrazo(id, iso){
+  const d=demandas.find(x=>x._id===id);
+  if(!d || (d.prazo||'')===(iso||'')) return;
+  const mud=[{campo:'prazo', rotulo:'entrega estimada',
+    de:d.prazo?soData(d.prazo):'—', para:iso?soData(iso):'—'}];
+  try{
+    await window._setDoc(window._doc(COL_DEM,id), Object.assign({}, d, {
+      prazo:iso||'', atualizadoEm:agora(), atualizadoPor:quem(),
+      historico:logDem(d.historico,'Edição',mud)
+    }));
+    toast(String(d.titulo||'').slice(0,28)+': entrega '+(iso?soData(iso):'em branco')+'.','ok');
+  }catch(e){ toast('Erro ao mudar a entrega: '+e.message,'erro'); pintarDemandas(); }
+}
+
 async function mudarStatus(id, novo){
   const d=demandas.find(x=>x._id===id);
   if(!d || d.status===novo) return;
@@ -815,21 +859,26 @@ function pintarDemandas(){
         const n=diasAte(d.prazo);
         const entregue=d.status==='entregue';
         const cls = entregue||n===null ? '' : (n<0?'prazo-venc':(n<=7?'prazo-perto':''));
-        const quando = d.prazo
-          ? soData(d.prazo)+(entregue||n===null?'':' <span style="font-size:10.5px">('
-              +(n<0?(-n)+'d atrasado':(n===0?'hoje':n+'d'))+')</span>')
-          : '—';
         // Descritivo no hover do nome: o texto completo sem ocupar coluna.
-        const desc=String(d.descricao||'').trim();
-        const tip=desc?esc(desc).replace(/\n/g,'&#10;'):'';
+        const temDesc=!!String(d.descricao||'').trim();
         return '<tr class="clicavel"'+(entregue?' style="opacity:.62"':'')
           +' onclick="modalDemanda(\''+d._id+'\')">'
           +'<td style="font-weight:600;min-width:240px">'
-            +'<span'+(tip?' title="'+tip+'" class="tem-desc"':'')+'>'
+            +'<span'+(temDesc?' class="tem-desc"'
+              +' onmouseenter="mostrarDesc(event,\''+d._id+'\')"'
+              +' onmousemove="moverDesc(event)"'
+              +' onmouseleave="esconderDesc()"':'')+'>'
             +esc(d.titulo||'(sem título)')+'</span></td>'
           +'<td style="text-align:center;font-weight:700;font-variant-numeric:tabular-nums">'
             +prioTxt(d.prioridade)+'</td>'
-          +'<td class="'+cls+'">'+quando+'</td>'
+          +'<td><input type="date" class="dt-sel'+(cls?' '+cls:'')+'" '
+            +'value="'+esc(d.prazo||'')+'" title="Mudar a entrega estimada" '
+            +'onclick="event.stopPropagation()" '
+            +'onchange="event.stopPropagation();mudarPrazo(\''+d._id+'\',this.value)">'
+            +(d.prazo&&!entregue&&n!==null
+              ? '<div class="dt-obs '+(cls||'')+'">'
+                +(n<0?(-n)+'d atrasado':(n===0?'entrega hoje':'faltam '+n+'d'))+'</div>'
+              : '')+'</td>'
           +'<td><select class="st-sel" style="background:'+sInfo(d.status).cor+'" '
             +'title="Mudar o status" onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarStatus(\''+d._id+'\',this.value)">'
