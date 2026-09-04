@@ -872,9 +872,10 @@ function pintarDemandas(){
     const semana=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n>=0 && n<=7; });
     st.innerHTML=[
       ['<span style="color:var(--text)">'+abertas.length+'</span>','em aberto',''],
-      ['<span style="color:var(--cm-alta)">'+atrasadas.length+'</span>','com prazo vencido',
-        'Prazo de entrega já passou e a demanda não está como Entregue.'],
-      ['<span style="color:var(--cm-media)">'+semana.length+'</span>','vencem em 7 dias',''],
+      ['<span style="color:var(--cm-alta)">'+atrasadas.length+'</span>','estimativa passou',
+        'A entrega estimada pela parceira já passou e a demanda não está como Entregue. '
+        +'É estimativa, não prazo contratado: se ela reestimou, atualize a data na linha.'],
+      ['<span style="color:var(--cm-media)">'+semana.length+'</span>','estimadas em 7 dias',''],
       ['<span style="color:var(--text)">'+abertas.filter(d=>!d.prazo).length+'</span>',
         'sem prazo definido',
         'Sem entrega estimada na planilha: não entram na conta de vencidas nem de 7 dias.'],
@@ -962,7 +963,7 @@ function pintarDemandas(){
             +'onchange="event.stopPropagation();mudarPrazo(\''+d._id+'\',this.value)">'
             +(d.prazo&&!entregue&&n!==null
               ? '<div class="dt-obs '+(cls||'')+'">'
-                +(n<0?(-n)+'d atrasado':(n===0?'entrega hoje':'faltam '+n+'d'))+'</div>'
+                +(n<0?(-n)+'d além da estimativa':(n===0?'estimada para hoje':'faltam '+n+'d'))+'</div>'
               : '')+'</td>'
           +'<td><select class="st-sel" style="background:'+sInfo(d.status).cor+'" '
             +'title="Mudar o status" onclick="event.stopPropagation()" '
