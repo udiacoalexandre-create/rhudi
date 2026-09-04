@@ -67,6 +67,7 @@ a{ color:var(--accent); text-decoration:none }
   --cm-alta:      #b91c1c;
   --cm-media:     #b45309;
   --cm-baixa:     #0f766e;
+  --cm-briefing:  #4f46e5;   /* Briefing — demanda ainda sendo definida */
   --cm-fila:      #64748b;   /* Não iniciado */
   --cm-andamento: #2563eb;   /* Em desenvolvimento */
   --cm-pausada:   #7c3aed;   /* Pausado Udiaço */
@@ -181,6 +182,17 @@ table.dm--fixa td:first-child{ white-space:normal; overflow:visible; text-overfl
   padding:2px 8px; border-radius:20px; color:#fff; white-space:nowrap }
 .prazo-venc{ color:var(--cm-alta); font-weight:700 }
 .prazo-perto{ color:var(--cm-media); font-weight:700 }
+/* Totais por status: retrato do quadro, e cada um filtra ao clicar */
+.st-tot{ display:flex; gap:7px; flex-wrap:wrap; margin:-6px 0 var(--space-5) }
+.st-tot__b{ display:inline-flex; align-items:center; gap:6px; font-family:inherit;
+  font-size:11.5px; font-weight:600; color:var(--text-secondary); cursor:pointer;
+  background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--c);
+  border-radius:8px; padding:5px 10px }
+.st-tot__b:hover{ border-color:var(--c); color:var(--text) }
+.st-tot__b--on{ background:var(--c); border-color:var(--c); color:#fff }
+.st-tot__b--on .st-tot__n{ color:#fff }
+.st-tot__n{ font-size:14px; font-weight:700; color:var(--text);
+  font-variant-numeric:tabular-nums }
 /* Blocos de sprint: uma tabela por janela de entrega. O que esta rodando agora
    ganha peso visual; o que ja fechou sai do caminho. */
 .sp-bloco{ margin-bottom:16px }

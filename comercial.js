@@ -597,6 +597,7 @@ function prioNum(v){
   return isFinite(n)?n:9999;
 }
 const STATUS=[
+  {v:'briefing',       l:'Briefing',          cor:'var(--cm-briefing)'},
   {v:'nao_iniciado',   l:'Não iniciado',      cor:'var(--cm-fila)'},
   {v:'desenvolvimento',l:'Em desenvolvimento',cor:'var(--cm-andamento)'},
   {v:'pausado',        l:'Pausado Udiaço',    cor:'var(--cm-pausada)'},
@@ -838,6 +839,13 @@ function viewDemandas(){
     +'</div>'
     +'<div id="dm-lista"></div>';
 }
+// Clique no total de um status: liga o filtro daquele status e sincroniza o
+// seletor, para a tela não mostrar duas verdades diferentes.
+function filtrarPorStatus(v){
+  filtroDem.status=v||'';
+  const sel=$('dm-status'); if(sel) sel.value=filtroDem.status;
+  pintarDemandas();
+}
 function filtrarDem(){
   filtroDem={q:($('dm-q')?.value||'').toLowerCase().trim(),
     prio:$('dm-prio')?.value||'', status:$('dm-status')?.value||'',
@@ -865,22 +873,37 @@ function demandasFiltradas(){
 }
 function pintarDemandas(){
   const lista=demandasFiltradas();
+  // Indicadores: o volume e o que está chegando, e depois o retrato por
+  // status. Contam a base INTEIRA, não o filtro — é panorama, não recorte.
   const st=$('dm-stats');
   if(st){
     const abertas=demandas.filter(d=>d.status!=='entregue');
-    const atrasadas=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n<0; });
-    const semana=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n>=0 && n<=7; });
-    st.innerHTML=[
-      ['<span style="color:var(--text)">'+abertas.length+'</span>','em aberto',''],
-      ['<span style="color:var(--cm-alta)">'+atrasadas.length+'</span>','estimativa passou',
+    const dentro=(a,b)=>abertas.filter(d=>{ const n=diasAte(d.prazo);
+      return n!==null && n>=a && n<=b; }).length;
+    const passou=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n<0; }).length;
+    const num=(n,l,h,cor)=>'<div><div class="stat__n"'+(cor?' style="color:'+cor+'"':'')+'>'+n+'</div>'
+      +'<div class="stat__l">'+l+(h?ajuda(h):'')+'</div></div>';
+    st.innerHTML='<div class="stats">'
+      +num(demandas.length,'tickets no total',
+        'Todas as demandas cadastradas, entregues incluídas. Em aberto hoje: '+abertas.length+'.')
+      +num(dentro(0,7),'estimadas em 7 dias','Entrega estimada de hoje até 7 dias, sem contar as entregues.')
+      +num(dentro(0,15),'estimadas em 15 dias','Mesma conta em 15 dias — inclui as de 7.')
+      +(passou?num(passou,'estimativa passou',
         'A entrega estimada pela parceira já passou e a demanda não está como Entregue. '
-        +'É estimativa, não prazo contratado: se ela reestimou, atualize a data na linha.'],
-      ['<span style="color:var(--cm-media)">'+semana.length+'</span>','estimadas em 7 dias',''],
-      ['<span style="color:var(--text)">'+abertas.filter(d=>!d.prazo).length+'</span>',
-        'sem prazo definido',
-        'Sem entrega estimada na planilha: não entram na conta de vencidas nem de 7 dias.'],
-    ].map(([n,l,h])=>'<div><div class="stat__n">'+n+'</div>'
-      +'<div class="stat__l">'+l+(h?ajuda(h):'')+'</div></div>').join('');
+        +'É estimativa, não prazo contratado: se ela reestimou, atualize a data na linha.',
+        'var(--cm-alta)'):'')
+      +'</div>'
+      // Retrato por status, clicável: vira filtro sem precisar do seletor.
+      +'<div class="st-tot">'
+      +STATUS.map(o=>{
+        const n=demandas.filter(d=>sInfo(d.status).v===o.v).length;
+        const on=filtroDem.status===o.v;
+        return '<button class="st-tot__b'+(on?' st-tot__b--on':'')+'" '
+          +'style="--c:'+o.cor+'" onclick="filtrarPorStatus(\''+(on?'':o.v)+'\')" '
+          +'title="'+(on?'Tirar o filtro':'Ver só '+o.l)+'">'
+          +'<span class="st-tot__n">'+n+'</span> '+esc(o.l)+'</button>';
+      }).join('')
+      +'</div>';
   }
   const el=$('dm-lista'); if(!el) return;
   if(!lista.length){
