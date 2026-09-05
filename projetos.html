@@ -835,6 +835,9 @@ a{ color:var(--accent); text-decoration:none }
 <div id="toast"></div>
 <input type="file" id="foto-input" accept="image/*" style="display:none">
 
-<script src="projetos.js"></script>
+<!-- Cache-busting: o Hosting serve o .js com max-age=3600, então sem isto o
+     navegador continua rodando a versão de até uma hora atrás mesmo depois do
+     deploy. É o mesmo que o RH (index.html) e o Comercial já fazem. -->
+<script>document.write('<scr'+'ipt src="projetos.js?v='+Date.now()+'"></scr'+'ipt>');</script>
 </body>
 </html>
