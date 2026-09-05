@@ -38,6 +38,7 @@ pela tela.
 | `painel.html`              | Painel de BI aberto por link público (só leitura).     |
 | `demandas.html`            | Quadro de demandas por link público (só leitura).      |
 | `udiaco-design-system.css` | Estilos comuns às quatro telas.                        |
+| `lab-diff.js`              | Comparação de versões, usada pela tela e pelo terminal. |
 | `firestore.rules`          | Quem lê e escreve o quê. **O CI não publica isto.**    |
 | `ferramentas/`             | Scripts de terminal. Fora do deploy do Hosting.        |
 
@@ -50,8 +51,19 @@ subir pelo navegador, mas enquanto se desenvolve o caminho é o terminal:
 node ferramentas/lab.js publicar site/index.html --titulo "Meu site"
 node ferramentas/lab.js publicar site/index.html --watch   # republica ao salvar
 node ferramentas/lab.js listar
+node ferramentas/lab.js versoes lab_index          # histórico
+node ferramentas/lab.js diff lab_index 3 5         # o que mudou entre duas
+node ferramentas/lab.js restaurar lab_index 3
 node ferramentas/lab.js excluir lab_index
 ```
+
+Cada publicação guarda uma **versão** (as 20 mais recentes). HTML idêntico
+não cria versão nova — com `--watch`, salvar sem alterar nada acontece o
+tempo todo. Restaurar não apaga: republica a versão antiga como a mais nova.
+Na aba, o botão de histórico abre a comparação lado a lado.
+
+A conta do diff (`lab-diff.js`) é **uma só**, usada pelo navegador e pelo
+terminal: duas cópias acabariam discordando do mesmo par de versões.
 
 O id vem do nome do arquivo, então publicar de novo **atualiza** o mesmo teste
 em vez de criar um segundo. CSS, JS e imagens locais entram embutidos no HTML
@@ -61,6 +73,20 @@ resolveria; link de CDN continua sendo buscado normalmente.
 A ferramenta usa a chave da conta de serviço, procurada em
 `~/udiaco-dados-privados` (ou no caminho da variável `UDIACO_SA`). A chave não
 está no repositório e a pasta `ferramentas/` não vai para o Hosting.
+
+## Regras do Firestore
+
+O deploy do GitHub Actions **não** publica regras — falta
+`roles/firebaserules.admin` na conta de serviço do CI. Alterar o
+`firestore.rules` e dar push não muda nada no banco:
+
+```bash
+node ferramentas/regras.js         # publica e confere o que ficou no ar
+node ferramentas/regras.js --ver   # só mostra o que está valendo agora
+```
+
+Depois de publicar, o script relê o release do servidor e compara byte a byte
+com o arquivo local, e lista quais coleções estão abertas sem login.
 
 ## Testes
 

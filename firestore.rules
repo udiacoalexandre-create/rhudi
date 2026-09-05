@@ -115,8 +115,11 @@ service cloud.firestore {
     function ehDonoLab() {
       return isSignedIn() && email() == 'alexandre.magalhaes@udiaco.com.br';
     }
-    match /pe_lab/{id}       { allow read, write: if ehDonoLab(); }
-    match /pe_lab_dados/{id} { allow read, write: if ehDonoLab(); }
+    // pe_lab_versoes guarda o histórico: cada publicação vira uma versão, e é
+    // o que permite comparar o que mudou e voltar atrás.
+    match /pe_lab/{id}         { allow read, write: if ehDonoLab(); }
+    match /pe_lab_dados/{id}   { allow read, write: if ehDonoLab(); }
+    match /pe_lab_versoes/{id} { allow read, write: if ehDonoLab(); }
 
     // Configuração da plataforma (hoje: integração com o Google Drive).
     // Todo mundo lê — o app precisa do Client ID para pedir o token —, mas só

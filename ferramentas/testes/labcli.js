@@ -130,15 +130,17 @@ try{
   t('manteve o titulo dado antes', reg2.titulo==='Teste automatico', reg2.titulo);
   t('manteve a data de criacao', reg2.criadoEm===reg.criadoEm);
   t('mudou a data de atualizacao', reg2.atualizadoEm!==reg.atualizadoEm);
-  t('nada de pedaco pendurado do arquivo maior', reg2.chunks===1, String(reg2.chunks));
+  t('a versao nova tem 1 pedaco', reg2.chunks===1, String(reg2.chunks));
+  t('e subiu de versao', reg2.versao===2, String(reg2.versao));
+  t('a versao anterior continua guardada', !!(await CLI.lerVersao(ID,1)));
 
   // le como o navegador leria
-  const volta=await lerHTML(ID, reg2.chunks);
+  const volta=await lerHTML(ID, reg2.versao, reg2.chunks);
   t('o HTML volta exatamente como foi publicado', volta==='<h1>versao 2</h1>', volta);
 
   await CLI.excluir(ID);
   t('excluiu o registro', (await CLI.lerRegistro(ID))===null);
-  t('excluiu o pedaco tambem', (await pedacoExiste(ID+'__0'))===false);
+  t('excluiu o pedaco tambem', (await pedacoExiste(ID+'__v'+reg2.versao+'__0'))===false);
 }catch(e){
   t('ciclo real no Firestore', false, e.message);
   try{ await CLI.excluir(ID); }catch(_){}
@@ -150,7 +152,7 @@ process.exit(fail?1:0);
 })();
 
 // le os pedacos pelo mesmo caminho do navegador (get por id)
-async function lerHTML(id, n){
+async function lerHTML(id, v, n){
   const https=require('https'), crypto=require('crypto');
   const sa=JSON.parse(fs.readFileSync(CLI.SA,'utf8'));
   const b64=o=>Buffer.from(typeof o==='string'?o:JSON.stringify(o)).toString('base64url');
@@ -172,7 +174,7 @@ async function lerHTML(id, n){
     +'/databases/(default)/documents/';
   let b='';
   for(let i=0;i<n;i++){
-    const d=await req('GET', B+'pe_lab_dados/'+id+'__'+i, null, tk);
+    const d=await req('GET', B+'pe_lab_dados/'+id+'__v'+v+'__'+i, null, tk);
     b += d.j.fields.p.stringValue;
   }
   global._tk = { tk, B, req };

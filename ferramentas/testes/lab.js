@@ -61,7 +61,10 @@ const window={ _firebaseReady:false,_db:{},_auth:{},
   addEventListener(){},removeEventListener(){},
   matchMedia:()=>({matches:false,addEventListener(){}}),
   location:{href:'',search:'',origin:'https://x',pathname:'/projetos.html'},
-  navigator:{userAgent:'node'}, crypto:{getRandomValues:a=>a} };
+  navigator:{userAgent:'node'},
+  // labHash usa crypto.subtle: o do node serve, e assim a impressao do
+  // conteudo e a de verdade, nao um substituto que sempre concorda.
+  crypto:Object.assign({getRandomValues:a=>a}, {subtle:require('crypto').webcrypto.subtle}) };
 window.window=window;
 const sandbox={ window,document,
   localStorage:{_d:{},getItem(k){return this._d[k]??null},setItem(k,v){this._d[k]=String(v)},removeItem(){}},
@@ -77,6 +80,7 @@ const sandbox={ window,document,
   Blob:function(p,o){ this.partes=p; this.type=o&&o.type; },
   URL:{createObjectURL:()=>'blob:x',revokeObjectURL(){}},
   File:function(){},FileReader:function(){},
+  crypto:require('crypto').webcrypto,
   Intl,Date,Math,JSON,Object,Array,String,Number,Boolean,RegExp,Error,Promise,Set,Map,
   isNaN,parseInt,parseFloat,Uint8Array,
   structuredClone:o=>JSON.parse(JSON.stringify(o)) };
@@ -84,7 +88,9 @@ const nomes=Object.keys(sandbox);
 const API=['ehDonoLab','viewLab','labModal','labSalvar','labAbrir','labFechar','labExcluir','labAlternarCli',
   'labBaixar','labLerHTML','labComprimir','labDescomprimir','labPicar','labTamanho',
   'labQuando','labApagarPedacos','renderNav','render','COL_LAB','COL_LABDAD',
-  'DONO_LAB','LAB_CHUNK','LAB_LIMITE_MB'];
+  'DONO_LAB','LAB_CHUNK','LAB_LIMITE_MB','COL_LABVER','LAB_MAX_VER',
+  'labHash','labIdVersao','labGravarVersao','labCarregarVersoes','labPodarVersoes',
+  'labVersoes','labEscolher','labComparar','labRestaurar','labFecharVersoes'];
 const exporta='return {'+API.map(n=>n+':(typeof '+n+'!=="undefined"?'+n+':undefined)').join(',')
   +',setUsuario:v=>{usuario=v},setLabs:v=>{labs=v},getLabs:()=>labs'
   +',setAba:v=>{aba=v},getAba:()=>aba,setProjetos:v=>{projetos=v},setTarefas:v=>{tarefas=v}};';
@@ -158,9 +164,16 @@ t('guardou o dono', reg.dono===ALE.email);
 t('marcou quando criou e quando atualizou', !!reg.criadoEm && !!reg.atualizadoEm);
 t('gravou o conteudo em pe_lab_dados', Object.keys(DB['pe_lab_dados']||{}).length===1,
   JSON.stringify(Object.keys(DB['pe_lab_dados']||{})));
-t('o pedaco leva o dono junto', DB['pe_lab_dados'][ids[0]+'__0'].dono===ALE.email);
-t('o id do pedaco e id__n', !!DB['pe_lab_dados'][ids[0]+'__0']);
+t('o pedaco fica sob a VERSAO, nao solto', !!DB['pe_lab_dados'][ids[0]+'__v1__0'],
+  JSON.stringify(Object.keys(DB['pe_lab_dados'])));
+t('o pedaco leva o dono junto', DB['pe_lab_dados'][ids[0]+'__v1__0'].dono===ALE.email);
 t('registrou quantos pedacos', reg.chunks===1, String(reg.chunks));
+t('nasce na v1', reg.versao===1, String(reg.versao));
+t('guardou a impressao do conteudo', typeof reg.hash==='string' && reg.hash.length>=16);
+t('criou o documento da versao', !!DB['pe_lab_versoes'][ids[0]+'__v1'],
+  JSON.stringify(Object.keys(DB['pe_lab_versoes']||{})));
+t('a versao sabe de quem e', DB['pe_lab_versoes'][ids[0]+'__v1'].labId===ids[0]);
+t('e de onde veio', DB['pe_lab_versoes'][ids[0]+'__v1'].origem==='navegador');
 t('fechou o modal', NODES['modal'].classList.contains('modal--on')===false);
 t('avisou', /no ar/i.test(NODES['toast'].textContent), NODES['toast'].textContent.replace(/<[^>]*>/g,' '));
 
@@ -197,12 +210,8 @@ t('e diz o tamanho e o limite',
   /MB/.test(NODES['toast'].textContent) && /limite/i.test(NODES['toast'].textContent),
   NODES['toast'].textContent.replace(/<[^>]*>/g,' '));
 
-console.log('\n== 6) TROCAR O ARQUIVO ==');
+console.log('\n== 6) PUBLICAR DE NOVO GUARDA A VERSAO ANTERIOR ==');
 APP.setLabs([salvo]);
-// arquivo novo MENOR, que antes deixava pedaco velho pendurado
-DB['pe_lab_dados'][ids[0]+'__1']={p:'lixo antigo'};
-DB['pe_lab'][ids[0]].chunks=2;
-APP.setLabs([Object.assign({}, salvo, {chunks:2})]);
 NODES['lab-tit'].value='Protótipo v2';
 NODES['lab-nota'].value='';
 NODES['lab-file'].files=[{name:'proto2.html',size:9,text:()=>Promise.resolve('<p>v2</p>')}];
@@ -212,13 +221,55 @@ t('nao criou registro novo', Object.keys(DB['pe_lab']).length===antes5,
   JSON.stringify(Object.keys(DB['pe_lab'])));
 t('trocou o titulo', DB['pe_lab'][ids[0]].titulo==='Protótipo v2');
 t('trocou o arquivo', DB['pe_lab'][ids[0]].arquivo==='proto2.html');
-t('apagou os pedacos antigos ANTES de gravar',
-  APAGADOS.includes('pe_lab_dados/'+ids[0]+'__1'), APAGADOS.join(','));
-t('nao sobrou pedaco pendurado', !DB['pe_lab_dados'][ids[0]+'__1'],
+t('subiu para a v2', DB['pe_lab'][ids[0]].versao===2, String(DB['pe_lab'][ids[0]].versao));
+t('NAO apagou o conteudo da v1', !!DB['pe_lab_dados'][ids[0]+'__v1__0'],
   JSON.stringify(Object.keys(DB['pe_lab_dados'])));
-t('agora tem 1 pedaco so', DB['pe_lab'][ids[0]].chunks===1);
-const v2=await APP.labLerHTML(Object.assign({_id:ids[0]}, DB['pe_lab'][ids[0]]));
-t('le a versao nova, nao a antiga', v2==='<p>v2</p>', v2);
+t('nem o documento da v1', !!DB['pe_lab_versoes'][ids[0]+'__v1']);
+t('gravou o conteudo da v2 em separado', !!DB['pe_lab_dados'][ids[0]+'__v2__0']);
+t('nao apagou nada neste caminho', APAGADOS.length===0, APAGADOS.join(','));
+const atual=Object.assign({_id:ids[0]}, DB['pe_lab'][ids[0]]);
+APP.setLabs([atual]);
+t('ler sem versao traz a atual', (await APP.labLerHTML(atual))==='<p>v2</p>');
+t('e a v1 continua legivel', (await APP.labLerHTML(atual,1))===HTML_TESTE,
+  await APP.labLerHTML(atual,1));
+t('pedir uma versao que nao existe da erro claro',
+  await (async()=>{ try{ await APP.labLerHTML(atual,9); return false; }
+    catch(e){ return /versão 9 não está no banco/.test(e.message); } })());
+
+console.log('\n== 6b) CONTEUDO IGUAL NAO VIRA VERSAO NOVA ==');
+// com --watch, salvar sem alterar nada acontece o tempo todo
+NODES['lab-tit'].value='Protótipo v2';
+NODES['lab-file'].files=[{name:'proto2.html',size:9,text:()=>Promise.resolve('<p>v2</p>')}];
+await APP.labSalvar(ids[0]);
+t('continua na v2', DB['pe_lab'][ids[0]].versao===2, String(DB['pe_lab'][ids[0]].versao));
+t('nao criou o documento da v3', !DB['pe_lab_versoes'][ids[0]+'__v3']);
+t('e avisa que nada mudou', /idêntico/i.test(NODES['toast'].textContent),
+  NODES['toast'].textContent);
+
+console.log('\n== 6c) O HISTORICO E A COMPARACAO ==');
+APP.setLabs([Object.assign({_id:ids[0]}, DB['pe_lab'][ids[0]])]);
+const hist=await APP.labCarregarVersoes(ids[0]);
+t('lista as duas, da mais nova para a mais velha',
+  hist.map(v=>v.versao).join(',')==='2,1', hist.map(v=>v.versao).join(','));
+const D=require('/Users/acmags/rhudi/lab-diff.js');
+const r6=D.resumo(HTML_TESTE,'<p>v2</p>');
+t('a comparacao acusa a troca', r6.entrou===1 && r6.saiu===1, JSON.stringify(r6));
+
+console.log('\n== 6d) RESTAURAR NAO APAGA NADA ==');
+APAGADOS.length=0;
+await APP.labVersoes(ids[0]);
+await APP.labRestaurar(1);
+t('a restaurada entra como v3', DB['pe_lab'][ids[0]].versao===3,
+  String(DB['pe_lab'][ids[0]].versao));
+t('com o conteudo da v1',
+  (await APP.labLerHTML(Object.assign({_id:ids[0]}, DB['pe_lab'][ids[0]])))===HTML_TESTE);
+t('a v1 continua guardada', !!DB['pe_lab_versoes'][ids[0]+'__v1']);
+t('a v2 tambem', !!DB['pe_lab_versoes'][ids[0]+'__v2']);
+t('nada foi apagado', APAGADOS.length===0, APAGADOS.join(','));
+t('a versao registra que veio de restauracao',
+  /restaurada da v1/.test(DB['pe_lab_versoes'][ids[0]+'__v3'].origem||''),
+  DB['pe_lab_versoes'][ids[0]+'__v3'].origem);
+APP.labFecharVersoes();
 
 console.log('\n== 7) ABRIR ISOLADO ==');
 APP.setLabs([Object.assign({_id:ids[0]}, DB['pe_lab'][ids[0]])]);
@@ -235,16 +286,26 @@ t('a barra tem o botao de voltar', /labFechar\(\)/.test(visor.innerHTML));
 APP.labFechar();
 t('fecha e some da tela', !NODES['lab-visor']);
 
-console.log('\n== 8) EXCLUIR ==');
+console.log('\n== 8) EXCLUIR LEVA O HISTORICO JUNTO ==');
 APAGADOS.length=0;
 APP.setLabs([Object.assign({_id:ids[0]}, DB['pe_lab'][ids[0]])]);
 await APP.labExcluir(ids[0]);
-t('apagou o pedaco', APAGADOS.includes('pe_lab_dados/'+ids[0]+'__0'), APAGADOS.join(','));
+t('apagou o conteudo das tres versoes',
+  [1,2,3].every(v=>APAGADOS.includes('pe_lab_dados/'+ids[0]+'__v'+v+'__0')),
+  APAGADOS.join(','));
+t('apagou os documentos das tres versoes',
+  [1,2,3].every(v=>APAGADOS.includes('pe_lab_versoes/'+ids[0]+'__v'+v)));
 t('apagou o registro', APAGADOS.includes('pe_lab/'+ids[0]));
-t('o pedaco vai ANTES do registro (senao sobra lixo sem dono)',
-  APAGADOS.indexOf('pe_lab_dados/'+ids[0]+'__0') < APAGADOS.indexOf('pe_lab/'+ids[0]),
+t('o registro sai POR ULTIMO (senao sobra historico sem dono)',
+  APAGADOS.indexOf('pe_lab/'+ids[0])===APAGADOS.length-1,
   APAGADOS.join(' -> '));
 t('nao sobrou nada em pe_lab', !DB['pe_lab'][ids[0]]);
+t('nem em pe_lab_versoes',
+  !Object.keys(DB['pe_lab_versoes']||{}).some(k=>k.startsWith(ids[0])),
+  JSON.stringify(Object.keys(DB['pe_lab_versoes']||{})));
+t('nem em pe_lab_dados',
+  !Object.keys(DB['pe_lab_dados']||{}).some(k=>k.startsWith(ids[0])),
+  JSON.stringify(Object.keys(DB['pe_lab_dados']||{})));
 
 console.log('\n== 9) A TELA ==');
 APP.setUsuario(ALE);

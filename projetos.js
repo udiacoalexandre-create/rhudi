@@ -48,6 +48,8 @@ const COL_CONF  = 'pe_config';
 // manda é a regra do Firestore; esconder a aba é só cortesia.
 const COL_LAB    = 'pe_lab';
 const COL_LABDAD = 'pe_lab_dados';
+const COL_LABVER = 'pe_lab_versoes';
+const LAB_MAX_VER = 20;          // histórico guardado por teste
 const DONO_LAB   = 'alexandre.magalhaes@udiaco.com.br';
 const LAB_CHUNK  = 600 * 1024;   // um documento do Firestore para em 1 MB
 const LAB_LIMITE_MB = 20;
@@ -3224,7 +3226,9 @@ function viewLab(){
       (l.nota ? '<div class="lab-card__d">' + esc(l.nota) + '</div>' : '') +
       '<div class="lab-card__m">' + esc(l.arquivo || '—') + ' · ' + labTamanho(l.bytes) +
         (l.gzip ? ' · comprimido' : '') + '</div>' +
-      '<div class="lab-card__m">Atualizado em ' + labQuando(l.atualizadoEm) +
+      '<div class="lab-card__m">' +
+        (l.versao ? '<b>v' + l.versao + '</b> · ' : '') +
+        'Atualizado em ' + labQuando(l.atualizadoEm) +
         // Saber a origem importa: o que vem do terminal é reescrito a cada
         // publicação, e editar por aqui seria perdido no próximo deploy.
         (l.origem === 'claude-code'
@@ -3237,6 +3241,11 @@ function viewLab(){
           'onclick="labModal(\'' + l._id + '\')"><i class="ti ti-edit"></i></button>' +
         '<button class="btn" title="Baixar o HTML de volta" ' +
           'onclick="labBaixar(\'' + l._id + '\')"><i class="ti ti-download"></i></button>' +
+        (Number(l.versao) > 1
+          ? '<button class="btn" title="Ver o histórico e comparar versões" ' +
+            'onclick="labVersoes(\'' + l._id + '\')">' +
+            '<i class="ti ti-history"></i> ' + l.versao + ' versões</button>'
+          : '') +
         '<button class="btn lab-del" title="Excluir" ' +
           'onclick="labExcluir(\'' + l._id + '\')"><i class="ti ti-trash"></i></button>' +
       '</div>' +
@@ -3254,11 +3263,12 @@ function viewLab(){
         ? '<pre class="lab-cli__c">node ferramentas/lab.js publicar site/index.html --titulo "Meu site"\n' +
           'node ferramentas/lab.js publicar site/index.html --watch\n' +
           'node ferramentas/lab.js listar</pre>' +
-          '<div class="lab-cli__d">Publicar de novo <b>atualiza</b> o mesmo teste, ' +
-          'sem duplicar. CSS, JS e imagens locais entram embutidos — o visor abre ' +
-          'o HTML isolado, e caminho relativo não resolveria aqui dentro. ' +
-          'Com <b>--watch</b>, cada vez que você salva o arquivo o teste é ' +
-          'republicado; basta recarregar esta aba.</div>'
+          '<div class="lab-cli__d">Publicar de novo <b>atualiza</b> o mesmo teste ' +
+          'e <b>guarda a versão anterior</b> — dá para comparar o que mudou e voltar ' +
+          'atrás. Conteúdo idêntico não gera versão nova. CSS, JS e imagens locais ' +
+          'entram embutidos, porque o visor abre o HTML isolado e caminho relativo ' +
+          'não resolveria aqui dentro. Com <b>--watch</b>, cada vez que você salva ' +
+          'o arquivo o teste é republicado.</div>'
         : '') +
     '</div>';
   return '<div class="lab-head">' +
@@ -3316,31 +3326,102 @@ async function labSalvar(id){
   try{
     const docId = id || ('lab_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
     const meta = { titulo, nota, atualizadoEm:new Date().toISOString(), dono:usuario.email };
+    let repetida = false;
     if(arq){
       prog('Lendo o arquivo...');
       const texto = await arq.text();
-      prog('Comprimindo...');
-      const comp = await labComprimir(texto);
-      const pedacos = labPicar(comp.b64);
-      // Apaga os pedaços antigos ANTES de gravar: se o arquivo novo for menor,
-      // o que sobra do anterior fica pendurado e corrompe a leitura.
-      if(l && l.chunks) await labApagarPedacos(docId, l.chunks);
-      for(let i = 0; i < pedacos.length; i++){
-        prog('Gravando pedaço ' + (i + 1) + ' de ' + pedacos.length + '...');
-        await window._setDoc(window._doc(COL_LABDAD, docId + '__' + i),
-          { p:pedacos[i], dono:usuario.email });
-      }
-      meta.arquivo = arq.name; meta.bytes = arq.size;
-      meta.chunks = pedacos.length; meta.gzip = comp.gzip;
+      prog('Gravando a versão...');
+      const v = await labGravarVersao(docId, texto, {
+        arquivo:arq.name, origem:'navegador', anterior:l
+      }, prog);
+      repetida = v.repetida;
+      Object.assign(meta, { arquivo:arq.name, bytes:v.bytes, chunks:v.chunks,
+        gzip:v.gzip, versao:v.versao, hash:v.hash });
     }
     if(!l) meta.criadoEm = new Date().toISOString();
     await window._setDoc(window._doc(COL_LAB, docId), Object.assign({}, l || {}, meta));
     fecharModal();
-    toast(l ? 'Teste atualizado.' : 'Teste no ar.', 'ok');
+    // O aviso de "nada mudou" tem de ser o ÚLTIMO: dito antes, o toast de
+    // sucesso passava por cima e a pessoa achava que tinha subido versão nova.
+    toast(repetida
+      ? 'O arquivo é idêntico à v' + meta.versao + ' — nenhuma versão nova foi criada.'
+      : (l ? 'Teste atualizado' + (meta.versao ? ' (v' + meta.versao + ')' : '') + '.'
+           : 'Teste no ar.'),
+      repetida ? 'aviso' : 'ok');
   }catch(e){
     prog('');
     toast('Erro ao salvar: ' + (e && e.message || e), 'erro');
   }
+}
+
+// ── Versões ───────────────────────────────────────────────────────────────
+// Cada publicação vira uma versão, e o conteúdo dela fica em pedaços com o
+// número da versão no id. Sem isso não há o que comparar: sobrescrever apaga
+// justamente a informação que a comparação precisa.
+//
+// Duas defesas contra encher o banco à toa: conteúdo idêntico NÃO gera versão
+// nova (com --watch, salvar sem alterar nada dispararia uma por salvamento),
+// e as versões além das LAB_MAX_VER mais recentes são descartadas.
+async function labHash(texto){
+  const buf = new TextEncoder().encode(texto);
+  const d = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(d)).slice(0, 16)
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const labIdVersao = (id, v) => id + '__v' + v;
+
+async function labGravarVersao(docId, texto, info, prog){
+  const anterior = info.anterior || {};
+  const hash = await labHash(texto);
+  // Mesmo conteúdo: devolve a versão que já existe em vez de duplicar.
+  if(anterior.hash && anterior.hash === hash)
+    return { repetida:true, versao:anterior.versao || 1, bytes:anterior.bytes,
+      chunks:anterior.chunks, gzip:anterior.gzip, hash };
+
+  const versao = (Number(anterior.versao) || 0) + 1;
+  const comp = await labComprimir(texto);
+  const pedacos = labPicar(comp.b64);
+  const bytes = new TextEncoder().encode(texto).length;
+  for(let i = 0; i < pedacos.length; i++){
+    if(prog) prog('Gravando pedaço ' + (i + 1) + ' de ' + pedacos.length + '...');
+    await window._setDoc(window._doc(COL_LABDAD, labIdVersao(docId, versao) + '__' + i),
+      { p:pedacos[i], dono:usuario.email });
+  }
+  await window._setDoc(window._doc(COL_LABVER, labIdVersao(docId, versao)), {
+    labId:docId, versao, hash, bytes, chunks:pedacos.length, gzip:comp.gzip,
+    arquivo:info.arquivo || '', origem:info.origem || 'navegador',
+    criadoEm:new Date().toISOString(), dono:usuario.email
+  });
+  await labPodarVersoes(docId, versao);
+  return { repetida:false, versao, bytes, chunks:pedacos.length, gzip:comp.gzip, hash };
+}
+
+// Guarda as LAB_MAX_VER mais recentes. O plano é o Spark: histórico infinito
+// de páginas inteiras encheria a cota sem ninguém perceber.
+async function labPodarVersoes(docId, versaoAtual){
+  const limite = versaoAtual - LAB_MAX_VER;
+  for(let v = limite; v > 0; v--){
+    const ref = window._doc(COL_LABVER, labIdVersao(docId, v));
+    let s;
+    try{ s = await window._getDoc(ref); }catch(e){ break; }
+    if(!s.exists()) break;              // já foi podada; abaixo dela não há mais
+    const d = s.data() || {};
+    for(let i = 0; i < (d.chunks || 0); i++)
+      try{ await window._deleteDoc(window._doc(COL_LABDAD, labIdVersao(docId, v) + '__' + i)); }catch(e){}
+    try{ await window._deleteDoc(ref); }catch(e){}
+  }
+}
+
+async function labCarregarVersoes(docId){
+  const fim = Number((labs.find(x => x._id === docId) || {}).versao) || 0;
+  const out = [];
+  for(let v = fim; v > 0 && out.length < LAB_MAX_VER; v--){
+    let s;
+    try{ s = await window._getDoc(window._doc(COL_LABVER, labIdVersao(docId, v))); }catch(e){ break; }
+    if(!s.exists()) break;
+    out.push(Object.assign({ _id:labIdVersao(docId, v) }, s.data()));
+  }
+  return out;
 }
 
 async function labApagarPedacos(id, n){
@@ -3349,17 +3430,29 @@ async function labApagarPedacos(id, n){
   }
 }
 
-async function labLerHTML(l){
+// Lê o conteúdo de uma versão. Sem versão indicada, a atual.
+async function labLerHTML(l, versao){
+  const v = versao == null ? (Number(l.versao) || 0) : Number(versao);
+  // Antes das versões o conteúdo ficava em id__0, id__1... Ler o formato
+  // antigo custa três linhas e evita perder um teste subido naquela época.
+  const base = v > 0 ? labIdVersao(l._id, v) : l._id;
+  let chunks = l.chunks || 0, gzip = !!l.gzip;
+  if(versao != null && Number(versao) !== Number(l.versao)){
+    const s = await window._getDoc(window._doc(COL_LABVER, base));
+    if(!s.exists()) throw new Error('a versão ' + versao + ' não está no banco');
+    const d = s.data() || {};
+    chunks = d.chunks || 0; gzip = !!d.gzip;
+  }
   const partes = [];
-  for(let i = 0; i < (l.chunks || 0); i++){
-    const s = await window._getDoc(window._doc(COL_LABDAD, l._id + '__' + i));
+  for(let i = 0; i < chunks; i++){
+    const s = await window._getDoc(window._doc(COL_LABDAD, base + '__' + i));
     if(!s.exists()) throw new Error('o pedaço ' + (i + 1) + ' do arquivo não está no banco');
     partes.push((s.data() || {}).p || '');
   }
-  return await labDescomprimir(partes.join(''), !!l.gzip);
+  return await labDescomprimir(partes.join(''), gzip);
 }
 
-async function labAbrir(id){
+async function labAbrir(id, versao){
   if(!ehDonoLab()) return;
   const l = labs.find(x => x._id === id); if(!l) return;
   labFechar();
@@ -3367,14 +3460,15 @@ async function labAbrir(id){
   v.id = 'lab-visor'; v.className = 'lab-visor';
   v.innerHTML = '<div class="lab-visor__bar">' +
       '<button class="btn" onclick="labFechar()"><i class="ti ti-arrow-left"></i> Voltar</button>' +
-      '<span class="lab-visor__t">' + esc(l.titulo || '') + '</span>' +
+      '<span class="lab-visor__t">' + esc(l.titulo || '') +
+        (versao != null ? ' <span class="lab-tag">v' + versao + '</span>' : '') + '</span>' +
       '<span style="flex:1"></span>' +
       '<span class="small" style="color:var(--text-muted)">' + esc(l.arquivo || '') +
         ' · ' + labTamanho(l.bytes) + '</span></div>' +
     '<div class="lab-visor__corpo" id="lab-corpo">Carregando...</div>';
   document.body.appendChild(v);
   try{
-    const html = await labLerHTML(l);
+    const html = await labLerHTML(l, versao);
     const corpo = $('lab-corpo'); if(!corpo) return;   // fechou antes de carregar
     // sandbox SEM allow-same-origin: o teste roda os scripts dele e não
     // alcança o Firestore nem a sessão desta aba.
@@ -3389,14 +3483,18 @@ async function labAbrir(id){
 }
 function labFechar(){ const v = $('lab-visor'); if(v) v.remove(); }
 
-async function labBaixar(id){
+async function labBaixar(id, versao){
   if(!ehDonoLab()) return;
   const l = labs.find(x => x._id === id); if(!l) return;
   try{
-    const html = await labLerHTML(l);
+    const html = await labLerHTML(l, versao);
     const a = document.createElement('a');
+    const nome = l.arquivo || ((l.titulo || 'teste') + '.html');
     a.href = URL.createObjectURL(new Blob([html], { type:'text/html' }));
-    a.download = l.arquivo || ((l.titulo || 'teste') + '.html');
+    // Baixar duas versoes na mesma pasta nao pode gerar dois arquivos com o
+    // mesmo nome, senao a comparacao fora daqui fica impossivel.
+    a.download = versao != null
+      ? nome.replace(/(\.html?)?$/i, '-v' + versao + '$1') : nome;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }catch(e){ toast('Erro ao baixar: ' + (e && e.message || e), 'erro'); }
@@ -3405,14 +3503,195 @@ async function labBaixar(id){
 async function labExcluir(id){
   if(!ehDonoLab()) return;
   const l = labs.find(x => x._id === id); if(!l) return;
-  if(!confirm('Excluir "' + (l.titulo || '') + '"?\n\nO arquivo é apagado e não dá para desfazer.')) return;
+  const nv = Number(l.versao) || 0;
+  if(!confirm('Excluir "' + (l.titulo || '') + '"?\n\n' +
+    (nv > 1 ? 'As ' + nv + ' versões vão junto. ' : '') +
+    'Não dá para desfazer.')) return;
   try{
     // Os pedaços primeiro: se der erro no meio, o registro continua na lista e
     // dá para tentar de novo. Ao contrário, sobraria lixo sem dono.
-    await labApagarPedacos(id, l.chunks || 0);
+    // Todas as versões, não só a atual — senão o histórico fica órfão no banco,
+    // ocupando cota sem nada que aponte para ele.
+    for(let v = nv; v > 0; v--){
+      let s;
+      try{ s = await window._getDoc(window._doc(COL_LABVER, labIdVersao(id, v))); }catch(e){ break; }
+      if(!s.exists()) continue;
+      await labApagarPedacos(labIdVersao(id, v), (s.data() || {}).chunks || 0);
+      try{ await window._deleteDoc(window._doc(COL_LABVER, labIdVersao(id, v))); }catch(e){}
+    }
+    await labApagarPedacos(id, l.chunks || 0);   // formato antigo, sem versão
     await window._deleteDoc(window._doc(COL_LAB, id));
     toast('Teste excluído.', 'ok');
   }catch(e){ toast('Erro ao excluir: ' + (e && e.message || e), 'erro'); }
+}
+
+
+// ── Painel de versões e comparação ────────────────────────────────────────
+// Estado do painel: de quem, quais versões, e qual par está sendo comparado.
+let labVer = { id:null, lista:[], a:null, b:null, texto:{} };
+
+async function labVersoes(id){
+  if(!ehDonoLab()) return;
+  const l = labs.find(x => x._id === id); if(!l) return;
+  labVer = { id, lista:[], a:null, b:null, texto:{} };
+  labPainelVersoes('<div class="lab-ver__vazio">Carregando o histórico...</div>');
+  try{
+    labVer.lista = await labCarregarVersoes(id);
+    // Compara a mais nova com a anterior: é o que se quer ver ao abrir.
+    if(labVer.lista.length >= 2){
+      labVer.b = labVer.lista[0].versao;
+      labVer.a = labVer.lista[1].versao;
+    }
+    labDesenharVersoes();
+    if(labVer.a != null) labComparar();
+  }catch(e){
+    labPainelVersoes('<div class="lab-ver__vazio">Não deu para ler o histórico.<br>' +
+      '<span class="small">' + esc(e && e.message || e) + '</span></div>');
+  }
+}
+
+function labPainelVersoes(corpoHTML){
+  const l = labs.find(x => x._id === labVer.id) || {};
+  let p = $('lab-ver');
+  if(!p){
+    p = document.createElement('div');
+    p.id = 'lab-ver'; p.className = 'lab-ver';
+    document.body.appendChild(p);
+  }
+  p.innerHTML = '<div class="lab-ver__bar">' +
+      '<button class="btn" onclick="labFecharVersoes()">' +
+        '<i class="ti ti-arrow-left"></i> Voltar</button>' +
+      '<span class="lab-ver__t">Versões · ' + esc(l.titulo || '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<span class="small" style="color:var(--text-muted)">' +
+        'as ' + LAB_MAX_VER + ' mais recentes</span></div>' +
+    '<div class="lab-ver__corpo" id="lab-ver-corpo">' + corpoHTML + '</div>';
+}
+function labFecharVersoes(){ const p = $('lab-ver'); if(p) p.remove(); }
+
+function labDesenharVersoes(){
+  const lista = labVer.lista;
+  if(!lista.length){
+    labPainelVersoes('<div class="lab-ver__vazio">Ainda não há versão gravada.</div>');
+    return;
+  }
+  const linhas = lista.map((v, i) => {
+    const anterior = lista[i + 1];
+    return '<div class="lab-v' + (v.versao === labVer.a || v.versao === labVer.b ? ' lab-v--on' : '') + '">' +
+      '<label class="lab-v__p" title="Comparar a partir desta">' +
+        '<input type="radio" name="lab-va" value="' + v.versao + '"' +
+        (v.versao === labVer.a ? ' checked' : '') +
+        ' onchange="labEscolher(\'a\',' + v.versao + ')">de</label>' +
+      '<label class="lab-v__p" title="Comparar até esta">' +
+        '<input type="radio" name="lab-vb" value="' + v.versao + '"' +
+        (v.versao === labVer.b ? ' checked' : '') +
+        ' onchange="labEscolher(\'b\',' + v.versao + ')">até</label>' +
+      '<span class="lab-v__n">v' + v.versao + '</span>' +
+      (i === 0 ? '<span class="lab-tag">atual</span>' : '') +
+      '<span class="lab-v__d">' + labQuando(v.criadoEm) + '</span>' +
+      '<span class="lab-v__m">' + labTamanho(v.bytes) +
+        (v.origem === 'claude-code' ? ' · do terminal' : '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="btn" title="Abrir esta versão" ' +
+        'onclick="labAbrirVersao(' + v.versao + ')"><i class="ti ti-player-play"></i></button>' +
+      '<button class="btn" title="Baixar esta versão" ' +
+        'onclick="labBaixarVersao(' + v.versao + ')"><i class="ti ti-download"></i></button>' +
+      (i === 0 ? '' : '<button class="btn" title="Publicar esta versão de novo, como a mais nova" ' +
+        'onclick="labRestaurar(' + v.versao + ')"><i class="ti ti-history"></i></button>') +
+    '</div>';
+  }).join('');
+  labPainelVersoes(
+    '<div class="lab-ver__lista">' + linhas + '</div>' +
+    '<div id="lab-dif" class="lab-dif">' +
+      (lista.length < 2
+        ? '<div class="lab-ver__vazio">Só há uma versão até agora. ' +
+          'Publique de novo e a comparação aparece aqui.</div>'
+        : '<div class="lab-ver__vazio">Escolha duas versões acima.</div>') +
+    '</div>');
+}
+
+function labEscolher(qual, versao){
+  labVer[qual] = versao;
+  labDesenharVersoes();
+  if(labVer.a != null && labVer.b != null) labComparar();
+}
+
+// Guarda o texto já lido: trocar o par de comparação não deve buscar de novo
+// o que acabou de vir do banco.
+async function labTextoVersao(v){
+  if(labVer.texto[v] != null) return labVer.texto[v];
+  const l = labs.find(x => x._id === labVer.id);
+  const txt = await labLerHTML(l, v);
+  labVer.texto[v] = txt;
+  return txt;
+}
+
+async function labComparar(){
+  const d = $('lab-dif'); if(!d) return;
+  const { a, b } = labVer;
+  if(a == null || b == null){ d.innerHTML = '<div class="lab-ver__vazio">Escolha duas versões.</div>'; return; }
+  if(a === b){ d.innerHTML = '<div class="lab-ver__vazio">São a mesma versão.</div>'; return; }
+  d.innerHTML = '<div class="lab-ver__vazio">Comparando...</div>';
+  try{
+    const [ta, tb] = await Promise.all([labTextoVersao(a), labTextoVersao(b)]);
+    const r = LabDiff.resumo(ta, tb);
+    if(!r.mudou){
+      d.innerHTML = '<div class="lab-ver__vazio">v' + a + ' e v' + b +
+        ' têm exatamente o mesmo conteúdo.</div>';
+      return;
+    }
+    const blocos = LabDiff.trechos(ta, tb, 3);
+    d.innerHTML = '<div class="lab-dif__cab">' +
+        '<b>v' + a + ' → v' + b + '</b>' +
+        '<span class="lab-dif__mais">+' + r.entrou + '</span>' +
+        '<span class="lab-dif__menos">−' + r.saiu + '</span>' +
+        '<span class="small" style="color:var(--text-muted)">' +
+          blocos.length + ' trecho(s) alterado(s)</span>' +
+      '</div>' +
+      blocos.map(bl => '<div class="lab-dif__bl">' + bl.linhas.map(t => {
+        const cls = t.tipo === 'entrou' ? 'e' : t.tipo === 'saiu' ? 's' : 'i';
+        const sinal = t.tipo === 'entrou' ? '+' : t.tipo === 'saiu' ? '−' : ' ';
+        const num = t.tipo === 'entrou' ? (t.b + 1) : (t.a + 1);
+        return '<div class="lab-dif__l lab-dif__l--' + cls + '">' +
+          '<span class="lab-dif__num">' + num + '</span>' +
+          '<span class="lab-dif__sig">' + sinal + '</span>' +
+          '<span class="lab-dif__tx">' + esc(t.texto || ' ') + '</span></div>';
+      }).join('') + '</div>').join('');
+  }catch(e){
+    d.innerHTML = '<div class="lab-ver__vazio">Não deu para comparar.<br>' +
+      '<span class="small">' + esc(e && e.message || e) + '</span></div>';
+  }
+}
+
+async function labAbrirVersao(v){
+  const l = labs.find(x => x._id === labVer.id); if(!l) return;
+  await labAbrir(l._id, v);
+}
+async function labBaixarVersao(v){
+  const l = labs.find(x => x._id === labVer.id); if(!l) return;
+  await labBaixar(l._id, v);
+}
+
+// Restaurar não apaga nada: republica o conteúdo antigo como versão nova. O
+// histórico continua inteiro, e dá para voltar de novo se for engano.
+async function labRestaurar(v){
+  if(!ehDonoLab()) return;
+  const l = labs.find(x => x._id === labVer.id); if(!l) return;
+  if(!confirm('Publicar a v' + v + ' de novo, como versão mais nova?\n\n' +
+    'Nada é apagado: ela entra como v' + ((Number(l.versao) || 0) + 1) + '.')) return;
+  try{
+    const texto = await labTextoVersao(v);
+    const r = await labGravarVersao(l._id, texto, {
+      arquivo:l.arquivo, origem:'restaurada da v' + v, anterior:l
+    });
+    if(r.repetida){ toast('A v' + v + ' é igual à atual. Nada a fazer.', 'aviso'); return; }
+    await window._setDoc(window._doc(COL_LAB, l._id), Object.assign({}, l, {
+      bytes:r.bytes, chunks:r.chunks, gzip:r.gzip, versao:r.versao, hash:r.hash,
+      atualizadoEm:new Date().toISOString()
+    }));
+    toast('v' + v + ' publicada de novo como v' + r.versao + '.', 'ok');
+    labVersoes(l._id);
+  }catch(e){ toast('Erro ao restaurar: ' + (e && e.message || e), 'erro'); }
 }
 
 // ============================================================

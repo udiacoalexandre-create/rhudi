@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const DIFF = require(path.join(__dirname, '..', 'lab-diff.js'));
 const https = require('https');
 const crypto = require('crypto');
 
@@ -56,6 +57,8 @@ const SA = acharChave();
 const DONO = 'alexandre.magalhaes@udiaco.com.br';
 const COL = 'pe_lab';
 const COL_DADOS = 'pe_lab_dados';
+const COL_VER = 'pe_lab_versoes';
+const MAX_VER = 20;                 // historico guardado por teste
 const CHUNK = 600 * 1024;          // um documento do Firestore para em 1 MB
 const LIMITE_MB = 20;
 const LIMITE_IMG = 2 * 1024 * 1024; // imagem maior que isto não vira data URI
@@ -244,6 +247,13 @@ async function apagarPedacos(id, n){
   }
 }
 
+// Cada publicacao vira uma VERSAO. Sobrescrever apagaria justamente o que a
+// comparacao precisa. O conteudo de cada versao mora em pedacos com o numero
+// dela no id; o registro em pe_lab aponta para a mais nova.
+const idVersao = (id, v) => id + '__v' + v;
+const hashDe = txt => crypto.createHash('sha256').update(txt, 'utf8')
+  .digest('hex').slice(0, 32);
+
 async function publicar(arquivo, opts){
   if(!fs.existsSync(arquivo)) throw new Error('não achei o arquivo ' + arquivo);
   const token = await autenticar();
@@ -255,34 +265,107 @@ async function publicar(arquivo, opts){
   if(bytes > LIMITE_MB * 1048576)
     throw new Error('o HTML montado tem ' + tamanho(bytes) + '; o limite é ' + LIMITE_MB + ' MB');
 
+  const hash = hashDe(html);
+  // Conteudo identico nao gera versao: com --watch, salvar sem alterar nada
+  // dispararia uma versao por salvamento e o historico viraria ruido.
+  if(antes && antes.hash === hash)
+    return { id, novo:false, repetida:true, versao:antes.versao || 1,
+      bytes, comprimido:0, pedacos:antes.chunks || 0, usados, faltando };
+
+  const versao = (Number(antes && antes.versao) || 0) + 1;
   const b64 = zlib.gzipSync(Buffer.from(html, 'utf8')).toString('base64');
   const pedacos = fatiar(b64);
 
-  // Os pedaços antigos saem ANTES: se a versão nova for menor, o que sobra da
-  // anterior fica pendurado e corrompe a leitura.
-  if(antes && antes.chunks) await apagarPedacos(id, antes.chunks);
   for(let i = 0; i < pedacos.length; i++)
-    await req('PATCH', base() + COL_DADOS + '/' + id + '__' + i,
+    await req('PATCH', base() + COL_DADOS + '/' + idVersao(id, versao) + '__' + i,
       campos({ p:pedacos[i], dono:DONO }), token);
 
   const agora = new Date().toISOString();
+  await req('PATCH', base() + COL_VER + '/' + idVersao(id, versao), campos({
+    labId:id, versao, hash, bytes, chunks:pedacos.length, gzip:true,
+    arquivo:path.basename(arquivo), origem:'claude-code', criadoEm:agora, dono:DONO
+  }), token);
+
   await req('PATCH', base() + COL + '/' + id, campos({
     titulo: opts.titulo || (antes && antes.titulo) || path.basename(arquivo),
     nota: opts.nota != null ? opts.nota
       : (antes && antes.nota) || ('publicado do terminal · ' + path.relative(process.cwd(), arquivo)),
     arquivo: path.basename(arquivo),
-    bytes, chunks:pedacos.length, gzip:true, dono:DONO, origem:'claude-code',
+    bytes, chunks:pedacos.length, gzip:true, versao, hash,
+    dono:DONO, origem:'claude-code',
     criadoEm: (antes && antes.criadoEm) || agora,
     atualizadoEm: agora
   }), token);
 
-  return { id, novo:!antes, bytes, comprimido:b64.length, pedacos:pedacos.length, usados, faltando };
+  const podadas = await podar(id, versao);
+  return { id, novo:!antes, repetida:false, versao, bytes, comprimido:b64.length,
+    pedacos:pedacos.length, usados, faltando, podadas };
+}
+
+// Guarda as MAX_VER mais recentes: o projeto esta no plano Spark, e historico
+// infinito de paginas inteiras encheria a cota sem ninguem perceber.
+async function podar(id, versaoAtual){
+  const token = await autenticar();
+  let n = 0;
+  for(let v = versaoAtual - MAX_VER; v > 0; v--){
+    const d = await lerVersao(id, v);
+    if(!d) break;                       // abaixo desta ja foi podado
+    for(let i = 0; i < (d.chunks || 0); i++)
+      try{ await req('DELETE', base() + COL_DADOS + '/' + idVersao(id, v) + '__' + i, null, token); }catch(e){}
+    try{ await req('DELETE', base() + COL_VER + '/' + idVersao(id, v), null, token); }catch(e){}
+    n++;
+  }
+  return n;
+}
+
+async function lerVersao(id, v){
+  const token = await autenticar();
+  try{ return leCampos(await req('GET', base() + COL_VER + '/' + idVersao(id, v), null, token)); }
+  catch(e){ if(/-> 404/.test(e.message)) return null; throw e; }
+}
+
+async function versoesDe(id){
+  const reg = await lerRegistro(id);
+  if(!reg) throw new Error('não existe nenhum teste com o id ' + id);
+  const out = [];
+  for(let v = Number(reg.versao) || 0; v > 0 && out.length < MAX_VER; v--){
+    const d = await lerVersao(id, v);
+    if(!d) break;
+    out.push(d);
+  }
+  return { reg, versoes:out };
+}
+
+// Le o conteudo de uma versao (ou da atual).
+async function lerHTML(id, v){
+  const token = await autenticar();
+  const reg = await lerRegistro(id);
+  if(!reg) throw new Error('não existe nenhum teste com o id ' + id);
+  const alvo = v == null ? (Number(reg.versao) || 0) : Number(v);
+  let chunks = reg.chunks, gzip = reg.gzip, prefixo = alvo > 0 ? idVersao(id, alvo) : id;
+  if(alvo > 0 && alvo !== Number(reg.versao)){
+    const d = await lerVersao(id, alvo);
+    if(!d) throw new Error('a versão ' + alvo + ' não está no banco');
+    chunks = d.chunks; gzip = d.gzip;
+  }
+  let b = '';
+  for(let i = 0; i < (chunks || 0); i++){
+    const d = leCampos(await req('GET', base() + COL_DADOS + '/' + prefixo + '__' + i, null, token));
+    b += d.p || '';
+  }
+  const buf = Buffer.from(b, 'base64');
+  return gzip ? zlib.gunzipSync(buf).toString('utf8') : buf.toString('utf8');
 }
 
 function relatar(r, arquivo){
+  if(r.repetida){
+    console.log('  sem mudança: o HTML é idêntico à v' + r.versao + ', nenhuma versão criada');
+    return;
+  }
   console.log((r.novo ? '  publicado ' : '  atualizado ') + r.id +
-    '  ' + tamanho(r.bytes) + ' -> ' + tamanho(r.comprimido) +
-    ' comprimido, ' + r.pedacos + ' pedaço(s)');
+    '  v' + r.versao + '  ' + tamanho(r.bytes) + ' -> ' + tamanho(r.comprimido) +
+    ' comprimido, ' + r.pedacos + ' pedaço(s)' +
+    (r.podadas ? '  (' + r.podadas + ' versão(ões) antiga(s) descartada(s))' : ''));
   if(r.usados.length)
     console.log('  embutidos: ' + r.usados.join(', '));
   if(r.faltando.length)
@@ -301,8 +384,11 @@ async function vigiar(arquivo, opts){
     try{
       const r = await publicar(arquivo, opts);
       const h = new Date().toTimeString().slice(0, 8);
-      console.log('[' + h + '] republicado');
-      if(r.faltando.length) console.log('  faltando: ' + r.faltando.join(', '));
+      // Salvar sem alterar nada acontece o tempo todo; nao vira linha no log.
+      if(!r.repetida){
+        console.log('[' + h + '] v' + r.versao + ' publicada');
+        if(r.faltando.length) console.log('  faltando: ' + r.faltando.join(', '));
+      }
     }catch(e){ console.error('  erro: ' + e.message); }
     rodando = false;
   };
@@ -323,6 +409,7 @@ async function listar(){
   docs.map(d => Object.assign({ _id:d.name.split('/').pop() }, leCampos(d)))
     .sort((a, b) => String(b.atualizadoEm || '').localeCompare(String(a.atualizadoEm || '')))
     .forEach(l => console.log('  ' + (l._id + '                    ').slice(0, 22) +
+      ('v' + (l.versao || 1) + '   ').slice(0, 5) +
       (l.titulo || '(sem título)') + '  · ' + tamanho(l.bytes) +
       ' · ' + String(l.atualizadoEm || '').slice(0, 16).replace('T', ' ') +
       (l.origem === 'claude-code' ? ' · do terminal' : '')));
@@ -332,9 +419,89 @@ async function excluir(id){
   const token = await autenticar();
   const antes = await lerRegistro(id);
   if(!antes) throw new Error('não existe nenhum teste com o id ' + id);
-  await apagarPedacos(id, antes.chunks || 0);
+  // Todas as versoes, nao so a atual: senao o historico fica orfao no banco,
+  // ocupando cota sem nada que aponte para ele.
+  let n = 0;
+  for(let v = Number(antes.versao) || 0; v > 0; v--){
+    const d = await lerVersao(id, v);
+    if(!d) continue;
+    for(let i = 0; i < (d.chunks || 0); i++)
+      try{ await req('DELETE', base() + COL_DADOS + '/' + idVersao(id, v) + '__' + i, null, token); }catch(e){}
+    try{ await req('DELETE', base() + COL_VER + '/' + idVersao(id, v), null, token); }catch(e){}
+    n++;
+  }
+  await apagarPedacos(id, antes.chunks || 0);    // formato antigo, sem versao
   await req('DELETE', base() + COL + '/' + id, null, token);
-  console.log('  excluído ' + id + ' (' + (antes.titulo || '') + ')');
+  console.log('  excluído ' + id + ' (' + (antes.titulo || '') + ')' +
+    (n ? ' e ' + n + ' versão(ões)' : ''));
+}
+
+async function mostrarVersoes(id){
+  if(!id) throw new Error('diga de qual teste (veja com: lab.js listar)');
+  const { reg, versoes } = await versoesDe(id);
+  console.log('  ' + (reg.titulo || id) + ' — ' + versoes.length + ' versão(ões) guardada(s)');
+  for(let i = 0; i < versoes.length; i++){
+    const v = versoes[i];
+    console.log('  v' + String(v.versao).padEnd(4) +
+      String(v.criadoEm || '').slice(0, 16).replace('T', ' ') +
+      '  ' + tamanho(v.bytes).padStart(8) +
+      '  ' + (v.origem || '') + (i === 0 ? '   <- atual' : ''));
+  }
+  if(versoes.length >= 2)
+    console.log('\n  comparar: node ferramentas/lab.js diff ' + id + ' ' +
+      versoes[1].versao + ' ' + versoes[0].versao);
+}
+
+// Mesma conta da tela (lab-diff.js), para o terminal e o navegador nunca
+// mostrarem comparacoes diferentes do mesmo par.
+async function mostrarDiff(id, a, b){
+  if(!id) throw new Error('diga de qual teste (veja com: lab.js listar)');
+  const { reg, versoes } = await versoesDe(id);
+  if(versoes.length < 2) throw new Error('só há uma versão; não há o que comparar');
+  const vb = b != null ? Number(b) : versoes[0].versao;
+  const va = a != null ? Number(a) : (b != null ? Number(b) - 1 : versoes[1].versao);
+  const [ta, tb] = [await lerHTML(id, va), await lerHTML(id, vb)];
+  const r = DIFF.resumo(ta, tb);
+  console.log('  ' + (reg.titulo || id) + ' — v' + va + ' -> v' + vb +
+    '  (+' + r.entrou + ' / -' + r.saiu + ')');
+  if(!r.mudou){ console.log('  as duas versões têm exatamente o mesmo conteúdo'); return; }
+  DIFF.trechos(ta, tb, 3).forEach((bl, i) => {
+    console.log('  ' + '─'.repeat(56));
+    bl.linhas.forEach(t => {
+      const n = (t.tipo === 'entrou' ? t.b + 1 : t.a + 1);
+      const sig = t.tipo === 'entrou' ? '+' : t.tipo === 'saiu' ? '-' : ' ';
+      console.log('  ' + String(n).padStart(5) + ' ' + sig + ' ' + t.texto);
+    });
+  });
+}
+
+// Restaurar nao apaga nada: republica o conteudo antigo como versao nova.
+async function restaurar(id, v){
+  if(!id || !v) throw new Error('diga o teste e a versão: lab.js restaurar <id> <versão>');
+  const token = await autenticar();
+  const reg = await lerRegistro(id);
+  if(!reg) throw new Error('não existe nenhum teste com o id ' + id);
+  const html = await lerHTML(id, Number(v));
+  const hash = hashDe(html);
+  if(reg.hash === hash){ console.log('  a v' + v + ' já é igual à atual; nada a fazer'); return; }
+  const versao = (Number(reg.versao) || 0) + 1;
+  const b64 = zlib.gzipSync(Buffer.from(html, 'utf8')).toString('base64');
+  const pedacos = fatiar(b64);
+  for(let i = 0; i < pedacos.length; i++)
+    await req('PATCH', base() + COL_DADOS + '/' + idVersao(id, versao) + '__' + i,
+      campos({ p:pedacos[i], dono:DONO }), token);
+  const agora = new Date().toISOString();
+  await req('PATCH', base() + COL_VER + '/' + idVersao(id, versao), campos({
+    labId:id, versao, hash, bytes:Buffer.byteLength(html), chunks:pedacos.length,
+    gzip:true, arquivo:reg.arquivo || '', origem:'restaurada da v' + v,
+    criadoEm:agora, dono:DONO
+  }), token);
+  await req('PATCH', base() + COL + '/' + id, campos(Object.assign({}, reg, {
+    bytes:Buffer.byteLength(html), chunks:pedacos.length, gzip:true,
+    versao, hash, atualizadoEm:agora
+  })), token);
+  await podar(id, versao);
+  console.log('  v' + v + ' publicada de novo como v' + versao + ' (nada foi apagado)');
 }
 
 const AJUDA = `
@@ -342,6 +509,9 @@ Publica HTML direto no Laboratório do Projetos Estratégicos.
 
   node ferramentas/lab.js publicar <arquivo.html> [opções]
   node ferramentas/lab.js listar
+  node ferramentas/lab.js versoes <id>
+  node ferramentas/lab.js diff <id> [de] [ate]
+  node ferramentas/lab.js restaurar <id> <versão>
   node ferramentas/lab.js excluir <id>
 
 Opções de publicar:
@@ -350,7 +520,10 @@ Opções de publicar:
   --id lab_xxx          publica sobre um teste específico
   --watch               republica a cada salvamento
 
-O id vem do nome do arquivo, então publicar de novo ATUALIZA o mesmo teste.
+O id vem do nome do arquivo, então publicar de novo ATUALIZA o mesmo teste e
+guarda a versão anterior (as ${MAX_VER} mais recentes). HTML idêntico não gera
+versão nova. Restaurar não apaga nada: republica a versão antiga como a mais
+nova.
 CSS, JS e imagens locais entram embutidos — o visor abre o HTML isolado, e
 caminho relativo não resolveria lá dentro. Link de CDN continua funcionando.
 
@@ -361,7 +534,9 @@ Chave da conta de serviço: ${SA}
 // Chamado como módulo (pelos testes), expõe as peças e não roda nada.
 if(require.main !== module){
   module.exports = { embutir, fatiar, slug, tamanho, publicar, listar, excluir,
-    lerRegistro, apagarPedacos, SA, CHUNK, LIMITE_MB, LIMITE_IMG, externo, valor, leCampos };
+    lerRegistro, apagarPedacos, SA, CHUNK, LIMITE_MB, LIMITE_IMG, externo, valor, leCampos,
+    lerVersao, versoesDe, lerHTML, restaurar, podar, hashDe, idVersao, MAX_VER,
+    COL, COL_DADOS, COL_VER, DIFF };
   return;
 }
 
@@ -381,5 +556,8 @@ if(require.main !== module){
   }
   else if(cmd === 'listar')  await listar();
   else if(cmd === 'excluir') await excluir(arg[1]);
+  else if(cmd === 'versoes') await mostrarVersoes(arg[1]);
+  else if(cmd === 'diff')    await mostrarDiff(arg[1], arg[2], arg[3]);
+  else if(cmd === 'restaurar') await restaurar(arg[1], arg[2]);
   else console.log(AJUDA);
 })().catch(e => { console.error('erro: ' + e.message); process.exit(1); });
