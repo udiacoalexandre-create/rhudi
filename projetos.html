@@ -743,6 +743,33 @@ a{ color:var(--accent); text-decoration:none }
   .card__meta{ font-size:10px }
   .ag__faixa b{ font-size:13px }
 }
+
+/* ---------- LABORATÓRIO (aba particular) ---------- */
+.lab-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+  flex-wrap:wrap; margin-bottom:var(--space-5) }
+.lab-tit{ font-size:18px; font-weight:700; color:var(--text); margin:0 0 2px }
+.lab-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+  gap:var(--space-4) }
+.lab-card{ background:var(--surface); border:1px solid var(--border);
+  border-top:3px solid var(--accent); border-radius:var(--radius);
+  padding:var(--space-4); display:flex; flex-direction:column; gap:5px }
+.lab-card__t{ font-size:14px; font-weight:600; color:var(--text); line-height:1.3 }
+.lab-card__d{ font-size:12px; color:var(--text-secondary); line-height:1.4 }
+.lab-card__m{ font-size:11px; color:var(--text-muted) }
+.lab-card__a{ display:flex; gap:6px; margin-top:auto; padding-top:9px; flex-wrap:wrap }
+.lab-card__a .btn{ height:30px; padding:0 10px; font-size:12px }
+.lab-del{ color:var(--danger-text) }
+.lab-del:hover{ border-color:var(--danger-text) }
+
+/* Visor: o teste ocupa a tela inteira, mas dentro de um iframe isolado. */
+.lab-visor{ position:fixed; inset:0; z-index:120; background:var(--surface);
+  display:flex; flex-direction:column }
+.lab-visor__bar{ display:flex; align-items:center; gap:12px; padding:9px 14px;
+  border-bottom:1px solid var(--border); background:var(--surface-soft,#f8fafc); flex-shrink:0 }
+.lab-visor__t{ font-weight:600; font-size:14px }
+.lab-visor__corpo{ flex:1; min-height:0; display:flex; align-items:center;
+  justify-content:center; font-size:13px; color:var(--text-muted) }
+.lab-visor__corpo iframe{ border:none; width:100%; height:100%; background:#fff; display:block }
 </style>
 </head>
 <body>

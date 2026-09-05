@@ -107,6 +107,17 @@ service cloud.firestore {
     // Notificações (sino): cada um lê as suas; escrever é preciso para avisar
     // o outro (quem responde cria a notificação de quem pediu).
     match /pe_notificacoes/{id} { allow read, write: if podeProjetos(); }
+    // Laboratório: área PARTICULAR de uma pessoa dentro do Projetos
+    // Estratégicos, para hospedar HTML de teste (metadados + o arquivo em
+    // pedaços). O e-mail está cravado de propósito: "particular" aqui quer
+    // dizer de uma pessoa, e não do papel de Master — um Master futuro não
+    // deve enxergar rascunho alheio. Nem 'get', nem 'list'.
+    function ehDonoLab() {
+      return isSignedIn() && email() == 'alexandre.magalhaes@udiaco.com.br';
+    }
+    match /pe_lab/{id}       { allow read, write: if ehDonoLab(); }
+    match /pe_lab_dados/{id} { allow read, write: if ehDonoLab(); }
+
     // Configuração da plataforma (hoje: integração com o Google Drive).
     // Todo mundo lê — o app precisa do Client ID para pedir o token —, mas só
     // o Master altera.

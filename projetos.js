@@ -42,6 +42,16 @@ const COL_TAR   = 'pe_tarefas';
 const COL_MSG   = 'pe_mensagens';
 const COL_NOTIF = 'pe_notificacoes';
 const COL_CONF  = 'pe_config';
+// Laboratório: área particular para hospedar HTML de teste. O e-mail está
+// cravado de propósito — "particular" aqui quer dizer de uma pessoa, não do
+// papel de Master: um Master futuro não deve enxergar este rascunho. Quem
+// manda é a regra do Firestore; esconder a aba é só cortesia.
+const COL_LAB    = 'pe_lab';
+const COL_LABDAD = 'pe_lab_dados';
+const DONO_LAB   = 'alexandre.magalhaes@udiaco.com.br';
+const LAB_CHUNK  = 600 * 1024;   // um documento do Firestore para em 1 MB
+const LAB_LIMITE_MB = 20;
+const ehDonoLab = () => !!usuario && String(usuario.email || '').toLowerCase() === DONO_LAB;
 
 const MASTER_BOOTSTRAP = ['alexandre.magalhaes@udiaco.com.br'];
 
@@ -88,6 +98,7 @@ let projetos  = [];
 let tarefas   = [];
 let notificacoes = [];
 let aba = 'agenda';
+let labs = [];          // HTMLs de teste do laboratório
 let projetoAberto = null;
 let tarefaAberta  = null;
 let mensagens = [];
@@ -581,6 +592,18 @@ function assinarDados(){
     confDrive = snap.exists() ? snap.data() : null;
     if(aba === 'projetos') render();
   }, () => {}));
+  // Laboratório: só o dono assina. Para qualquer outra pessoa a regra nega, e
+  // ficar escutando só renderia um erro de permissão na tela de quem não tem
+  // nada a ver com isso.
+  if(ehDonoLab()){
+    unsubs.push(window._onSnapshot(window._col(COL_LAB), snap => {
+      labs = [];
+      snap.forEach(d => labs.push(Object.assign({ _id:d.id }, d.data())));
+      labs.sort((a, b) => String(b.atualizadoEm || '').localeCompare(String(a.atualizadoEm || '')));
+      renderNav();
+      if(aba === 'lab') render();
+    }, () => {}));
+  }
   // Notificações: só as minhas (filtro no servidor, ordenação no cliente).
   unsubs.push(window._onSnapshot(
     window._query(window._col(COL_NOTIF), window._where('para', '==', usuario.email)),
@@ -795,8 +818,11 @@ function render(){
   renderNav();
   renderSino();
   const v = $('view');
-  if(aba === 'projetos') v.innerHTML = viewProjetos();
-  else                  v.innerHTML = viewAgenda();
+  // A aba some se a sessão trocar de pessoa sem recarregar a página.
+  if(aba === 'lab' && !ehDonoLab()) aba = 'agenda';
+  if(aba === 'projetos')     v.innerHTML = viewProjetos();
+  else if(aba === 'lab')     v.innerHTML = viewLab();
+  else                       v.innerHTML = viewAgenda();
 }
 function renderNav(){
   const minhas = abertas(tarefas.filter(t => t.responsavel === usuario.email && vejoTarefa(t)));
@@ -808,6 +834,9 @@ function renderNav(){
       count:projetosVisiveis().filter(p => p.status !== 'concluido').length,
       dica:'Projetos, frentes e demandas' },
   ];
+  // Aba particular: só aparece para o dono. Quem barra de verdade é o banco.
+  if(ehDonoLab()) itens.push({ id:'lab', icone:'flask', label:'Laboratório',
+    count:labs.length, dica:'Seus HTMLs de teste — só você vê' });
   $('abas').innerHTML = itens.map(i =>
     '<button class="aba' + (aba === i.id ? ' aba--on' : '') + '" title="' + esc(i.dica) + '" ' +
       'onclick="irPara(\'' + i.id + '\')">' +
@@ -3124,6 +3153,235 @@ function avisarVersaoNova(){
     '<button class="btn" onclick="location.reload()">Recarregar agora</button>' +
     '<button class="icon-btn" title="Depois" onclick="this.parentNode.remove()"><i class="ti ti-x"></i></button>';
   document.body.appendChild(el);
+}
+
+// ============================================================
+// ABA PARTICULAR — LABORATÓRIO (só do dono)
+// ============================================================
+// Lugar para subir HTML de teste e abrir no navegador sem publicar nada em
+// lugar nenhum. Não tem link de compartilhamento, de propósito: o que está
+// aqui é rascunho, e rascunho que se compartilha vira versão oficial.
+//
+// O arquivo vai comprimido e picado dentro do Firestore porque o projeto está
+// no plano Spark e não tem Storage. Um documento do Firestore para em 1 MB,
+// daí os pedaços de 600 KB.
+const LAB_TEM_GZIP = typeof CompressionStream === 'function'
+  && typeof DecompressionStream === 'function';
+
+function labBytesParaB64(bytes){
+  // btoa de uma vez estoura a pilha com arquivo grande: vai em blocos.
+  let out = '';
+  for(let i = 0; i < bytes.length; i += 0x8000)
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+}
+function labB64ParaBytes(b64){
+  const s = atob(b64), a = new Uint8Array(s.length);
+  for(let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return a;
+}
+async function labComprimir(texto){
+  // HTML comprime muito bem — costuma cair para 1/5 —, e é isso que torna
+  // guardar no Firestore viável. Navegador sem gzip grava o texto puro.
+  if(!LAB_TEM_GZIP) return { b64:btoa(unescape(encodeURIComponent(texto))), gzip:false };
+  const cs = new CompressionStream('gzip');
+  const w = cs.writable.getWriter();
+  w.write(new TextEncoder().encode(texto)); w.close();
+  const buf = await new Response(cs.readable).arrayBuffer();
+  return { b64:labBytesParaB64(new Uint8Array(buf)), gzip:true };
+}
+async function labDescomprimir(b64, gzip){
+  if(!gzip) return decodeURIComponent(escape(atob(b64)));
+  const ds = new DecompressionStream('gzip');
+  const w = ds.writable.getWriter();
+  w.write(labB64ParaBytes(b64)); w.close();
+  return await new Response(ds.readable).text();
+}
+function labPicar(txt){
+  const out = [];
+  for(let i = 0; i < txt.length; i += LAB_CHUNK) out.push(txt.slice(i, i + LAB_CHUNK));
+  return out;
+}
+function labTamanho(bytes){
+  const n = Number(bytes) || 0;
+  if(n < 1024) return n + ' B';
+  if(n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+function labQuando(iso){
+  const d = iso ? new Date(iso) : null;
+  if(!d || isNaN(d)) return '—';
+  const p = n => String(n).padStart(2, '0');
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() +
+    ' às ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function viewLab(){
+  if(!ehDonoLab()) return vazio('lock', 'Área particular', 'Esta aba é de outra pessoa.');
+  const cards = labs.map(l =>
+    '<div class="lab-card">' +
+      '<div class="lab-card__t">' + esc(l.titulo || '(sem título)') + '</div>' +
+      (l.nota ? '<div class="lab-card__d">' + esc(l.nota) + '</div>' : '') +
+      '<div class="lab-card__m">' + esc(l.arquivo || '—') + ' · ' + labTamanho(l.bytes) +
+        (l.gzip ? ' · comprimido' : '') + '</div>' +
+      '<div class="lab-card__m">Atualizado em ' + labQuando(l.atualizadoEm) + '</div>' +
+      '<div class="lab-card__a">' +
+        '<button class="btn btn--primary" onclick="labAbrir(\'' + l._id + '\')">' +
+          '<i class="ti ti-player-play"></i> Abrir</button>' +
+        '<button class="btn" title="Trocar o arquivo ou o título" ' +
+          'onclick="labModal(\'' + l._id + '\')"><i class="ti ti-edit"></i></button>' +
+        '<button class="btn" title="Baixar o HTML de volta" ' +
+          'onclick="labBaixar(\'' + l._id + '\')"><i class="ti ti-download"></i></button>' +
+        '<button class="btn lab-del" title="Excluir" ' +
+          'onclick="labExcluir(\'' + l._id + '\')"><i class="ti ti-trash"></i></button>' +
+      '</div>' +
+    '</div>').join('');
+  return '<div class="lab-head">' +
+      '<div><h2 class="lab-tit">Laboratório</h2>' +
+      '<div class="small" style="color:var(--text-muted)">' +
+        'Seus HTMLs de teste. Só você abre — não há link para compartilhar.</div></div>' +
+      '<button class="btn btn--primary" onclick="labModal(null)">' +
+        '<i class="ti ti-plus"></i> Subir HTML</button>' +
+    '</div>' +
+    (labs.length ? '<div class="lab-grid">' + cards + '</div>'
+      : vazio('flask', 'Nada aqui ainda',
+        'Suba um arquivo .html e ele abre isolado, dentro desta tela.'));
+}
+
+function labModal(id){
+  if(!ehDonoLab()) return;
+  const l = id ? labs.find(x => x._id === id) : null;
+  abrirModal(moldura(l ? 'Editar teste' : 'Subir HTML de teste',
+    '<div class="fg"><label>Título</label>' +
+      '<input type="text" id="lab-tit" maxlength="80" value="' + esc(l ? l.titulo || '' : '') + '">' +
+    '</div>' +
+    '<div class="fg"><label>Nota</label>' +
+      '<input type="text" id="lab-nota" maxlength="140" ' +
+        'placeholder="opcional — para você lembrar do que é" ' +
+        'value="' + esc(l ? l.nota || '' : '') + '">' +
+    '</div>' +
+    '<div class="fg"><label>Arquivo .html' + (l ? ' (deixe vazio para manter o atual)' : '') + '</label>' +
+      '<input type="file" id="lab-file" accept=".html,.htm,text/html">' +
+      '<div class="ajuda">Um arquivo só. O que ele buscar de fora (CDN) continua sendo ' +
+        'buscado na hora de abrir. Limite de ' + LAB_LIMITE_MB + ' MB.</div>' +
+    '</div>' +
+    '<div id="lab-prog" class="small" style="color:var(--text-muted);min-height:16px"></div>',
+    l ? 'Salvar' : 'Subir', 'labSalvar(\'' + (id || '') + '\')'));
+}
+
+async function labSalvar(id){
+  if(!ehDonoLab()) return;
+  const l = id ? labs.find(x => x._id === id) : null;
+  const titulo = ($('lab-tit').value || '').trim();
+  const nota = ($('lab-nota').value || '').trim();
+  const arq = $('lab-file').files[0] || null;
+  if(!titulo){ toast('Dê um título ao teste.', 'erro'); return; }
+  if(!l && !arq){ toast('Escolha o arquivo .html.', 'erro'); return; }
+  if(arq && arq.size > LAB_LIMITE_MB * 1048576){
+    toast('O arquivo tem ' + labTamanho(arq.size) + '. O limite é ' + LAB_LIMITE_MB + ' MB.', 'erro');
+    return;
+  }
+  const prog = m => { const e = $('lab-prog'); if(e) e.textContent = m; };
+  try{
+    const docId = id || ('lab_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    const meta = { titulo, nota, atualizadoEm:new Date().toISOString(), dono:usuario.email };
+    if(arq){
+      prog('Lendo o arquivo...');
+      const texto = await arq.text();
+      prog('Comprimindo...');
+      const comp = await labComprimir(texto);
+      const pedacos = labPicar(comp.b64);
+      // Apaga os pedaços antigos ANTES de gravar: se o arquivo novo for menor,
+      // o que sobra do anterior fica pendurado e corrompe a leitura.
+      if(l && l.chunks) await labApagarPedacos(docId, l.chunks);
+      for(let i = 0; i < pedacos.length; i++){
+        prog('Gravando pedaço ' + (i + 1) + ' de ' + pedacos.length + '...');
+        await window._setDoc(window._doc(COL_LABDAD, docId + '__' + i),
+          { p:pedacos[i], dono:usuario.email });
+      }
+      meta.arquivo = arq.name; meta.bytes = arq.size;
+      meta.chunks = pedacos.length; meta.gzip = comp.gzip;
+    }
+    if(!l) meta.criadoEm = new Date().toISOString();
+    await window._setDoc(window._doc(COL_LAB, docId), Object.assign({}, l || {}, meta));
+    fecharModal();
+    toast(l ? 'Teste atualizado.' : 'Teste no ar.', 'ok');
+  }catch(e){
+    prog('');
+    toast('Erro ao salvar: ' + (e && e.message || e), 'erro');
+  }
+}
+
+async function labApagarPedacos(id, n){
+  for(let i = 0; i < n; i++){
+    try{ await window._deleteDoc(window._doc(COL_LABDAD, id + '__' + i)); }catch(e){}
+  }
+}
+
+async function labLerHTML(l){
+  const partes = [];
+  for(let i = 0; i < (l.chunks || 0); i++){
+    const s = await window._getDoc(window._doc(COL_LABDAD, l._id + '__' + i));
+    if(!s.exists()) throw new Error('o pedaço ' + (i + 1) + ' do arquivo não está no banco');
+    partes.push((s.data() || {}).p || '');
+  }
+  return await labDescomprimir(partes.join(''), !!l.gzip);
+}
+
+async function labAbrir(id){
+  if(!ehDonoLab()) return;
+  const l = labs.find(x => x._id === id); if(!l) return;
+  labFechar();
+  const v = document.createElement('div');
+  v.id = 'lab-visor'; v.className = 'lab-visor';
+  v.innerHTML = '<div class="lab-visor__bar">' +
+      '<button class="btn" onclick="labFechar()"><i class="ti ti-arrow-left"></i> Voltar</button>' +
+      '<span class="lab-visor__t">' + esc(l.titulo || '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<span class="small" style="color:var(--text-muted)">' + esc(l.arquivo || '') +
+        ' · ' + labTamanho(l.bytes) + '</span></div>' +
+    '<div class="lab-visor__corpo" id="lab-corpo">Carregando...</div>';
+  document.body.appendChild(v);
+  try{
+    const html = await labLerHTML(l);
+    const corpo = $('lab-corpo'); if(!corpo) return;   // fechou antes de carregar
+    // sandbox SEM allow-same-origin: o teste roda os scripts dele e não
+    // alcança o Firestore nem a sessão desta aba.
+    corpo.innerHTML = '<iframe sandbox="allow-scripts allow-popups allow-forms" ' +
+      'title="' + esc(l.titulo || 'teste') + '"></iframe>';
+    corpo.querySelector('iframe').srcdoc = html;
+  }catch(e){
+    const corpo = $('lab-corpo');
+    if(corpo) corpo.innerHTML = '<div style="padding:30px;text-align:center">' +
+      'Não foi possível abrir.<br><span class="small">' + esc(e && e.message || e) + '</span></div>';
+  }
+}
+function labFechar(){ const v = $('lab-visor'); if(v) v.remove(); }
+
+async function labBaixar(id){
+  if(!ehDonoLab()) return;
+  const l = labs.find(x => x._id === id); if(!l) return;
+  try{
+    const html = await labLerHTML(l);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([html], { type:'text/html' }));
+    a.download = l.arquivo || ((l.titulo || 'teste') + '.html');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }catch(e){ toast('Erro ao baixar: ' + (e && e.message || e), 'erro'); }
+}
+
+async function labExcluir(id){
+  if(!ehDonoLab()) return;
+  const l = labs.find(x => x._id === id); if(!l) return;
+  if(!confirm('Excluir "' + (l.titulo || '') + '"?\n\nO arquivo é apagado e não dá para desfazer.')) return;
+  try{
+    // Os pedaços primeiro: se der erro no meio, o registro continua na lista e
+    // dá para tentar de novo. Ao contrário, sobraria lixo sem dono.
+    await labApagarPedacos(id, l.chunks || 0);
+    await window._deleteDoc(window._doc(COL_LAB, id));
+    toast('Teste excluído.', 'ok');
+  }catch(e){ toast('Erro ao excluir: ' + (e && e.message || e), 'erro'); }
 }
 
 // ============================================================
