@@ -9,7 +9,8 @@
       "**/.*",
       "**/node_modules/**",
       "*.md",
-      "firestore.rules"
+      "firestore.rules",
+      "ferramentas/**"
     ]
   },
   "firestore": {

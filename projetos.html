@@ -760,6 +760,19 @@ a{ color:var(--accent); text-decoration:none }
 .lab-card__a .btn{ height:30px; padding:0 10px; font-size:12px }
 .lab-del{ color:var(--danger-text) }
 .lab-del:hover{ border-color:var(--danger-text) }
+.lab-tag{ background:var(--surface-soft,#eef1f4); border-radius:20px; padding:1px 7px;
+  font-size:10px; font-weight:700; color:var(--text-secondary) }
+.lab-cli{ background:var(--surface-soft,#f8fafc); border:1px dashed var(--border);
+  border-radius:var(--radius); padding:10px 13px; margin-bottom:var(--space-5) }
+.lab-cli__t{ display:flex; align-items:center; gap:7px; font-size:12.5px;
+  font-weight:600; color:var(--text-secondary) }
+.lab-cli__x{ margin-left:auto; font-size:11.5px; font-weight:600; color:var(--accent);
+  cursor:pointer }
+.lab-cli__x:hover{ text-decoration:underline }
+.lab-cli__c{ margin:9px 0 0; padding:9px 11px; background:var(--text); color:#e2e8f0;
+  border-radius:8px; font-size:11.5px; line-height:1.6; overflow-x:auto;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
+.lab-cli__d{ font-size:11.5px; color:var(--text-muted); margin-top:7px; line-height:1.5 }
 
 /* Visor: o teste ocupa a tela inteira, mas dentro de um iframe isolado. */
 .lab-visor{ position:fixed; inset:0; z-index:120; background:var(--surface);

@@ -3224,7 +3224,12 @@ function viewLab(){
       (l.nota ? '<div class="lab-card__d">' + esc(l.nota) + '</div>' : '') +
       '<div class="lab-card__m">' + esc(l.arquivo || '—') + ' · ' + labTamanho(l.bytes) +
         (l.gzip ? ' · comprimido' : '') + '</div>' +
-      '<div class="lab-card__m">Atualizado em ' + labQuando(l.atualizadoEm) + '</div>' +
+      '<div class="lab-card__m">Atualizado em ' + labQuando(l.atualizadoEm) +
+        // Saber a origem importa: o que vem do terminal é reescrito a cada
+        // publicação, e editar por aqui seria perdido no próximo deploy.
+        (l.origem === 'claude-code'
+          ? ' · <span class="lab-tag">do terminal</span>'
+          : '') + '</div>' +
       '<div class="lab-card__a">' +
         '<button class="btn btn--primary" onclick="labAbrir(\'' + l._id + '\')">' +
           '<i class="ti ti-player-play"></i> Abrir</button>' +
@@ -3236,16 +3241,42 @@ function viewLab(){
           'onclick="labExcluir(\'' + l._id + '\')"><i class="ti ti-trash"></i></button>' +
       '</div>' +
     '</div>').join('');
+  // O caminho principal é publicar do terminal enquanto se desenvolve; o
+  // upload continua para quando o arquivo já está pronto e veio de fora.
+  // Aberto por padrão quando não há nada: quem chega na aba vazia precisa do
+  // comando na frente, não escondido atrás de um "como?".
+  const cliAberto = labCliAberto == null ? !labs.length : labCliAberto;
+  const comando = '<div class="lab-cli">' +
+      '<div class="lab-cli__t"><i class="ti ti-terminal-2"></i> Publicar direto daqui de dentro' +
+        '<span class="lab-cli__x" onclick="labAlternarCli()">' +
+        (cliAberto ? 'esconder' : 'como?') + '</span></div>' +
+      (cliAberto
+        ? '<pre class="lab-cli__c">node ferramentas/lab.js publicar site/index.html --titulo "Meu site"\n' +
+          'node ferramentas/lab.js publicar site/index.html --watch\n' +
+          'node ferramentas/lab.js listar</pre>' +
+          '<div class="lab-cli__d">Publicar de novo <b>atualiza</b> o mesmo teste, ' +
+          'sem duplicar. CSS, JS e imagens locais entram embutidos — o visor abre ' +
+          'o HTML isolado, e caminho relativo não resolveria aqui dentro. ' +
+          'Com <b>--watch</b>, cada vez que você salva o arquivo o teste é ' +
+          'republicado; basta recarregar esta aba.</div>'
+        : '') +
+    '</div>';
   return '<div class="lab-head">' +
       '<div><h2 class="lab-tit">Laboratório</h2>' +
       '<div class="small" style="color:var(--text-muted)">' +
         'Seus HTMLs de teste. Só você abre — não há link para compartilhar.</div></div>' +
-      '<button class="btn btn--primary" onclick="labModal(null)">' +
-        '<i class="ti ti-plus"></i> Subir HTML</button>' +
-    '</div>' +
+      '<button class="btn" onclick="labModal(null)">' +
+        '<i class="ti ti-upload"></i> Subir HTML</button>' +
+    '</div>' + comando +
     (labs.length ? '<div class="lab-grid">' + cards + '</div>'
       : vazio('flask', 'Nada aqui ainda',
-        'Suba um arquivo .html e ele abre isolado, dentro desta tela.'));
+        'Publique do terminal com o comando acima, ou suba um arquivo .html.'));
+}
+// null = ainda não mexeram nisso; aí quem decide é ter ou não teste na lista.
+let labCliAberto = null;
+function labAlternarCli(){
+  labCliAberto = labCliAberto == null ? !!labs.length : !labCliAberto;
+  render();
 }
 
 function labModal(id){

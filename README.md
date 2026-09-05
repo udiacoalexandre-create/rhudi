@@ -26,10 +26,55 @@ administração de benefícios. A aplicação roda inteiramente no navegador
 
 ## Estrutura
 
-| Arquivo       | Descrição                                              |
-| ------------- | ------------------------------------------------------ |
-| `index.html`  | Página principal, estilos e inicialização do Firebase. |
-| `app.js`      | Lógica da aplicação (telas, regras e integrações).     |
+O mesmo login serve a quatro aplicações; o Master libera cada plataforma
+pessoa por pessoa, e quem não tem é barrado pela regra do Firestore, não só
+pela tela.
+
+| Arquivo                    | Descrição                                              |
+| -------------------------- | ------------------------------------------------------ |
+| `index.html` / `app.js`    | RH: colaboradores, benefícios, férias, folha, prêmios. |
+| `projetos.html` / `.js`    | Projetos Estratégicos, e o Laboratório particular.     |
+| `comercial.html` / `.js`   | Comercial: painéis de BI e o Projeto Dev&Co.           |
+| `painel.html`              | Painel de BI aberto por link público (só leitura).     |
+| `demandas.html`            | Quadro de demandas por link público (só leitura).      |
+| `udiaco-design-system.css` | Estilos comuns às quatro telas.                        |
+| `firestore.rules`          | Quem lê e escreve o quê. **O CI não publica isto.**    |
+| `ferramentas/`             | Scripts de terminal. Fora do deploy do Hosting.        |
+
+## Publicar um HTML no Laboratório
+
+O Laboratório é a aba particular dentro do Projetos Estratégicos. Dá para
+subir pelo navegador, mas enquanto se desenvolve o caminho é o terminal:
+
+```bash
+node ferramentas/lab.js publicar site/index.html --titulo "Meu site"
+node ferramentas/lab.js publicar site/index.html --watch   # republica ao salvar
+node ferramentas/lab.js listar
+node ferramentas/lab.js excluir lab_index
+```
+
+O id vem do nome do arquivo, então publicar de novo **atualiza** o mesmo teste
+em vez de criar um segundo. CSS, JS e imagens locais entram embutidos no HTML
+— o visor abre o arquivo num iframe isolado, onde caminho relativo não
+resolveria; link de CDN continua sendo buscado normalmente.
+
+A ferramenta usa a chave da conta de serviço, procurada em
+`~/udiaco-dados-privados` (ou no caminho da variável `UDIACO_SA`). A chave não
+está no repositório e a pasta `ferramentas/` não vai para o Hosting.
+
+## Testes
+
+As suítes carregam o arquivo real da aplicação num sandbox e exercitam as
+funções de verdade — não conferem markup solto.
+
+```bash
+node ferramentas/testes/rodar.js        # todas
+node ferramentas/testes/rodar.js lab    # só as que casam com "lab"
+```
+
+Sai com código 1 se qualquer uma falhar, para servir de porta antes do
+commit. A suíte `labcli` toca o Firestore de produção num id descartável
+(`lab_zzz_teste_automatico`) e apaga o que criou.
 
 ## Como executar
 
