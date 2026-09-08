@@ -6680,7 +6680,11 @@ async function salvarDetalheFerias(id){
 // O valor não é proporcional ao percentual: são FAIXAS declaradas pelo RH.
 // A tabela abaixo é o que manda — mudar aqui muda o cálculo, e nada é
 // interpolado, porque a regra da Udiaço não é linear (0,5 vale 85 e 1 vale 270).
-const RV_FAIXAS = [
+// Ponto de partida, não regra: o valor de cada percentual é definido POR
+// COMPETÊNCIA, no passo Valores. Em 08/2026 foi 0 / 85 / 270, e nos outros
+// meses pode ser outro. Ficar cravado no código obrigaria um deploy para
+// pagar o mês seguinte.
+const RV_FAIXAS_PADRAO = [
   {p:0,   v:0},
   {p:0.5, v:85},
   {p:1,   v:270},
@@ -6692,9 +6696,16 @@ let rvState = {
   competencia: '',      // "9/2026"
   fechado: false,
   pessoas: [],          // {mat,nome,cpf,empresa,depto,percentual}
+  faixas: RV_FAIXAS_PADRAO.map(f=>({p:f.p, v:f.v})),
 };
 
-const rvFaixa = p => RV_FAIXAS.find(f => f.p === fnum(p));
+// Sempre em ordem de percentual: a tela e o arquivo do Caju leem daqui.
+function rvFaixas(){
+  const l = Array.isArray(rvState.faixas) && rvState.faixas.length
+    ? rvState.faixas : RV_FAIXAS_PADRAO;
+  return l.slice().sort((a,b)=>fnum(a.p)-fnum(b.p));
+}
+const rvFaixa = p => rvFaixas().find(f => fnum(f.p) === fnum(p));
 // Valor da pessoa. Percentual fora das faixas não vale nada até alguém
 // declarar a faixa — melhor pagar zero e aparecer na tela do que inventar.
 function rvValor(pessoa){
@@ -6709,18 +6720,22 @@ function rvSemPercentual(){
 
 // ── Página ──────────────────────────────────────────────────────
 function pgRemVariavel(){
+  // O título e as abas ficam DENTRO do .bl-page, como no Prêmio e no
+  // Lançamento. Fora dele, somavam altura à do .bl-page e a página inteira
+  // passava a rolar — levando o rodapé com o botão Continuar junto.
   return `
-    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
-      <div><h2 class="page-title">Remuneração Variável</h2>
-        <p class="page-subtitle">Prêmio por atingimento de meta${_ajuda('O valor vem de faixas fixas: '
-          + RV_FAIXAS.map(f=>_rvPct(f.p)+' = '+brl(f.v)).join(' · ')
-          + '. Percentual fora dessas faixas não gera valor.')}</p></div>
-      <div id="rv-tabs" style="flex:1;display:flex;justify-content:flex-end"></div>
+   <div class="bl-page">
+    <div class="lan-conteudo" id="rv-conteudo-wrap">
+      <div class="lan-top">
+        <div class="page-header"><h2 class="page-title">Remuneração Variável</h2>
+          <p class="page-subtitle">Prêmio por atingimento de meta${_ajuda(
+            'Os valores de cada percentual são definidos por competência, no passo Valores.')}</p></div>
+        <div id="rv-tabs"></div>
+      </div>
+      <div id="rv-conteudo"></div>
     </div>
-    <div class="bl-page">
-      <div class="lan-conteudo" id="rv-conteudo"></div>
-      <div id="rv-rodape"></div>
-    </div>`;
+    <div id="rv-rodape"></div>
+   </div>`;
 }
 function _rvPct(p){ return (fnum(p)*100).toLocaleString('pt-BR',{maximumFractionDigits:0})+'%'; }
 function afterRenderRV(){ renderRV(); }
@@ -6730,8 +6745,9 @@ const RV_PASSOS = [
   {n:1, label:'Base'},
   {n:2, label:'Competência'},
   {n:3, label:'Colaboradores'},
-  {n:4, label:'Percentuais'},
-  {n:5, label:'Fechar'},
+  {n:4, label:'Valores'},
+  {n:5, label:'Percentuais'},
+  {n:6, label:'Fechar'},
 ];
 
 function renderRV(){
@@ -6816,8 +6832,61 @@ function renderRV(){
       +'<div id="rv-lista-pessoas"></div>';
     rodape(2,4,'Continuar');
 
-  // ── 4. Percentuais ──
+  // ── 4. Valores de cada percentual ──
   } else if(atual===4){
+    const fx=rvFaixas();
+    const trav=rvState.fechado;
+    // Se os percentuais já foram preenchidos, mostra quanta gente cai em cada
+    // faixa e quanto ela custa. É o que permite mexer no valor sabendo o efeito.
+    const preenchidos=(rvState.pessoas||[]).filter(p=>p.percentual!==''&&p.percentual!=null).length;
+    conteudo='<div class="lan-caixa">'
+      +'<div class="lan-caixa__t">Quanto vale cada percentual em '+(rvState.competencia||'—')
+        +_ajuda('Vale só para esta competência. No mês seguinte estes valores vêm '
+               +'preenchidos como ponto de partida e você ajusta se mudarem.')+'</div>'
+      +'<table class="tbl" style="margin-top:8px;max-width:520px"><thead><tr>'
+        +'<th>Atingimento</th><th style="text-align:right">Valor</th>'
+        +(preenchidos?'<th style="text-align:center">Pessoas</th>'
+          +'<th style="text-align:right">Subtotal</th>':'')
+        +'<th></th></tr></thead><tbody>'
+      +fx.map((f,i)=>{
+        const qtd=(rvState.pessoas||[]).filter(p=>p.percentual!==''&&p.percentual!=null
+          && fnum(p.percentual)===fnum(f.p)).length;
+        return '<tr>'
+          +'<td style="font-weight:600">'+_rvPct(f.p)+'</td>'
+          +'<td style="text-align:right">'
+            +(trav ? brl(f.v)
+              : '<div style="display:inline-flex;align-items:center;gap:4px">'
+                +'<span style="color:var(--text2)">R$</span>'
+                +'<input type="text" inputmode="decimal" value="'+_rvNum(f.v)+'" '
+                +'style="width:92px;text-align:right;padding:5px 7px;border:1.5px solid var(--border);'
+                +'border-radius:6px;font-size:13px;font-family:monospace" '
+                +'onchange="rvSetFaixaValor('+f.p+',this.value)"></div>')
+          +'</td>'
+          +(preenchidos?'<td style="text-align:center">'+(qtd||'—')+'</td>'
+            +'<td style="text-align:right;font-family:monospace">'
+            +(qtd?brl(qtd*fnum(f.v)):'—')+'</td>':'')
+          +'<td style="text-align:right">'
+            +(trav||fx.length<=1 ? ''
+              : '<button class="btn btn-ghost btn-xs" title="Remover esta faixa" '
+                +'onclick="rvRemFaixa('+f.p+')"><i class="ti ti-trash"></i></button>')
+          +'</td></tr>';
+      }).join('')
+      +'</tbody></table>'
+      +(trav?'<div class="text-xs" style="margin-top:8px;color:var(--text2)">'
+        +'Competência fechada: os valores não podem mais ser alterados.</div>'
+        :'<div style="display:flex;gap:8px;align-items:flex-end;margin-top:12px;flex-wrap:wrap">'
+        +'<div class="fg" style="margin:0"><label style="font-size:11px">Novo atingimento (%)</label>'
+          +'<input type="text" id="rv-nova-p" placeholder="ex.: 75" style="width:120px"></div>'
+        +'<div class="fg" style="margin:0"><label style="font-size:11px">Valor (R$)</label>'
+          +'<input type="text" id="rv-nova-v" placeholder="ex.: 180" style="width:120px"></div>'
+        +'<button class="btn btn-ghost btn-sm" onclick="rvAddFaixa()">'
+          +'<i class="ti ti-plus"></i> Incluir faixa</button>'
+      +'</div>')
+      +'</div>';
+    rodape(3,5,'Continuar');
+
+  // ── 5. Percentuais ──
+  } else if(atual===5){
     const sem=rvSemPercentual();
     conteudo='<div class="lan-caixa">'
       +'<div class="lan-destaque"><span class="lan-destaque__n">'+brl(rvTotal())+'</span>'
@@ -6831,15 +6900,18 @@ function renderRV(){
           return f?'<span><strong style="color:var(--red)">'+f+'</strong> demitido/afastado'
             +_ajuda('Estão na lista porque você os incluiu. Confira se devem receber nesta competência.')+'</span>':''; })()
       +'</div>'
-      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
-        +RV_FAIXAS.map(f=>'<button class="btn btn-ghost btn-sm" onclick="rvAplicarTodos('+f.p+')">'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">'
+        +rvFaixas().map(f=>'<button class="btn btn-ghost btn-sm" onclick="rvAplicarTodos('+f.p+')">'
           +'Todos '+_rvPct(f.p)+'</button>').join('')
+        +'<span class="text-xs" style="color:var(--text2)">'
+          +rvFaixas().map(f=>_rvPct(f.p)+' = '+brl(f.v)).join(' · ')
+          +' <button class="btn btn-ghost btn-xs" onclick="rvIrPasso(4)">alterar</button></span>'
       +'</div>'
       +'</div>'
       +'<div id="rv-lista-pct"></div>';
-    rodape(3,5,'Continuar');
+    rodape(4,6,'Continuar');
 
-  // ── 5. Fechar ──
+  // ── 6. Fechar ──
   } else {
     const comValor=rvComValor();
     conteudo='<div class="lan-caixa">'
@@ -6851,7 +6923,7 @@ function renderRV(){
         +(rvState.fechado?'<span><strong style="color:var(--green)">competência fechada</strong></span>':'')
       +'</div></div>'
       +'<div id="rv-lista-fim"></div>';
-    rodape(4,null,null,null,
+    rodape(5,null,null,null,
       '<span style="display:flex;gap:8px;flex-wrap:wrap">'
       +(rvState.fechado
         ? '<button class="btn btn-ghost" onclick="rvNovaCompetencia()"><i class="ti ti-refresh"></i> Nova competência</button>'
@@ -6869,8 +6941,8 @@ function renderRV(){
   if(rodEl) rodEl.innerHTML=rodapeHtml;
 
   if(atual===3) rvRenderPessoas();
-  if(atual===4) rvRenderPct();
-  if(atual===5) rvRenderFim();
+  if(atual===5) rvRenderPct();
+  if(atual===6) rvRenderFim();
 }
 
 // População elegível: mesma regra do prêmio (fora demitidos e N/A).
@@ -6891,6 +6963,68 @@ function rvDefinirComp(){
   rvState.competencia=nova;
   rvCarregar().then(()=>rvIrPasso(3));
 }
+
+// ── Valores de cada percentual (por competência) ─────────────────
+// Número no formato da tela: "270" e não "270.00", mas "85,5" se for o caso.
+function _rvNum(v){
+  const n=fnum(v);
+  return Number.isInteger(n) ? String(n) : n.toLocaleString('pt-BR',{minimumFractionDigits:2});
+}
+// "1.234,56" e "1234.56" viram o mesmo número.
+function _rvLerNum(txt){
+  let t=String(txt==null?'':txt).trim().replace(/[R$\s]/g,'');
+  if(t==='') return NaN;
+  if(t.includes(',')) t=t.replace(/\./g,'').replace(',','.');
+  const n=Number(t);
+  return isFinite(n) ? n : NaN;
+}
+function rvSetFaixaValor(p, txt){
+  if(rvState.fechado){ toast('Competência fechada.','warning'); renderRV(); return; }
+  const v=_rvLerNum(txt);
+  if(isNaN(v) || v<0){ toast('Valor inválido. Use um número, como 270 ou 85,50.','warning'); renderRV(); return; }
+  const f=(rvState.faixas||[]).find(x=>fnum(x.p)===fnum(p));
+  if(!f){ renderRV(); return; }
+  if(fnum(f.v)===v) return;                 // nada mudou, não redesenha à toa
+  f.v=v;
+  renderRV();
+  // Grava sozinho: o valor é o que multiplica todo mundo, e perder isto por
+  // um refresh sairia caro.
+  if(rvState.competencia) rvSalvar().catch(()=>{});
+}
+function rvAddFaixa(){
+  if(rvState.fechado){ toast('Competência fechada.','warning'); return; }
+  const pTxt=document.getElementById('rv-nova-p')?.value;
+  const vTxt=document.getElementById('rv-nova-v')?.value;
+  let p=_rvLerNum(pTxt);
+  const v=_rvLerNum(vTxt);
+  if(isNaN(p)){ toast('Informe o atingimento, em porcentagem (ex.: 75).','warning'); return; }
+  // Aceita 75 (por cento) e 0,75 — a planilha da meta usa os dois formatos.
+  if(p>1) p=p/100;
+  if(p<0 || p>1){ toast('O atingimento vai de 0% a 100%.','warning'); return; }
+  if(isNaN(v) || v<0){ toast('Informe o valor em reais (ex.: 180).','warning'); return; }
+  if((rvState.faixas||[]).some(f=>fnum(f.p)===p)){
+    toast('Já existe faixa de '+_rvPct(p)+'. Altere o valor dela na tabela.','warning'); return;
+  }
+  rvState.faixas=(rvState.faixas||[]).concat([{p, v}]);
+  renderRV();
+  if(rvState.competencia) rvSalvar().catch(()=>{});
+  toast('Faixa de '+_rvPct(p)+' incluída ('+brl(v)+').','success');
+}
+function rvRemFaixa(p){
+  if(rvState.fechado){ toast('Competência fechada.','warning'); return; }
+  const f=(rvState.faixas||[]).find(x=>fnum(x.p)===fnum(p));
+  if(!f) return;
+  // Quem já está marcado com esse percentual perde o valor: dizer antes.
+  const usando=(rvState.pessoas||[]).filter(x=>x.percentual!==''&&x.percentual!=null
+    && fnum(x.percentual)===fnum(p)).length;
+  if(!confirm('Remover a faixa de '+_rvPct(p)+'?'
+    +(usando?'\n\n'+usando+' colaborador(es) estão marcados com esse atingimento e '
+      +'ficariam sem valor.':''))) return;
+  rvState.faixas=(rvState.faixas||[]).filter(x=>fnum(x.p)!==fnum(p));
+  renderRV();
+  if(rvState.competencia) rvSalvar().catch(()=>{});
+}
+
 
 // ── Colaboradores da competência ────────────────────────────────
 function rvRenderPessoas(){
@@ -7121,7 +7255,7 @@ function rvRenderPct(){
       +'<td style="text-align:center"><select onchange="rvSetPct(\''+p.mat+'\',this.value)"'+trava
         +' style="min-width:110px">'
         +'<option value=""'+(p.percentual===''||p.percentual==null?' selected':'')+'>—</option>'
-        +RV_FAIXAS.map(f=>'<option value="'+f.p+'"'+(fnum(p.percentual)===f.p&&p.percentual!==''?' selected':'')+'>'
+        +rvFaixas().map(f=>'<option value="'+f.p+'"'+(fnum(p.percentual)===fnum(f.p)&&p.percentual!==''?' selected':'')+'>'
           +_rvPct(f.p)+'</option>').join('')
       +'</select></td>'
       +'<td style="text-align:right;font-weight:700;'+(v>0?'color:var(--green)':'color:var(--text3)')+'">'
@@ -7239,7 +7373,7 @@ async function rvSalvar(){
       fechado:!!rvState.fechado,
       pessoas:rvState.pessoas,
       total:rvTotal(),
-      faixas:RV_FAIXAS,
+      faixas:rvFaixas(),
       atualizadoEm:new Date().toISOString(),
       atualizadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||''
     });
@@ -7253,6 +7387,11 @@ async function rvCarregar(){
       const d=snap.data()||{};
       rvState.pessoas=Array.isArray(d.pessoas)?d.pessoas:[];
       rvState.fechado=!!d.fechado;
+      // Competência já iniciada traz os valores DELA. Sem documento, ficam
+      // os do mês anterior como ponto de partida — é o que se ajusta, e não
+      // se redigita do zero todo mês.
+      if(Array.isArray(d.faixas) && d.faixas.length)
+        rvState.faixas=d.faixas.map(f=>({p:fnum(f.p), v:fnum(f.v)}));
     }
   }catch(e){ /* sem documento ainda: começa vazio */ }
 }
@@ -7268,6 +7407,9 @@ async function rvGravarHistorico(){
     qtdLista:rvState.pessoas.length,
     fechadoEm:new Date().toISOString(),
     fechadoPor:(usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'',
+    // A tabela de valores vai junto: sem ela, meses depois não há como
+    // reconstruir de onde saiu o valor de cada pessoa.
+    faixas:rvFaixas(),
     detalhe:comValor.map(p=>({mat:p.mat,nome:p.nome,cpf:p.cpf,
       percentual:p.percentual,valor:rvValor(p)}))
   });

@@ -477,13 +477,18 @@ t('Briefing existe', APP.STATUS.some(x=>x.v==='briefing'&&x.l==='Briefing'));
 t('Briefing vem primeiro', APP.STATUS[0].v==='briefing');
 t('cor do Briefing no CSS', /--cm-briefing:/.test(HTML));
 APP.setFiltro({q:'',prio:'',status:'',solic:''});
+// Datas relativas ao dia de hoje. Com data cravada, o teste passava na
+// semana em que foi escrito e acusava erro depois — o codigo estava certo e
+// o fixture tinha envelhecido.
+const emDias=n=>{ const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 APP.setDemandas([
   {_id:'i1',titulo:'Briefing 1',solicitante:'A',prioridade:0,status:'briefing',prazo:''},
-  {_id:'i2',titulo:'Em 3 dias',solicitante:'A',prioridade:0,status:'desenvolvimento',prazo:'2026-09-07'},
-  {_id:'i3',titulo:'Em 12 dias',solicitante:'A',prioridade:0,status:'desenvolvimento',prazo:'2026-09-16'},
-  {_id:'i4',titulo:'Em 40 dias',solicitante:'A',prioridade:0,status:'nao_iniciado',prazo:'2026-10-14'},
-  {_id:'i5',titulo:'Passou',solicitante:'A',prioridade:0,status:'validacao',prazo:'2026-08-28'},
-  {_id:'i6',titulo:'Entregue',solicitante:'A',prioridade:0,status:'entregue',prazo:'2026-09-07'},
+  {_id:'i2',titulo:'Em 3 dias',solicitante:'A',prioridade:0,status:'desenvolvimento',prazo:emDias(3)},
+  {_id:'i3',titulo:'Em 12 dias',solicitante:'A',prioridade:0,status:'desenvolvimento',prazo:emDias(12)},
+  {_id:'i4',titulo:'Em 40 dias',solicitante:'A',prioridade:0,status:'nao_iniciado',prazo:emDias(40)},
+  {_id:'i5',titulo:'Passou',solicitante:'A',prioridade:0,status:'validacao',prazo:emDias(-11)},
+  {_id:'i6',titulo:'Entregue',solicitante:'A',prioridade:0,status:'entregue',prazo:emDias(3)},
 ]);
 APP.pintarDemandas();
 const si=NODES['dm-stats']._html;

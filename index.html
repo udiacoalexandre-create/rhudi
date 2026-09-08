@@ -611,10 +611,15 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 
 /* Rodapé de navegação do assistente: sempre no mesmo lugar, em todos os passos */
 /* Rodapé TRAVADO no fim da área da página: não anda com o conteúdo. */
+/* O rodapé é grudado embaixo (sticky), e não só o último filho de um .bl-page
+   de altura calculada. A altura do .bl-page sai de uma subtração da viewport
+   (100vh menos o topo), e qualquer diferença de alguns pixels na barra de
+   módulos faz a página inteira rolar levando o botão Continuar com ela. Com
+   sticky, ele fica no rodapé da tela quem quer que esteja rolando. */
 .ds .lan-rodape { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center;
   gap: 16px; background: var(--surface); border-top: 1px solid var(--border);
   box-shadow: 0 -4px 14px rgba(15,23,42,.07); padding: 12px 18px; margin: 0 -24px -24px;
-  position: relative; z-index: 20; }
+  position: sticky; bottom: 0; z-index: 20; }
 .ds .lan-rodape__meio { flex: 1 1 auto; text-align: center; font-size: 12px; color: var(--text2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ds .lan-rodape .btn { min-width: 150px; justify-content: center; padding: 10px 18px; font-size: 14px; }

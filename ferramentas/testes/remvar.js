@@ -47,7 +47,7 @@ const sandbox={ window, document, localStorage:{getItem:()=>null,setItem(){},rem
   btoa:s=>Buffer.from(s,'binary').toString('base64'), atob:s=>Buffer.from(s,'base64').toString('binary'),
   structuredClone:o=>JSON.parse(JSON.stringify(o)), Uint8Array, ArrayBuffer };
 const nomes=Object.keys(sandbox);
-const exporta='return {'+['RV_FAIXAS','rvValor','rvTotal','rvComValor','rvSemPercentual','rvFaixa',
+const exporta='return {'+['RV_FAIXAS_PADRAO','rvFaixas','rvValor','rvTotal','rvComValor','rvSemPercentual','rvFaixa',
   '_rvPct','pgRemVariavel','renderRV','rvIrPasso','rvDefinirComp','_rvAplicarPlanilha','rvRemover',
   'rvIncluir','rvSetPct','rvAplicarTodos','rvFecharCompetencia','rvExportarCaju','rvExportarExcel',
   'rvSalvar','rvCarregar','_rvBasePop','rvRenderPct','rvRenderPessoas','rvRenderFim','rvBaixarModelo',
@@ -71,7 +71,11 @@ APP.setColabs([
 
 (async()=>{
 console.log('\n══ 1) AS FAIXAS ══');
-t('três faixas declaradas', APP.RV_FAIXAS.length===3);
+// As faixas viraram dado da COMPETENCIA; RV_FAIXAS_PADRAO e so o ponto de
+// partida. O passo Valores e coberto pela suite rvvalores.
+t('três faixas de partida', APP.RV_FAIXAS_PADRAO.length===3,
+  JSON.stringify(APP.RV_FAIXAS_PADRAO));
+t('e a competencia comeca com elas', APP.rvFaixas().length===3);
 t('0% = R$ 0,00', APP.rvValor({percentual:0})===0);
 t('50% = R$ 85,00', APP.rvValor({percentual:0.5})===85, 'v='+APP.rvValor({percentual:0.5}));
 t('100% = R$ 270,00', APP.rvValor({percentual:1})===270, 'v='+APP.rvValor({percentual:1}));
