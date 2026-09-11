@@ -131,7 +131,7 @@ t('nenhum ano de 4 digitos na tabela', !/\/2026/.test(li),
 t('a coluna de entrega encolheu (era 122px)',
   parseFloat(APP.DM_COLS[2])<122, APP.DM_COLS[2]);
 t('a coluna de entrada encolheu (era 82px)',
-  parseFloat(APP.DM_COLS[5])<82, APP.DM_COLS[5]);
+  parseFloat(APP.DM_COLS[6])<82, APP.DM_COLS[6]);
 t('a folga foi para a Demanda', APP.DM_COLS[0]==='auto');
 t('a pagina publica tambem usa DD/MM', /function soDataCurta/.test(PUB)
   && /soDataCurta\(d\.prazo\)/.test(PUB) && /soDataCurta\(d\.entrada\)/.test(PUB));
@@ -178,8 +178,12 @@ const minP=parseFloat((HTML.match(/table\.dm--fixa\{[^}]*min-width:(\d+)px/)||[]
 const minPub=parseFloat((PUB.match(/table\.dm\{[^}]*min-width:(\d+)px/)||[])[1]);
 t('sobra largura para a Demanda na plataforma', minP-soma(APP.DM_COLS)>=200,
   'min '+minP+' - fixas '+soma(APP.DM_COLS));
+// com as colunas DELA, nao com as da plataforma: as duas ja nao sao iguais
+const colPub=(PUB.match(/const DM_COLS=\[([^\]]*)\]/)||['',''])[1]
+  .split(',').map(x=>x.replace(/['"\s]/g,''));
+const fixasPub=colPub.slice(1).reduce((a,w)=>a+parseFloat(w),0);
 t('sobra largura para a Demanda na pagina publica',
-  minPub-(soma(APP.DM_COLS)-40)>=200, 'min '+minPub);
+  minPub-fixasPub>=200, 'min '+minPub+' - fixas '+fixasPub+' = '+(minPub-fixasPub));
 
 console.log('\n== 9) A FAIXA OCUPA A LINHA INTEIRA ==');
 // O div de FORA nao pode ser .stats: sendo flex, a faixa virava item de
@@ -191,17 +195,31 @@ t('a faixa em si é que tem a classe', /class="stats stats--slim"/.test(NODES['d
 t('a página pública já era um bloco simples', /<div id="stats"><\/div>/.test(PUB));
 
 console.log('\n== 10) NOME E ÁREA CABEM ==');
-t('quem pediu ficou mais largo (era 116px)', parseFloat(APP.DM_COLS[4])>116, APP.DM_COLS[4]);
-t('área ficou mais larga (era 100px)', parseFloat(APP.DM_COLS[6])>100, APP.DM_COLS[6]);
+// indices depois da entrada da coluna Responsável:
+// 0 demanda · 1 prio · 2 entrega · 3 status · 4 quem pediu · 5 responsável
+// 6 entrada · 7 área · 8 editar
+t('quem pediu cabe um nome', parseFloat(APP.DM_COLS[4])>=140, APP.DM_COLS[4]);
+t('responsável também', parseFloat(APP.DM_COLS[5])>=140, APP.DM_COLS[5]);
+t('área ficou mais larga (era 100px)', parseFloat(APP.DM_COLS[7])>100, APP.DM_COLS[7]);
 t('cabe um nome completo em quem pediu',
   parseFloat(APP.DM_COLS[4])/6.4>'MARIZAN PEREIRA DOURADA'.length,
   'cabem ~'+Math.floor(parseFloat(APP.DM_COLS[4])/6.4)+' caracteres');
 t('a folga saiu da Demanda, que segue em auto', APP.DM_COLS[0]==='auto');
 t('a Demanda tem o balão para o texto inteiro', /data-desc=/.test(li)||/tem-desc/.test(SRC));
-t('as duas telas usam as mesmas larguras',
-  (PUB.match(/const DM_COLS=\[([^\]]*)\]/)||['',''])[1].replace(/'/g,'')
-    === APP.DM_COLS.slice(0,7).join(','),
-  (PUB.match(/const DM_COLS=\[[^\]]*\]/)||[''])[0]);
+// A pagina publica NAO mostra 'Responsável': e outra audiencia (a parceira),
+// e a decisao de expor ou nao esta com o Alê. Enquanto for assim, o que se
+// cobra e que a divergencia seja SO essa coluna — as outras tem de bater.
+t('a pagina publica segue com 7 colunas', colPub.length===7, colPub.join(','));
+t('e nao tem a coluna de Responsável', !/Responsável/.test(PUB));
+// 'Quem pediu' cedeu 26px na plataforma para abrir espaço ao Responsável; na
+// pública, que não tem essa coluna, não havia motivo para apertar. O que se
+// cobra é que nenhuma coluna da pública seja MENOR que a da plataforma.
+const semResp=APP.DM_COLS.filter((_,i)=>i!==5 && i!==8);
+const apertadas=colPub.map((w,i)=>({i, pub:parseFloat(w), plat:parseFloat(semResp[i])}))
+  .filter(x=>x.plat && x.pub && x.pub<x.plat);
+t('nenhuma coluna da pública é mais apertada que a da plataforma',
+  apertadas.length===0,
+  apertadas.map(x=>'col'+x.i+': '+x.pub+' < '+x.plat).join(' | '));
 
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

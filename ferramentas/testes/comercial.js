@@ -296,12 +296,17 @@ t('prioridade no campo editável', /class="pr-sel"[^>]*value="0"/.test(li)
   (li.match(/class="pr-sel"[^>]{0,60}/g)||[]).join(' | '));
 // confere os ROTULOS visiveis, e nao o texto dos title
 const rotulos=(li.match(/<th[^>]*>([\s\S]*?)<\/th>/g)||[])
-  .slice(0,8).map(x=>x.replace(/<[^>]*>/g,'').trim());
+  .slice(0,9).map(x=>x.replace(/<[^>]*>/g,'').trim());
 t('colunas na ordem pedida',
-  rotulos.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Entrada|Área|',
+  rotulos.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Responsável|Entrada|Área|',
   rotulos.join('|'));
-t('nenhum rotulo comprido o bastante para invadir a vizinha',
-  rotulos.every(r=>r.length<=10), rotulos.filter(r=>r.length>10).join('|'));
+// 'Responsável' tem 11 caracteres e cabe folgado nos 150px da coluna dele:
+// contar caractere era um atalho. O que vale e caber na largura declarada,
+// e o cabecalho ser cortado para nao vazar de jeito nenhum.
+t('rotulos curtos, do tamanho de um cabecalho',
+  rotulos.every(r=>r.length<=12), rotulos.filter(r=>r.length>12).join('|'));
+t('e o cabecalho e cortado, para nao vazar de jeito nenhum',
+  /table\.dm th\{[^}]*overflow:hidden/.test(HTML));
 t('clicar abre a demanda', /modalDemanda\('a'\)/.test(li));
 
 console.log('\n══ 5) CASCA E REGISTRO ══');

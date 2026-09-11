@@ -67,7 +67,7 @@ const filtro=mkEl('dm-solic'); filtro.value='';        // nenhum filtro escolhid
 document.registrar(filtro);
 // 2) depois o modal, com o campo preenchido
 [['dm-tit','Integração com o ERP'],['dm-desc','texto'],['dm-f-solic','Alexandre'],
- ['dm-area','Comercial'],['dm-f-prio','0'],['dm-entrada','2026-07-01'],
+ ['dm-area','Comercial'],['dm-resp','Júlia'],['dm-f-prio','0'],['dm-entrada','2026-07-01'],
  ['dm-prazo','2026-10-15'],['dm-f-status','andamento'],['dm-ok','']]
   .forEach(([id,v])=>{ const n=mkEl(id); n.value=v; document.registrar(n); });
 

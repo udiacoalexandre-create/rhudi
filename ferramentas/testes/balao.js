@@ -148,7 +148,11 @@ t('não cria um novo a cada hover', criados===0, 'criados='+criados);
 
 console.log('\n══ 4) SEGURANÇA E CSS ══');
 t('texto entra por textContent', /b\.textContent=txt/.test(SRC));
-t('não usa innerHTML no balão', !/\bb\.innerHTML/.test(SRC));
+const fnMostrar=(SRC.match(/function mostrarDesc\([\s\S]*?\n\}/)||[''])[0];
+t('achou a funcao do balao', fnMostrar.length>100, String(fnMostrar.length));
+t('o balao usa textContent, nao innerHTML',
+  /b\.textContent\s*=/.test(fnMostrar) && !/\bb\.innerHTML/.test(fnMostrar),
+  fnMostrar.replace(/\s+/g,' ').slice(0,120));
 t('CSS do balão existe', /\.balao\{/.test(HTML));
 t('só aparece com a classe --on', /\.balao--on\{ opacity:1 \}/.test(HTML));
 t('nasce fora da tela', /\.balao\{[\s\S]{0,400}left:-9999px/.test(HTML));

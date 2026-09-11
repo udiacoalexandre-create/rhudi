@@ -2307,8 +2307,19 @@ function calcBen(c, dr, du){
   const mob=inferMob(c);
   const elegVT = (eleg.vt!==undefined) ? eleg.vt : (eleg.mobilidade!==false); // retrocompat
 
+  // Vale Refeição pode ter dias a mais que os outros benefícios. A Conferência
+  // (passo 5) dá o líquido que vale para todo mundo — jornada menos faltas e
+  // férias, mais os extras —, e o VR aceita um acréscimo lançado no
+  // fechamento, para as exceções.
+  //
+  // Este acréscimo é lido AQUI, e não passado pelo chamador, porque são doze
+  // lugares no arquivo que calculam valor (telas, três exportações, o
+  // fechamento). Esquecer um deles pagaria a pessoa errada num arquivo e
+  // certo em outro, e a divergência só apareceria no banco.
+  const drVR = getLanDRVR(c.mat, dr);
+
   // Valores "cheios" de cada benefício (como se trabalhasse o período dr)
-  const vVR  = (eleg.vr!==false&&fnum(c.vr)>0)    ? (cfg.vr==='mult'?fnum(c.vr)*dr:fnum(c.vr))     : 0;
+  const vVR  = (eleg.vr!==false&&fnum(c.vr)>0)    ? (cfg.vr==='mult'?fnum(c.vr)*drVR:fnum(c.vr))   : 0;
   const vCafe= (eleg.cafe!==false&&fnum(c.cafe)>0)? (cfg.cafe==='mult'?fnum(c.cafe)*dr:fnum(c.cafe)) : 0;
   const vComb= (eleg.mobilidade!==false&&mob==='combustivel'&&fnum(c.comb)>0) ? (cfg.comb==='fixo'?fnum(c.comb):calcMob(fnum(c.comb),dr,du)) : 0;
   const vVT  = (elegVT&&mob==='vt') ? (cfg.vt==='mult'?calcVT(c,dr):calcVT(c,1)) : 0;
@@ -2381,6 +2392,13 @@ function getLanDR(mat, defaultDU){
   const du=getLanDU(mat,defaultDU);
   const l=lancamento[mat]||{};
   return Math.max(0,du-fnum(l.faltas)-feriasLancamento(mat,du)+fnum(l.extras));
+}
+// Dias que valem para o VALE REFEIÇÃO: os dias líquidos da Conferência mais os
+// extras lançados só para ele, no passo de fechar. Recebe os dias já
+// calculados em vez de recalcular, para não haver duas contas do mesmo número.
+function getLanDRVR(mat, dr){
+  const l=lancamento[mat]||{};
+  return Math.max(0, fnum(dr)+fnum(l.extrasVr));
 }
 // Dias de ferias do Passo 5: valor MANUAL se o usuario informou (l.ferias definido);
 // senao, calculado automaticamente do periodo de ferias que cai na competencia.
@@ -3190,6 +3208,8 @@ async function setLan(mat,campo,val){
   const vazio=(val===''||val===null||val===undefined);
   if(campo==='ferias' && vazio){
     delete lancamento[mat].ferias;   // campo vazio: volta ao cálculo automático
+  } else if(campo==='extrasVr' && (vazio || fnum(val)===0)){
+    delete lancamento[mat].extrasVr; // sem exceção de VR: não deixa o campo no banco
   } else if(campo==='duteis'){
     if(vazio){ delete lancamento[mat].duteis; delete lancamento[mat].duManual; }  // volta ao calendário
     else { lancamento[mat].duteis=fnum(val); lancamento[mat].duManual=true; }     // ajuste explícito desta linha
@@ -3263,7 +3283,9 @@ async function fecharCompetencia(){
       const du2=getLanDU(c.mat,du); const dr=getLanDR(c.mat,du);
       const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
       tVR+=vr;tCafe+=cafe;tCesta+=cesta;tComb+=comb;tVT+=vt;
-      return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:feriasLancamento(c.mat,du2),extras:fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
+      // extrasVr/drVr ficam gravados: sem eles, meses depois nao daria para
+      // explicar por que o VR de alguem saiu maior que os dias da apuracao.
+      return {mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',du:du2,faltas:fnum(lancamento[c.mat]?.faltas),ferias:feriasLancamento(c.mat,du2),extras:fnum(lancamento[c.mat]?.extras),dr,extrasVr:fnum(lancamento[c.mat]?.extrasVr),drVr:getLanDRVR(c.mat,dr),vr,cafe,cesta,comb,vt,total:vr+cafe+comb+vt+cesta};
     });
     novoTotal=tVR+tCafe+tCesta+tComb+tVT; novoCount=ativos.length;
     payload={competencia:comp,beneficio:'todos',fechadoEm:new Date().toISOString(),totalColaboradores:ativos.length,totais:{vr:tVR,cafe:tCafe,cesta:tCesta,comb:tComb,vt:tVT,geral:novoTotal},detalhes};
@@ -3275,6 +3297,11 @@ async function fecharCompetencia(){
       if(v>0){
         tot+=v;
         const reg={mat:c.mat,nome:c.nome,cpf:c.cpf||'',depto:c.depto||'',filtro:c.filtro||'OK',valor:v};
+        if(benef==='vr'){
+          reg.dias = cfg.vr==='mult' ? getLanDRVR(c.mat,dr) : 1;
+          reg.dr = dr;
+          reg.extrasVr = fnum(lancamento[c.mat]?.extrasVr);
+        }
         if(benef==='vt'){
           reg.dias = cfg.vt==='mult'?dr:1;
           reg.linhas=[1,2,3,4]
@@ -3939,12 +3966,12 @@ function exportarLancamentoExcel(){
   const comp=lanComp||'MES';
   const empF=getMs('lemp').join('-');
   const ativos=getLanAtivos();
-  const rows=[['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
+  const rows=[['Matr\u00EDcula','Nome','CPF','Departamento','Dias \u00DAteis','Faltas','Ferias','Extras','Dias Reais','Extras VR','Dias VR','VR','Caf\u00E9','Cesta','Combust\u00EDvel','VT','Total'],
     ...ativos.map(c=>{
       const du2=getLanDU(c.mat,du);
       const dr=getLanDR(c.mat,du);
       const {vr,cafe,comb,vt,cesta}=calcBen(c,dr,du2);
-      return [c.mat,c.nome,c.cpf||'',c.depto||'',du2,fnum(lancamento[c.mat]?.faltas),fnum(lancamento[c.mat]?.ferias),fnum(lancamento[c.mat]?.extras),dr,vr,cafe,cesta,comb,vt,vr+cafe+comb+vt+cesta];
+      return [c.mat,c.nome,c.cpf||'',c.depto||'',du2,fnum(lancamento[c.mat]?.faltas),fnum(lancamento[c.mat]?.ferias),fnum(lancamento[c.mat]?.extras),dr,fnum(lancamento[c.mat]?.extrasVr),getLanDRVR(c.mat,dr),vr,cafe,cesta,comb,vt,vr+cafe+comb+vt+cesta];
     })];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Lancamento');
@@ -13699,6 +13726,50 @@ function renderTabelaBenef(){
     +'<span class="lan-destaque__n">'+brl(tot[ben]||0)+'</span>'
     +'<span class="lan-destaque__l">'+linhas.length+' colaborador'+(linhas.length!==1?'es':'')+' · '+rotulo+'</span></div>';
   if(!linhas.length){ alvo.innerHTML='<div class="empty-state"><p>Ninguém recebe '+rotulo+' com os filtros atuais.</p></div>'; return; }
+
+  // O Vale Refeição tem exceções que os outros benefícios não têm: a coluna de
+  // dias se abre em três — o líquido que veio da Conferência, o acréscimo só
+  // do VR, e o total que de fato multiplica o valor.
+  if(ben==='vr'){
+    const porDia = getCfg().vr==='mult';
+    const totExtra=linhas.reduce((s,x)=>s+fnum((lancamento[x.c.mat]||{}).extrasVr),0);
+    alvo.innerHTML=(porDia?'':'<div class="alert alert-info" style="margin-bottom:10px">'
+        +'<i class="ti ti-info-circle"></i> O VR está configurado como <strong>valor fixo</strong>, '
+        +'não por dia. Dias extras não mudam o valor enquanto for assim.</div>')
+      +'<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
+      +'<th>Matrícula</th><th>Nome</th><th>Empresa</th>'
+      +'<th style="text-align:center">Dias úteis'
+        +_ajuda('O líquido calculado na Conferência: jornada menos faltas e férias, mais dias extras.')+'</th>'
+      +'<th style="text-align:center">Extras VR'
+        +_ajuda('Dias a mais só para o Vale Refeição, para as exceções desta competência. '
+               +'Não altera os outros benefícios nem a Conferência.')+'</th>'
+      +'<th style="text-align:center">Dias VR</th>'
+      +'<th style="text-align:right">Valor</th>'
+      +'</tr></thead><tbody>'
+      +linhas.map(x=>{
+        const ex=fnum((lancamento[x.c.mat]||{}).extrasVr);
+        const dvr=getLanDRVR(x.c.mat,x.dr);
+        return '<tr><td><code style="font-size:10px">'+(x.c.mat||'—')+'</code></td>'
+          +'<td style="font-weight:500">'+x.c.nome+'</td>'
+          +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
+          +'<td style="text-align:center">'+x.dr+'</td>'
+          +'<td style="text-align:center">'
+            +'<input type="number" value="'+(ex||'')+'" min="0" max="31" class="input-extras" '
+            +'placeholder="0" title="Dias extras só de Vale Refeição" '
+            +'onchange="setLan(\''+x.c.mat+'\',\'extrasVr\',this.value)"'
+            +(ex?' style="background:#FEF3C7;border-color:var(--yellow)"':'')+'></td>'
+          +'<td style="text-align:center;font-weight:700'+(ex?';color:var(--orange)':'')+'">'+dvr+'</td>'
+          +'<td style="text-align:right;font-weight:600">'+brl(x.val)+'</td></tr>';
+      }).join('')
+      +'</tbody><tfoot><tr class="total-row">'
+      +'<td colspan="4" style="text-align:right;font-weight:700">Total</td>'
+      +'<td style="text-align:center;font-weight:700">'+(totExtra||'—')+'</td>'
+      +'<td></td>'
+      +'<td style="text-align:right;font-weight:700">'+brl(tot[ben]||0)+'</td>'
+      +'</tr></tfoot></table></div>';
+    return;
+  }
+
   alvo.innerHTML='<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
     +'<th>Matrícula</th><th>Nome</th><th>Empresa</th><th style="text-align:center">Dias</th><th style="text-align:right">Valor</th>'
     +'</tr></thead><tbody>'

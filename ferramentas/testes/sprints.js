@@ -157,7 +157,8 @@ t('colgroup em todas as tabelas', (h3.match(/<colgroup>/g)||[]).length===2,
   'n='+(h3.match(/<colgroup>/g)||[]).length);
 t('mesmas larguras nos dois blocos',
   (()=>{ const g=h3.match(/<colgroup>[\s\S]*?<\/colgroup>/g)||[]; return g.length===2 && g[0]===g[1]; })());
-t('8 colunas declaradas', APP.DM_COLS.length===8, 'n='+APP.DM_COLS.length);
+t('9 colunas declaradas (Responsável entrou)', APP.DM_COLS.length===9,
+  'n='+APP.DM_COLS.length);
 t('CSS trava o layout', /table\.dm--fixa\{[^}]*table-layout:fixed/.test(HTML));
 // derivado das colunas, para nao precisar mexer no teste a cada ajuste
 const fixas=APP.DM_COLS.slice(1).reduce((a,w)=>a+parseFloat(w),0);
@@ -408,10 +409,11 @@ t('sugere as áreas, ignorando vazio', JSON.stringify(APP._dmSugestoes('area'))=
   JSON.stringify(APP._dmSugestoes('area')));
 t('em ordem alfabética', APP._dmSugestoes('solicitante')[0]==='Comercial');
 const dl=APP._dmDatalists();
-t('duas listas geradas', /<datalist id="dl-solic">/.test(dl)&&/<datalist id="dl-area">/.test(dl));
+t('três listas geradas', /<datalist id="dl-solic">/.test(dl)&&/<datalist id="dl-area">/.test(dl)
+  &&/<datalist id="dl-resp">/.test(dl), dl.match(/<datalist id="[^"]*">/g).join(' '));
 t('opções dentro da lista', /<option value="Comercial">/.test(dl));
 t('as listas entram na tela uma vez só',
-  (hw.match(/<datalist /g)||[]).length===2, 'n='+(hw.match(/<datalist /g)||[]).length);
+  (hw.match(/<datalist /g)||[]).length===3, 'n='+(hw.match(/<datalist /g)||[]).length);
 
 console.log('\n── digitar um valor NOVO funciona ──');
 let gt=null;
