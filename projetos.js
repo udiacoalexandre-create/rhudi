@@ -1136,7 +1136,8 @@ function cardKanban(t, podeEditar){
 }
 const LIMITE_FINALIZADO = 15;
 function kanbanHTML(lista, podeEditar){
-  return '<div class="kanban">' + COLUNAS.map(k => {
+  const colunas = verFinalizadas ? COLUNAS : COLUNAS.filter(k => k !== 'concluida');
+  return '<div class="kanban' + (verFinalizadas ? '' : ' kanban--5') + '">' + colunas.map(k => {
     const s = STATUS[k];
     let ts = lista.filter(t => t.status === k);
     let mais = 0;
@@ -1172,6 +1173,7 @@ function viewAgenda(){
   const vencidos = emAberto.filter(deadlineEstourado).length;
   const hojeN = emAberto.filter(t => t.prazo === hoje()).length;
   const semData = emAberto.filter(t => !t.prazo).length;
+  const finalizadas = todas.length - emAberto.length;
 
   const chip = (n, texto, cor, icone) => n
     ? '<span class="chip chip--plain" style="color:' + cor + ';border-color:currentColor">' +
@@ -1187,6 +1189,12 @@ function viewAgenda(){
         chip(atrasadas, 'atrasada(s)', 'var(--danger-text)', 'alert-triangle') +
         chip(vencidos, 'fora do prazo final', 'var(--danger-text)', 'flag') +
         chip(semData, 'sem data', 'var(--warning-text)', 'calendar-question') +
+        '<button class="alterna' + (verFinalizadas ? ' alterna--on' : '') + '" ' +
+          'title="' + (verFinalizadas ? 'Esconder a coluna Finalizado' : 'Mostrar a coluna Finalizado') +
+          ' — a escolha fica guardada neste navegador" onclick="alternarFinalizadas()">' +
+          '<i class="ti ti-' + (verFinalizadas ? 'eye' : 'eye-off') + '"></i> Finalizadas' +
+          (finalizadas ? ' <span class="aba__n" style="background:var(--surface-soft);color:var(--text-secondary)">' +
+            finalizadas + '</span>' : '') + '</button>' +
         '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' +
       '</div>' +
     '</div>' +
@@ -1204,7 +1212,27 @@ function viewAgenda(){
 // Cada projeto é um bloco com sua tabela: uma linha por demanda, subtarefas e
 // pedidos recuados como sublinhas. O status é bloco de cor cheia, o círculo à
 // esquerda conclui sem abrir a tarefa e a barra de ferramentas filtra tudo.
-let mostrarConcluidas = false;
+let mostrarConcluidas = lerPref('pe_ver_concluidas', false);
+// Ver ou não a coluna FINALIZADO no quadro. Fica guardada neste navegador:
+// é preferência de quem olha, não dado do sistema.
+let verFinalizadas = lerPref('pe_ver_finalizadas', true);
+function lerPref(chave, padrao){
+  try{ const v = localStorage.getItem(chave); return v === null ? padrao : v === '1'; }
+  catch(e){ return padrao; }
+}
+function gravarPref(chave, valor){
+  try{ localStorage.setItem(chave, valor ? '1' : '0'); }catch(e){}
+}
+function alternarConcluidas(){
+  mostrarConcluidas = !mostrarConcluidas;
+  gravarPref('pe_ver_concluidas', mostrarConcluidas);
+  render();
+}
+function alternarFinalizadas(){
+  verFinalizadas = !verFinalizadas;
+  gravarPref('pe_ver_finalizadas', verFinalizadas);
+  render();
+}
 
 function passaFiltro(t){
   if(soMinhas && t.responsavel !== usuario.email) return false;
@@ -1262,7 +1290,7 @@ function barraFerramentas(){
       (filtro ? '<i class="ti ti-x" style="cursor:pointer" onclick="filtrar(\'\')"></i>' : '') +
     '</label>' +
     alt(soMinhas, 'user', 'Só as minhas', 'soMinhas=!soMinhas;render()') +
-    alt(mostrarConcluidas, 'circle-check', 'Mostrar concluídas', 'mostrarConcluidas=!mostrarConcluidas;render()') +
+    alt(mostrarConcluidas, 'circle-check', 'Mostrar concluídas', 'alternarConcluidas()') +
   '</div>';
 }
 // Re-renderiza a cada tecla, então devolve o foco e o cursor para a busca.
