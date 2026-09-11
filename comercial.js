@@ -916,7 +916,7 @@ function _itensPublicos(){
       return d || prioNum(a.prioridade)-prioNum(b.prioridade);
     })
     .map(d=>({titulo:d.titulo||'', descricao:d.descricao||'',
-      solicitante:d.solicitante||'', area:d.area||'',
+      solicitante:d.solicitante||'', responsavel:d.responsavel||'', area:d.area||'',
       prioridade:(d.prioridade===''||d.prioridade==null)?'':d.prioridade,
       status:sInfo(d.status).v, entrada:d.entrada||'', prazo:d.prazo||''}));
 }

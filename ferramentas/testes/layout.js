@@ -169,7 +169,8 @@ const cabPub=(PUB.match(/const cabecalho=([\s\S]*?);\n/)||['',''])[1]
   .replace(/'\s*\+\s*'/g,'').replace(/^'|'$/g,'');
 const rotPub=(cabPub.match(/<th[^>]*>([\s\S]*?)<\/th>/g)||[]).map(x=>x.replace(/<[^>]*>/g,'').trim());
 t('a pagina publica usa os mesmos rotulos curtos',
-  rotPub.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Entrada|Área', rotPub.join('|'));
+  rotPub.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Responsável|Entrada|Área',
+  rotPub.join('|'));
 t('o nome inteiro da coluna continua acessivel no title',
   /title="Prioridade"/.test(PUB) && /title="Entrega estimada[^"]*"/.test(PUB));
 // as duas tabelas tem de caber na largura minima que declaram
@@ -209,17 +210,13 @@ t('a Demanda tem o balão para o texto inteiro', /data-desc=/.test(li)||/tem-des
 // A pagina publica NAO mostra 'Responsável': e outra audiencia (a parceira),
 // e a decisao de expor ou nao esta com o Alê. Enquanto for assim, o que se
 // cobra e que a divergencia seja SO essa coluna — as outras tem de bater.
-t('a pagina publica segue com 7 colunas', colPub.length===7, colPub.join(','));
-t('e nao tem a coluna de Responsável', !/Responsável/.test(PUB));
-// 'Quem pediu' cedeu 26px na plataforma para abrir espaço ao Responsável; na
-// pública, que não tem essa coluna, não havia motivo para apertar. O que se
-// cobra é que nenhuma coluna da pública seja MENOR que a da plataforma.
-const semResp=APP.DM_COLS.filter((_,i)=>i!==5 && i!==8);
-const apertadas=colPub.map((w,i)=>({i, pub:parseFloat(w), plat:parseFloat(semResp[i])}))
-  .filter(x=>x.plat && x.pub && x.pub<x.plat);
-t('nenhuma coluna da pública é mais apertada que a da plataforma',
-  apertadas.length===0,
-  apertadas.map(x=>'col'+x.i+': '+x.pub+' < '+x.plat).join(' | '));
+t('a pagina publica tem 8 colunas', colPub.length===8, colPub.join(','));
+t('e mostra o Responsável, como a plataforma', /Responsável/.test(PUB));
+// As duas telas mostram as mesmas colunas; a plataforma tem a mais so a de
+// editar, que no link publico nao existe.
+t('as larguras batem com as da plataforma',
+  colPub.join(',')===APP.DM_COLS.slice(0,8).join(','),
+  'publica '+colPub.join(',')+' | plataforma '+APP.DM_COLS.slice(0,8).join(','));
 
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

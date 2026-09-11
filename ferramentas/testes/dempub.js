@@ -99,7 +99,7 @@ t('leva a cadencia escolhida', r.cadencia==='quinzenal', r.cadencia);
 t('tem data de atualizacao', typeof r.atualizadoEm==='string' && r.atualizadoEm.length>10);
 const campos=Object.keys(r.itens[0]).sort().join(',');
 t('item so com o que se le na tela',
-  campos==='area,descricao,entrada,prazo,prioridade,solicitante,status,titulo', campos);
+  campos==='area,descricao,entrada,prazo,prioridade,responsavel,solicitante,status,titulo', campos);
 t('NAO vaza o historico de auditoria', r.itens.every(i=>!('historico' in i)));
 t('NAO vaza quem criou', r.itens.every(i=>!('criadoPor' in i)));
 t('NAO vaza o id interno da demanda', r.itens.every(i=>!('_id' in i)));
@@ -273,7 +273,7 @@ if(PUBAPP){
   t('prioridade 0 continua sendo 0 nas duas',
     APP.prioNum(0)===0 && PUBAPP.prioNum(0)===0);
   t('mesmas larguras de coluna, menos a de editar',
-    JSON.stringify(PUBAPP.DM_COLS)===JSON.stringify(APP.sprintDe?['auto','46px','66px','128px','176px','62px','148px']:null),
+    JSON.stringify(PUBAPP.DM_COLS)===JSON.stringify(APP.sprintDe?['auto','46px','66px','128px','150px','150px','62px','148px']:null),
     JSON.stringify(PUBAPP.DM_COLS));
 
   console.log('\n== 9) PAGINA PUBLICA PINTA O QUADRO ==');
