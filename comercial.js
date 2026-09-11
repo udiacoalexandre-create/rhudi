@@ -44,12 +44,42 @@ const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const ajuda = t => '<span class="ajuda" title="'+esc(t).replace(/"/g,'&quot;')+'">?</span>';
 
+// Sem conexão, o Firestore aceita a gravação no cache e a tela mostra o
+// registro — mas ele só sobe quando a rede volta. Antes isso era invisível e
+// dava a impressão de "salvou". Agora a faixa deixa o estado à vista.
+function avisoConexao(){
+  let b=document.getElementById('semrede');
+  const fora = (typeof navigator!=='undefined') && navigator.onLine===false;
+  if(!fora){ if(b) b.remove(); return; }
+  if(b) return;
+  b=document.createElement('div');
+  b.id='semrede';
+  b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#b45309;'
+    +'color:#fff;padding:10px 16px;font-size:13.5px;text-align:center;'
+    +'box-shadow:0 -4px 14px rgba(0,0,0,.18)';
+  b.innerHTML='<b>Sem conexão.</b> O que você salvar agora fica guardado neste navegador '
+    +'e sobe sozinho quando a internet voltar — não limpe os dados do site até lá.';
+  document.body.appendChild(b);
+}
+if(typeof window!=='undefined' && window.addEventListener){
+  window.addEventListener('online', avisoConexao);
+  window.addEventListener('offline', avisoConexao);
+}
+
 function toast(msg, tipo){
   const t=$('toast'); if(!t) return;
   t.textContent=msg; t.className='show '+(tipo||'ok');
   clearTimeout(t._t); t._t=setTimeout(()=>t.className='', 4000);
 }
 function agora(){ return new Date().toISOString(); }
+// Espera a promessa até o prazo. Devolve true se confirmou, false se estourou —
+// e nunca derruba a gravação, que segue no cache até subir.
+function comPrazo(p, ms){
+  return Promise.race([
+    p.then(()=>true),
+    new Promise(r=>setTimeout(()=>r(false), ms))
+  ]);
+}
 function quem(){ return (usuario && (usuario.email||usuario.nome)) || '(não identificado)'; }
 function dataHora(iso){
   const d=iso?new Date(iso):null;
@@ -1077,6 +1107,7 @@ function demandasFiltradas(){
   });
 }
 function pintarDemandas(){
+  avisoConexao();
   const lista=demandasFiltradas();
   // Indicadores: o volume e o que está chegando, e depois o retrato por
   // status. Contam a base INTEIRA, não o filtro — é panorama, não recorte.
@@ -1315,9 +1346,15 @@ async function salvarDemanda(id){
       historico:logDem(d?d.historico:[], d?'Edição':'Inclusão', mud)
     });
     if(!d){ dados.criadoEm=agora(); dados.criadoPor=quem(); }
-    await window._setDoc(window._doc(COL_DEM, docId), dados);
+    // Espera a confirmação do SERVIDOR. Se ela não vier em 8 segundos, a
+    // gravação não se perdeu (fica no cache em disco e sobe depois), mas quem
+    // salvou precisa saber que ainda não subiu.
+    const confirmado = await comPrazo(
+      window._setDoc(window._doc(COL_DEM, docId), dados), 8000);
     fecharMod();
-    toast(d?'Demanda atualizada.':'Demanda criada.','ok');
+    if(confirmado) toast(d?'Demanda atualizada.':'Demanda criada.','ok');
+    else toast((d?'Alteração':'Demanda')+' salva neste navegador, mas o servidor ainda não '
+      +'confirmou. Ela sobe quando a conexão voltar — confira a lista mais tarde.','aviso');
   }catch(e){ toast('Erro ao salvar: '+e.message,'erro'); }
   finally{ if($('dm-ok')) $('dm-ok').disabled=false; }
 }
