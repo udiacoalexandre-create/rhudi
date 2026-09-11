@@ -23,6 +23,18 @@ const STATUS_SO_CESTA       = ['Afastado','Afastado Definitivo','Auxilio Doenca'
                                'Lic. Maternidade','Lic. Paternidade','Auxilio Reclusao'];
 const STATUS_NAO_RECEBE     = ['Demitido','N/A'];
 
+// Escape de HTML. Campos de texto livre (nome, cargo, depto, justificativa…)
+// vêm de importação da planilha ou são digitados por usuários; jogados crus
+// no innerHTML, um valor como <img src=x onerror=...> executaria na sessão de
+// quem abre a tela — inclusive o Master. Todo campo de dado que entra no HTML
+// passa por aqui. (Para textContent NÃO se usa isto: lá o navegador já trata o
+// texto como texto.)
+function escH(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function getStatusInfo(v){
   return STATUS_LIST.find(s=>s.v===v) || {v,label:v,cor:'#6B7280',bg:'#F9FAFB'};
 }
@@ -295,7 +307,7 @@ function filtroBadge(f){
 }
 
 function vtOptions(selCod){
-  return VT_LINHAS.map(l=>'<option value="'+l.cod+'" data-tipo="'+l.tipo+'" '+(l.cod===selCod?'selected':'')+'>'+l.nome+'</option>').join('');
+  return VT_LINHAS.map(l=>'<option value="'+l.cod+'" data-tipo="'+l.tipo+'" '+(l.cod===selCod?'selected':'')+'>'+escH(l.nome)+'</option>').join('');
 }
 
 function onVTSelect(n,prefix){
@@ -329,12 +341,12 @@ function formColabHTML(prefix, c){
       <div class="card-title">Dados Pessoais</div>
       <div class="form-grid">
         <div class="fg"><label>Matr\u00EDcula</label><input type="text" id="${prefix}-mat" value="${c?.mat||''}" oninput="verificarDuplic('${prefix}')"></div>
-        <div class="fg span2"><label>Nome Completo *</label><input type="text" id="${prefix}-nome" value="${c?.nome||''}" oninput="verificarDuplic('${prefix}')"></div>
+        <div class="fg span2"><label>Nome Completo *</label><input type="text" id="${prefix}-nome" value="${escH(c?.nome)||''}" oninput="verificarDuplic('${prefix}')"></div>
         <div class="fg"><label>CPF</label><input type="text" id="${prefix}-cpf" value="${c?.cpf||''}" oninput="verificarDuplic('${prefix}')"></div>
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
-        <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${c?.cargo||''}"></div>
-        <div class="fg span2"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label><input type="text" id="${prefix}-funcao" value="${c?.funcao||''}" placeholder="Ex.: Operador de Empilhadeira"></div>
-        <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${c?.depto||''}"></div>
+        <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${escH(c?.cargo)||''}"></div>
+        <div class="fg span2"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label><input type="text" id="${prefix}-funcao" value="${escH(c?.funcao)||''}" placeholder="Ex.: Operador de Empilhadeira"></div>
+        <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${escH(c?.depto)||''}"></div>
         <div class="fg"><label>Status</label>
           ${buildStatusSelect(prefix, c)}
         </div>
@@ -604,9 +616,9 @@ function verificarDuplic(prefix){
   const nome=(document.getElementById(prefix+'-nome')?.value||'').trim().toUpperCase();
   const cpf=(document.getElementById(prefix+'-cpf')?.value||'').trim();
   const alertas=[];
-  if(mat){const ex=colaboradores.find(c=>c.mat===mat&&c._id!==editColabId);if(ex)alertas.push('Matr\u00EDcula <strong>'+mat+'</strong> j\u00E1 cadastrada para <strong>'+ex.nome+'</strong>.');}
+  if(mat){const ex=colaboradores.find(c=>c.mat===mat&&c._id!==editColabId);if(ex)alertas.push('Matr\u00EDcula <strong>'+mat+'</strong> j\u00E1 cadastrada para <strong>'+escH(ex.nome)+'</strong>.');}
   if(nome.length>3){const ex=colaboradores.find(c=>c.nome.toUpperCase()===nome&&c._id!==editColabId);if(ex)alertas.push('Nome j\u00E1 existe (Mat: '+ex.mat+')');}
-  if(cpf.length>8){const cl=cpf.replace(/[^0-9]/g,'');const ex=colaboradores.find(c=>(c.cpf||'').replace(/[^0-9]/g,'')===cl&&c._id!==editColabId);if(ex)alertas.push('CPF j\u00E1 cadastrado para <strong>'+ex.nome+'</strong>.');}
+  if(cpf.length>8){const cl=cpf.replace(/[^0-9]/g,'');const ex=colaboradores.find(c=>(c.cpf||'').replace(/[^0-9]/g,'')===cl&&c._id!==editColabId);if(ex)alertas.push('CPF j\u00E1 cadastrado para <strong>'+escH(ex.nome)+'</strong>.');}
   const el=document.getElementById(prefix+'-duplic-alert');
   if(!el) return;
   el.innerHTML=alertas.length>0?'<div class="alert alert-warning" style="margin-top:8px">'+alertas.join('<br>')+'</div>':'';
@@ -1284,11 +1296,11 @@ function _dsAvatarVar(status){
   return g==='trabalhando'?'success':g==='ferias'?'warning':g==='so_cesta'?'danger':'neutral';
 }
 function dsPersonCell(c){
-  const tip=[c.cargo,c.funcao?('Função: '+c.funcao):''].filter(Boolean).join(' — ').replace(/"/g,'&quot;');
+  const tip=[escH(c.cargo),escH(c.funcao)?('Função: '+escH(c.funcao)):''].filter(Boolean).join(' — ').replace(/"/g,'&quot;');
   const trava=c.diasFixos?' <i class="ti ti-lock" title="Jornada travada: '+c.diasFixos+' dias fixos" style="color:var(--accent);font-size:12px"></i>':'';
   return '<div class="person-name"'+(tip?' title="'+tip+'"':'')+'>'
-    +'<span class="person__name">'+c.nome+trava+'</span>'
-    +(c.cargo?'<span class="person__sub">'+c.cargo+'</span>':'')
+    +'<span class="person__name">'+escH(c.nome)+trava+'</span>'
+    +(escH(c.cargo)?'<span class="person__sub">'+escH(c.cargo)+'</span>':'')
     +'</div>';
 }
 function dsStatusBadge(status){
@@ -1399,7 +1411,7 @@ function renderColabList(){
     <td>${dsPersonCell(c)}</td>
     <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
     <td class="text-xs text-muted">${c.admissao||'\u2014'}</td>
-    <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
+    <td class="text-sm text-muted">${escH(c.depto)||'\u2014'}</td>
     <td>${dsStatusBadge(c.status)}${feriasSeloAgendado(c)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
     <td>${dsTipoBadge(c.filtro||'OK')}</td>
     <td>${dsElegTags(c)}</td>
@@ -1409,7 +1421,7 @@ function renderColabList(){
     <td class="text-xs">${ferResumoCelula(c)}</td>
     <td>
       <button class="btn btn-ghost btn-xs" onclick="abrirEditar('${c._id}')">\u270F\uFE0F</button>
-      <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${c.nome.replace(/'/g,"\\'")}')"></button>
+      <button class="btn btn-danger btn-xs" onclick="excluirColab('${c._id}','${escH(c.nome.replace(/'/g,"\\'"))}')"></button>
     </td>
   </tr>`).join('');
 }
@@ -1568,7 +1580,7 @@ function renderDeParaPreview(){
 
   if(atualizar.length){
     const linhas=atualizar.slice(0,150).map(r=>`<tr>
-      <td style="font-weight:500">${r.nome}</td>
+      <td style="font-weight:500">${escH(r.nome)}</td>
       <td class="text-xs text-muted">${r.via}</td>
       <td class="text-xs">${r.ch.map(c=>c.campo+': <strong>'+c.de+'</strong> → <strong style="color:var(--green)">'+c.para+'</strong>').join('<br>')}</td>
     </tr>`).join('');
@@ -1577,15 +1589,15 @@ function renderDeParaPreview(){
   }
   if(naoEnc.length){
     html+=`<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--red)">Não encontrados na base (${naoEnc.length}) — planilha tem, base não</summary>
-      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${naoEnc.map(x=>x.nome+(x.mat?' ('+x.mat+')':'')).join('<br>')}</div></details>`;
+      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${naoEnc.map(x=>escH(x.nome)+(x.mat?' ('+x.mat+')':'')).join('<br>')}</div></details>`;
   }
   if(ambiguos.length){
     html+=`<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--yellow)">Ambíguos — revisar manualmente (${ambiguos.length})</summary>
-      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${ambiguos.map(x=>x.nome+(x.mat?' ('+x.mat+')':'')+' — '+x.motivo).join('<br>')}</div></details>`;
+      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${ambiguos.map(x=>escH(x.nome)+(x.mat?' ('+x.mat+')':'')+' — '+escH(x.motivo)).join('<br>')}</div></details>`;
   }
   if(feriasNaoRec.length){
     html+=`<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--orange)">Mês de férias não reconhecido (${feriasNaoRec.length}) — função/admissão são aplicadas, mês fica em branco</summary>
-      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${feriasNaoRec.map(x=>x.nome+': "'+x.valor+'"').join('<br>')}</div></details>`;
+      <div class="text-xs" style="margin-top:6px;max-height:200px;overflow:auto">${feriasNaoRec.map(x=>escH(x.nome)+': "'+escH(x.valor)+'"').join('<br>')}</div></details>`;
   }
 
   html+=`<div class="btn-row" style="margin-top:8px">
@@ -1744,7 +1756,7 @@ function renderSyncStatusPreview(){
   if(S.demissoes.length) html+='<div class="alert alert-warning" style="margin-bottom:10px">⚠️ As demissões <strong>removem</strong> o colaborador da base. Garanta que a competência do mês anterior já foi fechada (o snapshot fica no Histórico).</div>';
   const sec=(titulo,cor,arr,tipo,acao)=>{
     if(!arr.length) return '';
-    const linhas=arr.map((r,idx)=>'<tr><td style="font-weight:500">'+r.nome+'</td><td class="text-xs text-muted">'+(r.mat||'—')+'</td>'
+    const linhas=arr.map((r,idx)=>'<tr><td style="font-weight:500">'+escH(r.nome)+'</td><td class="text-xs text-muted">'+(r.mat||'—')+'</td>'
       +'<td class="text-xs">'+(r.colab?'era '+(r.colab.status||'—')+' → ':'')+'<strong>'+r.statusRaw+'</strong></td>'
       +'<td style="text-align:right;white-space:nowrap"><button class="btn btn-primary btn-xs" onclick="syncConfirmar(\''+tipo+'\','+idx+')">'+acao+'</button> '
       +'<button class="btn btn-ghost btn-xs" onclick="syncIgnorar(\''+tipo+'\','+idx+')">Ignorar</button></td></tr>').join('');
@@ -1922,9 +1934,9 @@ function renderSyncPreview(total){
   if(seniorPendente.length===0){prev.innerHTML='<div class="alert alert-success">Base sincronizada! '+total+' colaboradores no relat\u00F3rio.</div>';return;}
   let h='<div class="alert alert-info"><strong>'+total+'</strong> no relat\u00F3rio &middot; <strong>'+novos.length+'</strong> novos &middot; <strong>'+demitidos.length+'</strong> demiss\u00F5es &middot; <strong>'+voltaram.length+'</strong> retornos</div>';
   h+='<div style="max-height:380px;overflow-y:auto">';
-  novos.forEach((a,i)=>{h+='<div class="sync-card sync-novo"><div class="sync-card-text"><strong>Novo:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-success btn-sm" onclick="syncAcao(\'novo\','+i+')">Cadastrar</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'novo\','+i+')">Ignorar</button></div></div>';});
-  demitidos.forEach((a,i)=>{h+='<div class="sync-card sync-demitido"><div class="sync-card-text"><strong>N\u00E3o encontrado:</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-danger btn-sm" onclick="syncAcao(\'demitido\','+i+')">Inativo</button><button class="btn btn-warning btn-sm" onclick="syncAcaoFerias('+i+')">F\u00E9rias</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'demitido\','+i+')">Ignorar</button></div></div>';});
-  voltaram.forEach((a,i)=>{h+='<div class="sync-card sync-ferias-out"><div class="sync-card-text"><strong>Voltou?</strong> '+a.dados.nome+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-primary btn-sm" onclick="syncAcao(\'voltou\','+i+')">Marcar Ativo</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'voltou\','+i+')">Ignorar</button></div></div>';});
+  novos.forEach((a,i)=>{h+='<div class="sync-card sync-novo"><div class="sync-card-text"><strong>Novo:</strong> '+escH(a.dados.nome)+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-success btn-sm" onclick="syncAcao(\'novo\','+i+')">Cadastrar</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'novo\','+i+')">Ignorar</button></div></div>';});
+  demitidos.forEach((a,i)=>{h+='<div class="sync-card sync-demitido"><div class="sync-card-text"><strong>N\u00E3o encontrado:</strong> '+escH(a.dados.nome)+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-danger btn-sm" onclick="syncAcao(\'demitido\','+i+')">Inativo</button><button class="btn btn-warning btn-sm" onclick="syncAcaoFerias('+i+')">F\u00E9rias</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'demitido\','+i+')">Ignorar</button></div></div>';});
+  voltaram.forEach((a,i)=>{h+='<div class="sync-card sync-ferias-out"><div class="sync-card-text"><strong>Voltou?</strong> '+escH(a.dados.nome)+' <code>'+a.dados.mat+'</code></div><div class="sync-card-btns"><button class="btn btn-primary btn-sm" onclick="syncAcao(\'voltou\','+i+')">Marcar Ativo</button><button class="btn btn-ghost btn-sm" onclick="syncIgnorar(\'voltou\','+i+')">Ignorar</button></div></div>';});
   h+='</div>';
   prev.innerHTML=h;
 }
@@ -2115,9 +2127,9 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
           ${paraIncluir.map((c,i)=>`<tr>
             <td><input type="checkbox" id="inc-${i}" class="inc-check" data-idx="${i}" checked style="accent-color:var(--blue)"></td>
             <td><code>${c.mat||'\u2014'}</code></td>
-            <td>${c.nome}</td>
+            <td>${escH(c.nome)}</td>
             <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
-            <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
+            <td class="text-sm text-muted">${escH(c.depto)||'\u2014'}</td>
             <td>${filtroBadge(c.filtro||'OK')}</td>
           </tr>`).join('')}
         </tbody>
@@ -2140,9 +2152,9 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
           ${paraExcluir.map((c,i)=>`<tr>
             <td><input type="checkbox" id="exc-${i}" class="exc-check" data-idx="${i}" style="accent-color:var(--red)"></td>
             <td><code>${c.mat||'\u2014'}</code></td>
-            <td>${c.nome}</td>
+            <td>${escH(c.nome)}</td>
             <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
-            <td class="text-sm text-muted">${c.depto||'\u2014'}</td>
+            <td class="text-sm text-muted">${escH(c.depto)||'\u2014'}</td>
             <td>${statusBadge(c.status)}${(_statusKey(c.status).includes('DEMIT')&&c.demitidoEm)?'<br><span class="text-xs text-muted">dem. '+c.demitidoEm+'</span>':''}</td>
           </tr>`).join('')}
         </tbody>
@@ -2161,7 +2173,7 @@ function renderReconciliacao(jaExistem,paraIncluir,paraExcluir,duplicatas){
           ${duplicatas.map((c,i)=>`<tr>
             <td><input type="checkbox" id="dup-${i}" class="dup-check" data-idx="${i}" checked style="accent-color:var(--purple)"></td>
             <td><code>${c.mat||'\u2014'}</code></td>
-            <td>${c.nome}</td>
+            <td>${escH(c.nome)}</td>
             <td><code style="font-size:10px">${c.cpf||'\u2014'}</code></td>
             <td>
               <select id="dup-filtro-${i}" style="padding:4px 8px;border:1.5px solid var(--border);border-radius:4px;font-size:12px">
@@ -2585,7 +2597,7 @@ function pgBenLancamento(){
       +(tipo==='ferias'?'<th style="padding:8px 10px;text-align:left">Situação</th><th style="padding:8px 10px;text-align:right">Dias comprados</th>':'<th style="padding:8px 10px;text-align:left">Motivo</th><th style="padding:8px 10px;text-align:center">Ação</th>')
       +'</tr></thead><tbody>'
       +lista.sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(c=>{
-        const cel='<td style="padding:8px 10px"><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
+        const cel='<td style="padding:8px 10px"><div style="font-weight:500">'+escH(c.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
           +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>';
         if(tipo==='ferias') return '<tr>'+cel+'<td style="padding:8px 10px"><span class="badge badge--warning">Férias</span></td><td style="padding:8px 10px;text-align:right;font-weight:600">'+(c.ferDiasComprados!=null?c.ferDiasComprados:0)+'d</td></tr>';
         return '<tr>'+cel+'<td style="padding:8px 10px"><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'
@@ -2720,7 +2732,7 @@ function abrirIncluirStatus(tipo){
   const cands=colsApuracao().filter(c=>statusGrupo(c.status)==='trabalhando').sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   document.getElementById('modal-incluir-status')?.remove();
   const titulo = tipo==='ferias'?'Incluir colaborador em férias':'Incluir colaborador afastado';
-  const rows = cands.length ? cands.map(c=>'<div class="incl-row" onclick="aplicarIncluirStatus(\''+c._id+'\',\''+tipo+'\')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'"><div><div style="font-weight:600">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code> · '+(c.depto||'—')+'</div></div><span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('') : '<div class="empty-state"><p>Nenhum colaborador trabalhando disponível.</p></div>';
+  const rows = cands.length ? cands.map(c=>'<div class="incl-row" onclick="aplicarIncluirStatus(\''+c._id+'\',\''+tipo+'\')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" data-busca="'+((escH(c.nome)||'')+' '+(c.mat||'')+' '+(escH(c.depto)||'')).toLowerCase().replace(/"/g,'')+'"><div><div style="font-weight:600">'+escH(c.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code> · '+(escH(c.depto)||'—')+'</div></div><span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('') : '<div class="empty-state"><p>Nenhum colaborador trabalhando disponível.</p></div>';
   const html='<div class="modal-overlay ds open" id="modal-incluir-status" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
     +'<div class="modal" style="max-width:520px"><div class="modal-title">'+titulo+'</div>'
     +'<div class="modal-sub">Selecione o colaborador. A mudança vale na Base de Colaboradores e no Controle de Férias.</div>'
@@ -2980,8 +2992,8 @@ function verificarColabsEmFerias(){
       +'<div style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto">'
       +pendentes.map((c,i)=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;background:rgba(255,255,255,.6);padding:6px 10px;border-radius:6px">
           <input type="checkbox" id="fer-retorno-${i}" data-id="${c._id}" checked style="accent-color:var(--blue);width:15px;height:15px">
-          <strong>${c.nome}</strong>
-          <span style="color:var(--text2);font-size:11px">${c.mat||''} | ${c.depto||''}</span>
+          <strong>${escH(c.nome)}</strong>
+          <span style="color:var(--text2);font-size:11px">${c.mat||''} | ${escH(c.depto)||''}</span>
           ${c.ferInicio&&c.ferFim?'<span style="font-size:11px;color:var(--text2)">'+_ddmm(_dataLocal(c.ferInicio))+'\u2192'+_ddmm(_dataLocal(c.ferFim))+'</span>':''}
         </label>`).join('')
       +'</div>'
@@ -2996,7 +3008,7 @@ function verificarColabsEmFerias(){
   if(emFerias.length){
     html+=`<div style="font-size:12px;color:#92400E;margin-top:${pendentes.length?'14px':'0'};padding-top:${pendentes.length?'10px':'0'};${pendentes.length?'border-top:1px solid #FDE68A;':''}">`
       +`<strong>Em f\u00E9rias agora (${emFerias.length}):</strong> `
-      +emFerias.map(c=>`${c.nome}${c.ferFim?' (at\u00E9 '+_ddmm(_dataLocal(c.ferFim))+')':''}`).join(' &middot; ')
+      +emFerias.map(c=>`${escH(c.nome)}${c.ferFim?' (at\u00E9 '+_ddmm(_dataLocal(c.ferFim))+')':''}`).join(' &middot; ')
       +'</div>';
   }
 
@@ -3191,7 +3203,7 @@ function renderLancamento(){
            style="${manualDU?'background:#FEF3C7;border-color:var(--yellow)':''}">`;
     return `<tr${locked?' class="linha-travada"':''}>
       <td><code style="font-size:10px">${c.mat||'\u2014'}</code></td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${c.nome}">${c.nome}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:12px" title="${escH(c.nome)}">${escH(c.nome)}</td>
       <td>${duCell}</td>
       <td><input type="number" value="${fat}" min="0" max="31" class="input-falta" onchange="setLan('${c.mat}','faltas',this.value)"></td>
       <td><input type="number" value="${fev}" min="0" max="31" class="input-ferias" onchange="setLan('${c.mat}','ferias',this.value)" title="${ferAuto?'Preenchido automaticamente pelos dias úteis de férias na competência. Edite para sobrescrever.':'Valor informado manualmente. Apague para voltar ao automático.'}" style="${ferAuto&&fev>0?'background:#EFF6FF':''}"></td>
@@ -4092,7 +4104,7 @@ function renderUM989(){
     let html='';
     if(due.length){
       html+='<div class="alert alert-warning" style="margin-bottom:8px">🔔 <strong>Vencimento de férias atingido</strong> — creditar +30 dias: '
-        +due.map(c=>'<button class="btn btn-warning btn-xs" style="margin:2px" onclick="abrirCreditarCicloUM989(\''+c._id+'\')">'+c.nome+' — creditar +30</button>').join(' ')+'</div>';
+        +due.map(c=>'<button class="btn btn-warning btn-xs" style="margin:2px" onclick="abrirCreditarCicloUM989(\''+c._id+'\')">'+escH(c.nome)+' — creditar +30</button>').join(' ')+'</div>';
     }
     if(agend.length){
       html+='<div class="alert alert-info">🗓️ Férias agendadas que já chegaram: '+agend.map(c=>c.nome+' ('+_dataLocal(c.agendaInicio).toLocaleDateString('pt-BR')+')').join(', ')+'</div>';
@@ -4141,16 +4153,16 @@ function fichaUM989HTML(id){
   const st=c.status||'Trabalhando';
   const log=Array.isArray(c.feriasLog)?c.feriasLog.slice().reverse():[];
   const logHtml=log.length ? log.map(l=>{
-    if(l.tipo==='ciclo') return '<div style="border-bottom:1px solid var(--border);padding:6px 2px;font-size:12px"><strong style="color:var(--green)">+'+(l.dias||30)+'</strong> novo ciclo'+(l.desconto?' (−'+l.desconto+' desconto)':'')+(l.justificativa?' · '+l.justificativa:'')+' <span class="text-muted">('+new Date(l.em).toLocaleDateString('pt-BR')+')</span></div>';
+    if(l.tipo==='ciclo') return '<div style="border-bottom:1px solid var(--border);padding:6px 2px;font-size:12px"><strong style="color:var(--green)">+'+(l.dias||30)+'</strong> novo ciclo'+(l.desconto?' (−'+l.desconto+' desconto)':'')+(escH(l.justificativa)?' · '+escH(l.justificativa):'')+' <span class="text-muted">('+new Date(l.em).toLocaleDateString('pt-BR')+')</span></div>';
     const per=(l.inicio?_dataLocal(l.inicio).toLocaleDateString('pt-BR'):'')+(l.fim?' a '+_dataLocal(l.fim).toLocaleDateString('pt-BR'):'');
-    return '<div style="border-bottom:1px solid var(--border);padding:6px 2px;font-size:12px"><strong style="color:var(--red)">-'+l.dias+'d</strong> gozados '+per+(l.justificativa?' · '+l.justificativa:'')+' <span class="text-muted">('+new Date(l.em).toLocaleDateString('pt-BR')+')</span></div>';
+    return '<div style="border-bottom:1px solid var(--border);padding:6px 2px;font-size:12px"><strong style="color:var(--red)">-'+l.dias+'d</strong> gozados '+per+(escH(l.justificativa)?' · '+escH(l.justificativa):'')+' <span class="text-muted">('+new Date(l.em).toLocaleDateString('pt-BR')+')</span></div>';
   }).join('') : '<div class="text-muted">Sem registros.</div>';
   return `
     <div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="voltarUM989()">← Voltar</button></div>
     <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Ficha — ${c.nome||''}</div>
+      <div class="card-title">Ficha — ${escH(c.nome)||''}</div>
       <div class="form-grid cols2">
-        <div class="fg"><label>Nome</label><input type="text" id="fic-nome" value="${(c.nome||'').replace(/"/g,'&quot;')}"></div>
+        <div class="fg"><label>Nome</label><input type="text" id="fic-nome" value="${(escH(c.nome)||'').replace(/"/g,'&quot;')}"></div>
         <div class="fg"><label>Admissão</label><input type="date" id="fic-adm" value="${c.admissao||''}"></div>
         <div class="fg"><label>Status</label><select id="fic-status"><option value="Trabalhando" ${st!=='Desligado'?'selected':''}>Trabalhando</option><option value="Desligado" ${st==='Desligado'?'selected':''}>Desligado</option></select></div>
         <div class="fg"><label>Saldo (dias)</label><input type="number" id="fic-saldo" value="${fnum(c.ferSaldo)}" min="-90" max="120"></div>
@@ -4773,9 +4785,9 @@ function abrirAgendarFerias(){
       +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 11px;'
       +'border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
       +'data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'">'
-      +'<div style="min-width:0"><div style="font-weight:600">'+c.nome+'</div>'
+      +'<div style="min-width:0"><div style="font-weight:600">'+escH(c.nome)+'</div>'
       +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'
-      +(c.depto?' · '+c.depto:'')+'</div></div>'
+      +(escH(c.depto)?' · '+escH(c.depto):'')+'</div></div>'
       +'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+per+sel
       +'<span class="text-xs text-muted">'+(c.ferSaldo!=null?c.ferSaldo+'d':'—')+'</span>'
       +'<i class="ti ti-chevron-right" style="color:var(--text3)"></i></div></div>';
@@ -4825,7 +4837,7 @@ function abrirModalRetornosFerias(pend){
   document.getElementById('modal-retornos')?.remove();
   const rows=pend.map((c,i)=>'<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">'
     +'<input type="checkbox" id="mr-'+i+'" data-id="'+c._id+'" checked style="width:16px;height:16px;accent-color:var(--brand)">'
-    +'<span style="flex:1;min-width:0"><strong>'+c.nome+'</strong> <span class="text-xs text-muted">'+(c.mat||'')+(c.depto?' · '+c.depto:'')+'</span>'
+    +'<span style="flex:1;min-width:0"><strong>'+escH(c.nome)+'</strong> <span class="text-xs text-muted">'+(c.mat||'')+(escH(c.depto)?' · '+escH(c.depto):'')+'</span>'
     +(c.ferInicio&&c.ferFim?'<br><span class="text-xs" style="color:var(--text2)">Férias: '+_ddmm(_dataLocal(c.ferInicio))+' → '+_ddmm(_dataLocal(c.ferFim))+' (retorno vencido)</span>':'')
     +'</span></label>').join('');
   const html='<div class="modal-overlay open" id="modal-retornos" data-dynamic="1">'
@@ -5174,7 +5186,7 @@ function renderNovosPreview(novos, existentes, erros){
 
   if(novos.length){
     const lin=novos.slice(0,200).map(c=>'<tr>'
-      +'<td style="font-weight:600">'+c.nome+'</td>'
+      +'<td style="font-weight:600">'+escH(c.nome)+'</td>'
       +'<td class="text-xs text-muted">'+c.mat+'</td>'
       +'<td class="text-xs">'+(c.funcao||'—')+'</td>'
       +'<td class="text-xs">'+(c.depto||'—')+'</td>'
@@ -5194,7 +5206,7 @@ function renderNovosPreview(novos, existentes, erros){
   }
   if(erros.length){
     html+='<details style="margin-bottom:10px" open><summary style="cursor:pointer;font-weight:700;font-size:12px;color:var(--red)">Linhas com erro ('+erros.length+')</summary>'
-      +'<div class="text-xs" style="margin-top:6px">'+erros.map(x=>'Linha '+x.linha+': '+x.motivo+(x.nome?' — '+x.nome:'')+(x.mat?' ('+x.mat+')':'')).join('<br>')+'</div></details>';
+      +'<div class="text-xs" style="margin-top:6px">'+erros.map(x=>'Linha '+x.linha+': '+escH(x.motivo)+(escH(x.nome)?' — '+escH(x.nome):'')+(x.mat?' ('+x.mat+')':'')).join('<br>')+'</div></details>';
   }
 
   html+='<div class="btn-row" style="margin-top:6px">'
@@ -5281,7 +5293,7 @@ function renderPremioRows(dados){
     const label=d.status==='SIM'?'Sim':d.status==='NAO'?'Nao':d.status==='ANALISAR'?'Analisar':'N/A';
     return '<tr style="background:'+( i%2===0?'#F8F9FB':'')+'">'
       +'<td><code style="font-size:10px">'+d.mat+'</code></td>'
-      +'<td style="font-size:12px;font-weight:500">'+d.nome+'</td>'
+      +'<td style="font-size:12px;font-weight:500">'+escH(d.nome)+'</td>'
       +'<td style="font-size:10px">'+d.cpf+'</td>'
       +'<td style="font-size:11px">'+d.sit+'</td>'
       +'<td style="text-align:center;font-size:11px;color:'+(d.atraso>10?'var(--red)':d.atraso>0?'var(--yellow)':'var(--text3)')+'">'+fmtMin(d.atraso)+'</td>'
@@ -5292,7 +5304,7 @@ function renderPremioRows(dados){
       +'<td style="text-align:center;font-size:11px;color:'+(d.faltas?'var(--red)':'var(--text3)')+'">'+fmtMin(d.faltas)+'</td>'
       +'<td style="text-align:center;font-size:11px;color:'+(d.abono?'var(--red)':'var(--text3)')+'">'+fmtMin(d.abono)+'</td>'
       +'<td style="text-align:center"><span class="badge '+badge+'">'+label+'</span></td>'
-      +'<td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+d.motivo+'">'+d.motivo+'</td>'
+      +'<td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+escH(d.motivo)+'">'+escH(d.motivo)+'</td>'
       +'<td style="text-align:right;font-weight:600;color:var(--green);font-family:monospace">'+(d.status==='SIM'?brl(PREMIO_VAL):'-')+'</td>'
     +'</tr>';
   }).join('');
@@ -5606,7 +5618,7 @@ function renderTabelaFolha(){
     const c3=grupoEntry?getCor(grupoEntry[0]):{bg:"#F3F4F6",text:"#374151"};
     thead+='<th style="background:'+c3.bg+';color:'+c3.text+';font-size:9px;white-space:nowrap;'+
       'max-width:90px;overflow:hidden;text-overflow:ellipsis;padding:6px 5px;'+
-      'border-left:1px solid rgba(0,0,0,.06);font-weight:600" title="'+c.nome+'">'+c.nome+'</th>';
+      'border-left:1px solid rgba(0,0,0,.06);font-weight:600" title="'+escH(c.nome)+'">'+escH(c.nome)+'</th>';
   });
   thead+='<th style="background:#1B5E20;position:sticky;right:0;min-width:90px">Total</th></tr>';
   thead+='</thead>';
@@ -5617,7 +5629,7 @@ function renderTabelaFolha(){
     const rowTot=todasCols.reduce((s,c)=>s+fnum(d.eventos?.[c.ev]),0);
     tbody+='<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'">';
     tbody+='<td style="padding:7px 10px;position:sticky;left:0;background:'+(i%2===0?'#F8F9FB':'#fff')+'"><code style="font-size:10px">'+(d.mat||'—')+'</code></td>';
-    tbody+='<td style="padding:7px 10px;position:sticky;left:70px;background:'+(i%2===0?'#F8F9FB':'#fff')+';font-weight:500;min-width:160px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+d.nome+'">'+d.nome+'</td>';
+    tbody+='<td style="padding:7px 10px;position:sticky;left:70px;background:'+(i%2===0?'#F8F9FB':'#fff')+';font-weight:500;min-width:160px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+escH(d.nome)+'">'+escH(d.nome)+'</td>';
     tbody+='<td style="padding:7px 10px;font-size:10px">'+(d.cpf||'—')+'</td>';
     tbody+='<td style="padding:7px 10px;font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis">'+(d.depto||'—')+'</td>';
     todasCols.forEach(c=>{
@@ -5984,7 +5996,7 @@ function _fpRenderTabela(lista){
       return '<tr'+(critico?' style="background:var(--danger-bg)"':'')+'>'
         +'<td style="padding:8px 10px"><span class="badge badge--'+cls+'">'+info.lbl+'</span>'
           +(critico?' <span class="badge badge--danger" style="font-size:9px">crítico</span>':'')+'</td>'
-        +'<td style="padding:8px 10px"><div style="font-weight:500">'+c.nome+'</div>'
+        +'<td style="padding:8px 10px"><div style="font-weight:500">'+escH(c.nome)+'</div>'
           +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
         +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>'
         +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(funcaoColab(c)||'—')+'</td>'
@@ -6018,7 +6030,7 @@ function _fpCard({c,per,hoje,faixa,critico}){
   return '<div class="kan-card'+(critico?' kan-card--crit':'')+'" '
     +'onclick="abrirDetalheFerias(\''+c._id+'\')" title="'
     +String(ferResumoPeriodo(per,hoje)).replace(/"/g,'&quot;')+'">'
-    +'<div class="kan-card__n">'+c.nome+'</div>'
+    +'<div class="kan-card__n">'+escH(c.nome)+'</div>'
     +'<div class="kan-card__s">'+linha2+'</div>'
     +'<div class="kan-card__f">'
       +(nAbertos>1?'<span class="badge badge--warning" style="font-size:9px">'+nAbertos+' períodos</span>':'')
@@ -6188,7 +6200,7 @@ function ferLogDescreve(l){
   if(l.tipo==='aniversario') return {acao:'Inclusão', cls:'success',
     o:'+'+n(l.dias||30)+'d por aniversário de admissão · saldo '+n(l.de)+' → '+n(l.para)};
   if(l.tipo==='ajuste_manual') return {acao:'Edição', cls:'accent',
-    o:'saldo '+n(l.de)+' → '+n(l.para)+(l.justificativa?' · '+l.justificativa:'')};
+    o:'saldo '+n(l.de)+' → '+n(l.para)+(escH(l.justificativa)?' · '+escH(l.justificativa):'')};
   if(l.tipo==='agendado') return {acao:'Edição', cls:'accent',
     o:'voltou a Trabalhando — as férias de '
       +_ferValTxt('ferInicio',l.inicio)+' ainda não começaram'};
@@ -6443,7 +6455,7 @@ async function fecharCicloFerias(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const f=getFarol(c);
   if(!f.vencDate){ toast('Sem data de vencimento para fechar ciclo.','error'); return; }
-  const r=prompt('Fechar ciclo de '+c.nome+' (venceu em '+f.vencStr+').\n\n+30 dias serão somados ao saldo.\nQuantos dias de FALTA descontar neste ciclo? (0 se nenhuma)','0');
+  const r=prompt('Fechar ciclo de '+escH(c.nome)+' (venceu em '+f.vencStr+').\n\n+30 dias serão somados ao saldo.\nQuantos dias de FALTA descontar neste ciclo? (0 se nenhuma)','0');
   if(r===null) return;
   const faltas=Math.max(0,fnum(r));
   const novoSaldo=(c.ferSaldo!=null?c.ferSaldo:0)+30-faltas;
@@ -6482,7 +6494,7 @@ function abrirDetalheFerias(id,editando){
     <div class="modal-overlay ds" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
       <div class="modal" style="max-width:540px;padding:0;overflow:hidden">
         <div style="background:var(--brand);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella"></i> ${c.nome}</div>
+          <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella"></i> ${escH(c.nome)}</div>
           <button onclick="closeModal('modal-ferias-detalhe')" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1">&times;</button>
         </div>
         <div style="padding:20px;max-height:70vh;overflow-y:auto">
@@ -6557,8 +6569,8 @@ function abrirIncluirFerias(){
   const rows=cands.map(c=>'<div class="incl-row" onclick="_incluirFerias(\''+c._id+'\')" '
     +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
     +'data-busca="'+((c.nome||'')+' '+(c.mat||'')).toLowerCase().replace(/"/g,'')+'">'
-    +'<div><div style="font-weight:600">'+c.nome+'</div>'
-    +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'+(c.depto?' · '+c.depto:'')+'</div></div>'
+    +'<div><div style="font-weight:600">'+escH(c.nome)+'</div>'
+    +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'+(escH(c.depto)?' · '+escH(c.depto):'')+'</div></div>'
     +'<span class="btn btn-ghost btn-sm"><i class="ti ti-chevron-right"></i></span></div>').join('');
   document.body.insertAdjacentHTML('beforeend',
     '<div class="modal-overlay ds open" id="modal-inc-fer" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
@@ -7067,7 +7079,7 @@ function rvRenderPessoas(){
     +'<th style="text-align:center">Remover</th>'
     +'</tr></thead><tbody>'
     +lista.map(p=>'<tr>'
-      +'<td><div style="font-weight:500">'+p.nome+_rvSeloStatus(p)+'</div>'
+      +'<td><div style="font-weight:500">'+escH(p.nome)+_rvSeloStatus(p)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro}))+'</td>'
       +'<td class="text-sm" style="color:var(--text2)">'+(p.depto||'—')+'</td>'
@@ -7099,9 +7111,9 @@ function rvAbrirIncluir(){
     +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;'
     +'border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
     +'data-busca="'+((c.nome||'')+' '+(c.mat||'')+' '+(c.depto||'')).toLowerCase().replace(/"/g,'')+'">'
-    +'<div><div style="font-weight:600">'+c.nome+_rvSeloStatus(c)+'</div>'
+    +'<div><div style="font-weight:600">'+escH(c.nome)+_rvSeloStatus(c)+'</div>'
     +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'
-    +(c.depto?' · '+c.depto:'')+'</div></div>'
+    +(escH(c.depto)?' · '+escH(c.depto):'')+'</div></div>'
     +'<span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('');
   document.body.insertAdjacentHTML('beforeend',
     '<div class="modal-overlay ds open" id="modal-rv-inc" data-dynamic="1" '
@@ -7276,7 +7288,7 @@ function rvRenderPct(){
     +lista.map(p=>{
       const v=rvValor(p);
       return '<tr>'
-      +'<td><div style="font-weight:500">'+p.nome+_rvSeloStatus(p)+'</div>'
+      +'<td><div style="font-weight:500">'+escH(p.nome)+_rvSeloStatus(p)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
       +'<td class="text-sm" style="color:var(--text2)">'+(p.depto||'—')+'</td>'
       +'<td style="text-align:center"><select onchange="rvSetPct(\''+p.mat+'\',this.value)"'+trava
@@ -7323,7 +7335,7 @@ function rvRenderFim(){
     +lista.map(p=>{
       const v=rvValor(p);
       return '<tr'+(v>0?'':' style="opacity:.6"')+'>'
-      +'<td><div style="font-weight:500">'+p.nome+_rvSeloStatus(p)+'</div>'
+      +'<td><div style="font-weight:500">'+escH(p.nome)+_rvSeloStatus(p)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(p.mat||'—')+'</code></div></td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey({mat:p.mat,filtro:p.filtro}))+'</td>'
       +'<td style="text-align:center">'+(p.percentual===''||p.percentual==null?'—':_rvPct(p.percentual))+'</td>'
@@ -7877,7 +7889,7 @@ function renderPasso7Linhas(dados){
     else { celValor='<input type="number" step="0.01" min="0" value="'+val+'" onchange="editarValorPremio('+idx+',this.value)" style="width:96px;padding:3px 6px;border:1px solid '+(alterado?'var(--warning)':'var(--border)')+';border-radius:4px;font-size:12px;text-align:right">'; }
     return '<tr>'
       + '<td><code style="font-size:11px">'+(r.mat||'—')+'</code></td>'
-      + '<td style="font-weight:500">'+r.nome+'</td>'
+      + '<td style="font-weight:500">'+escH(r.nome)+'</td>'
       + '<td class="text-sm">'+(r.empresa||'—')+'</td>'
       + '<td><span class="badge badge--'+sitBadge+'">'+r.situacao+'</span></td>'
       + '<td style="text-align:center;font-weight:700;color:'+corRec+'">'+(r.recebe||'—')+'</td>'
@@ -7916,7 +7928,7 @@ function _premioBaseRows(lista){
     const badge=g==='trabalhando'?'success':g==='so_cesta'?'warning':g==='ferias'?'accent':'neutral';
     const acao=g==='so_cesta'?'<button class="btn btn-ghost btn-sm" onclick="premioReativarAfastado(\''+c._id+'\')"><i class="ti ti-arrow-back-up"></i> Reativar</button>':'';
     return '<tr><td><code style="font-size:10px">'+(c.mat||'—')+'</code></td>'
-      +'<td style="font-weight:500">'+c.nome+'</td>'
+      +'<td style="font-weight:500">'+escH(c.nome)+'</td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey(c))+'</td>'
       +'<td class="text-sm">'+(c.depto||'—')+'</td>'
       +'<td><span class="badge badge--'+badge+'">'+getStatusInfo(c.status).label+'</span></td>'
@@ -8507,7 +8519,7 @@ function renderPremioLinhas(dados){
     const sitBadge = r.situacao==='MEI'?'warning':r.situacao==='N/A'?'neutral':r.situacao==='Trabalhando'?'success':r.situacao==='DUP'?'purple':'accent';
     return '<tr>'
       + '<td><code style="font-size:10px">'+(r.mat||'—')+'</code></td>'
-      + '<td style="font-weight:500">'+r.nome+'</td>'
+      + '<td style="font-weight:500">'+escH(r.nome)+'</td>'
       + '<td class="text-sm">'+(r.empresa||'—')+'</td>'
       + '<td><span class="badge badge--'+sitBadge+'">'+r.situacao+'</span></td>'
       + '<td style="text-align:center"><select onchange="editarRecebeRow('+idx+',this.value)" style="padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-size:11px;font-weight:700;color:'+corRec+';background:transparent">'
@@ -9407,8 +9419,8 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLis
         <thead><tr><th>Matricula</th><th>Nome</th><th>Departamento</th><th>Status</th></tr></thead>
         <tbody>${afastadosDef.map(c=>`<tr>
           <td><code>${c.mat||'—'}</code></td>
-          <td>${c.nome}</td>
-          <td class="text-sm text-muted">${c.depto||'—'}</td>
+          <td>${escH(c.nome)}</td>
+          <td class="text-sm text-muted">${escH(c.depto)||'—'}</td>
           <td>${statusBadge(c.status)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
@@ -9424,7 +9436,7 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLis
         <thead><tr><th>Matricula</th><th>Nome</th><th>Período</th><th>Status</th></tr></thead>
         <tbody>${feriasLista.map(c=>`<tr>
           <td><code>${c.mat||'—'}</code></td>
-          <td>${c.nome}</td>
+          <td>${escH(c.nome)}</td>
           <td class="text-sm text-muted">${c.ferInicio&&c.ferFim?_ddmm(_dataLocal(c.ferInicio))+'→'+_ddmm(_dataLocal(c.ferFim)):'—'}</td>
           <td>${statusBadge(c.status)}</td>
         </tr>`).join('')}</tbody>
@@ -9445,7 +9457,7 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLis
         <tbody>${mudancas.map((m,i)=>`<tr>
           <td><input type="checkbox" id="mud-${i}" class="mud-check" checked style="accent-color:var(--blue)"></td>
           <td><code>${m.colab.mat}</code></td>
-          <td>${m.colab.nome}</td>
+          <td>${escH(m.colab.nome)}</td>
           <td>${statusBadge(m.statusAnterior)}</td>
           <td>${statusBadge(m.novoStatus)}</td>
         </tr>`).join('')}</tbody>
@@ -9466,7 +9478,7 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLis
         <tbody>${novos.map((n,i)=>`<tr>
           <td><input type="checkbox" id="nov-${i}" class="nov-check" checked style="accent-color:var(--blue)"></td>
           <td><code>${n.mat}</code></td>
-          <td>${n.nome}</td>
+          <td>${escH(n.nome)}</td>
           <td>${statusBadge(n.status)}</td>
           <td>${n.admissao||'—'}</td>
         </tr>`).join('')}</tbody>
@@ -9488,8 +9500,8 @@ function renderAtuPreview(novos,demitidos,mudancas,iguais,afastadosDef,feriasLis
         <tbody>${demitidos.map((d,i)=>`<tr>
           <td><input type="checkbox" id="dem-${i}" class="dem-check" style="accent-color:var(--red)"></td>
           <td><code>${d.mat}</code></td>
-          <td>${d.nome}</td>
-          <td class="text-sm text-muted">${d.depto||'—'}</td>
+          <td>${escH(d.nome)}</td>
+          <td class="text-sm text-muted">${escH(d.depto)||'—'}</td>
           <td>${statusBadge(d.status)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
@@ -9590,9 +9602,9 @@ function renderMeiLinhas(dados){
   return dados.map((r,i)=>{
     const idx = premioState.tabela.findIndex(x=>x.mat===r.mat);
     const corRec = r.recebe==='SIM'?'var(--green)':'var(--red)';
-    return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'" data-mat="'+r.mat+'" data-nome="'+r.nome.toLowerCase()+'">'
+    return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'" data-mat="'+r.mat+'" data-nome="'+escH(r.nome).toLowerCase()+'">'
       +'<td style="padding:8px 12px"><code style="font-size:11px">'+r.mat+'</code></td>'
-      +'<td style="padding:8px 12px;font-weight:500">'+r.nome+'</td>'
+      +'<td style="padding:8px 12px;font-weight:500">'+escH(r.nome)+'</td>'
       +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.atraso>10?'var(--red)':r.atraso>0?'var(--yellow)':'#ccc')+'">'+min2str(r.atraso)+'</td>'
       +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.saida>10?'var(--red)':r.saida>0?'var(--yellow)':'#ccc')+'">'+min2str(r.saida)+'</td>'
       +'<td style="padding:8px 12px;text-align:center;font-size:11px;color:'+(r.atestado>0?'var(--red)':'#ccc')+'">'+min2str(r.atestado)+'</td>'
@@ -9632,9 +9644,9 @@ function renderPasso6Linhas(dados){
     const idx = premioState.tabela.findIndex(x=>x.mat===r.mat);
     const corRec = r.recebe==='SIM'?'var(--green)':'var(--red)';
     const bgRec = r.recebe==='SIM'?'#F0FFF4':'#FFF0F0';
-    return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'" data-mat="'+r.mat+'" data-nome="'+r.nome.toLowerCase()+'" data-recebe="'+r.recebe+'" data-sit="'+r.situacao+'">'
+    return '<tr style="border-bottom:1px solid var(--border);background:'+(i%2===0?'#F8F9FB':'')+'" data-mat="'+r.mat+'" data-nome="'+escH(r.nome).toLowerCase()+'" data-recebe="'+r.recebe+'" data-sit="'+r.situacao+'">'
       +'<td style="padding:7px 10px"><code style="font-size:10px">'+r.mat+'</code></td>'
-      +'<td style="padding:7px 10px;font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis">'+r.nome+'</td>'
+      +'<td style="padding:7px 10px;font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis">'+escH(r.nome)+'</td>'
       +'<td style="padding:7px 10px"><span style="background:'+(r.situacao==='MEI'?'#FEF3C7':r.situacao==='Trabalhando'?'#D1FAE5':'#F3F4F6')+';color:'+(r.situacao==='MEI'?'#78350F':r.situacao==='Trabalhando'?'#065F46':'#374151')+';padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600">'+r.situacao+'</span></td>'
       +'<td style="padding:7px 10px;text-align:center;background:'+bgRec+'">'
         +'<select onchange="editarRecebeRow('+idx+',this.value);this.style.color=this.value===\'SIM\'?\'var(--green)\":\'var(--red)\';this.closest(\'tr\').dataset.recebe=this.value;filtrarPasso6()" '
@@ -10090,10 +10102,10 @@ function renderFeriasAgendadas(){
                 const dd=f.vencDate?(String(f.vencDate.getDate()).padStart(2,'0')+'/'+String(f.vencDate.getMonth()+1).padStart(2,'0')+'/'+String(f.vencDate.getFullYear()).slice(-2)):'';
                 const vencTxt=f.cor==='sem'?'Sem venc.':(f.meses<0?'Venceu '+dd:'Vence '+dd);
                 return '<div class="rad-card" onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para ver/editar">'
-                  +'<div class="rad-card__top"><span class="rad-card__name">'+c.nome+'</span>'
+                  +'<div class="rad-card__top"><span class="rad-card__name">'+escH(c.nome)+'</span>'
                     +'<span class="rad-saldo'+(saldo<0?' neg':'')+'" title="Saldo de dias">'+saldo+'d</span></div>'
                   +'<div class="rad-venc" style="color:'+corMap[f.cor]+'">'+vencTxt+'</div>'
-                  +(c.depto?'<div class="rad-agend">'+c.depto+'</div>':'')
+                  +(escH(c.depto)?'<div class="rad-agend">'+escH(c.depto)+'</div>':'')
                   +'</div>';
               }).join(''))
           +'</div></div>';
@@ -10125,7 +10137,7 @@ function renderFeriasAgendadas(){
           let sitCell='';
           if(temSit){ sitCell='<td style="padding:8px 10px"><span class="badge badge--danger">'+getStatusInfo(c.status).label+'</span></td>'; }
           return '<tr>'
-            +'<td style="padding:8px 10px"><div style="font-weight:500">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
+            +'<td style="padding:8px 10px"><div style="font-weight:500">'+escH(c.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code></div></td>'
             +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.cargo||'—')+'</td>'
             +'<td style="padding:8px 10px;font-size:11px;color:var(--text2)">'+(c.depto||'—')+'</td>'
             +sitCell
@@ -10197,14 +10209,14 @@ function renderAlertasFeriasMes(dados){
   if(aVencer.length>0){
     html+='<div style="background:#FEFCE8;border:1.5px solid #FDE68A;border-radius:var(--radius);padding:10px 14px;font-size:13px;color:#92400E">'
       +'<strong>'+aVencer.length+' colaborador(es)</strong> terao ferias vencendo nos proximos 2 meses: '
-      +aVencer.map(c=>c.nome.split(' ')[0]+' '+c.nome.split(' ').slice(-1)[0]).join(', ')
+      +aVencer.map(c=>escH(c.nome).split(' ')[0]+' '+escH(c.nome).split(' ').slice(-1)[0]).join(', ')
       +'</div>';
   }
 
   if(agendadosMes.length>0){
     html+='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--radius);padding:10px 14px;font-size:13px;color:#1E3A8A">'
       +'<strong>'+agendadosMes.length+' colaborador(es) agendados para tirar ferias em '+mesAtualNome+':</strong> '
-      +agendadosMes.map(c=>c.nome.split(' ')[0]+' '+c.nome.split(' ').slice(-1)[0]).join(', ')
+      +agendadosMes.map(c=>escH(c.nome).split(' ')[0]+' '+escH(c.nome).split(' ').slice(-1)[0]).join(', ')
       +'</div>';
   }
 
@@ -10420,7 +10432,7 @@ function wizRow(setName,c){
   const checked=wizState[setName].has(c._id)?'checked':'';
   return '<label class="wiz-item">'
     +'<input type="checkbox" '+checked+' onchange="wizToggle(\''+setName+'\',\''+c._id+'\')">'
-    +'<span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
+    +'<span class="wiz-item__main"><span class="wiz-item__name">'+escH(c.nome)+'</span> '
       +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
     +dsStatusBadge(c.status)
     +'</label>';
@@ -10429,7 +10441,7 @@ function wizBusca(c,q){
   return (c.nome||'').toLowerCase().includes(q)||(c.mat||'').toLowerCase().includes(q)||(c.depto||'').toLowerCase().includes(q);
 }
 function wizConfItem(id,c,tipo){
-  return '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
+  return '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+escH(c.nome)+'</span> '
     +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
     +dsStatusBadge(c.status)
     +'<button class="btn btn-ghost btn-sm" onclick="'+tipo+'"><i class="ti ti-x"></i> Excluir</button></div>';
@@ -10439,7 +10451,7 @@ function wizConfItem(id,c,tipo){
 function wizRevHTML(step){
   const done = step==='demissoes'?wizState.doneDem:wizState.doneAfa;
   const rows = done.length ? done.map((e,i)=>
-      '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+e.nome+'</span> '
+      '<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+escH(e.nome)+'</span> '
         +(e.info?'<span class="wiz-item__sub">'+e.info+'</span>':'')+'</span>'
       +dsStatusBadge(e.para)
       +'<button class="btn btn-ghost btn-sm" onclick="wizDesfazer(\''+step+'\','+i+')"><i class="ti ti-arrow-back-up"></i> Desfazer</button></div>').join('')
@@ -10494,7 +10506,7 @@ function wizContratacoesHTML(){
   if(add.length){
     painel=wizPanel('<i class="ti ti-user-check"></i> Adicionados nesta etapa','<span class="wiz-pill">'+add.length+'</span>',
       '<div class="wiz-list wiz-list--scroll">'
-      +add.map(c=>'<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> '
+      +add.map(c=>'<div class="wiz-item"><span class="wiz-item__main"><span class="wiz-item__name">'+escH(c.nome)+'</span> '
         +'<span class="wiz-item__sub">'+(c.mat||'—')+' &middot; '+(c.depto||'—')+'</span></span>'
         +'<button class="btn btn-ghost btn-sm" onclick="wizExcluirContratacao(\''+c._id+'\')"><i class="ti ti-trash"></i> Excluir</button></div>').join('')
       +'</div>');
@@ -10616,7 +10628,7 @@ function wizRenderAfaDefList(){
   const lista=colaboradoresUnicos().filter(c=>_statusKey(c.status)==='AFASTADO DEFINITIVO').sort((a,b)=>a.nome.localeCompare(b.nome));
   const cnt=document.getElementById('wiz-afadef-count'); if(cnt) cnt.textContent=lista.length||'';
   cont.innerHTML = lista.length ? lista.map(c=>'<div class="wiz-item" style="cursor:default">'
-    +'<span class="wiz-item__main"><span class="wiz-item__name">'+c.nome+'</span> <span class="wiz-item__sub">'+(c.mat||'—')+' · '+(c.depto||'—')+'</span></span>'
+    +'<span class="wiz-item__main"><span class="wiz-item__name">'+escH(c.nome)+'</span> <span class="wiz-item__sub">'+(c.mat||'—')+' · '+(escH(c.depto)||'—')+'</span></span>'
     +dsStatusBadge(c.status)+'</div>').join('') : '<div class="wiz-empty">Nenhum afastado definitivo.</div>';
 }
 function wizRenderAfaReList(){
@@ -10716,7 +10728,7 @@ function wizFerConfirmedRow(c,tipo){
                                 : ('novo saldo '+(c.ferSaldo!=null?c.ferSaldo:0)+'d');
   return '<div id="'+(tipo==='entrada'?'ent':'ret')+'-row-'+c._id+'" class="wiz-row wiz-row--ok">'
     +'<div class="wiz-row__top"><i class="ti ti-circle-check" style="color:var(--brand);font-size:17px"></i>'
-      +'<span style="flex:1;min-width:0">'+c.nome+' <span class="wiz-item__sub">'+dias+'</span></span>'
+      +'<span style="flex:1;min-width:0">'+escH(c.nome)+' <span class="wiz-item__sub">'+dias+'</span></span>'
       +dsStatusBadge(c.status)+'<span style="color:var(--brand);font-weight:700;font-size:12px">Confirmado</span></div></div>';
 }
 
@@ -10787,7 +10799,7 @@ function wizFerRetRow(c){
   const anoProx=anoAgendadoColab(c); const anoSel=(typeof anoProx==='number')?anoProx:anoAtual;
   const anos=[anoAtual,anoAtual+1,anoAtual+2,anoAtual+3];
   return '<div id="ret-row-'+c._id+'" class="wiz-row">'
-    +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
+    +'<div class="wiz-row__top">'+escH(c.nome)+' <span class="wiz-item__sub">'+(escH(c.depto)||'—')+'</span></div>'
     +'<div class="wiz-fields">'
       +'<div class="wiz-field"><label>'+(temPeriodo?'Período gozado':'Gozo')+'</label><div class="wiz-val">'+resumoGozo+'</div></div>'
       +'<div class="wiz-field"><label>Saldo atual</label><div class="wiz-val">'+saldo+'d</div></div>'
@@ -10884,7 +10896,7 @@ function wizFerEntRow(c,ref){
   const saldo=(c.ferSaldo!=null?c.ferSaldo:0);
   const outroMes = c.ferMes && c.ferMes!==ref ? ' <span class="badge badge--warning">agend.: '+c.ferMes+'</span>' : '';
   return '<div id="ent-row-'+c._id+'" class="wiz-row">'
-    +'<div class="wiz-row__top">'+c.nome+outroMes+' <span class="wiz-item__sub">'+(c.depto||'—')+'</span></div>'
+    +'<div class="wiz-row__top">'+escH(c.nome)+outroMes+' <span class="wiz-item__sub">'+(escH(c.depto)||'—')+'</span></div>'
     +'<div class="wiz-fields">'
       +'<div class="wiz-field"><label>Início</label><input type="date" id="ent-i-'+c._id+'" class="wiz-num" value="'+(c.ferInicio||'')+'"></div>'
       +'<div class="wiz-field"><label>Término</label><input type="date" id="ent-f-'+c._id+'" class="wiz-num" value="'+(c.ferFim||'')+'"></div>'
@@ -11007,7 +11019,7 @@ function wizFerAjusteList(){
   cont.innerHTML=lista.map(c=>{
     const saldo=(c.ferSaldo!=null?c.ferSaldo:0);
     return '<div class="wiz-row">'
-      +'<div class="wiz-row__top">'+c.nome+' <span class="wiz-item__sub">'+(c.depto||'—')+' &middot; saldo atual '+saldo+'d</span></div>'
+      +'<div class="wiz-row__top">'+escH(c.nome)+' <span class="wiz-item__sub">'+(escH(c.depto)||'—')+' &middot; saldo atual '+saldo+'d</span></div>'
       +'<div class="wiz-fields">'
         +'<div class="wiz-field"><label>Novo saldo</label><input type="number" id="aj-s-'+c._id+'" class="wiz-num" value="'+saldo+'"></div>'
         +'<div class="wiz-field" style="flex:1;min-width:200px"><label>Justificativa (obrigatória)</label><input type="text" id="aj-j-'+c._id+'" class="wiz-input" style="height:34px" placeholder="Motivo do ajuste"></div>'
@@ -12261,7 +12273,7 @@ function lcCopiarRelatorio(){
   const txt=lcResultados.map(r=>{
     const sem=Object.values(r.semMap).map(s=>'    - '+s.codigo+' '+s.descricao+': '+brl(s.soma)+' ('+s.ccs.map(c=>c.cc).join(', ')+')').join('\n');
     return [r.sigla+' — '+(r.empresaNome||''),
-      '  '+r.descricao,
+      '  '+escH(r.descricao),
       '  CCs: '+r.nCC+' | eventos: '+r.nEventos+' | linhas: '+(r.linhas.length-1)+' ('+r.pares+' pares)',
       '  Total Dr: '+brl(r.totalDr)+' | Total Cr: '+brl(r.totalCr)+' | '+(r.balanceado?'BALANCEADO':'DESBALANCEADO'),
       '  Arquivo: '+r.saida,
@@ -12644,7 +12656,7 @@ function contabPrevia(i){
   const cab=evs.map(k=>{const[c,d]=k.split('|');return '<th title="'+String(d).replace(/"/g,'')+'" style="text-align:right">'+c+'</th>';}).join('');
   const linhas=res.ccs.map(cc=>{
     let tot=0; cc.eventos.forEach(v=>tot+=v);
-    return '<tr><td style="font-weight:600;white-space:nowrap">'+cc.nome+'</td>'
+    return '<tr><td style="font-weight:600;white-space:nowrap">'+escH(cc.nome)+'</td>'
       +evs.map(k=>{const v=cc.eventos.get(k)||0; return '<td style="text-align:right">'+(v?brl(v):'')+'</td>';}).join('')
       +'<td style="text-align:right;font-weight:700">'+brl(tot)+'</td></tr>';
   }).join('');
@@ -12690,7 +12702,7 @@ function renderLcResultados(erros){
     return '<div class="card" style="margin-bottom:8px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
       +'<div><div style="font-weight:700;color:var(--brand)">'+r.sigla+' <span class="text-xs text-muted" style="font-weight:400">'+(r.empresaNome||'')+'</span></div>'
-      +'<div class="text-xs text-muted">'+r.descricao+' · '+r.nCC+' CCs · '+r.nEventos+' eventos · '+(r.linhas.length-1)+' linhas ('+r.pares+' pares Dr/Cr)</div>'
+      +'<div class="text-xs text-muted">'+escH(r.descricao)+' · '+r.nCC+' CCs · '+r.nEventos+' eventos · '+(r.linhas.length-1)+' linhas ('+r.pares+' pares Dr/Cr)</div>'
       +'<div class="text-xs text-muted"><code>'+r.saida+'</code></div></div>'
       +'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
         +'<div style="text-align:right"><div class="text-xs text-muted">Total Dr / Cr</div><div style="font-size:14px;font-weight:700">'+brl(r.totalDr)+'</div></div>'
@@ -12775,7 +12787,7 @@ function abrirDeParaEvento(codFolha, descFolha){
   const esc=s=>String(s||'').replace(/"/g,'&quot;').replace(/'/g,'');
   const linha=ev=>'<div class="incl-row" onclick="salvarDeParaEvento(\''+esc(codFolha)+'\',\''+esc(ev.codigo)+'\',\''+esc(descFolha)+'\')" '
     +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
-    +'data-busca="'+esc((ev.codigo+' '+ev.descricao).toLowerCase())+'">'
+    +'data-busca="'+esc((ev.codigo+' '+escH(ev.descricao)).toLowerCase())+'">'
     +'<div><div style="font-weight:600"><code>'+ev.codigo+'</code> · '+(ev.descricao||'—')+'</div>'
     +'<div class="text-xs text-muted">'+(ev.semLancamento?'sem lançamento contábil':'D '+ev.contaDebito+' · C '+ev.contaCredito)+'</div></div>'
     +'<span class="btn btn-ghost btn-sm"><i class="ti ti-arrow-right"></i></span></div>';
@@ -13137,7 +13149,7 @@ function explicaDiasUteis(du){
   if(!du) return '';
   const f=du.feriados.length
     ? ' − '+du.feriados.length+' feriado'+(du.feriados.length>1?'s':'')+' ('
-      +du.feriados.map(x=>x.data.slice(8)+'/'+x.data.slice(5,7)+' '+x.nome).join(', ')+')'
+      +du.feriados.map(x=>x.data.slice(8)+'/'+x.data.slice(5,7)+' '+escH(x.nome)).join(', ')+')'
     : ' · sem feriado em dia útil';
   const extra=du.feriadosNoFDS.length
     ? ' — '+du.feriadosNoFDS.map(x=>x.nome).join(', ')+' caiu no fim de semana'
@@ -13362,7 +13374,7 @@ function abrirAdicionarExtraHabitual(){
   const rows=cands.map(c=>'<div class="incl-row" onclick="extrasAdicionarNaLista(\''+c.mat+'\')" '
     +'style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer" '
     +'data-busca="'+((c.nome||'')+' '+(c.mat||'')).toLowerCase().replace(/"/g,'')+'">'
-    +'<div><div style="font-weight:600">'+c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code> · '+(c.depto||'—')+'</div></div>'
+    +'<div><div style="font-weight:600">'+escH(c.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code> · '+(escH(c.depto)||'—')+'</div></div>'
     +'<span class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i></span></div>').join('');
   document.body.insertAdjacentHTML('beforeend',
     '<div class="modal-overlay ds open" id="modal-extras-add" data-dynamic="1" onclick="if(event.target===this)this.remove()">'
@@ -13394,7 +13406,7 @@ function renderExtrasHabituais(){
       ? ' <span class="text-xs" style="color:var(--yellow)">confira se houve dia extra mesmo assim</span>' : '';
     return '<tr'+(est.incluir?'':' style="opacity:.45"')+'>'
       +'<td style="text-align:center"><input type="checkbox" '+(est.incluir?'checked':'')+' onchange="extrasToggle(\''+h.mat+'\')" style="accent-color:var(--brand)"></td>'
-      +'<td><div style="font-weight:600">'+(c?c.nome:h.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+h.mat+'</code>'+(c&&c.depto?' · '+c.depto:'')+'</div></td>'
+      +'<td><div style="font-weight:600">'+(c?escH(c.nome):escH(h.nome))+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+h.mat+'</code>'+(c&&escH(c.depto)?' · '+escH(c.depto):'')+'</div></td>'
       +'<td>'+sit+alerta+'</td>'
       +'<td style="text-align:center"><input type="number" min="0" max="31" value="'+est.dias+'" '
         +'onchange="extrasSetDias(\''+h.mat+'\',this.value)" class="input-extras" style="width:64px"'+(est.incluir?'':' disabled')+'></td>'
@@ -13501,7 +13513,7 @@ function renderFeriasConferencia(){
   const linhas=lista.map(x=>{
     const av=x.avisos.map(a=>'<span class="badge badge--'+a.t+'" style="font-size:9px">'+a.txt+'</span>').join(' ');
     return '<tr'+(x.dr>0?' style="background:var(--success-bg)"':'')+'>'
-      +'<td><div style="font-weight:600">'+x.c.nome+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(x.c.mat||'—')+'</code>'+(x.c.depto?' · '+x.c.depto:'')+'</div></td>'
+      +'<td><div style="font-weight:600">'+escH(x.c.nome)+'</div><div class="text-xs text-muted"><code style="font-size:10px">'+(x.c.mat||'—')+'</code>'+(escH(x.c.depto)?' · '+escH(x.c.depto):'')+'</div></td>'
       +'<td class="text-sm">'+(x.ini?fmtD(x.ini)+' a '+fmtD(x.fim):'<span style="color:var(--red)">não cadastrado</span>')+'</td>'
       +'<td style="text-align:center">'+(x.comprados>0?x.comprados+'d':'—')+'</td>'
       +'<td style="text-align:center">'+x.duCol+'</td>'
@@ -13556,7 +13568,7 @@ function renderCalendarioDU(){
     if(d.forcado){ cls.push('cal-forcado'); titulo+=' · ajustado à mão'; }
     cels.push('<div class="'+cls.join(' ')+'" title="'+titulo.replace(/"/g,'')+'" onclick="duAlternarDia(\''+d.data+'\')">'
       +'<span class="cal-num">'+d.dia+'</span>'
-      +(d.feriado?'<span class="cal-tag">'+d.feriado.nome.slice(0,14)+'</span>':'')
+      +(d.feriado?'<span class="cal-tag">'+escH(d.feriado.nome).slice(0,14)+'</span>':'')
       +(d.forcado?'<span class="cal-mao"><i class="ti ti-hand-click"></i></span>':'')
       +'</div>');
   });
@@ -13710,7 +13722,7 @@ function renderTabelaBenef(){
       +'<th>Colaborador</th><th>Empresa</th>'
       +BENS.map(([,rot])=>'<th style="text-align:right">'+rot+'</th>').join('')
       +'<th style="text-align:right">Total</th></tr></thead><tbody>'
-      +linhas.map(x=>'<tr><td><div style="font-weight:500">'+x.c.nome+'</div>'
+      +linhas.map(x=>'<tr><td><div style="font-weight:500">'+escH(x.c.nome)+'</div>'
         +'<div class="text-xs text-muted"><code style="font-size:10px">'+(x.c.mat||'—')+'</code></div></td>'
         +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
         +BENS.map(([k])=>'<td style="text-align:right">'+(x.v[k]>0?brl(x.v[k]):'—')+'</td>').join('')
@@ -13750,7 +13762,7 @@ function renderTabelaBenef(){
         const ex=fnum((lancamento[x.c.mat]||{}).extrasVr);
         const dvr=getLanDRVR(x.c.mat,x.dr);
         return '<tr><td><code style="font-size:10px">'+(x.c.mat||'—')+'</code></td>'
-          +'<td style="font-weight:500">'+x.c.nome+'</td>'
+          +'<td style="font-weight:500">'+escH(x.c.nome)+'</td>'
           +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
           +'<td style="text-align:center">'+x.dr+'</td>'
           +'<td style="text-align:center">'
@@ -13774,7 +13786,7 @@ function renderTabelaBenef(){
     +'<th>Matrícula</th><th>Nome</th><th>Empresa</th><th style="text-align:center">Dias</th><th style="text-align:right">Valor</th>'
     +'</tr></thead><tbody>'
     +linhas.map(x=>'<tr><td><code style="font-size:10px">'+(x.c.mat||'—')+'</code></td>'
-      +'<td style="font-weight:500">'+x.c.nome+'</td>'
+      +'<td style="font-weight:500">'+escH(x.c.nome)+'</td>'
       +'<td class="text-sm">'+_empresaLabel(_empresaKey(x.c))+'</td>'
       +'<td style="text-align:center">'+x.dr+'</td>'
       +'<td style="text-align:right;font-weight:600">'+brl(x.val)+'</td></tr>').join('')
@@ -13971,8 +13983,8 @@ function renderFerAjusteLista(){
       const saldo=(c.ferSaldo!=null?c.ferSaldo:'');
       const alerta=venc&&(c.ferSaldo==null||fnum(c.ferSaldo)>=30);
       return '<tr'+(alerta?' style="background:#FEF3C7"':'')+'>'
-        +'<td><div style="font-weight:500">'+c.nome+'</div>'
-          +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'+(c.depto?' · '+c.depto:'')+'</div></td>'
+        +'<td><div style="font-weight:500">'+escH(c.nome)+'</div>'
+          +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'+(escH(c.depto)?' · '+escH(c.depto):'')+'</div></td>'
         +'<td style="text-align:center"><input type="number" min="-90" max="90" value="'+saldo+'" placeholder="30" style="'+inp+';width:64px" onchange="faSalvar(\''+c._id+'\',\'ferSaldo\',this.value)"></td>'
         +'<td style="text-align:center"><input type="text" maxlength="5" placeholder="dd/mm" value="'+_vencCampoDDMM(c)+'" style="'+inp+';width:70px" onchange="faSalvar(\''+c._id+'\',\'ferVenc\',this.value)">'
           +'<div class="text-xs text-muted">'+(f.vencDate?f.vencDate.toLocaleDateString('pt-BR'):'—')+'</div></td>'
