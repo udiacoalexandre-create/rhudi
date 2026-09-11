@@ -250,6 +250,20 @@ function ehMaster(){ return usuario && usuario.papel === 'master'; }
 
 // ---------- Consultas em memória ----------
 function projetoDe(id){ return projetos.find(p => p._id === id) || null; }
+// RESPONSÁVEL NA EQUIPE DE PROJETOS (campo respProjetos)
+// -----------------------------------------------------
+// É diferente do 'responsavel': responsavel é quem executa e de quem é o card
+// no quadro; respProjetos é quem, dentro da equipe de projetos, responde pela
+// demanda — hoje a Júlia ou a Fernanda. Uma demanda atribuída ao Alê pode ter
+// a Júlia como responsável na equipe de projetos.
+function respProjetosDe(t){ return (t && t.respProjetos) || ''; }
+function opcoesRespProjetos(sel, projetoId){
+  const lista = projetoId ? pessoasDoProjeto(projetoId) : usuarios;
+  return '<option value="">— não definido</option>' + lista.map(u =>
+    '<option value="' + esc(u.email) + '"' + (u.email === sel ? ' selected' : '') + '>' +
+    esc(nomeDe(u.email)) + '</option>').join('');
+}
+
 // ROTINAS (tarefa que se repete)
 // -----------------------------
 // Concluir uma rotina não a manda para FINALIZADO: ela volta para NÃO
@@ -1213,6 +1227,7 @@ function passaFiltro(t){
   return String(t.titulo||'').toLowerCase().includes(f)
       || String(t.descricao||'').toLowerCase().includes(f)
       || nomeDe(t.responsavel).toLowerCase().includes(f)
+      || (respProjetosDe(t) && nomeDe(respProjetosDe(t)).toLowerCase().includes(f))
       || String(nomeFrente(t.projetoId, t.frenteId) || '').toLowerCase().includes(f);
 }
 // A linha fica visível se ela passa no filtro ou se alguma sublinha passa —
@@ -1336,9 +1351,11 @@ function blocoProjeto(p){
     '</div>' +
     (recolhido ? '' :
       (temLinha || frentes.length ? '<div class="tab-wrap"><table class="tab tab--fixa">' +
-        '<colgroup><col style="width:46%"><col style="width:14%"><col style="width:12%">' +
-        '<col style="width:14%"><col style="width:14%"></colgroup>' +
-        '<thead><tr><th class="cel-dem">Demanda</th><th>Responsável</th><th style="text-align:center">Status</th>' +
+        '<colgroup><col style="width:38%"><col style="width:13%"><col style="width:13%">' +
+        '<col style="width:12%"><col style="width:12%"><col style="width:12%"></colgroup>' +
+        '<thead><tr><th class="cel-dem">Demanda</th><th>Responsável</th>' +
+        '<th title="Quem responde pela demanda na equipe de projetos">Resp. projetos</th>' +
+        '<th style="text-align:center">Status</th>' +
         '<th>Próxima ação</th><th>Prazo final</th></tr></thead>' +
         '<tbody>' + corpo + '</tbody></table></div>'
       : vazio('list-check', 'Nenhuma demanda neste projeto',
@@ -1367,7 +1384,7 @@ function linhasDaFrente(p, g){
   const cab = '<tr class="fr" onclick="alternarFrente(\'' + chave + '\')"' +
     ' ondragover="sobreFrente(event,this)" ondragleave="this.classList.remove(\'fr-alvo\')"' +
     ' ondrop="soltarNaFrente(event,\'' + p._id + '\',\'' + (g.frente ? g.frente.id : '') + '\',this)">' +
-    '<td colspan="5"><div class="fr__linha">' +
+    '<td colspan="6"><div class="fr__linha">' +
       '<i class="ti ti-chevron-' + (fechada ? 'right' : 'down') + '" style="color:' + g.cor + '"></i>' +
       '<span class="fr__nome" style="color:' + g.cor + '">' + esc(nome) + '</span>' +
       '<span class="fr__n">' + g.raizes.length + (g.raizes.length === 1 ? ' demanda' : ' demandas') +
@@ -1382,7 +1399,7 @@ function linhasDaFrente(p, g){
     '</div></td></tr>';
   if(fechada) return cab;
   const linhas = ordenarNaTabela(g.raizes).map(t => linhasComFilhas(t, 0)).join('');
-  return cab + (linhas || '<tr class="fr-vazia"><td colspan="5">' +
+  return cab + (linhas || '<tr class="fr-vazia"><td colspan="6">' +
     (g.frente ? 'Nenhuma demanda nesta frente ainda.' : 'Nenhuma demanda fora das frentes.') + '</td></tr>');
 }
 function alternarFrente(chave){ frentesFechadas[chave] = !frentesFechadas[chave]; render(); }
@@ -1620,6 +1637,8 @@ function linhaTabela(t, nivel, filhas, aberto){
         : '') +
     '</div></td>' +
     '<td class="cel-resp">' + pessoaMini(t.responsavel) + '</td>' +
+    '<td class="cel-resp" data-rot="Resp. projetos">' +
+      (respProjetosDe(t) ? pessoaMini(respProjetosDe(t)) : '<span class="muted">—</span>') + '</td>' +
     stCelula(t) +
     celulaData(t, 'prazo') +
     celulaData(t, 'final') +
@@ -1734,7 +1753,7 @@ function renderPainel(){
       '<i class="ti ti-pencil"></i></button></div>' +
     '<div class="tk-chips">' + chipStatus(t) + chipPessoa(t) +
       chipData(t, 'prazo') + chipData(t, 'final') + chipFrente(t) + chipPai(t) +
-      chipRepetir(t) + '</div>' +
+      chipRespProjetos(t) + chipRepetir(t) + '</div>' +
   '</div>' +
 
   '<div class="drawer__body">' +
@@ -1813,6 +1832,39 @@ function chipPessoa(t){
     '<i class="ti ti-chevron-down"></i></span>';
 }
 // Frente da demanda: só aparece quando o projeto tem frentes definidas.
+// Chip do responsável na equipe de projetos (separado do executor).
+function chipRespProjetos(t){
+  const e = respProjetosDe(t);
+  return '<span class="chip" title="Responsável na equipe de projetos — quem responde pela demanda, ' +
+    'mesmo que outra pessoa execute" onclick="popRespProjetos(\'' + t._id + '\',event)">' +
+    '<i class="ti ti-briefcase" style="margin-left:7px"></i>' +
+    (e ? avatar(e, 'avatar--sm') + '<b>' + esc(primeiroNome(e)) + '</b>'
+       : 'projetos: <b>definir</b>') +
+    ' <i class="ti ti-chevron-down"></i></span>';
+}
+function popRespProjetos(id, ev){
+  ev.stopPropagation();
+  const t = tarefaDe(id);
+  if(!t) return;
+  const atual = respProjetosDe(t);
+  abrirPop(ev, '<div class="pop__lab">Responsável na equipe de projetos</div>' +
+    '<button class="' + (atual ? '' : 'pop--sel') + '" onclick="fecharPop();mudarRespProjetos(\'' + id + '\',\'\')">' +
+      '<i class="ti ti-circle-off"></i> Não definido</button>' +
+    pessoasDoProjeto(t.projetoId).map(u =>
+      '<button class="' + (atual === u.email ? 'pop--sel' : '') +
+      '" onclick="fecharPop();mudarRespProjetos(\'' + id + '\',\'' + esc(u.email) + '\')">' +
+      avatar(u.email, 'avatar--sm') + esc(nomeDe(u.email)) + '</button>').join(''));
+}
+async function mudarRespProjetos(id, email){
+  const t = tarefaDe(id);
+  if(!t || respProjetosDe(t) === email) return;
+  await atualizarTarefa(id, { respProjetos:email || null, atualizadoEm:new Date().toISOString() });
+  await postarMensagem(id, email
+    ? 'Responsável na equipe de projetos: ' + nomeDe(email) + '.'
+    : 'Responsável na equipe de projetos removido.', 'sistema');
+  if(email && email !== usuario.email)
+    await notificar([email], 'atribuicao', 'Você responde por esta demanda na equipe de projetos: ' + t.titulo, t);
+}
 function chipRepetir(t){
   if(t.tipo === 'solicitacao') return '';       // pedido não é rotina
   const tem = temRecorrencia(t);
@@ -2673,6 +2725,11 @@ function atualizarFrentesModal(){
     if(resp.value !== antes) resp.value = usuario.email;
     atualizarAcompanhar();
   }
+  const rp = $('t-respproj');
+  if(rp){
+    const antes = rp.value;
+    rp.innerHTML = opcoesRespProjetos(antes, proj);
+  }
 }
 function modalNovaTarefa(projetoId, frenteId){
   if(!projetosVisiveis().length){
@@ -2692,7 +2749,11 @@ function modalNovaTarefa(projetoId, frenteId){
     '<div class="fg"><label>Demanda</label><input id="t-titulo" placeholder="Ex.: Levantar as bases de horas extras de julho"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc" placeholder="Contexto, links, o que se espera de resultado"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' +
-      '<select id="t-resp" onchange="atualizarAcompanhar()">' + opcoesPessoa(usuario.email, projSel) + '</select></div>' +
+      '<select id="t-resp" onchange="atualizarAcompanhar()">' + opcoesPessoa(usuario.email, projSel) + '</select>' +
+      '<div class="ajuda">Quem executa — é de quem o card fica no quadro.</div></div>' +
+    '<div class="fg"><label>Responsável na equipe de projetos</label>' +
+      '<select id="t-respproj">' + opcoesRespProjetos('', projSel) + '</select>' +
+      '<div class="ajuda">Quem responde pela demanda dentro da equipe de projetos, mesmo que quem execute seja outra pessoa.</div></div>' +
     // Delegar é diferente de entregar: por padrão a demanda que vai para outra
     // pessoa fica no MEU quadro como acompanhamento, em aguardando terceiros, e
     // volta para verificar quando ela concluir.
@@ -2720,6 +2781,8 @@ function modalNovaSubtarefa(paiId){
     '<div class="fg"><label>O passo</label><input id="t-titulo" placeholder="Ex.: Conferir as marcações do relógio"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' + selPessoas('t-resp', pai.responsavel, pai.projetoId) + '</div>' +
+    '<div class="fg"><label>Responsável na equipe de projetos</label>' +
+      '<select id="t-respproj">' + opcoesRespProjetos(respProjetosDe(pai), pai.projetoId) + '</select></div>' +
     camposPrazos(hoje(), pai.prazoFinal || '') +
     '<div class="fg"><label>Repetir</label>' +
       '<select id="t-rec" onchange="atualizarRecorrencia()">' + opcoesRecorrencia('nao') + '</select>' +
@@ -2741,6 +2804,7 @@ async function salvarTarefa(paiId){
   const acompanhar = !pai && resp !== usuario.email && !!($('t-acomp') && $('t-acomp').checked);
   const base = { projetoId, frenteId, titulo, descricao, criadoPor:usuario.email,
                  recorrencia:lerRecorrencia(),
+                 respProjetos: (($('t-respproj') && $('t-respproj').value) || null),
                  criadoEm:agora, atualizadoEm:agora, ultimaMsgEm:null, lidoPor:{} };
   try{
     if(acompanhar){
@@ -2837,7 +2901,8 @@ async function salvarSolicitacao(paiId){
   const agora = new Date().toISOString();
   try{
     const filhaId = await criarDoc(COL_TAR, {
-      projetoId:pai.projetoId, frenteId:pai.frenteId || null, titulo:resumo, descricao:texto,
+      projetoId:pai.projetoId, frenteId:pai.frenteId || null, respProjetos:respProjetosDe(pai) || null,
+      titulo:resumo, descricao:texto,
       responsavel:quem, prazo, prazoFinal:final,
       status:'a_fazer', tipo:'solicitacao',
       paiId, solicitante:usuario.email,
