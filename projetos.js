@@ -113,6 +113,7 @@ let abaTicket = 'upd';     // aba do ticket: upd | arq | hist
 let respondendo = null;    // id da atualização que está com a caixa de resposta aberta
 let rascunhoResp = '';     // o que já foi digitado nessa caixa
 let soMinhas = false;      // filtro "só as minhas" na aba Projetos
+let buscaQuadro = '';      // busca do quadro de Minhas tarefas
 let expandidos = {};        // tarefas com as filhas abertas na tabela
 let unsubs = [];
 let confDrive = null;      // {clientId, pastaMaeId, pastaMaeNome} — integração com o Drive
@@ -1158,16 +1159,49 @@ function kanbanHTML(lista, podeEditar){
       '</div>' +
       '<div class="col__corpo">' +
         (ts.length ? ts.map(t => cardKanban(t, podeEditar)).join('')
-          : '<div class="dia__vazio">' + (podeEditar ? 'solte um card aqui' : 'vazio') + '</div>') +
+          : '<div class="dia__vazio">' +
+            (buscaQuadro.trim() ? '—'
+              : podeEditar ? 'solte um card aqui' : 'vazio') + '</div>') +
         (mais ? '<div class="mais-col">+ ' + mais + ' finalizada(s) mais antiga(s)</div>' : '') +
       '</div>' +
     '</section>';
   }).join('') + '</div>';
 }
 
+// Busca do quadro: olha o que está escrito no card e o que dá contexto a ele
+// — título, detalhes, projeto, frente e de quem veio o pedido.
+function casaBusca(t){
+  const f = buscaQuadro.trim().toLowerCase();
+  if(!f) return true;
+  const proj = projetoDe(t.projetoId);
+  return [t.titulo, t.descricao, proj && proj.nome, nomeFrente(t.projetoId, t.frenteId),
+          t.solicitante && nomeDe(t.solicitante)]
+    .some(v => String(v || '').toLowerCase().includes(f));
+}
+// Re-renderiza a cada tecla, então devolve o foco e o cursor para a busca.
+function buscarNoQuadro(v){
+  buscaQuadro = v;
+  render();
+  const el = $('busca-quadro');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} }
+}
+function barraBuscaQuadro(achadas, total){
+  const ativa = !!buscaQuadro.trim();
+  return '<div class="toolbar">' +
+    '<label class="busca"><i class="ti ti-search"></i>' +
+      '<input id="busca-quadro" placeholder="Buscar no quadro: demanda, projeto ou frente..." value="' +
+      esc(buscaQuadro) + '" oninput="buscarNoQuadro(this.value)">' +
+      (ativa ? '<i class="ti ti-x" style="cursor:pointer" title="Limpar a busca" ' +
+        'onclick="buscarNoQuadro(\'\')"></i>' : '') +
+    '</label>' +
+    (ativa ? '<span class="small muted">' + achadas + ' de ' + total + ' no quadro</span>' : '') +
+  '</div>';
+}
+
 function viewAgenda(){
   const email = usuario.email;
-  const todas = tarefas.filter(t => t.responsavel === email && vejoTarefa(t));
+  const minhas = tarefas.filter(t => t.responsavel === email && vejoTarefa(t));
+  const todas = buscaQuadro.trim() ? minhas.filter(casaBusca) : minhas;
   const emAberto = abertas(todas);
   const atrasadas = emAberto.filter(t => t.prazo && t.prazo < hoje()).length;
   const vencidos = emAberto.filter(deadlineEstourado).length;
@@ -1198,10 +1232,14 @@ function viewAgenda(){
         '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' +
       '</div>' +
     '</div>' +
+    (minhas.length ? barraBuscaQuadro(todas.length, minhas.length) : '') +
     (todas.length
       ? kanbanHTML(todas, true) + agendaRodape(emAberto, true)
-      : vazio('checkbox', 'Nada por aqui ainda',
-          'Quando alguém te definir como responsável — ou você criar uma tarefa — ela aparece no quadro e na agenda.')) +
+      : minhas.length
+        ? vazio('search-off', 'Nada encontrado',
+            'Nenhuma tarefa do seu quadro combina com "' + esc(buscaQuadro.trim()) + '".')
+        : vazio('checkbox', 'Nada por aqui ainda',
+            'Quando alguém te definir como responsável — ou você criar uma tarefa — ela aparece no quadro e na agenda.')) +
   '</div>';
 }
 
