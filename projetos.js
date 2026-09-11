@@ -2688,7 +2688,17 @@ async function excluirFrente(projetoId, frenteId){
 function opcoesFrente(projetoId, sel){
   const fs = frentesDe(projetoId);
   return '<option value="">Geral (sem frente)</option>' + fs.map(f =>
-    '<option value="' + esc(f.id) + '"' + (f.id === sel ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('');
+    '<option value="' + esc(f.id) + '"' + (f.id === sel ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('') +
+    '<option value="__nova"' + (sel === '__nova' ? ' selected' : '') + '>+ Criar uma frente nova…</option>';
+}
+// Escolher "criar nova" abre o campo do nome ali mesmo, sem sair do formulário:
+// a demanda e a frente (ou o projeto) nascem juntas quando você salva.
+function atualizarNovaFrente(){
+  const sel = $('t-frente'), campo = $('t-frente-nova');
+  if(!sel || !campo) return;
+  const nova = sel.value === '__nova';
+  campo.style.display = nova ? 'block' : 'none';
+  if(nova) focarCampo('t-frente-nova');
 }
 // Trocar o projeto no formulário troca a lista de frentes.
 // A caixa de acompanhamento só faz sentido quando o responsável é outra pessoa.
@@ -2715,32 +2725,43 @@ function avisoEntrega(){
 }
 function atualizarFrentesModal(){
   const proj = $('t-proj').value;
+  const novo = proj === '__novo';
+  const campo = $('t-proj-novo');
+  if(campo){
+    campo.style.display = novo ? 'block' : 'none';
+    if(novo) focarCampo('t-proj-novo');
+  }
+  // Projeto que ainda não existe não tem frente nenhuma para listar.
   const sel = $('t-frente');
-  if(sel) sel.innerHTML = opcoesFrente(proj, '');
+  if(sel) sel.innerHTML = opcoesFrente(novo ? '' : proj, '');
+  atualizarNovaFrente();
   // Projeto restrito não aceita qualquer responsável.
   const resp = $('t-resp');
   if(resp){
     const antes = resp.value;
-    resp.innerHTML = opcoesPessoa(antes, proj);
+    resp.innerHTML = opcoesPessoa(antes, novo ? '' : proj);
     if(resp.value !== antes) resp.value = usuario.email;
     avisoEntrega();
   }
 }
 function modalNovaTarefa(projetoId, frenteId){
-  if(!projetosVisiveis().length){
-    toast('Crie um projeto antes de lançar demandas.');
-    aba = 'projetos'; render(); modalNovoProjeto();
-    return;
-  }
   const visiveis = projetosVisiveis();
   const ativos = visiveis.filter(p => p.status !== 'concluido');
   const lista = ativos.length ? ativos : visiveis;
-  const projSel = projetoId || (lista[0] && lista[0]._id);
+  // Sem nenhum projeto à vista, o formulário já abre no "projeto novo": a
+  // primeira demanda cria o projeto junto, sem mandar a pessoa para outra tela.
+  const semProjeto = !lista.length;
+  const projSel = semProjeto ? '' : (projetoId || (lista[0] && lista[0]._id));
   abrirModal(moldura('Nova demanda',
     '<div class="fg"><label>Projeto</label><select id="t-proj" onchange="atualizarFrentesModal()">' + lista.map(p =>
       '<option value="' + p._id + '"' + (p._id === projetoId ? ' selected' : '') + '>' + esc(p.nome) + '</option>').join('') +
-      '</select></div>' +
-    '<div class="fg"><label>Frente</label><select id="t-frente">' + opcoesFrente(projSel, frenteId || '') + '</select></div>' +
+      '<option value="__novo"' + (semProjeto ? ' selected' : '') + '>+ Criar um projeto novo…</option>' +
+      '</select>' +
+      '<input id="t-proj-novo" placeholder="Nome do projeto novo" style="margin-top:8px;display:' +
+      (semProjeto ? 'block' : 'none') + '"></div>' +
+    '<div class="fg"><label>Frente</label><select id="t-frente" onchange="atualizarNovaFrente()">' +
+      opcoesFrente(projSel, frenteId || '') + '</select>' +
+      '<input id="t-frente-nova" placeholder="Nome da frente nova" style="margin-top:8px;display:none"></div>' +
     '<div class="fg"><label>Demanda</label><input id="t-titulo" placeholder="Ex.: Levantar as bases de horas extras de julho"></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc" placeholder="Contexto, links, o que se espera de resultado"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' +
@@ -2765,6 +2786,7 @@ function modalNovaTarefa(projetoId, frenteId){
       '<b>não iniciado</b> já na próxima data.</div></div>',
     'Criar demanda', 'salvarTarefa(null)'));
   avisoEntrega();
+  if(semProjeto) focarCampo('t-proj-novo');
 }
 function modalNovaSubtarefa(paiId){
   const pai = tarefaDe(paiId);
@@ -2787,12 +2809,39 @@ async function salvarTarefa(paiId){
   if(!titulo){ toast('Descreva a demanda.', 'erro'); return; }
   const pai = paiId ? tarefaDe(paiId) : null;
   const resp = $('t-resp').value;
-  const projetoId = pai ? pai.projetoId : $('t-proj').value;
-  const frenteId = pai ? (pai.frenteId || null) : (($('t-frente') && $('t-frente').value) || null);
+  let projetoId = pai ? pai.projetoId : $('t-proj').value;
+  let frenteId = pai ? (pai.frenteId || null) : (($('t-frente') && $('t-frente').value) || null);
+  // Projeto ou frente escolhidos como "criar novo" nascem agora, junto da demanda.
+  let nomeProjNovo = '', nomeFrenteNova = '';
+  if(projetoId === '__novo'){
+    nomeProjNovo = ((($('t-proj-novo') || {}).value) || '').trim();
+    if(!nomeProjNovo){ toast('Dê um nome ao projeto novo.', 'erro'); focarCampo('t-proj-novo'); return; }
+  }
+  if(frenteId === '__nova'){
+    nomeFrenteNova = ((($('t-frente-nova') || {}).value) || '').trim();
+    if(!nomeFrenteNova){ toast('Dê um nome à frente nova.', 'erro'); focarCampo('t-frente-nova'); return; }
+  }
   const descricao = ($('t-desc').value || '').trim();
   const prazo = $('f-prazo').value || null;
   const prazoFinal = $('f-final').value || null;
   const agora = new Date().toISOString();
+  try{
+    if(nomeProjNovo){
+      // Projeto novo nasce visível para a equipe, com quem criou como líder —
+      // o resto (descrição, alçada, pasta do Drive) se ajusta depois em Projetos.
+      const frentes = nomeFrenteNova ? [{ id:novoId(), nome:nomeFrenteNova }] : [];
+      projetoId = await criarDoc(COL_PROJ, { nome:nomeProjNovo, descricao:'', status:'ativo',
+        driveUrl:null, visibilidade:'equipe', dono:usuario.email, lider:usuario.email,
+        frentes:frentes, criadoPor:usuario.email, criadoEm:agora, atualizadoEm:agora });
+      frenteId = frentes.length ? frentes[0].id : null;
+    }else if(nomeFrenteNova){
+      const nova = { id:novoId(), nome:nomeFrenteNova };
+      await window._updateDoc(window._doc(COL_PROJ, projetoId),
+        { frentes:frentesDe(projetoId).concat([nova]), atualizadoEm:agora });
+      frenteId = nova.id;
+    }
+  }catch(e){ toast('Erro ao criar ' + (nomeProjNovo ? 'o projeto' : 'a frente') + ': ' +
+    (e && e.code || e), 'erro'); return; }
   const base = { projetoId, frenteId, titulo, descricao, criadoPor:usuario.email,
                  recorrencia:lerRecorrencia(),
                  criadoEm:agora, atualizadoEm:agora, ultimaMsgEm:null, lidoPor:{} };
@@ -2805,7 +2854,9 @@ async function salvarTarefa(paiId){
     fecharModal();
     if(resp !== usuario.email)
       await notificar([resp], 'atribuicao', titulo, { _id:id, titulo, projetoId });
-    toast(pai ? 'Subtarefa criada.' : 'Demanda criada.', 'ok');
+    toast(pai ? 'Subtarefa criada.'
+         : nomeProjNovo ? 'Projeto e demanda criados.'
+         : nomeFrenteNova ? 'Frente e demanda criadas.' : 'Demanda criada.', 'ok');
     abrirTarefa(id);
   }catch(e){ toast('Erro ao criar: ' + (e && e.code || e), 'erro'); }
 }
