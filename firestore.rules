@@ -53,7 +53,13 @@ service cloud.firestore {
     // Qualquer autenticado lê (o app precisa ler o próprio papel);
     // só o Master escreve. Exceção: o master-bootstrap cria o próprio doc.
     match /usuarios/{id} {
-      allow read:  if isSignedIn();
+      // Ler a lista de usuarios (nomes, papéis, plataformas) é só para quem já
+      // está autorizado — o app usa isso para exibir nomes/fotos da equipe.
+      // Cada pessoa lê o próprio doc mesmo antes de autorizada: é assim que o
+      // login descobre o papel e resolve dar ou negar acesso. Logar é livre,
+      // então 'isSignedIn' aqui deixava qualquer conta (até autocadastro) ler
+      // o organograma inteiro — por isso exigimos autorização para os demais.
+      allow read:  if isAuthorized() || (isSignedIn() && id == email());
       allow write: if isMaster() || (isBootstrapMaster() && id == email());
       // Cada pessoa pode trocar a PRÓPRIA foto — e só a foto, nada de papel,
       // plataformas ou 'ativo'. É o que permite subir o rosto do próprio
