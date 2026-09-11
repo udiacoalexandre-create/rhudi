@@ -317,10 +317,12 @@ function pintar(){
   ordenadas.forEach(e=>{ (fase(e[1])==='passada'?passadas:demais).push(e); });
 
   const bloco=([chave,g])=>{
+    // Dentro da sprint, a ENTREGA manda; a prioridade só desempata empate de
+    // data. Mesma ordem da tela interna.
     const lista=g.itens.slice().sort((a,b)=>{
-      const p=prioNum(a.prioridade)-prioNum(b.prioridade);
-      if(p) return p;
-      return String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+      const d=String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+      if(d) return d;
+      return prioNum(a.prioridade)-prioNum(b.prioridade);
     });
     const f=fase(g);
     const abertas=lista.filter(d=>sInfo(d.status).v!=='entregue').length;

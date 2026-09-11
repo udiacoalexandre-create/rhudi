@@ -878,8 +878,13 @@ function assinarDemPub(){
 // trouxesse 'sprint atual' já resolvido, ele envelheceria sozinho nos dias
 // em que ninguém mexe em nenhuma demanda.
 function _itensPublicos(){
+  // Ordem do retrato = a mesma da tela: pela entrega estimada. Era alfabética
+  // por título, o que não dizia nada sobre o que vem primeiro.
   return demandas.slice()
-    .sort((a,b)=>(a.titulo||'').localeCompare(b.titulo||''))
+    .sort((a,b)=>{
+      const d=String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+      return d || prioNum(a.prioridade)-prioNum(b.prioridade);
+    })
     .map(d=>({titulo:d.titulo||'', descricao:d.descricao||'',
       solicitante:d.solicitante||'', area:d.area||'',
       prioridade:(d.prioridade===''||d.prioridade==null)?'':d.prioridade,
@@ -1136,12 +1141,12 @@ function pintarDemandas(){
   ordenadas.forEach(e=>{ (fase(e[1])==='passada'?passadas:demais).push(e); });
 
   const bloco=([chave,g])=>{
-    // Dentro da sprint: prioridade primeiro (menor número na frente, vazio no
-    // fim), e entre iguais a entrega mais próxima.
+    // Dentro da sprint: a ENTREGA manda — é por ela que a Dev&Co e a Udiaço
+    // acompanham. A prioridade só desempata quando duas caem no mesmo dia.
     const itens=g.itens.slice().sort((a,b)=>{
-      const p=prioNum(a.prioridade)-prioNum(b.prioridade);
-      if(p) return p;
-      return String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+      const d=String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+      if(d) return d;
+      return prioNum(a.prioridade)-prioNum(b.prioridade);
     });
     const f=fase(g);
     const abertas=itens.filter(d=>d.status!=='entregue').length;
