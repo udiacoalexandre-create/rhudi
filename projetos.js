@@ -1185,17 +1185,17 @@ function buscarNoQuadro(v){
   const el = $('busca-quadro');
   if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} }
 }
+// A busca mora na linha do título — não vale gastar uma faixa inteira da tela
+// com ela. O quanto achou vai dentro da própria caixa, do lado do X.
 function barraBuscaQuadro(achadas, total){
   const ativa = !!buscaQuadro.trim();
-  return '<div class="toolbar">' +
-    '<label class="busca"><i class="ti ti-search"></i>' +
-      '<input id="busca-quadro" placeholder="Buscar no quadro: demanda, projeto ou frente..." value="' +
-      esc(buscaQuadro) + '" oninput="buscarNoQuadro(this.value)">' +
-      (ativa ? '<i class="ti ti-x" style="cursor:pointer" title="Limpar a busca" ' +
-        'onclick="buscarNoQuadro(\'\')"></i>' : '') +
-    '</label>' +
-    (ativa ? '<span class="small muted">' + achadas + ' de ' + total + ' no quadro</span>' : '') +
-  '</div>';
+  return '<label class="busca busca--topo"><i class="ti ti-search"></i>' +
+    '<input id="busca-quadro" placeholder="Buscar no quadro..." value="' +
+    esc(buscaQuadro) + '" oninput="buscarNoQuadro(this.value)">' +
+    (ativa ? '<span class="small muted" style="white-space:nowrap">' + achadas + ' de ' + total + '</span>' +
+      '<i class="ti ti-x" style="cursor:pointer" title="Limpar a busca" ' +
+      'onclick="buscarNoQuadro(\'\')"></i>' : '') +
+  '</label>';
 }
 
 function viewAgenda(){
@@ -1219,6 +1219,7 @@ function viewAgenda(){
         '<h1 class="page-title">Minhas tarefas</h1>' +
         '<p class="page-subtitle">' + emAberto.length + ' em aberto · ' + hojeN + ' para hoje</p>' +
       '</div>' +
+      (minhas.length ? barraBuscaQuadro(todas.length, minhas.length) : '') +
       '<div class="row" style="flex-wrap:wrap">' +
         chip(atrasadas, 'atrasada(s)', 'var(--danger-text)', 'alert-triangle') +
         chip(vencidos, 'fora do prazo final', 'var(--danger-text)', 'flag') +
@@ -1232,7 +1233,6 @@ function viewAgenda(){
         '<button class="btn btn--primary" onclick="modalNovaTarefa()"><i class="ti ti-plus"></i> Nova tarefa</button>' +
       '</div>' +
     '</div>' +
-    (minhas.length ? barraBuscaQuadro(todas.length, minhas.length) : '') +
     (todas.length
       ? kanbanHTML(todas, true) + agendaRodape(emAberto, true)
       : minhas.length
