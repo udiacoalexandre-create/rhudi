@@ -2434,10 +2434,53 @@ async function mudarPrazoFinal(id, prazo){
   await postarMensagem(id, 'Prazo final ' + (prazo ? 'definido para ' + dataBR(prazo) : 'removido') + '.', 'sistema');
   await notificar(envolvidos(t), 'mensagem', 'Prazo final agora é ' + (prazo ? dataBR(prazo) : 'sem data'), t);
 }
+// AÇÃO FUTURA: "depois" sem dia é lembrete que ninguém vê de novo. Cair nessa
+// coluna pergunta o dia em que você volta nisso — é essa data que faz a tarefa
+// reaparecer na agenda de planejamento.
+function modalAcaoFutura(id){
+  const t = tarefaDe(id);
+  if(!t) return;
+  const sug = (t.prazo && t.prazo > hoje()) ? t.prazo : proximaSegunda();
+  const atalho = (texto, data) =>
+    '<button class="alterna" onclick="definirDataFutura(\'' + data + '\')">' + texto + '</button>';
+  abrirModal(moldura('Quando você volta nisso?',
+    '<div class="banner banner--info" style="margin-bottom:var(--space-4)"><i class="ti ti-clock-pause"></i>' +
+      '<div><b>' + esc(t.titulo) + '</b> sai do seu dia a dia e volta na agenda no dia que você marcar.</div></div>' +
+    '<div class="fg"><label>Dia da próxima ação</label>' +
+      '<input type="date" id="af-data" value="' + esc(sug) + '" min="' + hoje() + '">' +
+      '<div class="row" style="margin-top:8px;flex-wrap:wrap">' +
+        atalho('Semana que vem', proximaSegunda()) +
+        atalho('Em 15 dias', maisDias(15)) +
+        atalho('Em 30 dias', maisDias(30)) +
+      '</div>' +
+      '<div class="ajuda">O prazo final combinado não muda — este é só o dia em que você pega de volta.</div>' +
+    '</div>',
+    'Marcar ação futura', 'salvarAcaoFutura(\'' + id + '\')'));
+  focarCampo('af-data');
+}
+function definirDataFutura(v){ const e = $('af-data'); if(e) e.value = v; }
+async function salvarAcaoFutura(id){
+  const data = (($('af-data') || {}).value || '').trim();
+  if(!data){ toast('Escolha o dia da próxima ação.', 'erro'); focarCampo('af-data'); return; }
+  try{
+    await atualizarTarefa(id, { status:'futuro', prazo:data, concluidaEm:null,
+                                atualizadoEm:new Date().toISOString() });
+    await postarMensagem(id, 'Situação: Ação futura — volta em ' + dataBR(data) + '.', 'sistema');
+    fecharModal();
+    if(tarefaAberta !== id) abrirTarefa(id); else renderPainel();
+  }catch(e){ toast('Erro ao marcar: ' + (e && e.code || e), 'erro'); }
+}
 async function mudarStatus(id, novo){
   const t = tarefaDe(id);
   if(!t) return;
   if(novo === 'concluida'){ concluirTarefa(id); return; }
+  // Ação futura pede o dia da volta; é o salvar do modal que muda o status.
+  // O ticket abre junto para a pessoa decidir a data olhando o histórico dele.
+  if(novo === 'futuro' && t.status !== 'futuro'){
+    if(tarefaAberta !== id) abrirTarefa(id); else renderPainel();
+    modalAcaoFutura(id);
+    return;
+  }
   // Estar "aguardando terceiros" sem ter pedido nenhum em aberto é um estado
   // que não diz nada: quem está esperando o quê, de quem? Então cair nessa
   // coluna abre o pedido, e é a criação dele que muda o status.
