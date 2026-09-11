@@ -1,0 +1,22 @@
+# Configuração do GitHub Pages (Jekyll).
+#
+# O host real do app é o GitHub Pages — udiaco.com.br/rh embute
+# udiacoalexandre-create.github.io/rhudi/ num iframe. O Pages serve o
+# repositório inteiro, então arquivos que não são do site ficavam abertos na
+# web (respondiam HTTP 200): as regras de segurança e o código do ferramental
+# de admin. Não vaza credencial, mas entrega o mapa de autorização e o
+# ferramental de graça para quem for bisbilhotar.
+#
+# 'exclude' tira esses caminhos do site PUBLICADO sem removê-los do repositório
+# — o ferramentas/regras.js continua lendo o firestore.rules aqui do disco, e a
+# pasta ferramentas/ segue disponível para rodar localmente.
+#
+# (O Firebase Hosting já barra os mesmos arquivos pelo 'ignore' do
+# firebase.json; isto é o equivalente para o Pages.)
+exclude:
+  - ferramentas
+  - firestore.rules
+  - firebase.json
+  - .firebaserc
+  - README.md
+  - GUIA-DESIGN.md
