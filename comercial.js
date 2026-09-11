@@ -134,8 +134,8 @@ function linkPublico(token){
 // Mesma regra do RH: toda inclusão, edição e exclusão fica registrada com data,
 // hora, usuário e o que mudou. É o que permite responder "quem mexeu nisso".
 const CAMPOS_DEM = {titulo:'demanda', descricao:'descrição', solicitante:'quem pediu',
-  area:'área', prioridade:'prioridade', status:'status', entrada:'entrada da demanda',
-  prazo:'entrega estimada', obs:'observação'};
+  responsavel:'responsável', area:'área', prioridade:'prioridade', status:'status',
+  entrada:'entrada da demanda', prazo:'entrega estimada', obs:'observação'};
 
 function diffDem(antes, depois){
   const mud=[];
@@ -688,13 +688,15 @@ function alternarSprint(chave){
 // 'Quem pediu' e 'Área' precisam caber o conteudo, nao só o cabeçalho: são
 // nome de pessoa e nome de setor, e cortados não servem para nada. A folga
 // sai da Demanda, que tem o balão para o texto inteiro.
-const DM_COLS=['auto','46px','66px','128px','176px','62px','148px','40px'];
+const DM_COLS=['auto','46px','66px','128px','150px','150px','62px','148px','40px'];
 const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
 const dmCabecalho='<thead><tr>'
   +'<th>Demanda</th>'
   +'<th style="text-align:center" title="Prioridade">Prio.</th>'
   +'<th title="Entrega estimada pela parceira">Entrega</th>'
-  +'<th>Status</th><th>Quem pediu</th><th>Entrada</th><th>Área</th>'
+  +'<th>Status</th><th>Quem pediu</th>'
+  +'<th title="Quem da equipe de projetos responde por esta demanda">Responsável</th>'
+  +'<th>Entrada</th><th>Área</th>'
   +'<th style="text-align:center" title="Editar"><i class="ti ti-pencil"></i></th>'
   +'</tr></thead>';
 
@@ -817,7 +819,7 @@ function _dmSugestoes(campo){
 function _dmDatalists(){
   const um=(id,campo)=>'<datalist id="'+id+'">'
     +_dmSugestoes(campo).map(v=>'<option value="'+esc(v)+'"></option>').join('')+'</datalist>';
-  return um('dl-solic','solicitante')+um('dl-area','area');
+  return um('dl-solic','solicitante')+um('dl-area','area')+um('dl-resp','responsavel');
 }
 
 // Prioridade trocada na própria linha. É um número livre (vem da coluna T da
@@ -1009,7 +1011,7 @@ function viewDemandas(){
     +'<div id="dm-stats"></div>'
     +'<div class="filtros">'
       +'<div class="fg" style="flex:1;min-width:180px"><label>Buscar</label>'
-        +'<input type="text" id="dm-q" placeholder="Demanda, quem pediu, área..." value="'+esc(filtroDem.q)+'" oninput="filtrarDem()"></div>'
+        +'<input type="text" id="dm-q" placeholder="Demanda, quem pediu, responsável, área..." value="'+esc(filtroDem.q)+'" oninput="filtrarDem()"></div>'
       +'<div class="fg"><label>Prioridade</label><select id="dm-prio" onchange="filtrarDem()">'
         +opt(prios, filtroDem.prio, 'Todas')+'</select></div>'
       +'<div class="fg"><label>Status</label><select id="dm-status" onchange="filtrarDem()">'
@@ -1056,7 +1058,7 @@ function demandasFiltradas(){
     if(filtroDem.status && d.status!==filtroDem.status) return false;
     if(filtroDem.solic && d.solicitante!==filtroDem.solic) return false;
     if(filtroDem.q){
-      const alvo=[d.titulo,d.descricao,d.solicitante,d.area].join(' ').toLowerCase();
+      const alvo=[d.titulo,d.descricao,d.solicitante,d.responsavel,d.area].join(' ').toLowerCase();
       if(!alvo.includes(filtroDem.q)) return false;
     }
     return true;
@@ -1201,6 +1203,11 @@ function pintarDemandas(){
             +'title="Quem pediu — escolha da lista ou digite um nome novo" '
             +'onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'solicitante\',this.value)"></td>'
+          +'<td><input type="text" class="tx-sel" list="dl-resp" maxlength="80" '
+            +'value="'+esc(d.responsavel||'')+'" placeholder="—" '
+            +'title="Responsável pela demanda na equipe de projetos — escolha da lista ou digite um nome novo" '
+            +'onclick="event.stopPropagation()" '
+            +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'responsavel\',this.value)"></td>'
           +'<td style="color:var(--text-secondary);white-space:nowrap">'+soDataCurta(d.entrada)+'</td>'
           +'<td><input type="text" class="tx-sel" list="dl-area" maxlength="60" '
             +'value="'+esc(d.area||'')+'" placeholder="—" '
@@ -1243,6 +1250,11 @@ function modalDemanda(id){
     +'<div class="grid2" style="margin-bottom:12px">'
       +'<div class="fg"><label>Quem pediu</label><input type="text" id="dm-f-solic" maxlength="80" '
         +'placeholder="Nome de quem solicitou" value="'+esc(d?d.solicitante:'')+'"></div>'
+      +'<div class="fg"><label>Responsável'
+        +ajuda('Quem da equipe de projetos responde por esta demanda junto à parceira. '
+              +'A lista sugere quem já aparece nas demandas; dá para digitar um nome novo.')
+        +'</label><input type="text" id="dm-resp" list="dl-resp" maxlength="80" '
+        +'placeholder="Quem acompanha" value="'+esc(d?d.responsavel:'')+'"></div>'
       +'<div class="fg"><label>Área</label><input type="text" id="dm-area" maxlength="60" '
         +'placeholder="Ex.: Comercial, Diretoria" value="'+esc(d?d.area:'')+'"></div>'
       +'<div class="fg"><label>Prioridade'
@@ -1278,6 +1290,7 @@ async function salvarDemanda(id){
     titulo:($('dm-tit').value||'').trim(),
     descricao:($('dm-desc').value||'').trim(),
     solicitante:($('dm-f-solic').value||'').trim(),
+    responsavel:($('dm-resp').value||'').trim(),
     area:($('dm-area').value||'').trim(),
     prioridade:($('dm-f-prio').value||'').trim(),
     entrada:$('dm-entrada').value||'',
@@ -1314,11 +1327,11 @@ async function excluirDemanda(id){
 }
 function exportarDemandas(){
   const lista=demandasFiltradas();
-  const cab=['Demanda','Prioridade','Entrega estimada','Status','Quem pediu',
+  const cab=['Demanda','Prioridade','Entrega estimada','Status','Quem pediu','Responsável',
     'Entrada da demanda','Área','Descritivo','Criada em','Criada por',
     'Última alteração','Por'];
   const linhas=lista.map(d=>[d.titulo||'', prioTxt(d.prioridade), d.prazo||'',
-    sInfo(d.status).l, d.solicitante||'', d.entrada||'', d.area||'', d.descricao||'',
+    sInfo(d.status).l, d.solicitante||'', d.responsavel||'', d.entrada||'', d.area||'', d.descricao||'',
     dataHora(d.criadoEm), d.criadoPor||'', dataHora(d.atualizadoEm), d.atualizadoPor||'']);
   const csv=[cab].concat(linhas)
     .map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\r\n');
