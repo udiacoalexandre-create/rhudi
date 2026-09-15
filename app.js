@@ -1324,11 +1324,26 @@ function ferResumoCelula(c){
 function colaboradoresUnicos(){
   const byKey={};
   const ehDup=x=>['MEI','SOC'].includes((x.filtro||'').toUpperCase())?1:0;
+  // Quem foi demitido de uma empresa e recontratado em outra tem DOIS
+  // cadastros com o mesmo CPF. O desempate olhava só o filtro MEI/SOC, então
+  // entre o demitido e o ativo ficava quem viesse primeiro na lista — e essa
+  // ordem não é garantida. Resultado: a pessoa podia sumir da apuração por
+  // causa de um vínculo encerrado. Cadastro ATIVO vence sempre.
+  const encerrado=x=>{
+    const k=_statusKey(x.status);
+    return (k.includes('DEMIT') || k==='INATIVO') ? 1 : 0;
+  };
+  // Entre dois iguais em tudo, fica o de admissão mais recente — é o vínculo
+  // que está valendo.
+  const maisNovo=(a,b)=>String(a.admissao||'').localeCompare(String(b.admissao||''));
   colaboradores.forEach(c=>{
     const cpf=(c.cpf||'').replace(/[^0-9]/g,'');
     const key=cpf||('nome:'+_normNome(c.nome));
     const ex=byKey[key];
-    if(!ex || ehDup(c)<ehDup(ex)) byKey[key]=c;
+    if(!ex){ byKey[key]=c; return; }
+    if(encerrado(c)!==encerrado(ex)){ if(encerrado(c)<encerrado(ex)) byKey[key]=c; return; }
+    if(ehDup(c)!==ehDup(ex)){ if(ehDup(c)<ehDup(ex)) byKey[key]=c; return; }
+    if(maisNovo(c,ex)>0) byKey[key]=c;
   });
   return Object.values(byKey);
 }
