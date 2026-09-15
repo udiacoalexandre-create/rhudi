@@ -251,6 +251,26 @@ a{ color:var(--accent); text-decoration:none }
       border:1.5px dashed transparent; padding:1px }
 .ag__itens--alvo{ border-color:var(--brand); background:var(--success-bg) }
 .ag__livre{ font-size:11.5px; color:var(--text-muted); font-style:italic; padding:3px 6px }
+
+/* Minhas tarefas: agenda à esquerda, quadro à direita. A agenda some por um
+   botão, e aí o quadro fica com a largura toda. */
+.mt-split{ display:flex; align-items:flex-start; gap:var(--space-4) }
+.mt-quadro{ flex:1 1 auto; min-width:0 }
+.ag--lado{ flex:0 0 268px; margin-top:0; position:sticky; top:var(--space-4);
+      max-height:calc(100vh - 120px); display:flex; flex-direction:column }
+.ag--lado .ag__faixa{ padding:9px var(--space-4); flex-wrap:nowrap; flex-shrink:0 }
+.ag--lado .ag__faixa b{ font-size:13px; white-space:nowrap }
+.ag--lado .ag__faixa .icon-btn{ color:var(--brand) }
+/* Um dia embaixo do outro: em coluna estreita, lado a lado nao cabe. */
+.ag--lado .ag__cols{ display:block; overflow-y:auto; flex:1 1 auto }
+.ag--lado .ag__col{ border-left:none; padding:var(--space-3) var(--space-4) }
+@media (max-width:1100px){
+  /* Sem largura para os dois, a agenda volta a ser uma faixa em cima. */
+  .mt-split{ flex-direction:column }
+  .ag--lado{ flex:1 1 auto; width:100%; position:static; max-height:none }
+  .ag--lado .ag__cols{ display:grid; grid-template-columns:repeat(auto-fit,minmax(172px,1fr)) }
+  .ag--lado .ag__col{ border-left:1px solid var(--border) }
+}
 .it{ display:flex; align-items:flex-start; gap:7px; padding:4px 6px; border-radius:6px; cursor:grab;
       font-size:12.5px; line-height:1.35 }
 .it:hover{ background:var(--surface-soft) }

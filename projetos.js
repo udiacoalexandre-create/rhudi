@@ -1148,14 +1148,22 @@ function itemDoDia(t, podeEditar){
 // A agenda fica em COLUNAS por dia, com os itens em linha (bullet + título) —
 // não em card. A faixa verde e as colunas sem caixa separam de vez este painel
 // do quadro de estado que fica acima.
-function agendaRodape(lista, podeEditar){
+function alternarAgenda(){
+  verAgenda = !verAgenda;
+  gravarPref('pe_ver_agenda', verAgenda);
+  render();
+}
+function agendaLado(lista, podeEditar){
   const dias = diasDaAgenda(lista);
-  return '<section class="ag">' +
+  return '<section class="ag ag--lado">' +
     '<div class="ag__faixa">' +
       '<i class="ti ti-calendar-week"></i>' +
       '<b>Agenda de planejamento</b>' +
-      '<span class="ag__sub">o dia em que você decidiu mexer em cada coisa' +
-        (podeEditar ? ' · arraste um item para outro dia para reprogramar' : '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="icon-btn" title="Esconder a agenda' +
+        (podeEditar ? ' — arraste um item para outro dia para reprogramar' : '') + '" ' +
+        'onclick="alternarAgenda()">' +
+        '<i class="ti ti-layout-sidebar-left-collapse"></i></button>' +
     '</div>' +
     '<div class="ag__cols">' +
     dias.map(d => {
@@ -1308,6 +1316,10 @@ function viewAgenda(){
         chip(atrasadas, 'atrasada(s)', 'var(--danger-text)', 'alert-triangle') +
         chip(vencidos, 'fora do prazo final', 'var(--danger-text)', 'flag') +
         chip(semData, 'sem data', 'var(--warning-text)', 'calendar-question') +
+        '<button class="alterna' + (verAgenda ? ' alterna--on' : '') + '" ' +
+          'title="' + (verAgenda ? 'Esconder a agenda de planejamento' : 'Mostrar a agenda de planejamento') +
+          ' — a escolha fica guardada neste navegador" onclick="alternarAgenda()">' +
+          '<i class="ti ti-' + (verAgenda ? 'layout-sidebar-left-collapse' : 'layout-sidebar-left-expand') + '"></i> Agenda</button>' +
         '<button class="alterna' + (verFinalizadas ? ' alterna--on' : '') + '" ' +
           'title="' + (verFinalizadas ? 'Esconder a coluna Finalizado' : 'Mostrar a coluna Finalizado') +
           ' — a escolha fica guardada neste navegador" onclick="alternarFinalizadas()">' +
@@ -1318,7 +1330,10 @@ function viewAgenda(){
       '</div>' +
     '</div>' +
     (todas.length
-      ? kanbanHTML(todas, true) + agendaRodape(emAberto, true)
+      ? '<div class="mt-split">' +
+          (verAgenda ? agendaLado(emAberto, true) : '') +
+          '<div class="mt-quadro">' + kanbanHTML(todas, true) + '</div>' +
+        '</div>'
       : minhas.length
         ? vazio('search-off', 'Nada encontrado',
             'Nenhuma tarefa do seu quadro combina com "' + esc(buscaQuadro.trim()) + '".')
@@ -1338,6 +1353,9 @@ let mostrarConcluidas = lerPref('pe_ver_concluidas', false);
 // Ver ou não a coluna FINALIZADO no quadro. Fica guardada neste navegador:
 // é preferência de quem olha, não dado do sistema.
 let verFinalizadas = lerPref('pe_ver_finalizadas', true);
+// Agenda ao lado do quadro. Quem usa o kanban o dia inteiro quer a largura
+// toda; quem planeja quer os dois juntos. Fica guardada neste navegador.
+let verAgenda = lerPref('pe_ver_agenda', true);
 function lerPref(chave, padrao){
   try{ const v = localStorage.getItem(chave); return v === null ? padrao : v === '1'; }
   catch(e){ return padrao; }
