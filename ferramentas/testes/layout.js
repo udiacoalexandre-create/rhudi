@@ -118,13 +118,20 @@ t('DD/MM sem o ano', APP.soDataCurta('2026-09-11')==='11/09', APP.soDataCurta('2
 t('vazio vira travessao', APP.soDataCurta('')==='—' && APP.soDataCurta(null)==='—');
 t('data invalida vira travessao', APP.soDataCurta('nada')==='—');
 t('o ano continua onde a data e registro', APP.soData('2026-09-11')==='11/09/2026');
+// Datas relativas ao dia de hoje. Com data cravada, a demanda ia parar numa
+// sprint PASSADA assim que a semana virava — e sprint passada nasce recolhida,
+// entao as linhas sumiam e o teste acusava erro que nao existia.
+const emDias=n=>{ const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 APP.setDemandas([{_id:'x', titulo:'Demanda', solicitante:'Leia', area:'TI', prioridade:1,
-  status:'desenvolvimento', entrada:'2026-07-01', prazo:'2026-09-11'}]);
+  status:'desenvolvimento', entrada:emDias(-70), prazo:emDias(4)}]);
 APP.pintarDemandas();
 const li=NODES['dm-lista']._html;
-t('entrega em DD/MM', /class="dt-txt[^"]*"[\s\S]{0,140}>11\/09</.test(li),
+const ddmm=n=>{ const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n);
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); };
+t('entrega em DD/MM', new RegExp('class="dt-txt[^"]*"[\\s\\S]{0,140}>'+ddmm(4)+'<').test(li),
   (li.match(/dt-txt[\s\S]{0,150}/)||[''])[0]);
-t('entrada em DD/MM', /<td[^>]*>01\/07<\/td>/.test(li),
+t('entrada em DD/MM', new RegExp('<td[^>]*>'+ddmm(-70)+'<\\/td>').test(li),
   (li.match(/<td[^>]*>[0-9\/]+<\/td>/g)||[]).join(' | '));
 t('nenhum ano de 4 digitos na tabela', !/\/2026/.test(li),
   (li.match(/[^"]\/2026/g)||[]).join(' | '));

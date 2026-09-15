@@ -2245,8 +2245,18 @@ function copiarLinkTarefa(id){
   const m = $('menu-ticket'); if(m) m.classList.remove('menu--on');
 }
 function focarCampo(id){ const e = $(id); if(e){ e.focus(); if(e.showPicker) try{ e.showPicker(); }catch(x){} } }
-function opcoesPessoa(sel, projetoId){
-  const lista = projetoId ? pessoasDoProjeto(projetoId) : usuarios;
+// Quem pode receber a demanda. 'projetoId' pode ser um projeto que ainda nao
+// existe: nesse caso vem a visibilidade escolhida no formulario, porque
+// atribuir a demanda de um projeto privado a outra pessoa daria a ela uma
+// tarefa de um projeto que ela nao enxerga.
+function pessoasPorVisibilidade(vis){
+  if(vis === 'privado')    return usuarios.filter(u => u.email === usuario.email);
+  if(vis === 'individual') return usuarios.filter(u => u.email === usuario.email || ehGestor(u));
+  return usuarios;
+}
+function opcoesPessoa(sel, projetoId, visNova){
+  const lista = visNova ? pessoasPorVisibilidade(visNova)
+    : (projetoId ? pessoasDoProjeto(projetoId) : usuarios);
   return lista.map(u => '<option value="' + esc(u.email) + '"' + (u.email === sel ? ' selected' : '') + '>' +
     esc(nomeDe(u.email)) + '</option>').join('');
 }
@@ -2812,6 +2822,8 @@ function atualizarFrentesModal(){
     campo.style.display = novo ? 'block' : 'none';
     if(novo) focarCampo('t-proj-novo');
   }
+  const visLinha = $('t-proj-vis-linha');
+  if(visLinha) visLinha.style.display = novo ? 'block' : 'none';
   // Projeto que ainda não existe não tem frente nenhuma para listar.
   const sel = $('t-frente');
   if(sel) sel.innerHTML = opcoesFrente(novo ? '' : proj, '');
@@ -2820,7 +2832,8 @@ function atualizarFrentesModal(){
   const resp = $('t-resp');
   if(resp){
     const antes = resp.value;
-    resp.innerHTML = opcoesPessoa(antes, novo ? '' : proj);
+    const visNova = novo ? ((($('t-proj-vis') || {}).value) || 'equipe') : '';
+    resp.innerHTML = opcoesPessoa(antes, novo ? '' : proj, visNova);
     if(resp.value !== antes) resp.value = usuario.email;
     avisoEntrega();
   }
@@ -2839,7 +2852,18 @@ function modalNovaTarefa(projetoId, frenteId){
       '<option value="__novo"' + (semProjeto ? ' selected' : '') + '>+ Criar um projeto novo…</option>' +
       '</select>' +
       '<input id="t-proj-novo" placeholder="Nome do projeto novo" style="margin-top:8px;display:' +
-      (semProjeto ? 'block' : 'none') + '"></div>' +
+      (semProjeto ? 'block' : 'none') + '">' +
+      // Quem vê o projeto se decide AQUI, junto com o nome. Criado por este
+      // atalho ele nascia sempre visível para a equipe, e quem queria algo só
+      // seu descobria depois — quando já estava à vista de todos.
+      '<div id="t-proj-vis-linha" style="margin-top:8px;display:' +
+        (semProjeto ? 'block' : 'none') + '">' +
+        '<select id="t-proj-vis" onchange="atualizarFrentesModal()">' + Object.keys(VISIBILIDADES).map(k =>
+          '<option value="' + k + '">' + VISIBILIDADES[k].label + '</option>').join('') +
+        '</select>' +
+        '<div class="ajuda">Quem vê o projeto novo — e, com ele, esta demanda. ' +
+          'Dá para mudar depois na aba Projetos.</div>' +
+      '</div></div>' +
     '<div class="fg"><label>Frente</label><select id="t-frente" onchange="atualizarNovaFrente()">' +
       opcoesFrente(projSel, frenteId || '') + '</select>' +
       '<input id="t-frente-nova" placeholder="Nome da frente nova" style="margin-top:8px;display:none"></div>' +
@@ -2908,11 +2932,12 @@ async function salvarTarefa(paiId){
   const agora = new Date().toISOString();
   try{
     if(nomeProjNovo){
-      // Projeto novo nasce visível para a equipe, com quem criou como líder —
-      // o resto (descrição, alçada, pasta do Drive) se ajusta depois em Projetos.
+      // Quem vê vem do formulário. O resto (descrição, alçada, pasta do
+      // Drive) se ajusta depois em Projetos.
+      const vis = (($('t-proj-vis') || {}).value) || 'equipe';
       const frentes = nomeFrenteNova ? [{ id:novoId(), nome:nomeFrenteNova }] : [];
       projetoId = await criarDoc(COL_PROJ, { nome:nomeProjNovo, descricao:'', status:'ativo',
-        driveUrl:null, visibilidade:'equipe', dono:usuario.email, lider:usuario.email,
+        driveUrl:null, visibilidade:vis, dono:usuario.email, lider:usuario.email,
         frentes:frentes, criadoPor:usuario.email, criadoEm:agora, atualizadoEm:agora });
       frenteId = frentes.length ? frentes[0].id : null;
     }else if(nomeFrenteNova){

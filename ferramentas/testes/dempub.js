@@ -74,14 +74,19 @@ APP.setUsuario({email:'alexandre.magalhaes@udiaco.com.br'});
 APP.setFiltro({q:'',prio:'',status:'',solic:''});
 APP.setAba('demandas');
 
+// Datas relativas ao dia de hoje. Com data cravada, a demanda ia parar numa
+// sprint PASSADA assim que a semana virava — e sprint passada nasce recolhida,
+// entao as linhas sumiam e o teste acusava erro que nao existia.
+const emDias=n=>{ const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 const DEMS=[
   {_id:'a', titulo:'Integrar folha com o Senior', descricao:'Texto longo da parceira',
    solicitante:'Leia', area:'RH', prioridade:2, status:'desenvolvimento',
-   entrada:'2026-07-01', prazo:'2026-09-11',
+   entrada:emDias(-70), prazo:emDias(4),
    historico:[{quem:'ale@udiaco.com.br',quando:'2026-08-01T10:00:00Z',mud:[]}],
    criadoPor:'ale@udiaco.com.br', origem:'planilha da parceira'},
   {_id:'b', titulo:'Painel de vendedores', descricao:'', solicitante:'Leia', area:'Comercial',
-   prioridade:1, status:'andamento', entrada:'2026-07-05', prazo:'2026-09-11'},
+   prioridade:1, status:'andamento', entrada:emDias(-66), prazo:emDias(4)},
   {_id:'c', titulo:'Sem prazo nenhum', solicitante:'', area:'', prioridade:'',
    status:'entregue', entrada:'', prazo:''},
 ];

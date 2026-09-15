@@ -1,5 +1,11 @@
 // Agrupamento por sprint, ordem por prioridade, descritivo no hover e edicao.
 const fs=require('fs');
+// 04/09/2026, meio-dia — o dia em que estes fixtures foram escritos.
+const _CONGELADO=new Date(2026,8,4,12,0,0,0).getTime();
+class HOJE_FIXO extends Date {
+  constructor(...a){ if(a.length===0) super(_CONGELADO); else super(...a); }
+  static now(){ return _CONGELADO; }
+}
 const SRC=fs.readFileSync('/Users/acmags/rhudi/comercial.js','utf8');
 const HTML=fs.readFileSync('/Users/acmags/rhudi/comercial.html','utf8');
 let ok=0, fail=0;
@@ -32,7 +38,12 @@ const sandbox={ window, document, location:window.location, navigator:{}, crypto
   btoa:s=>Buffer.from(s,'binary').toString('base64'), atob:s=>Buffer.from(s,'base64').toString('binary'),
   escape, unescape, encodeURIComponent, decodeURIComponent,
   Blob:function(){}, URL:{createObjectURL:()=>'x',revokeObjectURL(){}},
-  Intl,Date,Math,JSON,Object,Array,String,Number,Boolean,RegExp,Error,Promise,Set,Map,
+  // O agrupamento em sprint depende de QUE DIA E HOJE. Com o relogio de
+  // verdade, a mesma demanda muda de sprint sozinha na virada da quinzena e a
+  // suite acusa erro que nao existe. Aqui o dia e congelado: os fixtures
+  // valem sempre o mesmo, e o que se testa e a regra, nao o calendario.
+  Date:HOJE_FIXO,
+  Intl,Math,JSON,Object,Array,String,Number,Boolean,RegExp,Error,Promise,Set,Map,
   isNaN,parseInt,parseFloat,Uint8Array };
 const nomes=Object.keys(sandbox);
 const exporta='return {'+['sprintDe','sprintTitulo','irSprintModo','pintarDemandas','viewDemandas',
@@ -483,14 +494,16 @@ APP.setFiltro({q:'',prio:'',status:'',solic:''});
 // Datas relativas ao dia de hoje. Com data cravada, o teste passava na
 // semana em que foi escrito e acusava erro depois — o codigo estava certo e
 // o fixture tinha envelhecido.
-const emDias=n=>{ const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n);
+// parte do dia CONGELADO, o mesmo que o comercial.js enxerga — com o relogio
+// de verdade os dois discordariam e a conta de '7 dias' sairia errada
+const emDias=n=>{ const d=new HOJE_FIXO(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 APP.setDemandas([
   {_id:'i1',titulo:'Briefing 1',solicitante:'A',prioridade:0,status:'briefing',prazo:''},
   {_id:'i2',titulo:'Em 3 dias',solicitante:'A',prioridade:0,status:'desenvolvimento',prazo:emDias(3)},
   {_id:'i3',titulo:'Em 12 dias',solicitante:'A',prioridade:0,status:'desenvolvimento',prazo:emDias(12)},
   {_id:'i4',titulo:'Em 40 dias',solicitante:'A',prioridade:0,status:'nao_iniciado',prazo:emDias(40)},
-  {_id:'i5',titulo:'Passou',solicitante:'A',prioridade:0,status:'validacao',prazo:emDias(-11)},
+  {_id:'i5',titulo:'Passou',solicitante:'A',prioridade:0,status:'validacao',prazo:'2026-08-24'},
   {_id:'i6',titulo:'Entregue',solicitante:'A',prioridade:0,status:'entregue',prazo:emDias(3)},
 ]);
 APP.pintarDemandas();
