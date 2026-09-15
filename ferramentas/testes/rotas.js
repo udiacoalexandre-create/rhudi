@@ -121,6 +121,21 @@ A.loc.hash='#/ben-lancamento';
 t('papel restrito não entra por endereço', RHAPP.irPelaRota()===false,
   'entrou em '+RHAPP.getPagina());
 
+console.log('\n-- o carregamento nao pode atropelar a rota --');
+// Era o furo: a rota abria a tela certa e, meio segundo depois, o Promise.all
+// do login terminava e chamava switchModule('base'). Na tela parecia que a
+// URL nao funcionava.
+t('o carregamento termina respeitando a tela pedida',
+  /const alvo=_rotaAlvo;[\s\S]{0,260}showPage\(alvo\);/.test(RH),
+  (RH.match(/window\.__benefLoaded=true;[\s\S]{0,240}/)||[''])[0].replace(/\s+/g,' ').slice(0,200));
+t('e so cai na Base quando nao ha tela pedida',
+  /\} else switchModule\('base'\);/.test(RH));
+t('a tela pedida e guardada ao entrar pela rota', /_rotaAlvo = id;/.test(RH));
+t('e zerada depois de usada, para nao voltar sozinha',
+  /const alvo=_rotaAlvo; _rotaAlvo='';/.test(RH));
+t('a tela guardada tambem passa pela permissao',
+  /if\(modAlvo && pagesVisiveis\(modAlvo\)\.some\(p=>p\.id===alvo\)\)/.test(RH));
+
 console.log('\n== 2) COMERCIAL ==');
 const B=mkAmbiente('/comercial.html');
 const nomesB=Object.keys(B.sandbox);

@@ -995,7 +995,12 @@ function abrirConfig(){ if(!podeGerenciarUsuarios()) return; switchModule('confi
 //
 // Hash, e não caminho: com caminho o Hosting precisaria reescrever a rota, e
 // um F5 em /rh/base-lista daria 404 até isso ser configurado.
-let _rotaLendo = false;              // evita responder ao hash que nós mesmos escrevemos
+let _rotaLendo = false;
+// Tela pedida pelo endereco, guardada ate o carregamento do RH terminar. Sem
+// isto o Promise.all do login acabava depois e chamava switchModule('base'),
+// jogando a pessoa na Base — a rota abria e era atropelada meio segundo
+// depois, o que na tela parece 'nao funcionou'.
+let _rotaAlvo = '';              // evita responder ao hash que nós mesmos escrevemos
 function rotaEscrever(id){
   if(_rotaLendo) return;
   const nova = id ? '#/' + id : '';
@@ -1022,6 +1027,7 @@ function irPelaRota(){
   const mod = moduloDaPagina(id);
   if(!mod) return false;
   if(!pagesVisiveis(mod).some(p => p.id === id)) return false;
+  _rotaAlvo = id;
   _rotaLendo = true;
   try{
     entrarBeneficios();
@@ -4641,7 +4647,14 @@ function entrarBeneficios(){
     renderAvisoVersao();
     aplicarDUAutomatico(lanComp);   // dias úteis da competência corrente
     window.__benefLoaded=true;
-    switchModule('base');
+    // A tela pedida pelo endereco vence a Base: quem recarregou no meio de um
+    // lancamento quer voltar para o lancamento.
+    const alvo=_rotaAlvo; _rotaAlvo='';
+    const modAlvo=alvo?moduloDaPagina(alvo):'';
+    if(modAlvo && pagesVisiveis(modAlvo).some(p=>p.id===alvo)){
+      switchModule(modAlvo);
+      showPage(alvo);
+    } else switchModule('base');
     // O status ainda é acertado no login (o Lançamento depende dele), mas quem
     // PERGUNTA o retorno é a aba Controle de Férias — ver ferAoAbrirAba. Cobrar
     // isso de quem entrou para mexer em benefícios só atrapalhava.
