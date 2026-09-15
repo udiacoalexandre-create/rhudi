@@ -331,7 +331,59 @@ function vejoProjeto(p){
 function projetosVisiveis(){ return projetos.filter(vejoProjeto); }
 // Tarefa órfã (projeto apagado) continua aparecendo: esconder dado por
 // engano é pior que mostrar.
+// VISIBILIDADE DA DEMANDA
+// -----------------------
+// Uma demanda pode ser restrita mesmo dentro de um projeto que a equipe toda
+// enxerga: a conversa de uma é sobre pessoas, a de outra é sobre orçamento.
+// Sem isto, restringir uma única demanda obrigava a criar um projeto só para
+// ela.
+//   projeto — segue o projeto (o padrão, e o que toda demanda já existente é)
+//   dupla   — quem criou e quem é responsável
+//   gestor  — os dois acima, mais quem tem perfil de gestor
+const VIS_TAREFA = {
+  projeto: { label:'Como o projeto',            icone:'users',
+             dica:'Quem enxerga o projeto enxerga esta demanda.' },
+  gestor:  { label:'Só nós dois e os gestores', icone:'user-shield',
+             dica:'Você, o responsável e quem tem perfil de gestor.' },
+  dupla:   { label:'Só nós dois',               icone:'lock',
+             dica:'Só você e o responsável. Nem gestor entra.' },
+};
+function visDaTarefa(t){ return (t && t.visibilidade) || 'projeto'; }
+
+// PROJETO PESSOAL
+// ---------------
+// O caminho mais curto para "isto é só meu": em vez de escolher projeto e
+// depois restringir a demanda, escolher "Minhas tarefas" e pronto. É um
+// projeto de verdade — privado, seu —, criado na primeira vez que se usa.
+// Um por pessoa: o dono é quem o criou.
+const PROJ_PESSOAL = 'Minhas tarefas';
+function meuProjetoPessoal(){
+  return projetos.find(p => p.pessoal === true && donoDoProjeto(p) === usuario.email) || null;
+}
+async function garantirProjetoPessoal(){
+  const ja = meuProjetoPessoal();
+  if(ja) return ja._id;
+  const agora = new Date().toISOString();
+  return await criarDoc(COL_PROJ, {
+    nome:PROJ_PESSOAL, descricao:'', status:'ativo', driveUrl:null,
+    visibilidade:'privado', pessoal:true,
+    dono:usuario.email, lider:usuario.email, frentes:[],
+    criadoPor:usuario.email, criadoEm:agora, atualizadoEm:agora
+  });
+}
+function daDupla(t){
+  return t && (t.criadoPor === usuario.email || t.responsavel === usuario.email);
+}
 function vejoTarefa(t){
+  if(!t) return false;
+  const vis = visDaTarefa(t);
+  // A restrição da demanda é mais forte que a do projeto: de nada adianta o
+  // projeto ser da equipe se a demanda foi marcada como restrita.
+  if(vis !== 'projeto'){
+    if(daDupla(t)) return true;
+    if(vis === 'gestor' && ehGestor()) return true;
+    return false;
+  }
   const p = projetoDe(t.projetoId);
   return p ? vejoProjeto(p) : true;
 }
@@ -1625,6 +1677,27 @@ function popProjeto(id, ev){
   if(!itens.length) itens.push('<div class="pop__lab">Sem ações disponíveis</div>');
   abrirPop(ev, itens.join(''));
 }
+// Trocar quem vê, depois de criada. Só quem é da dupla ou gestor: senão
+// alguém de fora poderia abrir o que foi restrito.
+async function mudarVisTarefa(id, vis){
+  const t = tarefaDe(id); if(!t) return;
+  if(!(daDupla(t) || ehGestor())){ toast('Esta demanda não é sua.', 'erro'); return; }
+  if(!VIS_TAREFA[vis]) return;
+  try{
+    await atualizarTarefa(id, { visibilidade:vis, atualizadoEm:new Date().toISOString() });
+    toast('Quem vê: ' + VIS_TAREFA[vis].label + '.', 'ok');
+  }catch(e){ toast('Não deu para mudar: ' + (e && e.code || e), 'erro'); }
+}
+function menuVisTarefa(id, ev){
+  if(ev) ev.stopPropagation();
+  const t = tarefaDe(id); if(!t) return;
+  const atual = visDaTarefa(t);
+  abrirPop(ev, '<div class="pop__lab">Quem vê esta demanda</div>' +
+    Object.keys(VIS_TAREFA).map(k =>
+      '<button onclick="fecharPop();mudarVisTarefa(\'' + id + '\',\'' + k + '\')">' +
+      '<i class="ti ti-' + (k === atual ? 'check' : VIS_TAREFA[k].icone) + '"></i> ' +
+      VIS_TAREFA[k].label + '</button>').join(''));
+}
 function alternarProjeto(id){ recolhidos[id] = !recolhidos[id]; render(); }
 function alternarFilhas(id, ev){ if(ev) ev.stopPropagation(); expandidos[id] = expandidos[id] === false; render(); }
 
@@ -1771,6 +1844,11 @@ function renderPainel(){
     '<div class="row--between">' +
       '<div class="tk-ctx">' +
         '<i class="ti ti-' + TIPOS[t.tipo || 'tarefa'].icone + '"></i>' + esc(TIPOS[t.tipo || 'tarefa'].label) +
+        (visDaTarefa(t) !== 'projeto'
+          ? ' <span class="dot"></span> <span class="selo-vis" title="' +
+            esc(VIS_TAREFA[visDaTarefa(t)].dica) + '"><i class="ti ti-' +
+            VIS_TAREFA[visDaTarefa(t)].icone + '"></i>' +
+            esc(VIS_TAREFA[visDaTarefa(t)].label) + '</span>' : '') +
         (proj ? ' <span class="dot"></span> <span>' + esc(proj.nome) + '</span>' +
           (t.frenteId && nomeFrente(t.projetoId, t.frenteId)
             ? ' <span class="dot"></span> <span style="color:' + corFrente(t.projetoId, t.frenteId) +
@@ -1788,6 +1866,9 @@ function renderPainel(){
             '<button onclick="modalDescricao(\'' + t._id + '\')"><i class="ti ti-align-left"></i> ' +
               (t.descricao ? 'Editar descrição' : 'Adicionar descrição') + '</button>' +
             '<button onclick="modalNovaSubtarefa(\'' + t._id + '\')"><i class="ti ti-corner-down-right"></i> Nova subtarefa</button>' +
+            (daDupla(t) || ehGestor()
+              ? '<button onclick="menuVisTarefa(\'' + t._id + '\', event)">' +
+                '<i class="ti ti-' + VIS_TAREFA[visDaTarefa(t)].icone + '"></i> Quem vê esta demanda</button>' : '') +
             (podeExcluir ? '<hr><button class="perigo" onclick="excluirTarefa(\'' + t._id + '\')">' +
               '<i class="ti ti-trash"></i> Excluir tarefa</button>' : '') +
           '</div>' +
@@ -2817,6 +2898,7 @@ function avisoEntrega(){
 function atualizarFrentesModal(){
   const proj = $('t-proj').value;
   const novo = proj === '__novo';
+  const pessoal = proj === '__pessoal';
   const campo = $('t-proj-novo');
   if(campo){
     campo.style.display = novo ? 'block' : 'none';
@@ -2826,14 +2908,17 @@ function atualizarFrentesModal(){
   if(visLinha) visLinha.style.display = novo ? 'block' : 'none';
   // Projeto que ainda não existe não tem frente nenhuma para listar.
   const sel = $('t-frente');
-  if(sel) sel.innerHTML = opcoesFrente(novo ? '' : proj, '');
+  // Projeto pessoal não tem frente, e projeto que não existe ainda também não.
+  if(sel) sel.innerHTML = opcoesFrente((novo || pessoal) ? '' : proj, '');
   atualizarNovaFrente();
   // Projeto restrito não aceita qualquer responsável.
   const resp = $('t-resp');
   if(resp){
     const antes = resp.value;
-    const visNova = novo ? ((($('t-proj-vis') || {}).value) || 'equipe') : '';
-    resp.innerHTML = opcoesPessoa(antes, novo ? '' : proj, visNova);
+    // No pessoal a demanda é sua e ponto: ninguém mais enxergaria o projeto.
+    const visNova = pessoal ? 'privado'
+      : (novo ? ((($('t-proj-vis') || {}).value) || 'equipe') : '');
+    resp.innerHTML = opcoesPessoa(antes, (novo || pessoal) ? '' : proj, visNova);
     if(resp.value !== antes) resp.value = usuario.email;
     avisoEntrega();
   }
@@ -2847,8 +2932,12 @@ function modalNovaTarefa(projetoId, frenteId){
   const semProjeto = !lista.length;
   const projSel = semProjeto ? '' : (projetoId || (lista[0] && lista[0]._id));
   abrirModal(moldura('Nova demanda',
-    '<div class="fg"><label>Projeto</label><select id="t-proj" onchange="atualizarFrentesModal()">' + lista.map(p =>
-      '<option value="' + p._id + '"' + (p._id === projetoId ? ' selected' : '') + '>' + esc(p.nome) + '</option>').join('') +
+    '<div class="fg"><label>Projeto</label><select id="t-proj" onchange="atualizarFrentesModal()">' +
+      // Primeiro da lista, porque é o atalho: some a decisão de onde guardar.
+      '<option value="__pessoal">' + PROJ_PESSOAL + ' (só eu)</option>' +
+      lista.filter(p => !p.pessoal || donoDoProjeto(p) === usuario.email).map(p =>
+      '<option value="' + p._id + '"' + (p._id === projetoId ? ' selected' : '') + '>' +
+      esc(p.pessoal ? p.nome + ' (só eu)' : p.nome) + '</option>').join('') +
       '<option value="__novo"' + (semProjeto ? ' selected' : '') + '>+ Criar um projeto novo…</option>' +
       '</select>' +
       '<input id="t-proj-novo" placeholder="Nome do projeto novo" style="margin-top:8px;display:' +
@@ -2868,6 +2957,12 @@ function modalNovaTarefa(projetoId, frenteId){
       opcoesFrente(projSel, frenteId || '') + '</select>' +
       '<input id="t-frente-nova" placeholder="Nome da frente nova" style="margin-top:8px;display:none"></div>' +
     '<div class="fg"><label>Demanda</label><input id="t-titulo" placeholder="Ex.: Levantar as bases de horas extras de julho"></div>' +
+    '<div class="fg"><label>Quem vê esta demanda</label>' +
+      '<select id="t-vis">' + Object.keys(VIS_TAREFA).map(k =>
+        '<option value="' + k + '">' + VIS_TAREFA[k].label + '</option>').join('') +
+      '</select>' +
+      '<div class="ajuda">' + Object.keys(VIS_TAREFA).map(k =>
+        '<b>' + VIS_TAREFA[k].label + '</b>: ' + VIS_TAREFA[k].dica).join('<br>') + '</div></div>' +
     '<div class="fg"><label>Detalhes (opcional)</label><textarea id="t-desc" placeholder="Contexto, links, o que se espera de resultado"></textarea></div>' +
     '<div class="fg"><label>Responsável</label>' +
       '<select id="t-resp" onchange="avisoEntrega()">' + opcoesPessoa(usuario.email, projSel) + '</select>' +
@@ -2931,6 +3026,10 @@ async function salvarTarefa(paiId){
   const prazoFinal = $('f-final').value || null;
   const agora = new Date().toISOString();
   try{
+    if(projetoId === '__pessoal'){
+      projetoId = await garantirProjetoPessoal();
+      frenteId = null;
+    }
     if(nomeProjNovo){
       // Quem vê vem do formulário. O resto (descrição, alçada, pasta do
       // Drive) se ajusta depois em Projetos.
@@ -2950,6 +3049,7 @@ async function salvarTarefa(paiId){
     (e && e.code || e), 'erro'); return; }
   const base = { projetoId, frenteId, titulo, descricao, criadoPor:usuario.email,
                  recorrencia:lerRecorrencia(),
+                 visibilidade: ((($('t-vis') || {}).value) || 'projeto'),
                  criadoEm:agora, atualizadoEm:agora, ultimaMsgEm:null, lidoPor:{} };
   try{
     const id = await criarDoc(COL_TAR, Object.assign({}, base, {

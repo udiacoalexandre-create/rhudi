@@ -51,7 +51,8 @@ const sandbox={ window,document,
 const nomes=Object.keys(sandbox);
 const API=['modalNovaTarefa','atualizarFrentesModal','salvarTarefa','opcoesPessoa',
   'pessoasPorVisibilidade','pessoasDoProjeto','VISIBILIDADES','vejoProjeto',
-  'visDoProjeto','ehGestor'];
+  'visDoProjeto','ehGestor','VIS_TAREFA','visDaTarefa','vejoTarefa','daDupla',
+  'mudarVisTarefa','menuVisTarefa','meuProjetoPessoal','garantirProjetoPessoal','PROJ_PESSOAL'];
 const exporta='return {'+API.map(n=>n+':(typeof '+n+'!=="undefined"?'+n+':undefined)').join(',')
   +',setUsuario:v=>{usuario=v},setUsuarios:v=>{usuarios=v}'
   +',setProjetos:v=>{projetos=v},setTarefas:v=>{tarefas=v}};';
@@ -164,6 +165,116 @@ console.log('\n== 4) A ESCOLHA CHEGA NO PROJETO CRIADO ==');
   APP.setUsuario(GESTOR);
   t('o gestor vê o individual (é a alçada)', APP.vejoProjeto(indiv)===true);
   t('mas NÃO vê o privado', APP.vejoProjeto(priv)===false);
+  APP.setUsuario(EU);
+
+  console.log('\n== 6) RESTRINGIR A PROPRIA DEMANDA ==');
+  // era isto que faltava: dentro de um projeto que a equipe toda enxerga,
+  // marcar SO UMA demanda como restrita, sem ter de criar projeto para ela
+  const eq={_id:'p1',nome:'Comercial',status:'ativo',visibilidade:'equipe',
+    dono:EU.email,criadoPor:EU.email,frentes:[]};
+  APP.setProjetos([eq]);
+  const base={_id:'t1',projetoId:'p1',titulo:'Assunto sensível',
+    criadoPor:EU.email,responsavel:JULIA.email};
+  const solta=Object.assign({},base);
+  const dupla=Object.assign({},base,{visibilidade:'dupla'});
+  const comGestor=Object.assign({},base,{visibilidade:'gestor'});
+  t('sem marcação, segue o projeto', APP.visDaTarefa(solta)==='projeto');
+  APP.setUsuario(JULIA);
+  t('a Júlia vê a comum (projeto é da equipe)', APP.vejoTarefa(solta)===true);
+  t('e vê a restrita, porque é a responsável', APP.vejoTarefa(dupla)===true);
+  APP.setUsuario(GESTOR);
+  t('o gestor vê a comum', APP.vejoTarefa(solta)===true);
+  t('NÃO vê a "só nós dois"', APP.vejoTarefa(dupla)===false);
+  t('mas vê a que o inclui', APP.vejoTarefa(comGestor)===true);
+  APP.setUsuario(EU);
+  t('quem criou vê sempre', APP.vejoTarefa(dupla)===true && APP.vejoTarefa(comGestor)===true);
+  // a restricao da demanda e mais forte que a do projeto
+  APP.setProjetos([Object.assign({},eq,{visibilidade:'equipe'})]);
+  APP.setUsuario(JULIA);
+  const deOutro=Object.assign({},base,{criadoPor:GESTOR.email,
+    responsavel:GESTOR.email,visibilidade:'dupla'});
+  t('projeto da equipe não abre demanda restrita de terceiros',
+    APP.vejoTarefa(deOutro)===false);
+  APP.setUsuario(EU);
+
+  console.log('\n== 7) NO FORMULARIO E DEPOIS ==');
+  APP.modalNovaTarefa(null,null);
+  const f3=NODES['modal-card'].innerHTML;
+  t('o campo aparece SEMPRE, não só ao criar projeto', /id="t-vis"/.test(f3));
+  t('com as três opções', ['Como o projeto','Só nós dois e os gestores','Só nós dois']
+    .every(l=>f3.includes(l)), Object.values(APP.VIS_TAREFA).map(v=>v.label).join(' | '));
+  t('o padrão é seguir o projeto',
+    f3.indexOf('Como o projeto') < f3.indexOf('Só nós dois'));
+  CRIADOS.length=0;
+  NODES['t-proj'].value='p1'; NODES['t-titulo'].value='Restrita';
+  NODES['t-desc'].value=''; NODES['t-resp'].value=JULIA.email;
+  NODES['f-prazo'].value=''; NODES['f-final'].value='';
+  NODES['t-vis'].value='dupla';
+  await APP.salvarTarefa(null);
+  const tar=CRIADOS.find(c=>c.col==='pe_tarefas');
+  t('a demanda nasce restrita', tar && tar.d.visibilidade==='dupla',
+    tar?String(tar.d.visibilidade):'não criou');
+  t('e não mexeu no projeto', !CRIADOS.some(c=>c.col==='pe_projetos'));
+  APP.setTarefas([Object.assign({},base,{_id:'t9',visibilidade:'projeto'})]);
+  APP.setUsuario(JULIA);
+  await APP.mudarVisTarefa('t9','dupla');
+  t('a responsável pode restringir depois', /Quem vê/.test(NODES['toast'].textContent),
+    NODES['toast'].textContent);
+  APP.setUsuario({email:'estranho@udiaco.com.br',nome:'Outro'});
+  NODES['toast'].textContent='';
+  await APP.mudarVisTarefa('t9','projeto');
+  t('quem não é da dupla não mexe', /não é sua/.test(NODES['toast'].textContent),
+    NODES['toast'].textContent);
+  APP.setUsuario(EU);
+
+  console.log('\n== 8) MINHAS TAREFAS: O ATALHO ==');
+  APP.setProjetos([eq]);
+  APP.setUsuario(EU);
+  APP.modalNovaTarefa(null,null);
+  const f4=NODES['modal-card'].innerHTML;
+  t('a opção é a PRIMEIRA da lista de projetos',
+    /<select id="t-proj"[^>]*><option value="__pessoal">/.test(f4),
+    (f4.match(/<select id="t-proj"[\s\S]{0,120}/)||[''])[0]);
+  t('e diz que é só sua', /Minhas tarefas \(só eu\)/.test(f4));
+  // escolhendo, o responsavel fecha em mim e nao pede nome de projeto
+  NODES['t-proj'].value='__pessoal';
+  APP.atualizarFrentesModal();
+  t('não pede nome de projeto novo', NODES['t-proj-novo'].style.display==='none');
+  t('nem oferece visibilidade de projeto', NODES['t-proj-vis-linha'].style.display==='none');
+  t('o responsável fecha em mim',
+    (NODES['t-resp'].innerHTML.match(/<option/g)||[]).length===1
+    && NODES['t-resp'].innerHTML.includes(EU.email),
+    NODES['t-resp'].innerHTML.replace(/<[^>]*>/g,'|'));
+  // a primeira demanda cria o projeto pessoal
+  CRIADOS.length=0;
+  NODES['t-titulo'].value='Coisa minha'; NODES['t-desc'].value='';
+  NODES['t-resp'].value=EU.email; NODES['f-prazo'].value=''; NODES['f-final'].value='';
+  NODES['t-vis'].value='projeto';
+  await APP.salvarTarefa(null);
+  const pp=CRIADOS.find(c=>c.col==='pe_projetos');
+  t('criou o projeto pessoal', !!pp && pp.d.nome===APP.PROJ_PESSOAL, pp?pp.d.nome:'não criou');
+  t('privado', pp && pp.d.visibilidade==='privado');
+  t('marcado como pessoal', pp && pp.d.pessoal===true);
+  t('e com você como dono', pp && pp.d.dono===EU.email);
+  const tp=CRIADOS.find(c=>c.col==='pe_tarefas');
+  t('a demanda foi para dentro dele', !!tp);
+  // da segunda vez, reaproveita: nao cria outro
+  APP.setProjetos([eq, Object.assign({_id:'pp1'}, pp.d)]);
+  t('encontra o meu pessoal', APP.meuProjetoPessoal()._id==='pp1');
+  CRIADOS.length=0;
+  NODES['t-proj'].value='__pessoal'; NODES['t-titulo'].value='Outra coisa minha';
+  await APP.salvarTarefa(null);
+  t('não cria um segundo', !CRIADOS.some(c=>c.col==='pe_projetos'),
+    JSON.stringify(CRIADOS.map(c=>c.col)));
+  t('e a demanda vai para o que já existe',
+    CRIADOS.find(c=>c.col==='pe_tarefas').d.projetoId==='pp1');
+  // o pessoal de um nao aparece para o outro
+  APP.setUsuario(JULIA);
+  t('o pessoal do outro não é meu', APP.meuProjetoPessoal()===null);
+  t('e ela não o enxerga', APP.vejoProjeto(Object.assign({_id:'pp1'}, pp.d))===false);
+  APP.modalNovaTarefa(null,null);
+  t('a lista dela não mostra o pessoal alheio',
+    !/Minhas tarefas \(só eu\)<\/option>[\s\S]{0,40}Minhas tarefas/.test(NODES['modal-card'].innerHTML));
   APP.setUsuario(EU);
 
   console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
