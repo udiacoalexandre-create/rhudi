@@ -280,8 +280,22 @@ const ABAS=[
   {id:'paineis',  icone:'chart-pie',      label:'Painéis de BI'},
   {id:'demandas', icone:'clipboard-list', label:'Demandas'},
 ];
-function irAba(id){ aba=id; render(); }
+// A aba vai no endereço: recarregar devolve a mesma, em vez de cair sempre
+// em Painéis. replaceState para não encher o histórico do navegador.
+function rotaAba(id){
+  const nova = '#/' + id;
+  if(location.hash === nova) return;
+  if(history && history.replaceState)
+    history.replaceState(null, '', location.pathname + location.search + nova);
+  else location.hash = nova;
+}
+function abaDoEndereco(){
+  const m = String(location.hash||'').match(/^#\/([a-z]+)/i);
+  return (m && ABAS.some(a=>a.id===m[1])) ? m[1] : '';
+}
+function irAba(id){ aba=id; rotaAba(id); render(); }
 function render(){
+  rotaAba(aba);
   const ab=$('abas');
   if(ab) ab.innerHTML=ABAS.map(a=>'<button class="aba'+(aba===a.id?' aba--on':'')+'" '
     +'onclick="irAba(\''+a.id+'\')"><i class="ti ti-'+a.icone+'"></i> '+a.label+'</button>').join('');
@@ -1469,6 +1483,9 @@ function iniciar(){
       await window._signOut();
       return;
     }
+    // Abre na aba que estiver no endereço: recarregar não devolve a pessoa
+    // para Painéis quando ela estava nas Demandas.
+    const doLink=abaDoEndereco(); if(doLink) aba=doLink;
     mostrarApp();
     assinarDados();
   });

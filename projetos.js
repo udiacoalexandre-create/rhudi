@@ -527,6 +527,9 @@ function iniciar(){
       await window._signOut();
       return;
     }
+    // Abre na aba que estiver no endereço, se a pessoa puder vê-la.
+    const doLink=abaDoEndereco();
+    if(doLink && (doLink!=='lab' || ehDonoLab())) aba=doLink;
     mostrarApp();
     assinarDados();
   });
@@ -862,8 +865,23 @@ async function limparNotificacoesAntigas(){
 // ============================================================
 // NAVEGAÇÃO
 // ============================================================
+// A aba vai no endereço. O link de tarefa (#t=...) continua valendo: quem
+// chega por ele abre o ticket, e só depois o endereço passa a ser o da aba.
+function rotaAba(id){
+  if(/^#t=/.test(String(location.hash||''))) return;   // link de tarefa manda
+  const nova = '#/' + id;
+  if(location.hash === nova) return;
+  if(history && history.replaceState)
+    history.replaceState(null, '', location.pathname + location.search + nova);
+  else location.hash = nova;
+}
+function abaDoEndereco(){
+  const m = String(location.hash||'').match(/^#\/([a-z]+)/i);
+  return (m && ['agenda','projetos','lab'].includes(m[1])) ? m[1] : '';
+}
 function irPara(novaAba){
   aba = novaAba;
+  rotaAba(novaAba);
   if(novaAba !== 'projetos') projetoAberto = null;
   render();
   window.scrollTo(0, 0);

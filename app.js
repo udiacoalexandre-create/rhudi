@@ -987,6 +987,50 @@ function aplicarVisibModulos(){
 }
 function abrirConfig(){ if(!podeGerenciarUsuarios()) return; switchModule('config'); }
 
+// ENDEREÇO DA TELA
+// ----------------
+// O RH mora no mesmo arquivo do portal, então recarregar a página caía sempre
+// no portal — no meio de um lançamento, perdia-se o lugar. A tela agora vai no
+// endereço (#/base-lista), e é dela que a página parte ao abrir.
+//
+// Hash, e não caminho: com caminho o Hosting precisaria reescrever a rota, e
+// um F5 em /rh/base-lista daria 404 até isso ser configurado.
+let _rotaLendo = false;              // evita responder ao hash que nós mesmos escrevemos
+function rotaEscrever(id){
+  if(_rotaLendo) return;
+  const nova = id ? '#/' + id : '';
+  if(location.hash === nova) return;
+  // replaceState: trocar de tela não enche o histórico do navegador — o botão
+  // Voltar deve sair do app, não desfazer cada clique no menu.
+  if(history && history.replaceState) history.replaceState(null, '', location.pathname + location.search + nova);
+  else location.hash = nova;
+}
+function rotaLer(){
+  const m = String(location.hash || '').match(/^#\/([a-z0-9-]+)$/i);
+  return m ? m[1] : '';
+}
+// Em que módulo mora uma página — para a barra de módulos abrir junto.
+function moduloDaPagina(id){
+  return Object.keys(MODULES).find(m =>
+    (MODULES[m].pages || []).some(p => p.id === id)) || '';
+}
+// Abre a tela pedida pelo endereço. Devolve false quando não dá (página que
+// não existe, ou que o papel da pessoa não enxerga) — aí o portal continua.
+function irPelaRota(){
+  const id = rotaLer();
+  if(!id) return false;
+  const mod = moduloDaPagina(id);
+  if(!mod) return false;
+  if(!pagesVisiveis(mod).some(p => p.id === id)) return false;
+  _rotaLendo = true;
+  try{
+    entrarBeneficios();
+    if(currentModule !== mod) switchModule(mod);
+    showPage(id);
+  } finally { _rotaLendo = false; }
+  return true;
+}
+
 function switchModule(mod){
   // Se o módulo não existe mais (ou o papel não vê nenhuma página dele),
   // cai para Base — evita tela branca.
@@ -1013,6 +1057,7 @@ function buildSidebar(mod){
 
 function showPage(id){
   currentPage=id;
+  rotaEscrever(id);
   document.querySelectorAll('.sidebar-btn').forEach(b=>b.classList.remove('active'));
   const snav=document.getElementById('snav-'+id);
   if(snav) snav.classList.add('active');
@@ -4500,6 +4545,9 @@ async function initApp(user){
     if(errEl){ errEl.textContent='Usuário sem acesso liberado. Procure o administrador (Master).'; errEl.style.display='block'; }
     return;
   }
+  // Endereço apontando para uma tela do RH: vai direto para ela. É o que faz
+  // o F5 devolver a pessoa onde estava, em vez de jogá-la no portal.
+  if(temPlataforma('rh') && irPelaRota()) return;
   // Login único: cai no PORTAL (lançador) e a pessoa escolhe a plataforma.
   mostrarPortal();
 }
@@ -4565,6 +4613,7 @@ function mostrarPortal(){
 
 function voltarPortal(){
   const as=document.getElementById('app-screen'); if(as) as.style.display='none';
+  rotaEscrever('');
   mostrarPortal();
 }
 
