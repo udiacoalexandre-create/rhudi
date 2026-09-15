@@ -1001,14 +1001,28 @@ let _rotaLendo = false;
 // jogando a pessoa na Base — a rota abria e era atropelada meio segundo
 // depois, o que na tela parece 'nao funcionou'.
 let _rotaAlvo = '';              // evita responder ao hash que nós mesmos escrevemos
+// O sistema é servido dentro de um iframe em udiaco.com.br/rh. Lá a barra de
+// endereço é da página de fora, não desta — então o hash que gravamos aqui
+// não aparece, e recarregar recarrega a página de fora, que sempre abre na
+// home. Avisamos quem nos embute qual tela está aberta, para ela guardar no
+// endereço dela. Fora do iframe isto não faz nada.
+const PAI_PERMITIDO = 'https://udiaco.com.br';
+function avisarPagina(){
+  try{
+    if(window.parent === window) return;
+    const rel = location.pathname.split('/').pop() + (location.hash || '');
+    window.parent.postMessage({ udiacoRota: rel }, PAI_PERMITIDO);
+  }catch(e){ /* embutido em outro lugar: não é problema nosso */ }
+}
 function rotaEscrever(id){
   if(_rotaLendo) return;
   const nova = id ? '#/' + id : '';
-  if(location.hash === nova) return;
+  if(location.hash === nova){ avisarPagina(); return; }
   // replaceState: trocar de tela não enche o histórico do navegador — o botão
   // Voltar deve sair do app, não desfazer cada clique no menu.
   if(history && history.replaceState) history.replaceState(null, '', location.pathname + location.search + nova);
   else location.hash = nova;
+  avisarPagina();
 }
 function rotaLer(){
   const m = String(location.hash || '').match(/^#\/([a-z0-9-]+)$/i);

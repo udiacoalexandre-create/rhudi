@@ -199,5 +199,24 @@ const PORTAL=fs.readFileSync('/Users/acmags/rhudi/app.js','utf8');
 t('e o RH mora no index, com a tela no endereço',
   /rotaEscrever\(id\)/.test(RH) && /function irPelaRota/.test(RH));
 
+console.log('\n== 5) DENTRO DO IFRAME DA UDIACO.COM.BR ==');
+// udiaco.com.br/rh embute o sistema num iframe: la a barra de endereco e da
+// pagina de fora, e recarregar voltava sempre para a home.
+const WRAP=fs.readFileSync('/Users/acmags/rhudi/ferramentas/rh-wrapper.html','utf8');
+[['app.js',RH],['comercial.js',COM],['projetos.js',PROJ]].forEach(([nome,src])=>{
+  t(nome+' avisa a pagina de fora', /function avisarPagina/.test(src));
+  t('  e so quando esta embutido', /if\(window\.parent === window\) return;/.test(src));
+  t('  falando so com udiaco.com.br', /PAI_PERMITIDO = 'https:\/\/udiaco\.com\.br'/.test(src));
+  t('  a cada troca de tela', /avisarPagina\(\);/.test(src));
+});
+t('a pagina de fora so aceita mensagem do sistema',
+  /ev\.origin !== ORIGEM_APP\) return;/.test(WRAP));
+t('e so aceita nome de pagina do proprio sistema',
+  (WRAP.match(/\[a-z0-9\._-\]\{1,40\}\\.html/g)||[]).length===2,
+  'validacoes='+(WRAP.match(/\[a-z0-9\._-\]\{1,40\}\\.html/g)||[]).length);
+t('monta o iframe com a tela pedida', /src = APP \+ telaPedida\(\)/.test(WRAP));
+t('e guarda a tela no proprio endereco', /history\.replaceState\(null, '', location\.pathname \+ novo\)/.test(WRAP));
+t('diz que o certo e tirar o iframe', /apontar udiaco\.com\.br\/rh direto/.test(WRAP));
+
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

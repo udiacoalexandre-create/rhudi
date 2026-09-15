@@ -867,13 +867,27 @@ async function limparNotificacoesAntigas(){
 // ============================================================
 // A aba vai no endereço. O link de tarefa (#t=...) continua valendo: quem
 // chega por ele abre o ticket, e só depois o endereço passa a ser o da aba.
+// O sistema é servido dentro de um iframe em udiaco.com.br/rh. Lá a barra de
+// endereço é da página de fora, não desta — então o hash que gravamos aqui
+// não aparece, e recarregar recarrega a página de fora, que sempre abre na
+// home. Avisamos quem nos embute qual tela está aberta, para ela guardar no
+// endereço dela. Fora do iframe isto não faz nada.
+const PAI_PERMITIDO = 'https://udiaco.com.br';
+function avisarPagina(){
+  try{
+    if(window.parent === window) return;
+    const rel = location.pathname.split('/').pop() + (location.hash || '');
+    window.parent.postMessage({ udiacoRota: rel }, PAI_PERMITIDO);
+  }catch(e){ /* embutido em outro lugar: não é problema nosso */ }
+}
 function rotaAba(id){
   if(/^#t=/.test(String(location.hash||''))) return;   // link de tarefa manda
   const nova = '#/' + id;
-  if(location.hash === nova) return;
+  if(location.hash === nova){ avisarPagina(); return; }
   if(history && history.replaceState)
     history.replaceState(null, '', location.pathname + location.search + nova);
   else location.hash = nova;
+  avisarPagina();
 }
 function abaDoEndereco(){
   const m = String(location.hash||'').match(/^#\/([a-z]+)/i);

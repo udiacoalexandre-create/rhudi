@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RH Udiaço</title>
+  <style>
+    html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+      font-family: Arial, sans-serif; }
+    iframe { width:100%; height:100vh; border:none; display:block; }
+  </style>
+</head>
+<body>
+  <iframe id="app" title="RH Udiaço"></iframe>
+
+<script>
+/*
+ * Página de fora (udiaco.com.br/rh), que embute o sistema.
+ *
+ * O problema que isto resolve: dentro do iframe a barra de endereço continua
+ * sendo a DESTA página. O sistema até guarda a tela aberta no endereço dele,
+ * mas isso não chega aqui — então recarregar a barra recarregava esta página,
+ * que sempre abria o sistema na home. Quem estava no meio de um lançamento
+ * perdia o lugar.
+ *
+ * Agora o sistema avisa (postMessage) qual tela está aberta, e esta página
+ * guarda isso no PRÓPRIO endereço. No F5, a tela volta.
+ *
+ * O ideal continua sendo apontar udiaco.com.br/rh direto para o sistema, sem
+ * iframe: some a necessidade disto, o endereço fica legível e dá para
+ * favoritar uma tela. Enquanto isso não acontece, esta página resolve.
+ */
+var APP = 'https://udiacoalexandre-create.github.io/rhudi/';
+var ORIGEM_APP = 'https://udiacoalexandre-create.github.io';
+
+// Só nomes de página do próprio sistema entram no src — nada de endereço
+// vindo de fora.
+function telaPedida(){
+  var h = '';
+  try { h = decodeURIComponent((location.hash || '').slice(1)); } catch(e){ return ''; }
+  return /^[a-z0-9._-]{1,40}\.html(#\/[a-z0-9-]{1,40})?$/i.test(h) ? h : '';
+}
+
+document.getElementById('app').src = APP + telaPedida();
+
+window.addEventListener('message', function(ev){
+  if(ev.origin !== ORIGEM_APP) return;                 // só o sistema fala aqui
+  var r = ev.data && ev.data.udiacoRota;
+  if(typeof r !== 'string') return;
+  if(!/^[a-z0-9._-]{1,40}\.html(#\/[a-z0-9-]{1,40})?$/i.test(r)) return;
+  var novo = '#' + encodeURIComponent(r);
+  if(location.hash === novo) return;
+  // replaceState: trocar de tela não enche o histórico do navegador.
+  if(history.replaceState) history.replaceState(null, '', location.pathname + novo);
+  else location.hash = novo;
+});
+</script>
+</body>
+</html>
