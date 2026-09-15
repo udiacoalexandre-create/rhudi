@@ -96,6 +96,30 @@ APP.setColabs([okDemitido, meiAtivo]);
 t('a situacao pesa mais que o filtro', APP.colaboradoresUnicos()[0].mat==='6',
   APP.colaboradoresUnicos()[0].mat+' filtro '+APP.colaboradoresUnicos()[0].filtro);
 
+console.log('\n== 3b) MEI VENCE SOCIO ==');
+// O cadastro de socio existe para outra finalidade e nao carrega beneficio;
+// a cesta esta no de MEI. Antes os dois empatavam e o desempate caia na data
+// de admissao — arbitrario, e em quatro pessoas ficava o de socio, sem nada.
+const mei2={_id:'m2',mat:'10090002',nome:'AHMAD',cpf:'999',status:'Trabalhando',
+  filtro:'MEI',cesta:185,admissao:'2018-07-04'};
+const soc2={_id:'s2',mat:'10121000',nome:'AHMAD',cpf:'999',status:'Trabalhando',
+  filtro:'SOC',admissao:'2025-11-25'};
+APP.setColabs([mei2, soc2]);
+t('fica o MEI, mesmo sendo o mais antigo', APP.colaboradoresUnicos()[0].filtro==='MEI',
+  APP.colaboradoresUnicos()[0].filtro+' mat '+APP.colaboradoresUnicos()[0].mat);
+APP.setColabs([soc2, mei2]);
+t('em qualquer ordem', APP.colaboradoresUnicos()[0].filtro==='MEI');
+t('e e o que tem a cesta', APP.colaboradoresUnicos()[0].cesta===185);
+// data invalida nao pode mais decidir nada
+const socVelho=Object.assign({},soc2,{_id:'sv',admissao:'1970-01-01'});
+APP.setColabs([socVelho, mei2]);
+t('admissao 01/01/1970 nao muda o resultado',
+  APP.colaboradoresUnicos()[0].filtro==='MEI');
+// e o OK continua na frente dos dois
+const ok2=Object.assign({},mei2,{_id:'o2',mat:'10000942',filtro:'OK'});
+APP.setColabs([soc2, mei2, ok2]);
+t('OK vence MEI e SOCIO', APP.colaboradoresUnicos()[0].filtro==='OK');
+
 console.log('\n== 4) SEM CPF, E POR NOME ==');
 const semCpf1={_id:'s1',mat:'8',nome:'MARIA DA SILVA',cpf:'',status:'Demitido',filtro:'OK'};
 const semCpf2={_id:'s2',mat:'9',nome:'Maria da Silva',cpf:'',status:'Trabalhando',filtro:'OK'};

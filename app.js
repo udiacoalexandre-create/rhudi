@@ -1323,7 +1323,18 @@ function ferResumoCelula(c){
 // principal (CLT: OK/DUP) sobre os duplicados MEI/Sócio.
 function colaboradoresUnicos(){
   const byKey={};
-  const ehDup=x=>['MEI','SOC'].includes((x.filtro||'').toUpperCase())?1:0;
+  // Ordem de preferência entre cadastros do mesmo CPF. Menor vence.
+  //   OK  — o vínculo CLT, com os benefícios
+  //   MEI — quando é o único além do de sócio, é nele que a cesta está
+  //   SOC — existe para outra finalidade e não carrega benefício
+  // Antes MEI e SOC empatavam, e o desempate caía na data de admissão: em
+  // quatro pessoas ficava o de sócio, SEM benefício nenhum, enquanto o de MEI
+  // tinha a cesta. E duas só escapavam porque o cadastro de sócio está com
+  // admissão 01/01/1970.
+  const ordemFiltro=x=>{
+    const f=String(x.filtro||'').toUpperCase();
+    return f==='SOC' ? 2 : (f==='MEI' ? 1 : 0);
+  };
   // Quem foi demitido de uma empresa e recontratado em outra tem DOIS
   // cadastros com o mesmo CPF. O desempate olhava só o filtro MEI/SOC, então
   // entre o demitido e o ativo ficava quem viesse primeiro na lista — e essa
@@ -1342,7 +1353,7 @@ function colaboradoresUnicos(){
     const ex=byKey[key];
     if(!ex){ byKey[key]=c; return; }
     if(encerrado(c)!==encerrado(ex)){ if(encerrado(c)<encerrado(ex)) byKey[key]=c; return; }
-    if(ehDup(c)!==ehDup(ex)){ if(ehDup(c)<ehDup(ex)) byKey[key]=c; return; }
+    if(ordemFiltro(c)!==ordemFiltro(ex)){ if(ordemFiltro(c)<ordemFiltro(ex)) byKey[key]=c; return; }
     if(maisNovo(c,ex)>0) byKey[key]=c;
   });
   return Object.values(byKey);
