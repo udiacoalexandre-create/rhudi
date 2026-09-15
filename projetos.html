@@ -256,6 +256,28 @@ a{ color:var(--accent); text-decoration:none }
    botão, e aí o quadro fica com a largura toda. */
 .mt-split{ display:flex; align-items:flex-start; gap:var(--space-4) }
 .mt-quadro{ flex:1 1 auto; min-width:0 }
+/* Aba fina que fica NO LUGAR da agenda quando ela e escondida: e por onde se
+   traz de volta, sem ter de procurar o botao la em cima. */
+.ag-aba{ flex:0 0 34px; align-self:stretch; min-height:220px; display:flex;
+      flex-direction:column; align-items:center; gap:10px; padding:12px 0;
+      background:var(--surface); border:1px solid var(--border); border-radius:14px;
+      box-shadow:var(--shadow); color:var(--brand); cursor:pointer;
+      font-family:inherit; position:sticky; top:var(--space-4) }
+.ag-aba:hover{ background:var(--success-bg); border-color:var(--brand) }
+.ag-aba i{ font-size:17px }
+.ag-aba__t{ writing-mode:vertical-rl; font-size:11.5px; font-weight:700;
+      letter-spacing:.06em; text-transform:uppercase }
+/* Onde a agenda fica: os dois botoes, com o atual marcado. */
+.ag__pos{ display:inline-flex; border:1px solid var(--border); border-radius:8px;
+      overflow:hidden; background:var(--surface) }
+.ag__pos__b{ border:none; background:none; padding:3px 7px; cursor:pointer;
+      color:var(--text-muted); font-family:inherit; display:flex; align-items:center }
+.ag__pos__b:hover{ background:var(--surface-soft); color:var(--text) }
+.ag__pos__b--on{ background:var(--brand); color:#fff }
+.ag__pos__b--on:hover{ background:var(--brand); color:#fff }
+.ag__pos__b i{ font-size:15px }
+/* Embaixo: volta a ser a faixa larga, com os dias lado a lado. */
+.ag--baixo{ margin-top:var(--space-5) }
 .ag--lado{ flex:0 0 268px; margin-top:0; position:sticky; top:var(--space-4);
       max-height:calc(100vh - 120px); display:flex; flex-direction:column }
 .ag--lado .ag__faixa{ padding:9px var(--space-4); flex-wrap:nowrap; flex-shrink:0 }

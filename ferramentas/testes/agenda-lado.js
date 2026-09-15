@@ -53,14 +53,15 @@ const sandbox={ window,document,location:window.location,history:window.history,
   FileReader:function(){},structuredClone:o=>JSON.parse(JSON.stringify(o)) };
 const nomes=Object.keys(sandbox);
 const API=['viewAgenda','agendaLado','kanbanHTML','alternarAgenda','lerPref','gravarPref',
-  'hoje','diasDaAgenda'];
+  'hoje','diasDaAgenda','porAgenda','lerPrefTxt','gravarPrefTxt'];
 let APP;
 console.log('-- CARGA --');
 try{
   APP=new Function(...nomes, SRC+'\nreturn {'
     +API.map(n=>n+':(typeof '+n+'!=="undefined"?'+n+':undefined)').join(',')
     +',setUsuario:v=>{usuario=v},setUsuarios:v=>{usuarios=v},setProjetos:v=>{projetos=v}'
-    +',setTarefas:v=>{tarefas=v},setAba:v=>{aba=v},getVerAgenda:()=>verAgenda};')
+    +',setTarefas:v=>{tarefas=v},setAba:v=>{aba=v},getVerAgenda:()=>verAgenda'
+    +',getPos:()=>agendaPos};')
     (...nomes.map(n=>sandbox[n]));
   t('projetos.js carregado',true);
 }catch(e){ t('projetos.js carregado',false,e.message); process.exit(1); }
@@ -117,8 +118,10 @@ t('o padrão é aparecer', /let verAgenda = lerPref\('pe_ver_agenda', true\)/.te
 console.log('\n== 4) O QUE SAIU DO CAMINHO ==');
 t('a agenda não fica mais embaixo do quadro', !/agendaRodape/.test(SRC),
   (SRC.match(/agendaRodape[^\n]*/)||[''])[0]);
-t('o texto de apoio virou tooltip do botão',
-  !/ag__sub">o dia em que/.test(SRC) && /arraste um item para outro dia/.test(SRC));
+t('o texto de apoio virou tooltip da faixa',
+  !/ag__sub">o dia em que/.test(SRC)
+  && /ag__faixa" title="O dia em que você decidiu mexer/.test(SRC),
+  (SRC.match(/ag__faixa"[^+]{0,60}/)||[''])[0]);
 
 console.log('\n== 5) O CSS ==');
 t('as duas colunas lado a lado', /\.mt-split\{[^}]*display:flex/.test(HTML));
@@ -132,6 +135,48 @@ t('em tela estreita, a agenda volta para cima',
   /@media \(max-width:1100px\)\{[\s\S]{0,300}\.mt-split\{ flex-direction:column \}/.test(HTML));
 t('e lá volta a ser uma faixa de dias',
   /@media \(max-width:1100px\)\{[\s\S]{0,400}\.ag--lado \.ag__cols\{ display:grid/.test(HTML));
+
+console.log('\n== 6) ESCONDIDA, SOBRA A ABA NO LUGAR DELA ==');
+// era a queixa: escondendo pela lateral, so o botao la em cima trazia de volta
+APP.setUsuario(EU);
+if(APP.getVerAgenda()) APP.alternarAgenda();
+v=APP.viewAgenda();
+t('sobra a aba fina na esquerda', /class="ag-aba"/.test(v));
+t('e ela fica ANTES do quadro, onde a agenda estava',
+  v.indexOf('ag-aba') < v.indexOf('mt-quadro'));
+t('clicando nela, a agenda volta', /ag-aba[^>]*onclick="alternarAgenda\(\)"/.test(v),
+  (v.match(/ag-aba[^>]{0,80}/)||[''])[0]);
+t('com o nome escrito, para nao virar adivinhacao', /ag-aba__t">Agenda</.test(v));
+APP.alternarAgenda();
+v=APP.viewAgenda();
+t('voltou, e a aba some', /ag--lado/.test(v) && !/class="ag-aba"/.test(v));
+
+console.log('\n== 7) AO LADO OU EMBAIXO ==');
+t('comeca ao lado', APP.getPos()==='lado');
+t('os dois botoes de posicao estao no cabecalho',
+  /porAgenda\('lado'\)/.test(v) && /porAgenda\('baixo'\)/.test(v));
+t('e o atual aparece marcado', /ag__pos__b--on[^>]*>[\s\S]{0,60}ti-layout-sidebar"/.test(v),
+  (v.match(/ag__pos__b[^>]{0,70}/g)||[]).join(' | ').slice(0,160));
+APP.porAgenda('baixo');
+v=APP.viewAgenda();
+t('embaixo: a agenda vem DEPOIS do quadro',
+  v.indexOf('class="kanban') < v.indexOf('ag--baixo'),
+  'quadro em '+v.indexOf('class="kanban')+', agenda em '+v.indexOf('ag--baixo'));
+t('e sem a divisao em duas colunas', !/mt-split/.test(v));
+t('nem a aba lateral', !/ag-aba/.test(v));
+t('gravou a escolha', PREFS['pe_agenda_pos']==='baixo', JSON.stringify(PREFS['pe_agenda_pos']));
+APP.alternarAgenda();
+v=APP.viewAgenda();
+t('escondida embaixo, nao inventa aba lateral', !/ag-aba/.test(v));
+t('e o botao do topo continua trazendo de volta', /onclick="alternarAgenda\(\)"/.test(v));
+APP.porAgenda('lado');
+v=APP.viewAgenda();
+t('escolher a posicao ja traz a agenda de volta', APP.getVerAgenda()===true && /ag--lado/.test(v));
+t('e volta a dividir em duas colunas', /mt-split/.test(v));
+t('a escolha e lida na abertura', /lerPrefTxt\('pe_agenda_pos', 'lado'\)/.test(SRC));
+t('CSS da aba lateral', /\.ag-aba\{/.test(HTML));
+t('com o nome na vertical', /\.ag-aba__t\{[^}]*writing-mode:vertical/.test(HTML));
+t('CSS dos botoes de posicao', /\.ag__pos__b--on\{/.test(HTML));
 
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

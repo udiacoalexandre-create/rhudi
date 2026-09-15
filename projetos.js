@@ -1153,17 +1153,32 @@ function alternarAgenda(){
   gravarPref('pe_ver_agenda', verAgenda);
   render();
 }
+function porAgenda(onde){
+  agendaPos = (onde === 'baixo') ? 'baixo' : 'lado';
+  gravarPrefTxt('pe_agenda_pos', agendaPos);
+  verAgenda = true;                 // escolher onde ela fica é pedir para vê-la
+  gravarPref('pe_ver_agenda', true);
+  render();
+}
 function agendaLado(lista, podeEditar){
   const dias = diasDaAgenda(lista);
-  return '<section class="ag ag--lado">' +
-    '<div class="ag__faixa">' +
+  return '<section class="ag' + (agendaPos === 'lado' ? ' ag--lado' : ' ag--baixo') + '">' +
+    '<div class="ag__faixa" title="O dia em que você decidiu mexer em cada coisa.' +
+      (podeEditar ? ' Arraste um item para outro dia para reprogramar.' : '') + '">' +
       '<i class="ti ti-calendar-week"></i>' +
       '<b>Agenda de planejamento</b>' +
       '<span style="flex:1"></span>' +
-      '<button class="icon-btn" title="Esconder a agenda' +
-        (podeEditar ? ' — arraste um item para outro dia para reprogramar' : '') + '" ' +
-        'onclick="alternarAgenda()">' +
-        '<i class="ti ti-layout-sidebar-left-collapse"></i></button>' +
+      // Onde ela fica: ao lado ou embaixo. Dois botões, o atual marcado.
+      '<span class="ag__pos">' +
+        '<button class="ag__pos__b' + (agendaPos === 'lado' ? ' ag__pos__b--on' : '') + '" ' +
+          'title="Agenda ao lado do quadro" onclick="porAgenda(\'lado\')">' +
+          '<i class="ti ti-layout-sidebar"></i></button>' +
+        '<button class="ag__pos__b' + (agendaPos === 'baixo' ? ' ag__pos__b--on' : '') + '" ' +
+          'title="Agenda embaixo do quadro" onclick="porAgenda(\'baixo\')">' +
+          '<i class="ti ti-layout-bottombar"></i></button>' +
+      '</span>' +
+      '<button class="icon-btn" title="Esconder a agenda" onclick="alternarAgenda()">' +
+        '<i class="ti ti-' + (agendaPos === 'lado' ? 'layout-sidebar-left-collapse' : 'chevron-down') + '"></i></button>' +
     '</div>' +
     '<div class="ag__cols">' +
     dias.map(d => {
@@ -1330,10 +1345,18 @@ function viewAgenda(){
       '</div>' +
     '</div>' +
     (todas.length
-      ? '<div class="mt-split">' +
-          (verAgenda ? agendaLado(emAberto, true) : '') +
-          '<div class="mt-quadro">' + kanbanHTML(todas, true) + '</div>' +
-        '</div>'
+      ? (agendaPos === 'lado'
+        ? '<div class="mt-split">' +
+            (verAgenda ? agendaLado(emAberto, true)
+              // Escondida, sobra a aba fina NO LUGAR dela: e por onde se traz
+              // de volta sem procurar o botao la em cima.
+              : '<button class="ag-aba" title="Mostrar a agenda de planejamento" ' +
+                'onclick="alternarAgenda()">' +
+                '<i class="ti ti-layout-sidebar-left-expand"></i>' +
+                '<span class="ag-aba__t">Agenda</span></button>') +
+            '<div class="mt-quadro">' + kanbanHTML(todas, true) + '</div>' +
+          '</div>'
+        : kanbanHTML(todas, true) + (verAgenda ? agendaLado(emAberto, true) : ''))
       : minhas.length
         ? vazio('search-off', 'Nada encontrado',
             'Nenhuma tarefa do seu quadro combina com "' + esc(buscaQuadro.trim()) + '".')
@@ -1356,6 +1379,19 @@ let verFinalizadas = lerPref('pe_ver_finalizadas', true);
 // Agenda ao lado do quadro. Quem usa o kanban o dia inteiro quer a largura
 // toda; quem planeja quer os dois juntos. Fica guardada neste navegador.
 let verAgenda = lerPref('pe_ver_agenda', true);
+// Onde a agenda fica: 'lado' (coluna à esquerda) ou 'baixo' (faixa sob o
+// quadro, como era antes). Cada um planeja de um jeito, e a escolha é de
+// quem olha — fica guardada neste navegador.
+let agendaPos = lerPrefTxt('pe_agenda_pos', 'lado');
+// As preferências de sim/não usam lerPref; esta guarda uma escolha entre
+// opções, e não um interruptor.
+function lerPrefTxt(chave, padrao){
+  try{ const v = localStorage.getItem(chave); return v === null ? padrao : v; }
+  catch(e){ return padrao; }
+}
+function gravarPrefTxt(chave, valor){
+  try{ localStorage.setItem(chave, String(valor)); }catch(e){}
+}
 function lerPref(chave, padrao){
   try{ const v = localStorage.getItem(chave); return v === null ? padrao : v === '1'; }
   catch(e){ return padrao; }
