@@ -203,7 +203,8 @@ t('gravou a demanda', dids.length===1);
 const d=DB['cm_demandas'][dids[0]];
 t('demanda', d.titulo==='Integração com o ERP');
 t('quem pediu', d.solicitante==='Alexandre');
-t('prioridade é o número', d.prioridade==='0', 'prio='+d.prioridade);
+t('prioridade é gravada como NÚMERO, não texto',
+  d.prioridade===0 && typeof d.prioridade==='number', 'prio='+JSON.stringify(d.prioridade));
 t('prazo de entrega', d.prazo==='2026-10-15');
 t('status inicial', d.status==='nao_iniciado', 'st='+d.status);
 t('parceira saiu do modelo', d.parceira===undefined);
@@ -231,7 +232,9 @@ await APP.salvarDemanda(id2);
 const d2=DB['cm_demandas'][id2];
 const ed=d2.historico.find(h=>h.acao==='Edição');
 t('gravou linha de edição', !!ed);
-t('prioridade 2 → 0', ed.mudancas.some(m=>m.rotulo==='prioridade'&&m.de==='2'&&m.para==='0'),
+// zero e prioridade de verdade, nao campo em branco
+t('prioridade 2 → 0', ed.mudancas.some(m=>m.rotulo==='prioridade'
+    && String(m.de)==='2' && String(m.para)==='0'),
   JSON.stringify(ed.mudancas));
 t('status registrado no histórico', ed.mudancas.some(m=>m.rotulo==='status'));
 t('entrega estimada em dd/mm/aaaa no histórico',
@@ -298,7 +301,7 @@ t('prioridade no campo editável', /class="pr-sel"[^>]*value="0"/.test(li)
 const rotulos=(li.match(/<th[^>]*>([\s\S]*?)<\/th>/g)||[])
   .slice(0,9).map(x=>x.replace(/<[^>]*>/g,'').trim());
 t('colunas na ordem pedida',
-  rotulos.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Responsável|Entrada|Área|',
+  rotulos.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Responsável|Entrada|Rolou|',
   rotulos.join('|'));
 // 'Responsável' tem 11 caracteres e cabe folgado nos 150px da coluna dele:
 // contar caractere era um atalho. O que vale e caber na largura declarada,

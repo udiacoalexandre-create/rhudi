@@ -33,7 +33,7 @@ let usuario = null;
 let aba = 'paineis';
 let paineis = [], demandas = [];
 let unsubs = [];
-let filtroDem = {q:'', prio:'', status:'', solic:''};
+let filtroDem = {q:'', prio:'', status:'', solic:'', resp:''};
 // Concluídas ficam na tela por padrão e somem só quando a pessoa pede. O total
 // de Entregue nos indicadores conta sempre, então esconder não faz nada
 // desaparecer sem rastro.
@@ -169,12 +169,17 @@ const CAMPOS_DEM = {titulo:'demanda', descricao:'descrição', solicitante:'quem
 
 function diffDem(antes, depois){
   const mud=[];
+  // Prioridade ZERO é valor, não campo em branco — e é a mais usada. Com
+  // `v||''` o zero virava vazio: mudar para 0 não entrava no histórico, e
+  // mudar de 0 para vazio não era nem detectado.
+  const vazio=v=>v===undefined||v===null||v==='';
+  const txt=v=>vazio(v)?'':String(v);
   Object.keys(CAMPOS_DEM).forEach(k=>{
     const de=antes?antes[k]:undefined, para=depois[k];
-    if((de||'')===(para||'')) return;
+    if(txt(de)===txt(para)) return;
     const dt = k==='prazo'||k==='entrada';
-    mud.push({campo:k, rotulo:CAMPOS_DEM[k],
-      de:dt?(de?soData(de):'—'):(de||'—'), para:dt?(para?soData(para):'—'):(para||'—')});
+    const most=v=>dt ? (vazio(v)?'—':soData(v)) : (vazio(v)?'—':String(v));
+    mud.push({campo:k, rotulo:CAMPOS_DEM[k], de:most(de), para:most(para)});
   });
   return mud;
 }
@@ -640,6 +645,36 @@ async function abrirPainel(id){
 function prioTxt(v){ return (v===''||v==null) ? '—' : String(v); }
 // Vazio vai para o FIM. Sem o teste explícito, Number('') daria 0 e a
 // prioridade em branco passaria na frente da mais urgente.
+// Quantos dias a entrega foi empurrada desde a PRIMEIRA data combinada.
+// prazoOriginal é gravado uma vez: na criação da demanda e na primeira vez que
+// alguém mexe no prazo de uma demanda antiga. Depois disso não muda mais —
+// é o marco contra o qual se mede o rolo.
+function diasRolados(d){
+  if(!d || !d.prazo || !d.prazoOriginal) return null;
+  const a=_dl(d.prazoOriginal), b=_dl(d.prazo);
+  if(!a || !b) return null;
+  return Math.round((b-a)/86400000);
+}
+// Selo da coluna Rolou. Adiantar a entrega tambem e informacao, e vem em
+// outra cor — verde, porque e o oposto de rolar.
+function _rolouHTML(d){
+  const n=diasRolados(d);
+  if(n===null || n===0) return '<span style="color:var(--text-muted)">—</span>';
+  const cor = n>0 ? 'background:#fef3c7;color:#92400e' : 'background:#dcfce7;color:#15803d';
+  const tit = n>0 ? 'Adiada '+n+' dia(s) desde '+soData(d.prazoOriginal)
+                  : 'Antecipada '+(-n)+' dia(s) desde '+soData(d.prazoOriginal);
+  return '<span title="'+tit+'" style="display:inline-block;padding:1px 7px;'
+    +'border-radius:20px;font-size:11px;font-weight:700;'+cor+'">'
+    +(n>0?'+':'')+n+'d</span>';
+}
+// Prioridade sempre NUMERO (ou vazio). Gravada ora como texto ora como
+// numero, a mesma prioridade virava duas opcoes no filtro — '0' e 0.
+function _prioVal(v){
+  const t=String(v==null?'':v).trim();
+  if(t==='') return '';
+  const n=Number(t.replace(',','.'));
+  return isFinite(n) ? n : '';
+}
 function prioNum(v){
   if(v===''||v==null) return 9999;
   const n=Number(v);
@@ -718,7 +753,9 @@ function alternarSprint(chave){
 // 'Quem pediu' e 'Área' precisam caber o conteudo, nao só o cabeçalho: são
 // nome de pessoa e nome de setor, e cortados não servem para nada. A folga
 // sai da Demanda, que tem o balão para o texto inteiro.
-const DM_COLS=['auto','46px','66px','128px','150px','150px','62px','148px','40px'];
+// Área saiu: não era usada. No lugar, "Rolou" — quantos dias a entrega foi
+// empurrada desde a primeira data combinada.
+const DM_COLS=['auto','46px','66px','128px','150px','150px','62px','70px','40px'];
 const dmColgroup='<colgroup>'+DM_COLS.map(w=>'<col style="width:'+w+'">').join('')+'</colgroup>';
 const dmCabecalho='<thead><tr>'
   +'<th>Demanda</th>'
@@ -726,7 +763,8 @@ const dmCabecalho='<thead><tr>'
   +'<th title="Entrega estimada pela parceira">Entrega</th>'
   +'<th>Status</th><th>Quem pediu</th>'
   +'<th title="Quem da equipe de projetos responde por esta demanda">Responsável</th>'
-  +'<th>Entrada</th><th>Área</th>'
+  +'<th>Entrada</th>'
+  +'<th style="text-align:center" title="Quantos dias a entrega foi adiada desde a primeira data">Rolou</th>'
   +'<th style="text-align:center" title="Editar"><i class="ti ti-pencil"></i></th>'
   +'</tr></thead>';
 
@@ -811,9 +849,14 @@ async function mudarPrazo(id, iso){
   if(!d || (d.prazo||'')===(iso||'')) return;
   const mud=[{campo:'prazo', rotulo:'entrega estimada',
     de:d.prazo?soData(d.prazo):'—', para:iso?soData(iso):'—'}];
+  // A data que estava valendo ANTES desta mudança vira o marco, se ainda não
+  // houver um. Sem isso, a primeira rolagem de uma demanda antiga não teria
+  // contra o que ser medida.
+  const marco = d.prazoOriginal || d.prazo || '';
   try{
     await window._setDoc(window._doc(COL_DEM,id), Object.assign({}, d, {
-      prazo:iso||'', atualizadoEm:agora(), atualizadoPor:quem(),
+      prazo:iso||'', prazoOriginal:marco,
+      atualizadoEm:agora(), atualizadoPor:quem(),
       historico:logDem(d.historico,'Edição',mud)
     }));
     toast(String(d.titulo||'').slice(0,28)+': entrega '+(iso?soData(iso):'em branco')+'.','ok');
@@ -916,7 +959,8 @@ function _itensPublicos(){
       return d || prioNum(a.prioridade)-prioNum(b.prioridade);
     })
     .map(d=>({titulo:d.titulo||'', descricao:d.descricao||'',
-      solicitante:d.solicitante||'', responsavel:d.responsavel||'', area:d.area||'',
+      solicitante:d.solicitante||'', responsavel:d.responsavel||'',
+      rolou:diasRolados(d),
       prioridade:(d.prioridade===''||d.prioridade==null)?'':d.prioridade,
       status:sInfo(d.status).v, entrada:d.entrada||'', prazo:d.prazo||''}));
 }
@@ -1025,10 +1069,23 @@ function copiarLinkDemandas(){
 }
 
 function viewDemandas(){
-  const solicitantes=[...new Set(demandas.map(d=>d.solicitante||'').filter(Boolean))].sort();
-  const prios=[...new Set(demandas.map(d=>d.prioridade).filter(v=>v!==''&&v!=null))]
-    .sort((a,b)=>prioNum(a)-prioNum(b)).map(v=>({v:String(v),l:String(v)}));
-  const opt=(arr,sel,vazio)=>'<option value="">'+vazio+'</option>'
+  // Quem não foi classificado some do filtro se ele só listar os valores que
+  // existem — e é justamente quem se precisa achar para preencher. Daí a
+  // opção '(sem ...)', em todo filtro onde o campo pode ficar em branco.
+  const SEM='__sem__';
+  const distintos=campo=>[...new Set(demandas.map(d=>String(d[campo]||'').trim())
+    .filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const semValor=campo=>demandas.filter(d=>String(d[campo]||'').trim()==='').length;
+  const solicitantes=distintos('solicitante');
+  const responsaveis=distintos('responsavel');
+  // Número, não texto: gravada dos dois jeitos, a mesma prioridade aparecia
+  // duas vezes na lista.
+  const prios=[...new Set(demandas.map(d=>d.prioridade)
+      .filter(v=>v!==''&&v!=null&&isFinite(Number(v))).map(Number))]
+    .sort((a,b)=>a-b).map(v=>({v:String(v),l:String(v)}));
+  const opt=(arr,sel,vazio,nSem)=>'<option value="">'+vazio+'</option>'
+    +(nSem?'<option value="'+SEM+'"'+(sel===SEM?' selected':'')+'>'
+      +'(sem classificação) · '+nSem+'</option>':'')
     +arr.map(o=>'<option value="'+esc(o.v)+'"'+(sel===o.v?' selected':'')+'>'+esc(o.l)+'</option>').join('');
   return '<div class="pg-head">'
       +'<div><h2 class="pg-tit pg-tit--sm">Projeto Dev&amp;Co'
@@ -1048,9 +1105,9 @@ function viewDemandas(){
       +'<div class="fg" style="flex:1;min-width:180px"><label>Buscar</label>'
         +'<input type="text" id="dm-q" placeholder="Demanda, quem pediu, responsável, área..." value="'+esc(filtroDem.q)+'" oninput="filtrarDem()"></div>'
       +'<div class="fg"><label>Prioridade</label><select id="dm-prio" onchange="filtrarDem()">'
-        +opt(prios, filtroDem.prio, 'Todas')+'</select></div>'
+        +opt(prios, filtroDem.prio, 'Todas', semValor('prioridade'))+'</select></div>'
       +'<div class="fg"><label>Status</label><select id="dm-status" onchange="filtrarDem()">'
-        +opt(STATUS, filtroDem.status, 'Todos')+'</select></div>'
+        +opt(STATUS, filtroDem.status, 'Todos', semValor('status'))+'</select></div>'
       +'<div class="fg"><label>Sprint'
         +ajuda('A planilha não traz sprint, só a entrega estimada. Escolha a cadência que a Udiaço usa e as demandas se agrupam nessas janelas.')
         +'</label><select onchange="irSprintModo(this.value)">'
@@ -1058,7 +1115,11 @@ function viewDemandas(){
           +(sprintModo===m?' selected':'')+'>'+m.charAt(0).toUpperCase()+m.slice(1)+'</option>').join('')
         +'</select></div>'
       +'<div class="fg"><label>Quem pediu</label><select id="dm-solic" onchange="filtrarDem()">'
-        +opt(solicitantes.map(s=>({v:s,l:s})), filtroDem.solic, 'Todos')+'</select></div>'
+        +opt(solicitantes.map(s=>({v:s,l:s})), filtroDem.solic, 'Todos', semValor('solicitante'))
+        +'</select></div>'
+      +'<div class="fg"><label>Responsável</label><select id="dm-resp-f" onchange="filtrarDem()">'
+        +opt(responsaveis.map(s=>({v:s,l:s})), filtroDem.resp, 'Todos', semValor('responsavel'))
+        +'</select></div>'
       +'<label class="oc-sw" title="Mostrar ou esconder as entregues">'
         +'<input type="checkbox" id="dm-oc"'+(ocultarEntregues?' checked':'')+' '
         +'onchange="alternarEntregues()">'
@@ -1083,15 +1144,20 @@ function filtrarPorStatus(v){
 function filtrarDem(){
   filtroDem={q:($('dm-q')?.value||'').toLowerCase().trim(),
     prio:$('dm-prio')?.value||'', status:$('dm-status')?.value||'',
-    solic:$('dm-solic')?.value||''};
+    solic:$('dm-solic')?.value||'', resp:$('dm-resp-f')?.value||''};
   pintarDemandas();
 }
 function demandasFiltradas(){
   return demandas.filter(d=>{
     if(ocultarEntregues && d.status==='entregue') return false;
-    if(filtroDem.prio && String(d.prioridade)!==filtroDem.prio) return false;
-    if(filtroDem.status && d.status!==filtroDem.status) return false;
-    if(filtroDem.solic && d.solicitante!==filtroDem.solic) return false;
+    const vazio=v=>String(v==null?'':v).trim()==='';
+    // '__sem__' significa 'os que ninguem classificou'.
+    const casa=(filtro, valor)=>!filtro
+      || (filtro==='__sem__' ? vazio(valor) : String(valor)===filtro);
+    if(!casa(filtroDem.prio, d.prioridade===''||d.prioridade==null?'':Number(d.prioridade))) return false;
+    if(!casa(filtroDem.status, d.status)) return false;
+    if(!casa(filtroDem.solic, d.solicitante)) return false;
+    if(!casa(filtroDem.resp, d.responsavel)) return false;
     if(filtroDem.q){
       const alvo=[d.titulo,d.descricao,d.solicitante,d.responsavel,d.area].join(' ').toLowerCase();
       if(!alvo.includes(filtroDem.q)) return false;
@@ -1245,11 +1311,7 @@ function pintarDemandas(){
             +'onclick="event.stopPropagation()" '
             +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'responsavel\',this.value)"></td>'
           +'<td style="color:var(--text-secondary);white-space:nowrap">'+soDataCurta(d.entrada)+'</td>'
-          +'<td><input type="text" class="tx-sel" list="dl-area" maxlength="60" '
-            +'value="'+esc(d.area||'')+'" placeholder="—" '
-            +'title="Área — escolha da lista ou digite uma nova" '
-            +'onclick="event.stopPropagation()" '
-            +'onchange="event.stopPropagation();mudarTexto(\''+d._id+'\',\'area\',this.value)"></td>'
+          +'<td style="text-align:center">'+_rolouHTML(d)+'</td>'
           +'<td style="text-align:center"><button class="btn-ed" title="Editar esta demanda" '
             +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\')">'
             +'<i class="ti ti-pencil"></i></button></td>'
@@ -1328,7 +1390,7 @@ async function salvarDemanda(id){
     solicitante:($('dm-f-solic').value||'').trim(),
     responsavel:($('dm-resp').value||'').trim(),
     area:($('dm-area').value||'').trim(),
-    prioridade:($('dm-f-prio').value||'').trim(),
+    prioridade:_prioVal($('dm-f-prio').value),
     entrada:$('dm-entrada').value||'',
     prazo:$('dm-prazo').value||'',
     status:$('dm-f-status').value||'nao_iniciado',
@@ -1345,7 +1407,11 @@ async function salvarDemanda(id){
       atualizadoEm:agora(), atualizadoPor:quem(),
       historico:logDem(d?d.historico:[], d?'Edição':'Inclusão', mud)
     });
-    if(!d){ dados.criadoEm=agora(); dados.criadoPor=quem(); }
+    // A demanda nasce com o marco da entrega: e contra ele que se mede o
+    // quanto rolou depois.
+    if(!d){ dados.criadoEm=agora(); dados.criadoPor=quem();
+      if(dep.prazo) dados.prazoOriginal=dep.prazo; }
+    else if(dep.prazo && !d.prazoOriginal) dados.prazoOriginal=d.prazo||dep.prazo;
     // Espera a confirmação do SERVIDOR. Se ela não vier em 8 segundos, a
     // gravação não se perdeu (fica no cache em disco e sobe depois), mas quem
     // salvou precisa saber que ainda não subiu.

@@ -39,6 +39,15 @@ for(const s of suites){
   }
   const linha = (saida.match(/(TUDO OK \(\d+ checagens\)|TODOS OS \d+ TESTES PASSARAM|FALHAS: \d+[^\n]*)/g) || []).pop();
   const n = Number((linha || '').match(/\d+/) || 0);
+  // Suíte que depende de permissão que a conta de serviço não tem (a API de
+  // regras pede roles/firebaserules.admin) não é falha do código: fica como
+  // pulada, visível, para não mascarar as que realmente quebraram.
+  const semPermissao = !linha && /403|does not have permission|PERMISSION_DENIED/.test(saida);
+  if(semPermissao){
+    console.log('  pulou   ' + s.replace('.js', '').padEnd(16) +
+      'sem permissão na conta de serviço');
+    continue;
+  }
   if(!erro && linha && !/FALHAS/.test(linha)) total += n;
   else { falharam.push(s); }
   console.log((erro || !linha || /FALHAS/.test(linha) ? '  FALHOU  ' : '  ok      ') +

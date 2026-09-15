@@ -396,7 +396,8 @@ APP.setDemandas([
 APP.pintarDemandas();
 const hw=NODES['dm-lista']._html;
 t('quem pediu virou campo', /class="tx-sel" list="dl-solic"/.test(hw));
-t('área virou campo', /class="tx-sel" list="dl-area"/.test(hw));
+// A coluna Área saiu da tabela; o campo continua no cadastro da demanda.
+t('responsável virou campo', /class="tx-sel" list="dl-resp"/.test(hw));
 t('traz o valor atual', /list="dl-solic"[^>]*value="Comercial"/.test(hw),
   (hw.match(/list="dl-solic"[^>]{0,60}/)||[''])[0]);
 t('clicar não abre o modal', /class="tx-sel"[\s\S]{0,240}stopPropagation/.test(hw));

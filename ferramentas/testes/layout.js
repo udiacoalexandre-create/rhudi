@@ -169,7 +169,7 @@ const cabPub=(PUB.match(/const cabecalho=([\s\S]*?);\n/)||['',''])[1]
   .replace(/'\s*\+\s*'/g,'').replace(/^'|'$/g,'');
 const rotPub=(cabPub.match(/<th[^>]*>([\s\S]*?)<\/th>/g)||[]).map(x=>x.replace(/<[^>]*>/g,'').trim());
 t('a pagina publica usa os mesmos rotulos curtos',
-  rotPub.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Responsável|Entrada|Área',
+  rotPub.join('|')==='Demanda|Prio.|Entrega|Status|Quem pediu|Responsável|Entrada|Rolou',
   rotPub.join('|'));
 t('o nome inteiro da coluna continua acessivel no title',
   /title="Prioridade"/.test(PUB) && /title="Entrega estimada[^"]*"/.test(PUB));
@@ -201,7 +201,10 @@ console.log('\n== 10) NOME E ÁREA CABEM ==');
 // 6 entrada · 7 área · 8 editar
 t('quem pediu cabe um nome', parseFloat(APP.DM_COLS[4])>=140, APP.DM_COLS[4]);
 t('responsável também', parseFloat(APP.DM_COLS[5])>=140, APP.DM_COLS[5]);
-t('área ficou mais larga (era 100px)', parseFloat(APP.DM_COLS[7])>100, APP.DM_COLS[7]);
+t('a coluna Área saiu da tabela', !/<th>Área<\/th>/.test(li)
+  && !/<td>[^<]*list="dl-area"/.test(li) && !/class="tx-sel" list="dl-area"/.test(li),
+  (li.match(/<th[^>]*>[^<]*/g)||[]).join(' | '));
+t('no lugar dela, a rolagem do prazo', /Rolou<\/th>/.test(li));
 t('cabe um nome completo em quem pediu',
   parseFloat(APP.DM_COLS[4])/6.4>'MARIZAN PEREIRA DOURADA'.length,
   'cabem ~'+Math.floor(parseFloat(APP.DM_COLS[4])/6.4)+' caracteres');
