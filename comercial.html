@@ -248,6 +248,15 @@ table.dm--fixa td{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .sp-cab--futura{ border-left-color:var(--cm-andamento) }
 .sp-cab--passada{ border-left-color:var(--border-strong,#cbd5e1); opacity:.75 }
 .sp-cab--sem{ border-left-style:dashed; background:var(--surface-soft,#f8fafc) }
+/* A reclassificar: sprint encerrada sem entrega. Fica no alto, aberto, e
+   com peso visual — e o unico bloco que pede uma decisao. */
+.vc-bloco{ margin-bottom:14px }
+.vc-cab{ border-left-color:var(--cm-alta); border-color:#fecaca; background:#fef2f2;
+  cursor:default; padding:5px 11px }
+.vc-cab:hover{ border-color:#fecaca }
+.vc-cab .sp-seta{ color:var(--cm-alta) }
+.vc-cab .sp-tit{ color:var(--cm-alta) }
+.vc-selo{ background:var(--cm-alta); color:#fff }
 .sp-cab{ cursor:pointer }
 .sp-cab:hover{ border-color:var(--brand) }
 .sp-seta{ font-size:12px; color:var(--text-muted); flex-shrink:0 }

@@ -1186,102 +1186,12 @@ function demandasFiltradas(){
     return prioNum(a.prioridade)-prioNum(b.prioridade);
   });
 }
-function pintarDemandas(){
-  avisoConexao();
-  const lista=demandasFiltradas();
-  // Indicadores: o volume e o que está chegando, e depois o retrato por
-  // status. Contam a base INTEIRA, não o filtro — é panorama, não recorte.
-  const st=$('dm-stats');
-  if(st){
-    const abertas=demandas.filter(d=>d.status!=='entregue');
-    const dentro=(a,b)=>abertas.filter(d=>{ const n=diasAte(d.prazo);
-      return n!==null && n>=a && n<=b; }).length;
-    const passou=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n<0; }).length;
-    // número e rótulo na mesma linha: ocupa metade da altura do formato antigo
-    const num=(n,l,h,cor)=>'<div class="stat1">'
-      +'<span class="stat1__n"'+(cor?' style="color:'+cor+'"':'')+'>'+n+'</span>'
-      +'<span class="stat1__l">'+l+(h?ajuda(h):'')+'</span></div>';
-    st.innerHTML='<div class="stats stats--slim">'
-      +num(demandas.length,'tickets no total',
-        'Todas as demandas cadastradas, entregues incluídas. Em aberto hoje: '+abertas.length+'.')
-      +num(dentro(0,7),'estimadas em 7 dias','Entrega estimada de hoje até 7 dias, sem contar as entregues.')
-      +num(dentro(0,15),'estimadas em 15 dias','Mesma conta em 15 dias — inclui as de 7.')
-      +(passou?num(passou,'estimativa passou',
-        'A entrega estimada pela parceira já passou e a demanda não está como Entregue. '
-        +'É estimativa, não prazo contratado: se ela reestimou, atualize a data na linha.',
-        'var(--cm-alta)'):'')
-      // Retrato por status, clicável: vira filtro sem precisar do seletor.
-      +'<span class="stats__sep"></span>'
-      +STATUS.map(o=>{
-        const n=demandas.filter(d=>sInfo(d.status).v===o.v).length;
-        const on=filtroDem.status===o.v;
-        return '<button class="st-tot__b'+(on?' st-tot__b--on':'')+'" '
-          +'style="--c:'+o.cor+'" onclick="filtrarPorStatus(\''+(on?'':o.v)+'\')" '
-          +'title="'+(on?'Tirar o filtro':'Ver só '+o.l)+'">'
-          +'<span class="st-tot__n">'+n+'</span> '+esc(o.l)+'</button>';
-      }).join('')
-      +'</div>';
-  }
-  const el=$('dm-lista'); if(!el) return;
-  if(!lista.length){
-    el.innerHTML='<div class="vazio"><div class="vazio__ic"><i class="ti ti-clipboard-list"></i></div>'
-      +'<p>'+(demandas.length?'Nenhuma demanda com os filtros atuais.'
-        :'Nenhuma demanda ainda. Clique em <strong>Nova demanda</strong>.')+'</p></div>';
-    return;
-  }
-  // Agrupa pela sprint da entrega estimada. Quem não tem prazo vai para um
-  // grupo no fim — são a maioria hoje, e esconder isso seria pior.
-  const grupos=new Map();
-  lista.forEach(d=>{
-    const sp=sprintDe(d.prazo);
-    const k=sp?sp.chave:'zz-sem-prazo';
-    if(!grupos.has(k)) grupos.set(k,{sp, itens:[]});
-    grupos.get(k).itens.push(d);
-  });
-  const ordenadas=[...grupos.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
-  const hojeISO=new Date().toISOString().slice(0,10);
-  const dISO=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  // Onde cada sprint entra na tela
-  const fase=g=>{
-    if(!g.sp) return 'sem';
-    if(dISO(g.sp.fim) < hojeISO) return 'passada';
-    if(dISO(g.sp.ini) > hojeISO) return 'futura';
-    return 'atual';
-  };
-  const passadas=[], demais=[];
-  ordenadas.forEach(e=>{ (fase(e[1])==='passada'?passadas:demais).push(e); });
-
-  const bloco=([chave,g])=>{
-    // Dentro da sprint: a ENTREGA manda — é por ela que a Dev&Co e a Udiaço
-    // acompanham. A prioridade só desempata quando duas caem no mesmo dia.
-    const itens=g.itens.slice().sort((a,b)=>{
-      const d=String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
-      if(d) return d;
-      return prioNum(a.prioridade)-prioNum(b.prioridade);
-    });
-    const f=fase(g);
-    const abertas=itens.filter(d=>d.status!=='entregue').length;
-    // Quanto falta para a sprint atual fechar — é o que dá noção de urgência.
-    const restam = f==='atual' ? Math.round((g.sp.fim-hoje0())/86400000)+1 : null;
-    const selo = f==='atual'   ? '<span class="sp-selo sp-selo--atual">Sprint atual'
-                                  +(restam!=null?' · '+(restam===1?'último dia':'faltam '+restam+' dias'):'')+'</span>'
-               : f==='futura'  ? '<span class="sp-selo">a seguir</span>'
-               : f==='passada' ? '<span class="sp-selo sp-selo--enc">encerrada</span>'
-               : '<span class="sp-selo sp-selo--sem">sem data na planilha</span>';
-    const fechada=spFechadas.has(chave);
-    return '<div class="sp-bloco'+(f==='atual'?' sp-bloco--atual':'')+'">'
-      +'<div class="sp-cab sp-cab--'+f+'" onclick="alternarSprint(\''+chave+'\')" '
-        +'title="'+(fechada?'Abrir':'Recolher')+' esta sprint">'
-        +'<i class="ti ti-chevron-'+(fechada?'right':'down')+' sp-seta"></i>'
-        +'<span class="sp-tit">'+esc(sprintTitulo(g.sp))+'</span>'
-        +selo
-        +'<span style="flex:1"></span>'
-        +'<span class="sp-n">'+abertas+' em aberto'
-          +(abertas!==itens.length?' <span style="opacity:.7">de '+itens.length+'</span>':'')+'</span>'
-      +'</div>'
-      +(fechada?''
-      : '<div class="tbl-wrap"><table class="dm dm--fixa">'+dmColgroup+dmCabecalho+'<tbody>'
-      +itens.map(d=>{
+// A tabela de demandas serve a dois blocos: as sprints e o quadro das
+// vencidas a reclassificar. Uma funcao so, para as duas listas terem as
+// mesmas colunas e os mesmos campos editaveis.
+function tabelaDm(itens){
+  return '<div class="tbl-wrap"><table class="dm dm--fixa">'+dmColgroup+dmCabecalho+'<tbody>'
+    +itens.map(d=>{
         const n=diasAte(d.prazo);
         const entregue=d.status==='entregue';
         const cls = entregue||n===null ? '' : (n<0?'prazo-venc':(n<=7?'prazo-perto':''));
@@ -1330,7 +1240,117 @@ function pintarDemandas(){
             +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\')">'
             +'<i class="ti ti-pencil"></i></button></td>'
           +'</tr>';
-      }).join('')+'</tbody></table></div>')
+      }).join('')+'</tbody></table></div>';
+}
+
+function pintarDemandas(){
+  avisoConexao();
+  const lista=demandasFiltradas();
+  // Indicadores: o volume e o que está chegando, e depois o retrato por
+  // status. Contam a base INTEIRA, não o filtro — é panorama, não recorte.
+  const st=$('dm-stats');
+  if(st){
+    const abertas=demandas.filter(d=>d.status!=='entregue');
+    const dentro=(a,b)=>abertas.filter(d=>{ const n=diasAte(d.prazo);
+      return n!==null && n>=a && n<=b; }).length;
+    const passou=abertas.filter(d=>{ const n=diasAte(d.prazo); return n!==null && n<0; }).length;
+    // número e rótulo na mesma linha: ocupa metade da altura do formato antigo
+    const num=(n,l,h,cor)=>'<div class="stat1">'
+      +'<span class="stat1__n"'+(cor?' style="color:'+cor+'"':'')+'>'+n+'</span>'
+      +'<span class="stat1__l">'+l+(h?ajuda(h):'')+'</span></div>';
+    st.innerHTML='<div class="stats stats--slim">'
+      +num(demandas.length,'tickets no total',
+        'Todas as demandas cadastradas, entregues incluídas. Em aberto hoje: '+abertas.length+'.')
+      +num(dentro(0,7),'estimadas em 7 dias','Entrega estimada de hoje até 7 dias, sem contar as entregues.')
+      +num(dentro(0,15),'estimadas em 15 dias','Mesma conta em 15 dias — inclui as de 7.')
+      +(passou?num(passou,'estimativa passou',
+        'A entrega estimada pela parceira já passou e a demanda não está como Entregue. '
+        +'É estimativa, não prazo contratado: se ela reestimou, atualize a data na linha.',
+        'var(--cm-alta)'):'')
+      // Retrato por status, clicável: vira filtro sem precisar do seletor.
+      +'<span class="stats__sep"></span>'
+      +STATUS.map(o=>{
+        const n=demandas.filter(d=>sInfo(d.status).v===o.v).length;
+        const on=filtroDem.status===o.v;
+        return '<button class="st-tot__b'+(on?' st-tot__b--on':'')+'" '
+          +'style="--c:'+o.cor+'" onclick="filtrarPorStatus(\''+(on?'':o.v)+'\')" '
+          +'title="'+(on?'Tirar o filtro':'Ver só '+o.l)+'">'
+          +'<span class="st-tot__n">'+n+'</span> '+esc(o.l)+'</button>';
+      }).join('')
+      +'</div>';
+  }
+  const el=$('dm-lista'); if(!el) return;
+  if(!lista.length){
+    el.innerHTML='<div class="vazio"><div class="vazio__ic"><i class="ti ti-clipboard-list"></i></div>'
+      +'<p>'+(demandas.length?'Nenhuma demanda com os filtros atuais.'
+        :'Nenhuma demanda ainda. Clique em <strong>Nova demanda</strong>.')+'</p></div>';
+    return;
+  }
+  // Agrupa pela sprint da entrega estimada. Quem não tem prazo vai para um
+  // grupo no fim — são a maioria hoje, e esconder isso seria pior.
+  // Sprint encerrada leva junto o que NAO foi entregue: a demanda sumia do
+  // controle sem ninguem decidir nada sobre ela. Essas saem do agrupamento e
+  // vao para um bloco no alto, para serem reclassificadas — e a sprint
+  // encerrada guarda so o que de fato acabou.
+  const _dISOv=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')
+    +'-'+String(d.getDate()).padStart(2,'0');
+  const _hojeV=_dISOv(hoje0());
+  const aReclassificar = d => {
+    if(sInfo(d.status).v==='entregue') return false;
+    const sp=sprintDe(d.prazo);
+    return !!sp && _dISOv(sp.fim) < _hojeV;
+  };
+  const vencidas = lista.filter(aReclassificar);
+  const grupos=new Map();
+  lista.filter(d=>!aReclassificar(d)).forEach(d=>{
+    const sp=sprintDe(d.prazo);
+    const k=sp?sp.chave:'zz-sem-prazo';
+    if(!grupos.has(k)) grupos.set(k,{sp, itens:[]});
+    grupos.get(k).itens.push(d);
+  });
+  const ordenadas=[...grupos.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
+  const hojeISO=new Date().toISOString().slice(0,10);
+  const dISO=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // Onde cada sprint entra na tela
+  const fase=g=>{
+    if(!g.sp) return 'sem';
+    if(dISO(g.sp.fim) < hojeISO) return 'passada';
+    if(dISO(g.sp.ini) > hojeISO) return 'futura';
+    return 'atual';
+  };
+  const passadas=[], demais=[];
+  ordenadas.forEach(e=>{ (fase(e[1])==='passada'?passadas:demais).push(e); });
+
+  const bloco=([chave,g])=>{
+    // Dentro da sprint: a ENTREGA manda — é por ela que a Dev&Co e a Udiaço
+    // acompanham. A prioridade só desempata quando duas caem no mesmo dia.
+    const itens=g.itens.slice().sort((a,b)=>{
+      const d=String(a.prazo||'9999').localeCompare(String(b.prazo||'9999'));
+      if(d) return d;
+      return prioNum(a.prioridade)-prioNum(b.prioridade);
+    });
+    const f=fase(g);
+    const abertas=itens.filter(d=>d.status!=='entregue').length;
+    // Quanto falta para a sprint atual fechar — é o que dá noção de urgência.
+    const restam = f==='atual' ? Math.round((g.sp.fim-hoje0())/86400000)+1 : null;
+    const selo = f==='atual'   ? '<span class="sp-selo sp-selo--atual">Sprint atual'
+                                  +(restam!=null?' · '+(restam===1?'último dia':'faltam '+restam+' dias'):'')+'</span>'
+               : f==='futura'  ? '<span class="sp-selo">a seguir</span>'
+               : f==='passada' ? '<span class="sp-selo sp-selo--enc">encerrada</span>'
+               : '<span class="sp-selo sp-selo--sem">sem data na planilha</span>';
+    const fechada=spFechadas.has(chave);
+    return '<div class="sp-bloco'+(f==='atual'?' sp-bloco--atual':'')+'">'
+      +'<div class="sp-cab sp-cab--'+f+'" onclick="alternarSprint(\''+chave+'\')" '
+        +'title="'+(fechada?'Abrir':'Recolher')+' esta sprint">'
+        +'<i class="ti ti-chevron-'+(fechada?'right':'down')+' sp-seta"></i>'
+        +'<span class="sp-tit">'+esc(sprintTitulo(g.sp))+'</span>'
+        +selo
+        +'<span style="flex:1"></span>'
+        +'<span class="sp-n">'+abertas+' em aberto'
+          +(abertas!==itens.length?' <span style="opacity:.7">de '+itens.length+'</span>':'')+'</span>'
+      +'</div>'
+      +(fechada?''
+      : tabelaDm(itens))
     +'</div>';
   };
 
@@ -1344,9 +1364,35 @@ function pintarDemandas(){
       +(verEncerradas?'<div class="enc-corpo">'+passadas.map(bloco).join('')+'</div>':'')
     : '';
 
-  el.innerHTML=_dmDatalists()+demais.map(bloco).join('')+encHtml
+  // As vencidas vao no ALTO, abertas, e nao dentro de uma sprint encerrada:
+  // sao as unicas que dependem de uma decisao para seguir.
+  const vencHtml = vencidas.length
+    ? (()=>{
+        const ord=vencidas.slice().sort((a,b)=>
+          String(a.prazo||'').localeCompare(String(b.prazo||''))
+          || prioNum(a.prioridade)-prioNum(b.prioridade));
+        const maisVelha=Math.abs(diasAte(ord[0].prazo)||0);
+        return '<div class="sp-bloco vc-bloco">'
+          +'<div class="sp-cab vc-cab">'
+            +'<i class="ti ti-alert-triangle sp-seta"></i>'
+            +'<span class="sp-tit">A reclassificar</span>'
+            +'<span class="sp-selo vc-selo">sprint encerrada sem entrega</span>'
+            +ajuda('A sprint destas demandas terminou e elas não foram entregues. '
+                  +'Antes elas iam junto para as sprints encerradas e sumiam do controle. '
+                  +'Mude a entrega estimada para reprogramá-las, ou o status para fechá-las.')
+            +'<span style="flex:1"></span>'
+            +'<span class="sp-n">'+ord.length+' em aberto'
+              +(maisVelha?' · a mais antiga venceu há '+maisVelha+'d':'')+'</span>'
+          +'</div>'
+          +tabelaDm(ord)
+        +'</div>';
+      })()
+    : '';
+  el.innerHTML=_dmDatalists()+vencHtml+demais.map(bloco).join('')+encHtml
     +'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:10px">'
-    +lista.length+' de '+demandas.length+' demanda(s) em '+ordenadas.length+' sprint(s)</div>';
+    +lista.length+' de '+demandas.length+' demanda(s)'
+    +(vencidas.length?' · '+vencidas.length+' a reclassificar':'')
+    +' em '+ordenadas.length+' sprint(s)</div>';
 }
 
 function modalDemanda(id){

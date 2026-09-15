@@ -102,8 +102,15 @@ const h=NODES['dm-lista']._html;
 t('2 blocos visíveis (a de agosto foi para as encerradas)',
   (h.match(/class="sp-bloco"/g)||[]).length===2,
   'n='+(h.match(/class="sp-bloco"/g)||[]).length);
-t('a encerrada está no toggle', /1 sprint encerrada · 1 demanda/.test(h),
-  (h.match(/sprints? encerradas?[^<]*/)||[''])[0]);
+// A de agosto NAO foi entregue: sobe para 'A reclassificar' em vez de sumir
+// dentro das encerradas (ver reclassificar.js).
+t('a de agosto, em aberto, virou A reclassificar', /vc-bloco/.test(h)
+  && h.indexOf('Sprint anterior')>h.indexOf('vc-bloco'),
+  (h.match(/sp-tit">[^<]*/g)||[]).join(' | '));
+// pelo TOGGLE, nao pelo texto: o selo do bloco novo diz 'sprint encerrada
+// sem entrega' e casaria por engano
+t('e nao sobrou sprint encerrada (a unica demanda dela subiu)',
+  !/class="enc-tg"/.test(h), (h.match(/enc-tg[^<]*/)||[''])[0]);
 t('bloco "Sem prazo definido" existe', /Sem prazo definido/.test(h));
 t('sem prazo fica por último dos visíveis', h.indexOf('Sem prazo definido')>h.indexOf('Prio 0 na 1ª sprint'));
 t('conta as demandas do bloco', /class="sp-n">3 em aberto</.test(h), (h.match(/sp-n">[^<]*/g)||[]).join(' | '));
@@ -114,7 +121,7 @@ const pos=n=>h.indexOf(n);
 t('prio 0 antes da 2', pos('Prio 0 na 1ª sprint')<pos('Prio 2 na 1ª sprint'));
 t('prio 2 antes da 10', pos('Prio 2 na 1ª sprint')<pos('Prio 10 na 1ª sprint'));
 t('sem prioridade vai depois', pos('Sem prazo prio 1')<pos('Sem prazo nenhum'));
-t('a de agosto não está na tela', pos('Sprint anterior')<0);
+t('a de agosto está na tela, no bloco do alto', pos('Sprint anterior')>0);
 
 console.log('\n══ 3) DESCRITIVO NO HOVER ══');
 t('não existe mais coluna Descritivo', !/<th>Descritivo<\/th>/.test(h));
@@ -128,14 +135,14 @@ t('quem não tem descritivo não ganha hover', !/onmouseenter="mostrarDesc\(even
 t('CSS do tracejado', /\.tem-desc\{/.test(HTML));
 
 console.log('\n══ 4) TODAS EDITÁVEIS ══');
-t('botão de editar nas 5 linhas visíveis', (h.match(/class="btn-ed"/g)||[]).length===5,
+t('botão de editar nas 6 linhas visíveis', (h.match(/class="btn-ed"/g)||[]).length===6,
   'n='+(h.match(/class="btn-ed"/g)||[]).length);
-t('coluna Editar em cada bloco aberto',
-  (h.match(/<th style="text-align:center" title="Editar"><i class="ti ti-pencil"><\/i><\/th>/g)||[]).length===2,
+t('coluna Editar em cada bloco aberto (com o de reclassificar, 3)',
+  (h.match(/<th style="text-align:center" title="Editar"><i class="ti ti-pencil"><\/i><\/th>/g)||[]).length===3,
   (h.match(/<th[^>]*title="Editar"[^>]*>[^<]*/g)||[]).join(' | '));
 t('botão abre o modal', /event.stopPropagation\(\);modalDemanda\('a'\)/.test(h));
 t('a linha inteira também abre', /class="clicavel"[^>]*onclick="modalDemanda\('a'\)"/.test(h));
-t('as 5 visíveis com onclick na linha e no botão', (h.match(/modalDemanda\('/g)||[]).length===10, 'n='+(h.match(/modalDemanda\('/g)||[]).length);
+t('as 6 visíveis com onclick na linha e no botão', (h.match(/modalDemanda\('/g)||[]).length===12, 'n='+(h.match(/modalDemanda\('/g)||[]).length);
 t('CSS do botão', /\.btn-ed\{/.test(HTML));
 
 console.log('\n══ 5) O SELETOR DE CADÊNCIA ══');
