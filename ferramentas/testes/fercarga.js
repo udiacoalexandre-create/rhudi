@@ -42,7 +42,8 @@ const nomes=Object.keys(sandbox);
 const API=['ferTemCarga','ferDaCarga','ferPeriodosAquisitivos','ferFaixa','ferFaixaInfo',
   'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte',
   'ferExtrato','ferExtratoCarga','ferFichaHTML','ferCabHTML','ferSituacao','ferSitPeriodo',
-  'ferHistoricoDobra','ferAlternarHistorico','FER_FAIXAS','_fpBase','renderFerPeriodos'];
+  'ferHistoricoDobra','ferAlternarHistorico','FER_FAIXAS','_fpBase','renderFerPeriodos','abrirDetalheFerias','salvarDetalheFerias',
+  'ferPeriodosHTML','naveColab'];
 let APP;
 console.log('-- CARGA --');
 try{
@@ -290,5 +291,35 @@ t('o kanban mostra as seis faixas, mesmo sem gente',
     .every(r=>rot.includes(r)), rot.join(' | '));
 t('coluna sem ninguem diz ninguem', /kan-vazia/.test(kanHTML));
 t('vencido so aparece quando ha alguem', !rot.includes('Vencido'), rot.join(' | '));
+console.log('\n== 13) A TELA DE EDICAO ==');
+let modalHTML='';
+document.body.insertAdjacentHTML=(pos,h)=>{ modalHTML+=h; };
+APP.setColabs([rodrigo]);
+try{ APP.abrirDetalheFerias('r'); }catch(e){ modalHTML='ERRO: '+e.message; }
+const ed=modalHTML.slice(modalHTML.indexOf('id="ferd-edit"'), modalHTML.indexOf('id="ferd-alertas"'));
+t('a edicao abre', ed.length>200, 'len='+modalHTML.length+' :: '+modalHTML.slice(0,200));
+t('admissao e vencimento so no cabecalho, sem campo',
+  /ferd-cab/.test(ed) && !/id="ferd-admissao"/.test(ed) && !/id="ferd-venc"/.test(ed));
+t('da para mudar saldo e mes', /id="ferd-saldo"/.test(ed) && /id="ferd-mes"/.test(ed));
+t('da para mudar funcao e nave', /id="ferd-funcao"/.test(ed) && /id="ferd-nave"/.test(ed));
+t('a funcao sugere as que ja existem', /list="ferd-funcoes"/.test(ed));
+t('os periodos aparecem na edicao', /fch-per__cab/.test(ed));
+t('com os campos de agendar e dias vendidos',
+  /id="ferd-inicio"/.test(ed) && /id="ferd-fim"/.test(ed) && /id="ferd-comprados"/.test(ed));
+
+// Salvar daqui muda o cadastro: e o mesmo documento do colaborador.
+const alvo=Object.assign({}, rodrigo, {funcao:'VENDEDOR', nave:'N/A'});
+APP.setColabs([alvo]);
+const campo=(id,v)=>{ document.getElementById(id).value=v; };
+campo('ferd-saldo','30'); campo('ferd-mes','Outubro');
+campo('ferd-funcao','conferente'); campo('ferd-nave','Nave 02');
+campo('ferd-inicio',''); campo('ferd-fim',''); campo('ferd-comprados','0');
+let erroSalvar='';
+APP.salvarDetalheFerias('r').catch(e=>{erroSalvar=e.message;});
+t('a funcao editada aqui vai para o cadastro', alvo.funcao==='CONFERENTE', alvo.funcao+' '+erroSalvar);
+t('e a nave tambem', alvo.nave==='Nave 02', alvo.nave);
+t('a mudanca fica registrada no historico',
+  (alvo.feriasLog||[]).some(l=>(l.mudancas||[]).some(m=>m.campo==='funcao'||m.campo==='nave')),
+  JSON.stringify((alvo.feriasLog||[]).slice(-1)));
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

@@ -6334,7 +6334,8 @@ const FER_CAMPOS_AUDIT={
   ferSaldo:'saldo', ferVenc:'vencimento', ferMes:'mês de agendamento',
   ferAno:'ano do agendamento', admissao:'admissão', ferInicio:'início das férias',
   ferFim:'último dia de férias', ferDiasComprados:'dias vendidos',
-  status:'status', ferDiasGozados:'dias gozados'
+  status:'status', ferDiasGozados:'dias gozados',
+  funcao:'função', nave:'nave'
 };
 function _ferQuem(){
   return (usuarioAtual&&(usuarioAtual.email||usuarioAtual.nome))||'(usuário não identificado)';
@@ -6640,31 +6641,12 @@ function ferCabHTML(c, admTxt, agHtml){
   +'</div>';
 }
 
-function ferFichaHTML(c, ex, hoje, cabHtml){
-  if(!ex) return '<div class="alert alert-info">Sem período de férias para mostrar.</div>';
+// Os períodos: de onde vêm os dias. Mesmo bloco na leitura e na edição.
+function ferPeriodosHTML(c, ex, hoje){
   const h=_hoje0(hoje);
   const dm=d=>d?_ddmm(d)+'/'+d.getFullYear():'—';
-  const sit=ferSituacao(c, ex, hoje);
-  const disp=ex.somaSaldos;
-
-  // ── 1. TOPO: quem é, à esquerda; quantos dias tem, à direita ─────────
-  // O número grande é a soma dos períodos. Negativo acontece — quem saiu
-  // antes de o período vencer, e nas coletivas — e é informação, não erro.
-  const topo='<div class="fch-topo'+(disp<0?' fch-topo--neg':'')+'">'
-    +'<div class="fch-topo__id">'+(cabHtml||'')+'</div>'
-    +'<div class="fch-topo__sal">'
-      +'<div class="fch-saldo__n">'+disp+'</div>'
-      +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
-        +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
-      +(sit.k==='pendente'
-        ? '<button class="btn btn-primary btn-sm fch-ag" onclick="ferdAgendar()" '
-            +'title="'+escH(sit.dica)+'"><i class="ti ti-calendar-plus"></i> Agendar</button>'
-        : '<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>')
-    +'</div></div>';
-
-  // ── 2. PERÍODOS ──────────────────────────────────────────────────────
   // Do mais recente para o mais antigo: o de cima e o que esta valendo.
-  const periodos=ex.periodos.slice().reverse().map(p=>{
+  return ex.periodos.slice().reverse().map(p=>{
     const s=ferSitPeriodo(p, hoje);
     const ultimoInicio=ferUltimoInicio(p);
     const movs=(p.lancamentos||[]).filter(l=>l.tipo!=='anterior');
@@ -6696,6 +6678,31 @@ function ferFichaHTML(c, ex, hoje, cabHtml){
             +p.aberto+'d</span></div>')
     +'</div>';
   }).join('');
+}
+
+function ferFichaHTML(c, ex, hoje, cabHtml){
+  if(!ex) return '<div class="alert alert-info">Sem período de férias para mostrar.</div>';
+  const h=_hoje0(hoje);
+  const dm=d=>d?_ddmm(d)+'/'+d.getFullYear():'—';
+  const sit=ferSituacao(c, ex, hoje);
+  const disp=ex.somaSaldos;
+
+  // ── 1. TOPO: quem é, à esquerda; quantos dias tem, à direita ─────────
+  // O número grande é a soma dos períodos. Negativo acontece — quem saiu
+  // antes de o período vencer, e nas coletivas — e é informação, não erro.
+  const topo='<div class="fch-topo'+(disp<0?' fch-topo--neg':'')+'">'
+    +'<div class="fch-topo__id">'+(cabHtml||'')+'</div>'
+    +'<div class="fch-topo__sal">'
+      +'<div class="fch-saldo__n">'+disp+'</div>'
+      +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
+        +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
+      +(sit.k==='pendente'
+        ? '<button class="btn btn-primary btn-sm fch-ag" onclick="ferdAgendar()" '
+            +'title="'+escH(sit.dica)+'"><i class="ti ti-calendar-plus"></i> Agendar</button>'
+        : '<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>')
+    +'</div></div>';
+
+  const periodos=ferPeriodosHTML(c, ex, hoje);
 
   return topo
     +'<div class="section-label" style="margin-top:14px">Períodos</div>'
@@ -6910,10 +6917,12 @@ function abrirDetalheFerias(id,editando){
           </div>
 
           <div id="ferd-edit" style="display:none">
-            <div class="section-label">Editar dados de férias</div>
-            <div class="form-grid cols2">
-              <div class="fg"><label>Data de admissão</label><input type="date" id="ferd-admissao" value="${c.admissao||''}"></div>
-              <div class="fg"><label>Vencimento (dia/mês)</label><input type="text" id="ferd-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}"></div>
+            <div class="ferd-cab">
+              <div><span class="ferd-lbl">Admissão</span><span class="ferd-val">${admTxt}</span></div>
+              <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span>
+                ${_ajuda('Admissão e vencimento vêm do cadastro. Para corrigi-los, use Colaboradores.')}</div>
+            </div>
+            <div class="form-grid cols2" style="margin-top:14px">
               <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="ferd-saldo" value="${saldo}" min="-90" max="90"></div>
               <div class="fg"><label>Mês agendado</label>
                 <select id="ferd-mes" onchange="atualizarAnoFerd()">
@@ -6922,8 +6931,15 @@ function abrirDetalheFerias(id,editando){
                 </select>
                 <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'—'}</strong></span>
               </div>
+              <div class="fg"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label>
+                <input type="text" id="ferd-funcao" list="ferd-funcoes" value="${escH(funcaoColab(c))}" onchange="verificarAlertasFerias('${id}')">
+                <datalist id="ferd-funcoes">${getFuncaoList().map(f=>'<option value="'+escH(f)+'">').join('')}</datalist></div>
+              <div class="fg"><label>Nave</label>
+                <select id="ferd-nave" onchange="verificarAlertasFerias('${id}')">${naveOptions(c)}</select></div>
             </div>
-            <div class="section-sep" style="margin-top:14px"><i class="ti ti-umbrella"></i> Período em gozo e dias vendidos</div>
+            <div class="section-label" style="margin-top:16px">Períodos</div>
+            <div class="fch-pers">${ferPeriodosHTML(c,_ferdEx,new Date())}</div>
+            <div class="section-sep" style="margin-top:14px"><i class="ti ti-umbrella"></i> Agendar as férias</div>
             <div class="form-grid cols3">
               <div class="fg"><label>Início das férias</label><input type="date" id="ferd-inicio" value="${c.ferInicio||''}" onchange="_ferdPrevia()"></div>
               <div class="fg"><label>Último dia de férias</label><input type="date" id="ferd-fim" value="${c.ferFim||''}" onchange="_ferdPrevia()">
@@ -6932,7 +6948,7 @@ function abrirDetalheFerias(id,editando){
                 <span class="text-xs text-muted" style="margin-top:2px">Limite legal: 10 dias.</span></div>
             </div>
             <div id="ferd-previa" class="text-xs" style="margin-top:6px"></div>
-            <p class="text-xs text-muted" style="margin-top:8px">A alteração vale para este colaborador em todo o sistema — cadastro, Controle de Férias e o cálculo dos benefícios da competência. Vencimento em dia/mês (o ano é gerido pelo sistema). Saldo pode ser negativo (antecipação).</p>
+            <p class="text-xs text-muted" style="margin-top:8px">A alteração vale em todo o sistema — cadastro, Controle de Férias e os benefícios da competência.</p>
           </div>
 
           <div id="ferd-alertas" style="margin-top:10px"></div>
@@ -7076,8 +7092,8 @@ async function salvarDetalheFerias(id){
   const c=colaboradores.find(x=>x._id===id); if(!c) return;
   const saldo=fnum(document.getElementById('ferd-saldo')?.value);
   const mes=document.getElementById('ferd-mes')?.value||'';
-  const venc=document.getElementById('ferd-venc')?.value||'';
-  const admissao=document.getElementById('ferd-admissao')?.value||'';
+  const funcao=(document.getElementById('ferd-funcao')?.value||'').trim().toUpperCase();
+  const nave=document.getElementById('ferd-nave')?.value||'N/A';
   const ini=document.getElementById('ferd-inicio')?.value||'';
   const fim=document.getElementById('ferd-fim')?.value||'';
   const comprados=fnum(document.getElementById('ferd-comprados')?.value);
@@ -7089,9 +7105,11 @@ async function salvarDetalheFerias(id){
   const antIni=c.ferInicio, antFim=c.ferFim;
   const antes=Object.assign({},c);          // retrato para a auditoria
   c.ferSaldo=saldo;
-  c.ferVenc=_resolveVencInput(venc, c.ferVenc);
   c.ferMes=mes;
-  c.admissao=admissao||c.admissao||'';
+  // Função e nave moram no cadastro; editadas aqui, mudam lá também — é o
+  // mesmo documento do colaborador.
+  if(funcao) c.funcao=funcao;
+  c.nave=NAVES.includes(nave)?nave:'N/A';
   c.ferInicio=ini; c.ferFim=fim;
   c.ferDiasComprados=comprados;
   ferRegistrarPeriodo(c,ini,fim,comprados,antIni,antFim);
