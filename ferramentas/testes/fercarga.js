@@ -303,7 +303,14 @@ t('admissao e vencimento so no cabecalho, sem campo',
 t('da para mudar saldo e mes', /id="ferd-saldo"/.test(ed) && /id="ferd-mes"/.test(ed));
 t('da para mudar funcao e nave', /id="ferd-funcao"/.test(ed) && /id="ferd-nave"/.test(ed));
 t('a funcao sugere as que ja existem', /list="ferd-funcoes"/.test(ed));
-t('os periodos aparecem na edicao', /fch-per__cab/.test(ed));
+t('os periodos aparecem na edicao, em uma linha cada',
+  /fch-per--slim/.test(ed) && !/fch-per__cab/.test(ed));
+t('sem textos de apoio soltos na edicao',
+  !/Ano calculado/.test(ed) && !/O retorno é no dia seguinte/.test(ed)
+  && !/text-xs text-muted/.test(ed) && !/vale em todo o sistema/.test(ed));
+t('as explicacoes viraram mouse over', (ed.match(/<label title="/g)||[]).length>=5,
+  'labels com title: '+(ed.match(/<label title="/g)||[]).length);
+t('e sem bolinhas de ? na edicao', !/class="ajuda"/.test(ed));
 t('com os campos de agendar e dias vendidos',
   /id="ferd-inicio"/.test(ed) && /id="ferd-fim"/.test(ed) && /id="ferd-comprados"/.test(ed));
 

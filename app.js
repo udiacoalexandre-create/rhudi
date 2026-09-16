@@ -6642,13 +6642,25 @@ function ferCabHTML(c, admTxt, agHtml){
 }
 
 // Os períodos: de onde vêm os dias. Mesmo bloco na leitura e na edição.
-function ferPeriodosHTML(c, ex, hoje){
+function ferPeriodosHTML(c, ex, hoje, enxuto){
   const h=_hoje0(hoje);
   const dm=d=>d?_ddmm(d)+'/'+d.getFullYear():'—';
   // Do mais recente para o mais antigo: o de cima e o que esta valendo.
   return ex.periodos.slice().reverse().map(p=>{
     const s=ferSitPeriodo(p, hoje);
     const ultimoInicio=ferUltimoInicio(p);
+    if(enxuto){
+      // Na edicao o periodo e contexto, nao leitura: uma linha basta. O resto
+      // da informacao continua no card, que e onde se le.
+      const nota=p.travado
+        ? 'Libera '+(p.direito||30)+' dias em '+dm(p.fim)
+        : 'Último dia para começar as férias: '+dm(ultimoInicio);
+      return '<div class="fch-per fch-per--slim'+(p.travado?' fch-per--trv':'')+'" title="'+nota+'">'
+        +'<span class="fch-per__dt">'+dm(p.ini)+' a '+dm(p.fim)+'</span>'
+        +'<span class="badge badge--'+s.cls+'">'+s.lbl+'</span>'
+        +'<span class="fch-per__sal'+(p.aberto<0?' fch-per__sal--neg':'')+'">'
+          +(p.travado?'—':p.aberto+'d')+'</span></div>';
+    }
     const movs=(p.lancamentos||[]).filter(l=>l.tipo!=='anterior');
     const anterior=(p.lancamentos||[]).filter(l=>l.tipo==='anterior')
       .reduce((s2,l)=>s2+l.dias,0);
@@ -6917,38 +6929,35 @@ function abrirDetalheFerias(id,editando){
           </div>
 
           <div id="ferd-edit" style="display:none">
-            <div class="ferd-cab">
+            <div class="ferd-cab" title="Admissão e vencimento vêm do cadastro. Para corrigi-los, use Colaboradores.">
               <div><span class="ferd-lbl">Admissão</span><span class="ferd-val">${admTxt}</span></div>
-              <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span>
-                ${_ajuda('Admissão e vencimento vêm do cadastro. Para corrigi-los, use Colaboradores.')}</div>
+              <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span></div>
             </div>
-            <div class="form-grid cols2" style="margin-top:14px">
-              <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="ferd-saldo" value="${saldo}" min="-90" max="90"></div>
-              <div class="fg"><label>Mês agendado</label>
+            <div class="form-grid cols2 ferd-form">
+              <div class="fg"><label title="Dias que ainda faltam gozar. Pode ser negativo, quando as férias foram antecipadas.">Saldo de dias</label>
+                <input type="number" id="ferd-saldo" value="${saldo}" min="-90" max="90"></div>
+              <div class="fg"><label title="Mês em que as férias estão previstas. O ano é calculado pelo sistema.">Mês agendado
+                <strong id="ferd-ano" class="ferd-ano">${c.ferMes?anoAgendadoColab(c):''}</strong></label>
                 <select id="ferd-mes" onchange="atualizarAnoFerd()">
                   <option value="">-- Não agendado --</option>
                   ${meses.map(m=>'<option value="'+m+'" '+(c.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
-                </select>
-                <span class="text-xs text-muted" style="margin-top:2px">Ano calculado: <strong id="ferd-ano">${c.ferMes?anoAgendadoColab(c):'—'}</strong></span>
-              </div>
-              <div class="fg"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label>
+                </select></div>
+              <div class="fg"><label title="É a função que define quem cobre quem nas férias. Alterar aqui altera o cadastro.">Função</label>
                 <input type="text" id="ferd-funcao" list="ferd-funcoes" value="${escH(funcaoColab(c))}" onchange="verificarAlertasFerias('${id}')">
                 <datalist id="ferd-funcoes">${getFuncaoList().map(f=>'<option value="'+escH(f)+'">').join('')}</datalist></div>
-              <div class="fg"><label>Nave</label>
+              <div class="fg"><label title="Nave onde a pessoa trabalha. Só quem divide função e nave disputa cobertura. Alterar aqui altera o cadastro.">Nave</label>
                 <select id="ferd-nave" onchange="verificarAlertasFerias('${id}')">${naveOptions(c)}</select></div>
             </div>
-            <div class="section-label" style="margin-top:16px">Períodos</div>
-            <div class="fch-pers">${ferPeriodosHTML(c,_ferdEx,new Date())}</div>
-            <div class="section-sep" style="margin-top:14px"><i class="ti ti-umbrella"></i> Agendar as férias</div>
-            <div class="form-grid cols3">
-              <div class="fg"><label>Início das férias</label><input type="date" id="ferd-inicio" value="${c.ferInicio||''}" onchange="_ferdPrevia()"></div>
-              <div class="fg"><label>Último dia de férias</label><input type="date" id="ferd-fim" value="${c.ferFim||''}" onchange="_ferdPrevia()">
-                <span class="text-xs text-muted" style="margin-top:2px">O retorno é no dia seguinte.</span></div>
-              <div class="fg"><label>Dias vendidos (abono)</label><input type="number" id="ferd-comprados" min="0" max="10" value="${fnum(c.ferDiasComprados)||0}" onchange="_ferdPrevia()">
-                <span class="text-xs text-muted" style="margin-top:2px">Limite legal: 10 dias.</span></div>
+            <div class="fch-pers fch-pers--slim">${ferPeriodosHTML(c,_ferdEx,new Date(),true)}</div>
+            <div class="form-grid cols3 ferd-form">
+              <div class="fg"><label title="Primeiro dia de férias.">Início</label>
+                <input type="date" id="ferd-inicio" value="${c.ferInicio||''}" onchange="_ferdPrevia()"></div>
+              <div class="fg"><label title="Último dia de férias — o retorno é no dia seguinte.">Último dia</label>
+                <input type="date" id="ferd-fim" value="${c.ferFim||''}" onchange="_ferdPrevia()"></div>
+              <div class="fg"><label title="Abono pecuniário: dias vendidos em vez de gozados. Limite legal de 10 dias.">Dias vendidos</label>
+                <input type="number" id="ferd-comprados" min="0" max="10" value="${fnum(c.ferDiasComprados)||0}" onchange="_ferdPrevia()"></div>
             </div>
-            <div id="ferd-previa" class="text-xs" style="margin-top:6px"></div>
-            <p class="text-xs text-muted" style="margin-top:8px">A alteração vale em todo o sistema — cadastro, Controle de Férias e os benefícios da competência.</p>
+            <div id="ferd-previa" class="text-xs"></div>
           </div>
 
           <div id="ferd-alertas" style="margin-top:10px"></div>
