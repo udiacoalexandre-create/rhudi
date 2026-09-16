@@ -39,7 +39,9 @@ const sandbox={ window,document,location:window.location,history:window.history,
   structuredClone:o=>JSON.parse(JSON.stringify(o)) };
 const nomes=Object.keys(sandbox);
 const API=['ferTemCarga','ferDaCarga','ferPeriodosAquisitivos','ferFaixa','ferFaixaInfo',
-  'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte'];
+  'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte',
+  'ferExtrato','ferExtratoCarga','ferFichaHTML','ferSituacao','ferSitPeriodo',
+  'ferHistoricoDobra','ferAlternarHistorico'];
 let APP;
 console.log('-- CARGA --');
 try{
@@ -150,6 +152,84 @@ t('quem nao e elegivel continua fora',
 t('o mes de agendamento nao entra no modelo', !/ferMes/.test(
   (SRC.match(/function ferDaCarga[\s\S]*?\n\}/)||[''])[0]),
   'a carga nao deve tocar em ferMes');
+
+console.log('\n== 8) A FICHA, COM O CASO REAL DO RODRIGO ==');
+// 30 dias do periodo vencido, ferias marcadas para 03/11 a 22/11 (20 dias)
+// mais 10 vendidos: fecha os 30.
+const rodrigo={_id:'r', mat:'10070020', nome:'RODRIGO LEITE MACEDO DE ARAUJO',
+  funcao:'VENDEDOR (BALCÃO)', admissao:'2023-01-02', status:'Trabalhando',
+  ferMes:'Outubro', ferSaldo:30, ferInicio:'2026-11-03', ferFim:'2026-11-22',
+  ferDiasComprados:10,
+  feriasLog:[{quando:'2026-09-01T10:00:00.000Z',quem:'julia@udiaco.com.br',
+    acao:'Edição',mudancas:[{rotulo:'mês de agendamento',de:'—',para:'Outubro'}]}],
+  feriasBase:{origem:'FPPF001.COL 14/09/2026', carregadoEm:'2026-09-16T17:38:00Z',
+    limiteLegal:'2027-01-01', proxVenc:'2028-01-01', periodos:[
+      {tipo:'vencido',ini:'2025-01-02',venc:'2026-01-01',direito:30,debito:0,saldo:30,
+       limiteLegal:'2027-01-01'},
+      {tipo:'atual',ini:'2026-01-02',venc:'2027-01-01',direito:0,debito:0,saldo:0}]}};
+const exR=APP.ferExtrato(rodrigo,HOJE);
+t('o extrato vem da carga', exR.daCarga===true);
+t('dois periodos na ficha', exR.periodos.length===2, 'n='+exR.periodos.length);
+t('o segundo esta travado', exR.periodos[1].travado===true);
+t('saldo disponivel 30', exR.somaSaldos===30, String(exR.somaSaldos));
+t('os 30 dias marcados aparecem como programados',
+  exR.periodos[0].programado===30, String(exR.periodos[0].programado));
+t('e a venda e reconhecida no periodo', exR.periodos[0].temVenda===true);
+t('o gozo passado NAO e recontado (ja esta no debito da carga)',
+  exR.periodos[0].usado===0, 'usado='+exR.periodos[0].usado);
+
+const sit=APP.ferSituacao(rodrigo, exR, HOJE);
+t('situacao: agendado', sit.k==='agendado', sit.k+' / '+sit.lbl);
+const semData=Object.assign({},rodrigo,{ferInicio:'',ferFim:'',ferDiasComprados:0});
+t('sem data marcada: nao agendado',
+  APP.ferSituacao(semData, APP.ferExtrato(semData,HOJE), HOJE).k==='pendente');
+const zerado2=Object.assign({},rodrigo,{ferInicio:'',ferFim:'',ferDiasComprados:0,
+  feriasBase:Object.assign({},rodrigo.feriasBase,{periodos:[
+    Object.assign({},rodrigo.feriasBase.periodos[0],{debito:30,saldo:0}),
+    rodrigo.feriasBase.periodos[1]]})});
+t('sem dias a tirar: em dia',
+  APP.ferSituacao(zerado2, APP.ferExtrato(zerado2,HOJE), HOJE).k==='emdia');
+
+console.log('\n== 9) O QUE A FICHA MOSTRA ==');
+const html=APP.ferFichaHTML(rodrigo, exR, HOJE);
+t('o numero de dias em destaque', /fch-saldo__n">30</.test(html),
+  (html.match(/fch-saldo__n[^<]*<[^<]*/)||[''])[0]);
+t('com a situacao ao lado', /badge--accent[^>]*>agendado/.test(html));
+t('os dois periodos com inicio e fim',
+  /02\/01\/2025 a 01\/01\/2026/.test(html) && /02\/01\/2026 a 01\/01\/2027/.test(html),
+  (html.match(/fch-per__dt">[^<]*/g)||[]).join(' | '));
+t('o limite para gozar, um mes antes do legal', /gozar até <b>02\/12\/2026<\/b>/.test(html),
+  (html.match(/gozar até <b>[^<]*/)||[''])[0]);
+t('a saida e a volta marcadas', /saída → volta[\s\S]{0,60}03\/11 → 22\/11/.test(html),
+  (html.match(/fch-mov__r[^<]*<[^>]*>[^<]*/g)||[]).join(' | '));
+t('os dias vendidos', /dias vendidos[\s\S]{0,80}−10d/.test(html),
+  (html.match(/dias vendidos[\s\S]{0,90}/)||[''])[0].replace(/<[^>]*>/g,' '));
+t('o saldo do periodo no fim', /saldo do período/.test(html));
+t('o travado diz quando libera', /libera 30 dias em <b>01\/01\/2027<\/b>/.test(html),
+  (html.match(/libera[^<]*<b>[^<]*/)||[''])[0]);
+t('e nao mostra saldo de periodo que nao venceu',
+  (html.match(/saldo do período/g)||[]).length===1,
+  'n='+(html.match(/saldo do período/g)||[]).length);
+t('o historico fica recolhido', /fch-hist-bt/.test(html) && /display:none/.test(html));
+t('e diz quantos registros tem', /Histórico \(1\)/.test(html),
+  (html.match(/Histórico \([^)]*\)/)||[''])[0]);
+
+console.log('\n== 10) SAIU ANTES DE LIBERAR: SALDO NEGATIVO ==');
+const antecipou=Object.assign({},rodrigo,{feriasBase:Object.assign({},rodrigo.feriasBase,
+  {periodos:[rodrigo.feriasBase.periodos[0],
+    {tipo:'atual',ini:'2026-01-02',venc:'2027-01-01',direito:0,debito:15,saldo:-15}]})});
+const exA=APP.ferExtrato(antecipou,HOJE);
+t('o saldo total desce', exA.somaSaldos===30, String(exA.somaSaldos));
+t('o periodo em curso continua travado', exA.periodos[1].travado===true);
+const negativo=Object.assign({},rodrigo,{feriasBase:Object.assign({},rodrigo.feriasBase,
+  {periodos:[{tipo:'vencido',ini:'2025-01-02',venc:'2026-01-01',direito:30,debito:45,
+    saldo:-15,limiteLegal:'2027-01-01'}, rodrigo.feriasBase.periodos[1]]})});
+const exN=APP.ferExtrato(negativo,HOJE);
+t('periodo com saldo negativo aparece negativo', exN.periodos[0].aberto===-15);
+const hN=APP.ferFichaHTML(negativo, exN, HOJE);
+t('e a ficha marca em vermelho', /fch-saldo--neg/.test(hN) && /fch-per__sal--neg/.test(hN));
+t('dizendo que sao dias em atraso', /dias? em atraso/.test(hN),
+  (hN.match(/fch-saldo__l">[^<]*/)||[''])[0]);
 
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

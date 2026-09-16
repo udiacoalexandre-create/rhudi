@@ -208,7 +208,44 @@
    Periodo atual em cima, encerrados descendo como historico. */
 .ds .ferd-cab{ display:flex;gap:18px;flex-wrap:wrap;padding:10px 0 12px;border-bottom:1px solid var(--border); }
 .ds .ferd-cab>div{ display:flex;flex-direction:column;gap:2px; }
-.ds .ferd-acum{ display:flex;align-items:baseline;gap:8px;padding:12px 0 14px; }
+.ds /* ── Ficha de férias ─────────────────────────────────────────────────
+   Quatro blocos e nada mais: quem é, quantos dias tem, de onde vêm e o
+   que houve. O histórico fica recolhido. */
+.ds .fch-saldo{ display:flex; align-items:baseline; gap:10px; padding:14px 16px;
+  background:var(--surface-2,#f8fafc); border:1px solid var(--border);
+  border-radius:12px; margin-top:4px }
+.ds .fch-saldo--neg{ background:#fef2f2; border-color:#fecaca }
+.ds .fch-saldo__n{ font-size:34px; font-weight:800; line-height:1; color:var(--brand) }
+.ds .fch-saldo--neg .fch-saldo__n{ color:var(--danger-text) }
+.ds .fch-saldo__l{ font-size:13px; color:var(--text2) }
+.ds .fch-saldo__s{ margin-left:auto; align-self:center }
+
+.ds .fch-pers{ display:flex; flex-direction:column; gap:8px }
+.ds .fch-per{ border:1px solid var(--border); border-radius:10px; padding:10px 12px;
+  background:var(--surface) }
+.ds .fch-per--trv{ background:var(--surface-2,#f8fafc); border-style:dashed }
+.ds .fch-per__cab{ display:flex; align-items:center; gap:8px; margin-bottom:2px }
+.ds .fch-per__dt{ font-weight:700; font-size:13.5px; font-variant-numeric:tabular-nums }
+.ds .fch-per__cab .badge{ margin-left:auto }
+.ds .fch-per__nota{ font-size:11.5px; color:var(--text2); margin-bottom:6px }
+.ds .fch-atraso{ color:var(--danger-text); font-weight:700 }
+.ds .fch-mov{ display:flex; align-items:center; gap:8px; font-size:12px;
+  padding:3px 0; border-top:1px dashed var(--border) }
+.ds .fch-mov--dim{ color:var(--text3) }
+.ds .fch-mov__r{ flex:1 }
+.ds .fch-mov__d{ font-variant-numeric:tabular-nums; font-weight:700; color:var(--text2) }
+.ds .fch-per__fim{ display:flex; align-items:center; gap:8px; font-size:12.5px;
+  margin-top:6px; padding-top:6px; border-top:1px solid var(--border); font-weight:600 }
+.ds .fch-per__fim span:first-child{ flex:1; color:var(--text2); font-weight:400 }
+.ds .fch-per__sal{ font-variant-numeric:tabular-nums }
+.ds .fch-per__sal--neg{ color:var(--danger-text) }
+
+.ds .fch-hist-bt{ display:flex; align-items:center; gap:6px; width:100%;
+  margin-top:14px; padding:8px 10px; background:none; border:1px dashed var(--border);
+  border-radius:9px; font-family:inherit; font-size:12.5px; color:var(--text2);
+  cursor:pointer }
+.ds .fch-hist-bt:hover{ background:var(--surface-2,#f8fafc) }
+.ferd-acum{ display:flex;align-items:baseline;gap:8px;padding:12px 0 14px; }
 .ds .ferd-acum__n{ font-size:34px;font-weight:700;color:var(--text);line-height:1; }
 .ds .ferd-acum__l{ font-size:12px;color:var(--text-secondary); }
 .ds .fex-p-box{ border:1px solid var(--border);border-left:3px solid var(--border);
