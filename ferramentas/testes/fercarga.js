@@ -43,7 +43,7 @@ const API=['ferTemCarga','ferDaCarga','ferPeriodosAquisitivos','ferFaixa','ferFa
   'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte',
   'ferExtrato','ferExtratoCarga','ferFichaHTML','ferCabHTML','ferSituacao','ferSitPeriodo',
   'ferHistoricoDobra','ferAlternarHistorico','FER_FAIXAS','_fpBase','renderFerPeriodos','abrirDetalheFerias','salvarDetalheFerias',
-  'ferPeriodosHTML','naveColab'];
+  'ferPeriodosHTML','naveColab','ferPeriodoAlvo'];
 let APP;
 console.log('-- CARGA --');
 try{
@@ -313,6 +313,17 @@ t('as explicacoes viraram mouse over', (ed.match(/<label title="/g)||[]).length>
 t('e sem bolinhas de ? na edicao', !/class="ajuda"/.test(ed));
 t('com os campos de agendar e dias vendidos',
   /id="ferd-inicio"/.test(ed) && /id="ferd-fim"/.test(ed) && /id="ferd-comprados"/.test(ed));
+t('os campos ficam DENTRO do periodo agendado, uma vez so',
+  (ed.match(/id="ferd-inicio"/g)||[]).length===1
+  && ed.indexOf('fch-per--alvo') < ed.indexOf('id="ferd-inicio"')
+  && ed.indexOf('id="ferd-comprados"') < ed.indexOf('id="ferd-previa"'));
+t('e o periodo escolhido e o que tem as ferias marcadas',
+  APP.ferPeriodoAlvo(exR)===exR.periodos.find(p=>(p.lancamentos||[]).some(l=>l.quando==='programado')));
+const exSA=APP.ferExtrato(semAg, HOJE);
+t('sem nada marcado, o alvo e o periodo mais antigo em aberto',
+  APP.ferPeriodoAlvo(exSA)===exSA.periodos.find(p=>!p.travado && p.aberto>0));
+t('o periodo travado nunca recebe os campos',
+  !(APP.ferPeriodoAlvo(exR)||{}).travado);
 
 // Salvar daqui muda o cadastro: e o mesmo documento do colaborador.
 const alvo=Object.assign({}, rodrigo, {funcao:'VENDEDOR', nave:'N/A'});

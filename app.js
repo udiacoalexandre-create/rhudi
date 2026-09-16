@@ -6642,7 +6642,32 @@ function ferCabHTML(c, admTxt, agHtml){
 }
 
 // Os períodos: de onde vêm os dias. Mesmo bloco na leitura e na edição.
-function ferPeriodosHTML(c, ex, hoje, enxuto){
+// O agendamento pertence a um periodo: o que ja tem as datas marcadas ou,
+// se nao ha nenhuma, o mais antigo ainda em aberto. E nele que se edita —
+// repetir os campos embaixo so criava duas fontes para a mesma informacao.
+function ferPeriodoAlvo(ex){
+  if(!ex || !Array.isArray(ex.periodos)) return null;
+  const marcado=ex.periodos.find(p=>(p.lancamentos||[]).some(l=>l.quando==='programado'));
+  if(marcado) return marcado;
+  return ex.periodos.find(p=>!p.travado && p.aberto>0)
+      || ex.periodos.find(p=>!p.travado) || null;
+}
+
+// Os campos de agendamento, dentro do periodo a que pertencem.
+function ferCamposAgenda(c){
+  const f=(rot,dica,campo)=>'<div class="fg"><label title="'+dica+'">'+rot+'</label>'+campo+'</div>';
+  return '<div class="fch-per__ed">'
+    +f('Início','Primeiro dia de férias.',
+       '<input type="date" id="ferd-inicio" value="'+(c.ferInicio||'')+'" onchange="_ferdPrevia()">')
+    +f('Último dia','Último dia de férias — o retorno é no dia seguinte.',
+       '<input type="date" id="ferd-fim" value="'+(c.ferFim||'')+'" onchange="_ferdPrevia()">')
+    +f('Dias vendidos','Abono pecuniário: dias vendidos em vez de gozados. Limite legal de 10 dias.',
+       '<input type="number" id="ferd-comprados" min="0" max="10" value="'
+        +(fnum(c.ferDiasComprados)||0)+'" onchange="_ferdPrevia()">')
+    +'</div>';
+}
+
+function ferPeriodosHTML(c, ex, hoje, enxuto, alvo){
   const h=_hoje0(hoje);
   const dm=d=>d?_ddmm(d)+'/'+d.getFullYear():'—';
   // Do mais recente para o mais antigo: o de cima e o que esta valendo.
@@ -6655,11 +6680,14 @@ function ferPeriodosHTML(c, ex, hoje, enxuto){
       const nota=p.travado
         ? 'Libera '+(p.direito||30)+' dias em '+dm(p.fim)
         : 'Último dia para começar as férias: '+dm(ultimoInicio);
-      return '<div class="fch-per fch-per--slim'+(p.travado?' fch-per--trv':'')+'" title="'+nota+'">'
+      const linha='<div class="fch-per__ln" title="'+nota+'">'
         +'<span class="fch-per__dt">'+dm(p.ini)+' a '+dm(p.fim)+'</span>'
         +'<span class="badge badge--'+s.cls+'">'+s.lbl+'</span>'
         +'<span class="fch-per__sal'+(p.aberto<0?' fch-per__sal--neg':'')+'">'
           +(p.travado?'—':p.aberto+'d')+'</span></div>';
+      const ed=(alvo && p===alvo) ? ferCamposAgenda(c) : '';
+      return '<div class="fch-per fch-per--slim'+(p.travado?' fch-per--trv':'')
+        +(ed?' fch-per--alvo':'')+'">'+linha+ed+'</div>';
     }
     const movs=(p.lancamentos||[]).filter(l=>l.tipo!=='anterior');
     const anterior=(p.lancamentos||[]).filter(l=>l.tipo==='anterior')
@@ -6948,15 +6976,7 @@ function abrirDetalheFerias(id,editando){
               <div class="fg"><label title="Nave onde a pessoa trabalha. Só quem divide função e nave disputa cobertura. Alterar aqui altera o cadastro.">Nave</label>
                 <select id="ferd-nave" onchange="verificarAlertasFerias('${id}')">${naveOptions(c)}</select></div>
             </div>
-            <div class="fch-pers fch-pers--slim">${ferPeriodosHTML(c,_ferdEx,new Date(),true)}</div>
-            <div class="form-grid cols3 ferd-form">
-              <div class="fg"><label title="Primeiro dia de férias.">Início</label>
-                <input type="date" id="ferd-inicio" value="${c.ferInicio||''}" onchange="_ferdPrevia()"></div>
-              <div class="fg"><label title="Último dia de férias — o retorno é no dia seguinte.">Último dia</label>
-                <input type="date" id="ferd-fim" value="${c.ferFim||''}" onchange="_ferdPrevia()"></div>
-              <div class="fg"><label title="Abono pecuniário: dias vendidos em vez de gozados. Limite legal de 10 dias.">Dias vendidos</label>
-                <input type="number" id="ferd-comprados" min="0" max="10" value="${fnum(c.ferDiasComprados)||0}" onchange="_ferdPrevia()"></div>
-            </div>
+            <div class="fch-pers fch-pers--slim">${ferPeriodosHTML(c,_ferdEx,new Date(),true,ferPeriodoAlvo(_ferdEx))}</div>
             <div id="ferd-previa" class="text-xs"></div>
           </div>
 
