@@ -59,6 +59,10 @@ const nomes=Object.keys(sandbox);
 const API=['viewDemandas','pintarDemandas','soDataCurta','soData','_retratoDemandas','DM_COLS'];
 const exporta='return {'+API.map(n=>n+':(typeof '+n+'!=="undefined"?'+n+':undefined)').join(',')
   +',setDemandas:v=>{demandas=v},setUsuario:v=>{usuario=v},setFiltro:v=>{filtroDem=v}};';
+// Um '.ds' colado num comentario vira '.ds .ds algo' e mata a regra.
+t('nenhuma regra de CSS comeca com .ds antes de um comentario',
+  !/\.ds\s+\/\*/.test(HTML), (HTML.match(/\.ds\s+\/\*[^*]{0,40}/g)||[]).join(' | '));
+
 console.log('-- CARGA --');
 let APP;
 try{ APP=new Function(...nomes, SRC+'\n'+exporta)(...nomes.map(n=>sandbox[n]));
