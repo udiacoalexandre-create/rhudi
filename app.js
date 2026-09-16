@@ -6612,41 +6612,35 @@ function _fchMov(rot, det, dias, dim){
     +'<span class="fch-mov__d">'+(dias<0?'+':'−')+Math.abs(dias)+'d</span></div>';
 }
 
-function ferFichaHTML(c, ex, hoje){
+// Identificacao: admissao e vencimento na mesma linha, agendamento embaixo.
+function ferCabHTML(c, admTxt, agHtml){
+  return '<div class="ferd-cab">'
+    +'<div><span class="ferd-lbl">Admissão</span><span class="ferd-val">'+admTxt+'</span></div>'
+    +'<div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">'
+      +(_vencCampoDDMM(c)||'—')+'</span></div>'
+    +'<div class="ferd-cab__ag"><span class="ferd-lbl">Mês de agendamento</span>'
+      +'<span>'+agHtml+'</span></div>'
+  +'</div>';
+}
+
+function ferFichaHTML(c, ex, hoje, cabHtml){
   if(!ex) return '<div class="alert alert-info">Sem período de férias para mostrar.</div>';
   const h=_hoje0(hoje);
   const dm=d=>d?_ddmm(d)+'/'+d.getFullYear():'—';
   const sit=ferSituacao(c, ex, hoje);
   const disp=ex.somaSaldos;
 
-  // ── 1. SALDO ─────────────────────────────────────────────────────────
+  // ── 1. TOPO: quem é, à esquerda; quantos dias tem, à direita ─────────
   // O número grande é a soma dos períodos. Negativo acontece — quem saiu
   // antes de o período vencer, e nas coletivas — e é informação, não erro.
-  // O espaco a direita carrega o proximo compromisso: a data ja marcada,
-  // o prazo para marcar, ou quando entram dias novos. Sem isso a linha fica
-  // com meia tela em branco.
-  const marcada=ex.periodos.reduce((a,p)=>a.concat(p.lancamentos||[]),[])
-    .filter(l=>l.quando==='programado' && l.inicio)
-    .sort((a,b)=>String(a.inicio).localeCompare(String(b.inicio)))[0];
-  const prazo=ex.periodos.filter(p=>!p.travado && p.aberto>0)
-    .map(p=>ferUltimoInicio(p)).filter(Boolean).sort((a,b)=>a-b)[0];
-  const emFormacao=ex.periodos.filter(p=>p.travado).map(p=>p.fim).filter(Boolean)
-    .sort((a,b)=>a-b)[0];
-  const aoLado = marcada
-    ? {r:'férias marcadas', v:_ddmm(_dataLocal(marcada.inicio))+' → '+_ddmm(_dataLocal(marcada.fim)), cls:''}
-    : prazo
-      ? {r:'marcar até', v:dm(prazo), cls:(prazo<h?' fch-saldo__x--tarde':'')}
-      : emFormacao ? {r:'novos dias em', v:dm(emFormacao), cls:''} : null;
-
-  const saldo='<div class="fch-saldo'+(disp<0?' fch-saldo--neg':'')+'">'
-    +'<div class="fch-saldo__n">'+disp+'</div>'
-    +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
-      +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
-    +'<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>'
-    +(aoLado?'<div class="fch-saldo__x'+aoLado.cls+'">'
-      +'<span class="fch-saldo__xr">'+aoLado.r+'</span>'
-      +'<span class="fch-saldo__xv">'+aoLado.v+'</span></div>':'')
-    +'</div>';
+  const topo='<div class="fch-topo'+(disp<0?' fch-topo--neg':'')+'">'
+    +'<div class="fch-topo__id">'+(cabHtml||'')+'</div>'
+    +'<div class="fch-topo__sal">'
+      +'<div class="fch-saldo__n">'+disp+'</div>'
+      +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
+        +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
+      +'<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>'
+    +'</div></div>';
 
   // ── 2. PERÍODOS ──────────────────────────────────────────────────────
   // Do mais recente para o mais antigo: o de cima e o que esta valendo.
@@ -6683,7 +6677,7 @@ function ferFichaHTML(c, ex, hoje){
     +'</div>';
   }).join('');
 
-  return saldo
+  return topo
     +'<div class="section-label" style="margin-top:14px">Períodos</div>'
     +'<div class="fch-pers">'+periodos+'</div>'
     +ferHistoricoDobra(c);
@@ -6884,12 +6878,7 @@ function abrirDetalheFerias(id,editando){
         </div>
         <div style="padding:20px;max-height:70vh;overflow-y:auto">
           <div id="ferd-view">
-            <div class="ferd-cab">
-              <div><span class="ferd-lbl">Admissão</span><span class="ferd-val">${admTxt}</span></div>
-              <div><span class="ferd-lbl">Vencimento</span><span class="ferd-val">${_vencCampoDDMM(c)||'—'}</span></div>
-              <div><span class="ferd-lbl">Mês de agendamento</span><span>${agHtml}</span></div>
-            </div>
-            ${ferFichaHTML(c,_ferdEx,new Date())}
+            ${ferFichaHTML(c,_ferdEx,new Date(), ferCabHTML(c, admTxt, agHtml))}
           </div>
 
           <div id="ferd-edit" style="display:none">

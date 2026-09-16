@@ -40,7 +40,7 @@ const sandbox={ window,document,location:window.location,history:window.history,
 const nomes=Object.keys(sandbox);
 const API=['ferTemCarga','ferDaCarga','ferPeriodosAquisitivos','ferFaixa','ferFaixaInfo',
   'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte',
-  'ferExtrato','ferExtratoCarga','ferFichaHTML','ferSituacao','ferSitPeriodo',
+  'ferExtrato','ferExtratoCarga','ferFichaHTML','ferCabHTML','ferSituacao','ferSitPeriodo',
   'ferHistoricoDobra','ferAlternarHistorico'];
 let APP;
 console.log('-- CARGA --');
@@ -191,7 +191,8 @@ t('sem dias a tirar: em dia',
   APP.ferSituacao(zerado2, APP.ferExtrato(zerado2,HOJE), HOJE).k==='emdia');
 
 console.log('\n== 9) O QUE A FICHA MOSTRA ==');
-const html=APP.ferFichaHTML(rodrigo, exR, HOJE);
+const cab=APP.ferCabHTML(rodrigo,'02/01/23','<strong>Outubro/2026</strong>');
+const html=APP.ferFichaHTML(rodrigo, exR, HOJE, cab);
 t('o numero de dias em destaque', /fch-saldo__n">30</.test(html),
   (html.match(/fch-saldo__n[^<]*<[^<]*/)||[''])[0]);
 t('com a situacao ao lado', /badge--accent[^>]*>agendado/.test(html));
@@ -214,8 +215,10 @@ t('o historico fica recolhido', /fch-hist-bt/.test(html) && /display:none/.test(
 t('e diz quantos registros tem', /Histórico \(1\)/.test(html),
   (html.match(/Histórico \([^)]*\)/)||[''])[0]);
 
-t('a linha do saldo usa o lado direito', /fch-saldo__x/.test(html),
-  (html.match(/fch-saldo__xr">[^<]*<\/span><span[^>]*>[^<]*/)||[''])[0]);
+t('o saldo fica a direita da identificacao', /fch-topo__id/.test(html)
+  && html.indexOf('fch-topo__id') < html.indexOf('fch-topo__sal'));
+t('admissao, vencimento e agendamento no topo',
+  /ferd-cab/.test(html) && /Mês de agendamento/.test(html));
 t('na ficha, o mais recente vem em cima',
   html.indexOf('02/01/2026 a 01/01/2027') < html.indexOf('02/01/2025 a 01/01/2026'),
   (html.match(/fch-per__dt">[^<]*/g)||[]).join(' | '));
@@ -242,7 +245,7 @@ const negativo=Object.assign({},rodrigo,{feriasBase:Object.assign({},rodrigo.fer
 const exN=APP.ferExtrato(negativo,HOJE);
 t('periodo com saldo negativo aparece negativo', exN.periodos[0].aberto===-15);
 const hN=APP.ferFichaHTML(negativo, exN, HOJE);
-t('e a ficha marca em vermelho', /fch-saldo--neg/.test(hN) && /fch-per__sal--neg/.test(hN));
+t('e a ficha marca em vermelho', /fch-topo--neg/.test(hN) && /fch-per__sal--neg/.test(hN));
 t('dizendo que sao dias em atraso', /dias? em atraso/.test(hN),
   (hN.match(/fch-saldo__l">[^<]*/)||[''])[0]);
 
