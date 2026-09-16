@@ -221,6 +221,7 @@ const semAg=Object.assign({}, rodrigo, {ferInicio:'', ferFim:'', ferDiasComprado
 const hSD=APP.ferFichaHTML(semAg, APP.ferExtrato(semAg, HOJE), HOJE, cab);
 t('com dias e nada marcado, aparece o botao Agendar',
   /fch-ag/.test(hSD) && /Agendar<\/button>/.test(hSD));
+t('o conflito nao se repete dentro da ficha', !/fch-conf/.test(html));
 t('o saldo fica a direita da identificacao', /fch-topo__id/.test(html)
   && html.indexOf('fch-topo__id') < html.indexOf('fch-topo__sal'));
 t('admissao, vencimento e agendamento no topo',

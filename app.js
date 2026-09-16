@@ -6697,7 +6697,6 @@ function ferFichaHTML(c, ex, hoje, cabHtml){
   }).join('');
 
   return topo
-    +ferConflitoHTML(c, (typeof colaboradores!=='undefined'?colaboradores:[]))
     +'<div class="section-label" style="margin-top:14px">Períodos</div>'
     +'<div class="fch-pers">'+periodos+'</div>'
     +ferHistoricoDobra(c);
