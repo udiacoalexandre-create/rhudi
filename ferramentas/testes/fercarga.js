@@ -214,6 +214,8 @@ t('o historico fica recolhido', /fch-hist-bt/.test(html) && /display:none/.test(
 t('e diz quantos registros tem', /Histórico \(1\)/.test(html),
   (html.match(/Histórico \([^)]*\)/)||[''])[0]);
 
+t('a linha do saldo usa o lado direito', /fch-saldo__x/.test(html),
+  (html.match(/fch-saldo__xr">[^<]*<\/span><span[^>]*>[^<]*/)||[''])[0]);
 t('na ficha, o mais recente vem em cima',
   html.indexOf('02/01/2026 a 01/01/2027') < html.indexOf('02/01/2025 a 01/01/2026'),
   (html.match(/fch-per__dt">[^<]*/g)||[]).join(' | '));

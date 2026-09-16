@@ -6622,11 +6622,30 @@ function ferFichaHTML(c, ex, hoje){
   // ── 1. SALDO ─────────────────────────────────────────────────────────
   // O número grande é a soma dos períodos. Negativo acontece — quem saiu
   // antes de o período vencer, e nas coletivas — e é informação, não erro.
+  // O espaco a direita carrega o proximo compromisso: a data ja marcada,
+  // o prazo para marcar, ou quando entram dias novos. Sem isso a linha fica
+  // com meia tela em branco.
+  const marcada=ex.periodos.reduce((a,p)=>a.concat(p.lancamentos||[]),[])
+    .filter(l=>l.quando==='programado' && l.inicio)
+    .sort((a,b)=>String(a.inicio).localeCompare(String(b.inicio)))[0];
+  const prazo=ex.periodos.filter(p=>!p.travado && p.aberto>0)
+    .map(p=>ferUltimoInicio(p)).filter(Boolean).sort((a,b)=>a-b)[0];
+  const emFormacao=ex.periodos.filter(p=>p.travado).map(p=>p.fim).filter(Boolean)
+    .sort((a,b)=>a-b)[0];
+  const aoLado = marcada
+    ? {r:'férias marcadas', v:_ddmm(_dataLocal(marcada.inicio))+' → '+_ddmm(_dataLocal(marcada.fim)), cls:''}
+    : prazo
+      ? {r:'marcar até', v:dm(prazo), cls:(prazo<h?' fch-saldo__x--tarde':'')}
+      : emFormacao ? {r:'novos dias em', v:dm(emFormacao), cls:''} : null;
+
   const saldo='<div class="fch-saldo'+(disp<0?' fch-saldo--neg':'')+'">'
     +'<div class="fch-saldo__n">'+disp+'</div>'
     +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
       +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
     +'<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>'
+    +(aoLado?'<div class="fch-saldo__x'+aoLado.cls+'">'
+      +'<span class="fch-saldo__xr">'+aoLado.r+'</span>'
+      +'<span class="fch-saldo__xv">'+aoLado.v+'</span></div>':'')
     +'</div>';
 
   // ── 2. PERÍODOS ──────────────────────────────────────────────────────
