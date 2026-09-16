@@ -215,6 +215,9 @@ t('o historico fica recolhido', /fch-hist-bt/.test(html) && /display:none/.test(
 t('e diz quantos registros tem', /Histórico \(1\)/.test(html),
   (html.match(/Histórico \([^)]*\)/)||[''])[0]);
 
+t('com dias no saldo, o status vira o botao Agendar',
+  /fch-ag[^>]*>/.test(html) && /Agendar<\/button>/.test(html)
+  && !/badge--accent">agendado<\/span>[\s\S]{0,40}fch-topo/.test(html));
 t('o saldo fica a direita da identificacao', /fch-topo__id/.test(html)
   && html.indexOf('fch-topo__id') < html.indexOf('fch-topo__sal'));
 t('admissao, vencimento e agendamento no topo',
@@ -245,6 +248,7 @@ const negativo=Object.assign({},rodrigo,{feriasBase:Object.assign({},rodrigo.fer
 const exN=APP.ferExtrato(negativo,HOJE);
 t('periodo com saldo negativo aparece negativo', exN.periodos[0].aberto===-15);
 const hN=APP.ferFichaHTML(negativo, exN, HOJE);
+t('sem dias no saldo, nao aparece o botao Agendar', !/fch-ag/.test(hN));
 t('e a ficha marca em vermelho', /fch-topo--neg/.test(hN) && /fch-per__sal--neg/.test(hN));
 t('dizendo que sao dias em atraso', /dias? em atraso/.test(hN),
   (hN.match(/fch-saldo__l">[^<]*/)||[''])[0]);

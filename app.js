@@ -6639,7 +6639,10 @@ function ferFichaHTML(c, ex, hoje, cabHtml){
       +'<div class="fch-saldo__n">'+disp+'</div>'
       +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
         +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
-      +'<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>'
+      +(disp>0
+        ? '<button class="btn btn-primary btn-sm fch-ag" onclick="ferdAgendar()" '
+            +'title="'+escH(sit.dica)+'"><i class="ti ti-calendar-plus"></i> Agendar</button>'
+        : '<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>')
     +'</div></div>';
 
   // ── 2. PERÍODOS ──────────────────────────────────────────────────────
@@ -6687,6 +6690,14 @@ function ferFichaHTML(c, ex, hoje, cabHtml){
 // Quem abre a ficha quer o saldo; o histórico é para quando alguém contesta.
 // Fica fechado por padrão e não ocupa a tela.
 let _fchHistAberto=false;
+// Com dias no saldo, o lugar de agir e ali mesmo: abre a edicao ja no campo
+// de inicio das ferias.
+function ferdAgendar(){
+  try{ ferdEdit(true); }catch(e){}
+  setTimeout(()=>{ const el=document.getElementById('ferd-inicio');
+    if(el){ try{ el.scrollIntoView({block:'center'}); }catch(e){} el.focus(); } },60);
+}
+
 function ferAlternarHistorico(){
   _fchHistAberto=!_fchHistAberto;
   const el=document.getElementById('fch-hist');
