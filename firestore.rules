@@ -107,9 +107,42 @@ service cloud.firestore {
     function podeProjetos() {
       return temPlataforma('projetos') && !isUM989();
     }
-    match /pe_projetos/{id}  { allow read, write: if podeProjetos(); }
+    // Dono do projeto: campo 'dono' quando existe, senão quem criou (docs
+    // antigos). Gestor de Projetos = Master ou perfilProjetos == 'gestor'.
+    function peDonoDe(d) { return d.get('dono', d.get('criadoPor', '')); }
+    function peEhGestor() {
+      return isMaster() || (isAuthorized() && hasUserDoc() &&
+        userData().get('perfilProjetos', '') == 'gestor');
+    }
+    function pePodeMandarNoProjeto(existente) {
+      return peEhGestor() || email() == peDonoDe(existente);
+    }
+
+    // Leitura/edição/criação continuam liberadas para a equipe de Projetos
+    // (a confidencialidade de projeto 'privado' na LEITURA ainda é só na
+    // interface — item à parte). O que travamos aqui é a ESCRITA destrutiva:
+    // ninguém apaga nem toma o dono de um projeto alheio.
+    match /pe_projetos/{id} {
+      allow read, create: if podeProjetos();
+      // Editar campos é livre para a equipe, MAS trocar o 'dono' (reatribuir o
+      // projeto) só o dono atual ou um gestor. Edição normal mantém o dono, e
+      // por isso passa direto.
+      allow update: if podeProjetos() && (
+        peDonoDe(request.resource.data) == peDonoDe(resource.data) ||
+        pePodeMandarNoProjeto(resource.data));
+      // Excluir: só o dono ou um gestor.
+      allow delete: if podeProjetos() && pePodeMandarNoProjeto(resource.data);
+    }
     match /pe_tarefas/{id}   { allow read, write: if podeProjetos(); }
-    match /pe_mensagens/{id} { allow read, write: if podeProjetos(); }
+    match /pe_mensagens/{id} {
+      allow read: if podeProjetos();
+      // Não dá para forjar recado no nome de outro: quem cria é o autor.
+      allow create: if podeProjetos() && request.resource.data.autor == email();
+      // Curtir (mexe em 'curtidas') é permitido; reescrever o autor de uma
+      // mensagem existente, não.
+      allow update: if podeProjetos() && request.resource.data.autor == resource.data.autor;
+      allow delete: if podeProjetos();
+    }
     // Notificações (sino): cada um lê as suas; escrever é preciso para avisar
     // o outro (quem responde cria a notificação de quem pediu).
     match /pe_notificacoes/{id} { allow read, write: if podeProjetos(); }

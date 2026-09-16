@@ -170,7 +170,7 @@ const rodrigo={_id:'r', mat:'10070020', nome:'RODRIGO LEITE MACEDO DE ARAUJO',
 const exR=APP.ferExtrato(rodrigo,HOJE);
 t('o extrato vem da carga', exR.daCarga===true);
 t('dois periodos na ficha', exR.periodos.length===2, 'n='+exR.periodos.length);
-t('o segundo esta travado', exR.periodos[1].travado===true);
+t('o extrato mantem a ordem cronologica', exR.periodos[1].travado===true);
 t('saldo disponivel 30', exR.somaSaldos===30, String(exR.somaSaldos));
 t('os 30 dias marcados aparecem como programados',
   exR.periodos[0].programado===30, String(exR.periodos[0].programado));
@@ -213,6 +213,19 @@ t('e nao mostra saldo de periodo que nao venceu',
 t('o historico fica recolhido', /fch-hist-bt/.test(html) && /display:none/.test(html));
 t('e diz quantos registros tem', /Histórico \(1\)/.test(html),
   (html.match(/Histórico \([^)]*\)/)||[''])[0]);
+
+t('na ficha, o mais recente vem em cima',
+  html.indexOf('02/01/2026 a 01/01/2027') < html.indexOf('02/01/2025 a 01/01/2026'),
+  (html.match(/fch-per__dt">[^<]*/g)||[]).join(' | '));
+t('o periodo com os dias ja marcados diz AGENDADO', /agendado<\/span>/.test(html)
+  && !/pendente/.test(html), (html.match(/badge--[a-z]+">[^<]*/g)||[]).join(' | '));
+t('um botao de historico, so', (html.match(/class="fch-hist-bt"/g)||[]).length===1,
+  'n='+(html.match(/class="fch-hist-bt"/g)||[]).length);
+t('sem titulo repetido dentro da dobra',
+  !/section-label[^>]*>Histórico/.test(html));
+t('o log so aparece ao expandir', /id="fch-hist" style="display:none"/.test(html));
+t('matricula e funcao saem do corpo da ficha',
+  !/Matrícula/.test(html) && !/Função/.test(html));
 
 console.log('\n== 10) SAIU ANTES DE LIBERAR: SALDO NEGATIVO ==');
 const antecipou=Object.assign({},rodrigo,{feriasBase:Object.assign({},rodrigo.feriasBase,

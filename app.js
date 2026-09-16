@@ -6380,7 +6380,7 @@ function ferLogDescreve(l){
     o:n(l.gozados)+'d gozados'+(l.comprados?' · '+l.comprados+'d vendidos':'')};
 }
 // Histórico completo: data e hora, quem fez, o que fez e o que mudou.
-function ferHistoricoHTML(c){
+function ferHistoricoHTML(c, semTitulo){
   const log=Array.isArray(c.feriasLog)?c.feriasLog:[];
   if(!log.length) return '';
   const linhas=log.slice().reverse().map(l=>{
@@ -6398,10 +6398,12 @@ function ferHistoricoHTML(c){
       +'<td class="fhi-u" title="'+String(quem).replace(/"/g,'&quot;')+'">'+quem+'</td>'
       +'</tr>';
   }).join('');
-  return '<div style="margin-top:16px">'
-    +'<div class="section-label" style="margin-bottom:6px">Histórico'
+  // Dentro da dobra o titulo ja esta no botao: repeti-lo aqui e o que fazia
+  // 'Histórico' aparecer duas vezes seguidas.
+  return '<div style="margin-top:'+(semTitulo?'0':'16px')+'">'
+    +(semTitulo?'':'<div class="section-label" style="margin-bottom:6px">Histórico'
       +_ajuda('Toda inclusão, edição e exclusão de férias fica registrada com data, hora e usuário.')
-    +'</div>'
+    +'</div>')
     +'<div class="fhi-wrap"><table class="fhi"><thead><tr>'
       +'<th>Quando</th><th>Ação</th><th>O que foi feito</th><th>Quem</th>'
     +'</tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
@@ -6593,10 +6595,13 @@ function ferSituacao(c, ex, hoje){
 
 // Situação de UM período.
 function ferSitPeriodo(p, hoje){
-  if(p.travado)              return {lbl:'travado',   cls:'neutral'};
-  if(p.aberto <= 0 && !p.programado) return {lbl:'OK', cls:'success'};
-  if(p.programado > 0 && p.aberto <= 0) return {lbl:'programado', cls:'accent'};
-  if(p.vencido)              return {lbl:'vencido',   cls:'danger'};
+  if(p.travado) return {lbl:'travado', cls:'neutral'};
+  if(p.aberto <= 0) return {lbl:'OK', cls:'success'};
+  // Dias marcados cobrindo o saldo: esta resolvido, so nao aconteceu ainda.
+  // Chamar de 'pendente' mandaria o RH cobrar quem ja marcou.
+  if(p.programado >= p.aberto) return {lbl:'agendado', cls:'accent'};
+  if(p.programado > 0) return {lbl:'agendado em parte', cls:'accent'};
+  if(p.vencido) return {lbl:'vencido', cls:'danger'};
   return {lbl:'pendente', cls:'warning'};
 }
 
@@ -6621,12 +6626,12 @@ function ferFichaHTML(c, ex, hoje){
     +'<div class="fch-saldo__n">'+disp+'</div>'
     +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
       +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
-    +'<span class="badge badge--'+sit.cls+' fch-saldo__s">'+sit.lbl
-      +_ajuda(sit.dica)+'</span>'
+    +'<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>'
     +'</div>';
 
   // ── 2. PERÍODOS ──────────────────────────────────────────────────────
-  const periodos=ex.periodos.map(p=>{
+  // Do mais recente para o mais antigo: o de cima e o que esta valendo.
+  const periodos=ex.periodos.slice().reverse().map(p=>{
     const s=ferSitPeriodo(p, hoje);
     const ultimoInicio=ferUltimoInicio(p);
     const movs=(p.lancamentos||[]).filter(l=>l.tipo!=='anterior');
@@ -6685,7 +6690,7 @@ function ferHistoricoDobra(c){
     +'onclick="ferAlternarHistorico()">'
     +'<i class="ti ti-chevron-'+(_fchHistAberto?'down':'right')+'"></i> '+lbl+'</button>'
     +'<div id="fch-hist" style="display:'+(_fchHistAberto?'block':'none')+'">'
-    +ferHistoricoHTML(c)+'</div>';
+    +ferHistoricoHTML(c, true)+'</div>';
 }
 
 function ferAcumuladoHTML(c, ex){
@@ -6851,13 +6856,14 @@ function abrirDetalheFerias(id,editando){
   const html=`
     <div class="modal-overlay ds" id="modal-ferias-detalhe" data-dynamic="1" onclick="if(event.target===this) closeModal('modal-ferias-detalhe')">
       <div class="modal" style="max-width:540px;padding:0;overflow:hidden">
-        <div style="background:var(--brand);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella"></i> ${escH(c.nome)}</div>
+        <div style="background:var(--brand);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          <div style="min-width:0">
+            <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella"></i> ${escH(c.nome)}</div>
+            <div style="font-size:12px;opacity:.85;margin-top:2px;margin-left:24px">${c.mat||'—'} · ${escH(funcaoColab(c)||'—')}</div>
+          </div>
           <button onclick="closeModal('modal-ferias-detalhe')" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1">&times;</button>
         </div>
         <div style="padding:20px;max-height:70vh;overflow-y:auto">
-          <div class="modal-sub" style="margin-top:0">Matrícula ${c.mat||'—'} &middot; Função: <strong>${funcaoColab(c)||'—'}</strong></div>
-
           <div id="ferd-view">
             <div class="ferd-cab">
               <div><span class="ferd-lbl">Admissão</span><span class="ferd-val">${admTxt}</span></div>
@@ -6893,7 +6899,6 @@ function abrirDetalheFerias(id,editando){
             <p class="text-xs text-muted" style="margin-top:8px">A alteração vale para este colaborador em todo o sistema — cadastro, Controle de Férias e o cálculo dos benefícios da competência. Vencimento em dia/mês (o ano é gerido pelo sistema). Saldo pode ser negativo (antecipação).</p>
           </div>
 
-          ${ferHistoricoHTML(c)}
           <div id="ferd-alertas" style="margin-top:10px"></div>
 
           <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
