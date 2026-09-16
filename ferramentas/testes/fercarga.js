@@ -13,6 +13,7 @@ function mkEl(id){ return { id,_html:'',style:{},className:'',textContent:'',val
   insertAdjacentHTML(){},remove(){},querySelectorAll(){return[]},querySelector(){return null},
   closest(){return null},focus(){},click(){},setAttribute(){},getAttribute(){return null} }; }
 const NODES={};
+globalThis.NODES=NODES;
 const document={ getElementById(id){ return NODES[id]||(NODES[id]=mkEl(id)); },
   querySelector(){return null},querySelectorAll(){return[]},createElement(){return mkEl('el')},
   addEventListener(){},removeEventListener(){},body:mkEl('body'),head:mkEl('head'),
@@ -41,7 +42,7 @@ const nomes=Object.keys(sandbox);
 const API=['ferTemCarga','ferDaCarga','ferPeriodosAquisitivos','ferFaixa','ferFaixaInfo',
   'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte',
   'ferExtrato','ferExtratoCarga','ferFichaHTML','ferCabHTML','ferSituacao','ferSitPeriodo',
-  'ferHistoricoDobra','ferAlternarHistorico'];
+  'ferHistoricoDobra','ferAlternarHistorico','FER_FAIXAS','_fpBase','renderFerPeriodos'];
 let APP;
 console.log('-- CARGA --');
 try{
@@ -257,5 +258,37 @@ t('e a ficha marca em vermelho', /fch-topo--neg/.test(hN) && /fch-per__sal--neg/
 t('dizendo que sao dias em atraso', /dias? em atraso/.test(hN),
   (hN.match(/fch-saldo__l">[^<]*/)||[''])[0]);
 
+console.log('\n== 12) AS SEIS FAIXAS DO KANBAN ==');
+const seis=['30d','60d','90d','3a6m','6a12m'];
+t('as faixas sao as seis pedidas, na ordem',
+  APP.FER_FAIXAS.filter(f=>f.k!=='vencido').map(f=>f.k).join(',')===seis.join(','),
+  APP.FER_FAIXAS.map(f=>f.k).join(','));
+// Quem tem mais de 12 meses de prazo nao e uma faixa de acompanhamento.
+const longe={maisAntigo:{limite:new Date(2030,0,1), aberto:30}};
+t('mais de 12 meses de prazo conta como em dia', APP.ferFaixa(longe, HOJE)==='emdia',
+  APP.ferFaixa(longe, HOJE));
+t('nada em aberto tambem e em dia', APP.ferFaixa({maisAntigo:null}, HOJE)==='emdia');
+const prazo=d=>{ const x=new Date(HOJE); x.setDate(x.getDate()+d+30); return {maisAntigo:{limite:x,aberto:30}}; };
+t('20 dias -> 30 dias', APP.ferFaixa(prazo(20),HOJE)==='30d', APP.ferFaixa(prazo(20),HOJE));
+t('45 dias -> 60 dias', APP.ferFaixa(prazo(45),HOJE)==='60d', APP.ferFaixa(prazo(45),HOJE));
+t('80 dias -> 90 dias', APP.ferFaixa(prazo(80),HOJE)==='90d', APP.ferFaixa(prazo(80),HOJE));
+t('150 dias -> 3 a 6 meses', APP.ferFaixa(prazo(150),HOJE)==='3a6m', APP.ferFaixa(prazo(150),HOJE));
+t('300 dias -> 6 a 12 meses', APP.ferFaixa(prazo(300),HOJE)==='6a12m', APP.ferFaixa(prazo(300),HOJE));
+t('prazo estourado -> vencido', APP.ferFaixa(prazo(-5),HOJE)==='vencido');
+t('a faixa folga sumiu do app', !/'folga'/.test(SRC), 'ainda ha folga');
+
+
+
+// O kanban na tela: as seis colunas sempre aparecem, mesmo zeradas.
+const gente=[Object.assign(base(0),{_id:'k1',nome:'A',status:'Trabalhando'})];
+APP.setColabs(gente);
+let kanHTML='';
+try{ APP.renderFerPeriodos(); kanHTML=NODES['fp-kanban']?NODES['fp-kanban'].innerHTML:''; }catch(e){ kanHTML='ERRO: '+e.message; }
+const rot=(kanHTML.match(/kan-col__t">[^<]*/g)||[]).map(x=>x.replace('kan-col__t">',''));
+t('o kanban mostra as seis faixas, mesmo sem gente',
+  ['≤ 30 dias','≤ 60 dias','≤ 90 dias','3 a 6 meses','6 a 12 meses','Em dia']
+    .every(r=>rot.includes(r)), rot.join(' | '));
+t('coluna sem ninguem diz ninguem', /kan-vazia/.test(kanHTML));
+t('vencido so aparece quando ha alguem', !rot.includes('Vencido'), rot.join(' | '));
 console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
 process.exit(fail?1:0);

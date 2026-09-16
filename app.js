@@ -6052,20 +6052,22 @@ function renderFerPeriodos(){
       +_ajuda('Gozaram mais do que tinham (férias coletivas, por exemplo). Os dias serão abatidos do próximo período que fechar.')+'</span>':'')
     +'</div>';
 
-  const cols=[...FER_FAIXAS.map(f=>f.k),'folga','emdia'];
+  const FIXAS=FER_FAIXAS.filter(f=>f.k!=='vencido').map(f=>f.k).concat('emdia');
+  const cols=['vencido'].concat(FIXAS);
   const html=cols.map(k=>{
     const itens=lista.filter(x=>x.faixa===k).sort((a,b)=>{
       const pa=a.per&&a.per.maisAntigo, pb=b.per&&b.per.maisAntigo;
       if(pa&&pb) return pa.limite-pb.limite;
       return (a.c.nome||'').localeCompare(b.c.nome||'');
     });
-    if(!itens.length) return '';
+    if(!itens.length && !FIXAS.includes(k)) return '';   // 'vencido' so quando ha alguem
     const info=ferFaixaInfo(k);
     return '<div class="kan-col">'
       +'<div class="kan-col__head" style="border-top-color:'+info.cor+'">'
         +'<span class="kan-col__t">'+info.lbl+'</span>'
         +'<span class="kan-col__n">'+itens.length+'</span></div>'
-      +'<div class="kan-col__body">'+itens.map(_fpCard).join('')+'</div></div>';
+      +'<div class="kan-col__body">'+(itens.length?itens.map(_fpCard).join('')
+        :'<div class="kan-vazia">ninguém</div>')+'</div></div>';
   }).join('');
   kan.innerHTML=html
     ? '<div class="kan-wrap">'+html+'</div>'
@@ -6080,7 +6082,7 @@ function _fpRenderTabela(lista){
       +'<i class="ti ti-table"></i> Ver lista por colaborador ('+lista.length+')</button>';
     return;
   }
-  const ordem={vencido:0,'30d':1,'60d':2,'90d':3,'3a6m':4,'6a12m':5,folga:6,emdia:7};
+  const ordem={vencido:0,'30d':1,'60d':2,'90d':3,'3a6m':4,'6a12m':5,emdia:6};
   const ord=[...lista].sort((a,b)=>{
     const d=(ordem[a.faixa]??9)-(ordem[b.faixa]??9);
     if(d) return d;
@@ -6309,12 +6311,11 @@ function ferFaixa(per, hoje){
   const d=_diasAte(_hoje0(hoje), ini||p.limite);
   if(d<0) return 'vencido';
   const f=FER_FAIXAS.find(x=>x.k!=='vencido' && d<=x.ate);
-  return f?f.k:'folga';
+  return f?f.k:'emdia';   // mais de 12 meses de prazo = em dia
 }
 function ferFaixaInfo(k){
   return FER_FAIXAS.find(x=>x.k===k)
-    || {k,lbl:k==='emdia'?'Em dia':(k==='folga'?'Mais de 12 meses':k),
-        cor:k==='emdia'?'var(--green)':'var(--text3)'};
+    || {k,lbl:k==='emdia'?'Em dia':k, cor:k==='emdia'?'var(--green)':'var(--text3)'};
 }
 // Crítico: dentro de 90 dias do limite (ou já vencido) e SEM agendamento.
 // É o cruzamento que o RH precisa ver primeiro.
