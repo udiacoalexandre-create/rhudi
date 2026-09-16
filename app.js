@@ -6639,7 +6639,7 @@ function ferFichaHTML(c, ex, hoje, cabHtml){
       +'<div class="fch-saldo__n">'+disp+'</div>'
       +'<div class="fch-saldo__l">dia'+(Math.abs(disp)===1?'':'s')
         +(disp<0?' em atraso':' disponíve'+(Math.abs(disp)===1?'l':'is'))+'</div>'
-      +(disp>0
+      +(sit.k==='pendente'
         ? '<button class="btn btn-primary btn-sm fch-ag" onclick="ferdAgendar()" '
             +'title="'+escH(sit.dica)+'"><i class="ti ti-calendar-plus"></i> Agendar</button>'
         : '<span class="badge badge--'+sit.cls+'">'+sit.lbl+_ajuda(sit.dica)+'</span>')

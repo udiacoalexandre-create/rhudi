@@ -215,9 +215,12 @@ t('o historico fica recolhido', /fch-hist-bt/.test(html) && /display:none/.test(
 t('e diz quantos registros tem', /Histórico \(1\)/.test(html),
   (html.match(/Histórico \([^)]*\)/)||[''])[0]);
 
-t('com dias no saldo, o status vira o botao Agendar',
-  /fch-ag[^>]*>/.test(html) && /Agendar<\/button>/.test(html)
-  && !/badge--accent">agendado<\/span>[\s\S]{0,40}fch-topo/.test(html));
+t('quem ja agendou continua com o selo agendado, sem botao',
+  !/fch-ag/.test(html) && /agendado/.test(html));
+const semAg=Object.assign({}, rodrigo, {ferInicio:'', ferFim:'', ferDiasComprados:0, feriasPeriodos:[]});
+const hSD=APP.ferFichaHTML(semAg, APP.ferExtrato(semAg, HOJE), HOJE, cab);
+t('com dias e nada marcado, aparece o botao Agendar',
+  /fch-ag/.test(hSD) && /Agendar<\/button>/.test(hSD));
 t('o saldo fica a direita da identificacao', /fch-topo__id/.test(html)
   && html.indexOf('fch-topo__id') < html.indexOf('fch-topo__sal'));
 t('admissao, vencimento e agendamento no topo',
