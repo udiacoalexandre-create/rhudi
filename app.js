@@ -306,6 +306,18 @@ function filtroBadge(f){
   return map[f]||'<span class="badge badge-gray">'+(f||'OK')+'</span>';
 }
 
+// A nave onde a pessoa trabalha. Duas pessoas da mesma funcao so se cobrem
+// se estiverem na mesma nave — por isso ela entra na conta das ferias.
+const NAVES=['N/A','Nave 01','Nave 02','Nave 03','Circulando'];
+function naveColab(c){
+  const n=(c&&c.nave)||'';
+  return NAVES.includes(n)?n:'N/A';   // sem informacao = N/A
+}
+function naveOptions(c){
+  const at=naveColab(c);
+  return NAVES.map(n=>'<option value="'+n+'" '+(n===at?'selected':'')+'>'+n+'</option>').join('');
+}
+
 function vtOptions(selCod){
   return VT_LINHAS.map(l=>'<option value="'+l.cod+'" data-tipo="'+l.tipo+'" '+(l.cod===selCod?'selected':'')+'>'+escH(l.nome)+'</option>').join('');
 }
@@ -346,6 +358,9 @@ function formColabHTML(prefix, c){
         <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
         <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${escH(c?.cargo)||''}"></div>
         <div class="fg span2"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label><input type="text" id="${prefix}-funcao" value="${escH(c?.funcao)||''}" placeholder="Ex.: Operador de Empilhadeira"></div>
+        <div class="fg span2"><label>Nave <span style="font-weight:400;color:var(--text3);font-size:11px">(operação)</span></label>
+          <select id="${prefix}-nave">${naveOptions(c)}</select>
+        </div>
         <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${escH(c?.depto)||''}"></div>
         <div class="fg"><label>Status</label>
           ${buildStatusSelect(prefix, c)}
@@ -574,6 +589,7 @@ function getColabFromForm(prefix){
     cargo:  (document.getElementById(prefix+'-cargo')?.value||'').trim().toUpperCase(),
     funcao: (document.getElementById(prefix+'-funcao')?.value||'').trim().toUpperCase(),
     depto:  document.getElementById(prefix+'-depto')?.value.trim()||'',
+    nave:   document.getElementById(prefix+'-nave')?.value||'N/A',
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
     diasFixos: fnum(document.getElementById(prefix+'-dias-fixos')?.value)||null,
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
@@ -6681,6 +6697,7 @@ function ferFichaHTML(c, ex, hoje, cabHtml){
   }).join('');
 
   return topo
+    +ferConflitoHTML(c, (typeof colaboradores!=='undefined'?colaboradores:[]))
     +'<div class="section-label" style="margin-top:14px">Períodos</div>'
     +'<div class="fch-pers">'+periodos+'</div>'
     +ferHistoricoDobra(c);
@@ -6883,7 +6900,7 @@ function abrirDetalheFerias(id,editando){
         <div style="background:var(--brand);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
           <div style="min-width:0">
             <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><i class="ti ti-umbrella"></i> ${escH(c.nome)}</div>
-            <div style="font-size:12px;opacity:.85;margin-top:2px;margin-left:24px">${c.mat||'—'} · ${escH(funcaoColab(c)||'—')}</div>
+            <div style="font-size:12px;opacity:.85;margin-top:2px;margin-left:24px">${c.mat||'—'} · ${escH(funcaoColab(c)||'—')}${naveColab(c)!=='N/A'?' · '+naveColab(c):''}</div>
           </div>
           <button onclick="closeModal('modal-ferias-detalhe')" title="Fechar" style="background:transparent;border:none;color:#fff;font-size:22px;cursor:pointer;line-height:1">&times;</button>
         </div>
@@ -6981,6 +6998,41 @@ function ferdEdit(on){
   if(fe) fe.style.display=on?'inline-flex':'none';
 }
 
+// Colegas que dividem funcao e nave com esta pessoa. Sao eles que podem
+// cobrir a ausencia — e quem entra em conflito quando o mes coincide.
+function ferColegas(c, lista){
+  const func=funcaoColab(c); if(!func) return [];
+  const nave=naveColab(c);
+  return (lista||[]).filter(x=>x && x._id!==c._id
+    && funcaoColab(x)===func && naveColab(x)===nave
+    && !STATUS_NAO_RECEBE.includes(x.status));
+}
+// Conflito: colega da mesma funcao e nave agendado para o mesmo mes.
+function ferConflitos(c, lista){
+  const mes=(c&&c.ferMes)||'';
+  if(!mes) return {mes:"", nomes:[], colegas:ferColegas(c,lista)};
+  const colegas=ferColegas(c, lista);
+  return {mes, colegas, nomes:colegas.filter(x=>x.ferMes===mes).map(x=>x.nome||"")};
+}
+// O bloco na tela: dois campos e nada mais. A distribuicao por mes fica
+// no "?" — serve para escolher outro mes, nao para ser lida toda hora.
+function ferConflitoHTML(c, lista, mesEscolhido){
+  const alvo=mesEscolhido!==undefined&&mesEscolhido!==null
+    ? Object.assign({}, c, {ferMes:mesEscolhido}) : c;
+  const cf=ferConflitos(alvo, lista);
+  if(!cf.nomes.length) return "";
+  const dist={}; cf.colegas.forEach(x=>{ if(x.ferMes) dist[x.ferMes]=(dist[x.ferMes]||0)+1; });
+  const livres=MESES_FER.filter(m=>!dist[m]);
+  const dica=(funcaoColab(c)||"—")+" na "+naveColab(c)+": "+(cf.colegas.length+1)+" pessoa(s). "
+    +(livres.length?"Sem ninguem agendado em "+livres.join(", ")+".":"Todos os meses ja tem alguem agendado.");
+  return '<div class="fch-conf">'
+    +'<div><span class="ferd-lbl">Conflito de função</span>'
+      +'<span class="ferd-val">'+cf.nomes.map(escH).join(", ")+'</span></div>'
+    +'<div><span class="ferd-lbl">Mês a verificar</span>'
+      +'<span class="ferd-val">'+escH(cf.mes)+_ajuda(dica)+'</span></div>'
+  +'</div>';
+}
+
 // Avisa sobre cobertura da FUNCAO ao agendar/trocar ferias e mostra a
 // distribuicao dos agendamentos da funcao por mes (nao bloqueia).
 function verificarAlertasFerias(id){
@@ -6990,35 +7042,7 @@ function verificarAlertasFerias(id){
     const c=colaboradores.find(x=>x._id===id);
     const alertasEl=document.getElementById('ferd-alertas');
     if(!c||!alertasEl) return;
-    const func=funcaoColab(c);
-    const novoMes=sel.value;
-    if(!func){ alertasEl.innerHTML=''; return; }
-
-    // Colegas da mesma funcao (exclui este e quem nao recebe ferias)
-    const colegas=colaboradores.filter(x=>
-      x._id!==id && funcaoColab(x)===func && !STATUS_NAO_RECEBE.includes(x.status)
-    );
-
-    let html='';
-    if(novoMes){
-      const mesmoMes=colegas.filter(x=>x.ferMes===novoMes);
-      if(mesmoMes.length>0){
-        html+='<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;font-size:12px;color:#92400E">'
-          +'<strong>Atencao a cobertura:</strong> '+mesmoMes.length+' colaborador(es) da funcao "'+func+'" ja estao em '+novoMes+': '
-          +mesmoMes.map(x=>x.nome).join(', ')+'. Verifique se a funcao seguira coberta.'
-          +'</div>';
-      }
-    }
-    // Painel de cobertura da funcao por mes
-    if(colegas.length>0){
-      const dist={};
-      colegas.forEach(x=>{ if(x.ferMes) dist[x.ferMes]=(dist[x.ferMes]||0)+1; });
-      const linhas=MESES_FER.filter(m=>dist[m]).map(m=>m.substring(0,3)+': '+dist[m]).join(' · ');
-      html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--text2);margin-top:6px">'
-        +'<strong>Funcao "'+func+'"</strong> — '+(colegas.length+1)+' pessoa(s) no total. Agendamentos: '+(linhas||'nenhum')
-        +'</div>';
-    }
-    alertasEl.innerHTML=html;
+    alertasEl.innerHTML=ferConflitoHTML(c, colaboradores, sel.value);
   };
   sel.addEventListener('change', render);
   render(); // estado inicial ao abrir o modal
