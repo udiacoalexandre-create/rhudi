@@ -1,0 +1,155 @@
+// Carga de ferias da Senior: os periodos passam a vir prontos, o periodo fica
+// travado ate o vencimento, o saldo soma os periodos (podendo ficar negativo
+// nas coletivas) e o aviso sai 60 dias antes do ultimo dia para COMECAR.
+const fs=require('fs');
+const SRC=fs.readFileSync('/Users/acmags/rhudi/app.js','utf8');
+let ok=0, fail=0;
+const t=(n,c,x)=>{ if(c){ok++;console.log('  ok   '+n);} else {fail++;console.log('  FALHA '+n+(x?'  -> '+x:''));} };
+
+function mkEl(id){ return { id,_html:'',style:{},className:'',textContent:'',value:'',
+  dataset:{},files:[],classList:{add(){},remove(){},contains(){return false}},
+  get innerHTML(){return this._html}, set innerHTML(v){this._html=String(v)},
+  addEventListener(){},removeEventListener(){},appendChild(c){return c},
+  insertAdjacentHTML(){},remove(){},querySelectorAll(){return[]},querySelector(){return null},
+  closest(){return null},focus(){},click(){},setAttribute(){},getAttribute(){return null} }; }
+const NODES={};
+const document={ getElementById(id){ return NODES[id]||(NODES[id]=mkEl(id)); },
+  querySelector(){return null},querySelectorAll(){return[]},createElement(){return mkEl('el')},
+  addEventListener(){},removeEventListener(){},body:mkEl('body'),head:mkEl('head'),
+  documentElement:mkEl('html'),cookie:'',readyState:'complete' };
+const window={ _firebaseReady:false,_db:{},_auth:{},_doc:(...a)=>({p:a.join('/')}),
+  _setDoc:()=>Promise.resolve(),_getDoc:()=>Promise.resolve({exists:()=>false,data:()=>({})}),
+  _getDocs:()=>Promise.resolve({docs:[],forEach(){}}),_deleteDoc:()=>Promise.resolve(),
+  _collection:()=>({}),_query:()=>({}),_onAuthStateChanged:()=>{},_signOut:()=>{},
+  _writeBatch:()=>({set(){},update(){},delete(){},commit:()=>Promise.resolve()}),
+  addEventListener(){},removeEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),
+  location:{href:'',hash:'',pathname:'/',search:''},history:{replaceState(){}},
+  navigator:{userAgent:'node'} };
+window.window=window;
+const sandbox={ window,document,location:window.location,history:window.history,
+  localStorage:{_d:{},getItem(k){return this._d[k]??null},setItem(k,v){this._d[k]=String(v)},removeItem(){}},
+  sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+  setTimeout:()=>0,setInterval:()=>0,clearTimeout:()=>{},clearInterval:()=>{},
+  console,alert:()=>{},confirm:()=>true,prompt:()=>null,fetch:()=>Promise.reject(new Error('x')),
+  XLSX:{utils:{}},ExcelJS:{Workbook:function(){}},JSZip:function(){},pdfjsLib:{},
+  Intl,Date,Math,JSON,Object,Array,String,Number,Boolean,RegExp,Error,Promise,Set,Map,
+  isNaN,parseInt,parseFloat,encodeURIComponent,decodeURIComponent,
+  btoa:s=>Buffer.from(s).toString('base64'),atob:s=>Buffer.from(s,'base64').toString(),
+  Blob:function(){},URL:{createObjectURL:()=>'x',revokeObjectURL(){}},FileReader:function(){},
+  structuredClone:o=>JSON.parse(JSON.stringify(o)) };
+const nomes=Object.keys(sandbox);
+const API=['ferTemCarga','ferDaCarga','ferPeriodosAquisitivos','ferFaixa','ferFaixaInfo',
+  'ferUltimoInicio','FER_ANTES_DO_LIMITE','_dataLocal','_hoje0','_diasAte'];
+let APP;
+console.log('-- CARGA --');
+try{
+  APP=new Function(...nomes, SRC+'\nreturn {'
+    +API.map(n=>n+':(typeof '+n+'!=="undefined"?'+n+':undefined)').join(',')
+    +',setColabs:v=>{colaboradores=v}};')(...nomes.map(n=>sandbox[n]));
+  t('app.js carregado',true);
+}catch(e){ t('app.js carregado',false,e.message); process.exit(1); }
+
+const HOJE=new Date(2026,8,16);      // 16/09/2026, o dia combinado
+// Um colaborador tipico da planilha: periodo vencido com 30 dias em aberto e
+// periodo atual ainda em curso.
+const base=(per,extra)=>Object.assign({
+  _id:'c1', mat:'10000162', nome:'LUIS AUGUSTO PERES', admissao:'2006-11-01',
+  status:'Trabalhando', ferSaldo:30,
+  feriasBase:Object.assign({ origem:'Senior FPPF001.COL 14/09/2026',
+    carregadoEm:'2026-09-16T12:00:00.000Z', periodos:per }, extra||{}),
+}, {});
+
+console.log('\n== 1) QUEM TEM CARGA USA A CARGA ==');
+const semCarga={_id:'x',mat:'1',nome:'SEM',admissao:'2020-01-01',status:'Trabalhando',ferSaldo:0};
+t('sem carga, nao ativa o modelo novo', APP.ferTemCarga(semCarga)===false);
+t('e continua calculando pela admissao',
+  !!APP.ferPeriodosAquisitivos(semCarga,HOJE) && !APP.ferPeriodosAquisitivos(semCarga,HOJE).daCarga);
+const c1=base([
+  {ini:'2024-11-01',venc:'2025-10-31',direito:30,debito:0,saldo:30,tipo:'vencido',
+   limiteLegal:'2026-10-31'},
+  {ini:'2025-11-01',venc:'2026-10-31',direito:30,debito:0,saldo:0,tipo:'atual'},
+]);
+t('com carga, ativa', APP.ferTemCarga(c1)===true);
+const p1=APP.ferPeriodosAquisitivos(c1,HOJE);
+t('e o resultado vem da carga', p1.daCarga===true);
+t('guarda de onde veio', /FPPF001/.test(p1.origem), p1.origem);
+t('dois periodos, nem mais nem menos', p1.ciclos.length===2, 'n='+p1.ciclos.length);
+
+console.log('\n== 2) O PERIODO FICA TRAVADO ATE O VENCIMENTO ==');
+t('o vencido (31/10/2025) esta liberado', p1.ciclos[0].liberado===true);
+t('o atual (31/10/2026) ainda nao', p1.ciclos[1].liberado===false);
+t('e diz quando libera', p1.ciclos[1].liberaEm instanceof Date
+  && p1.ciclos[1].liberaEm.getFullYear()===2026 && p1.ciclos[1].liberaEm.getMonth()===9,
+  String(p1.ciclos[1].liberaEm));
+t('o liberado nao mostra data de liberacao', p1.ciclos[0].liberaEm===null);
+t('direito conta so o que ja venceu', p1.direito===30, 'direito='+p1.direito);
+t('o periodo em curso e o em formacao', p1.emFormacao===p1.ciclos[1]);
+
+console.log('\n== 3) O SALDO SOMA OS PERIODOS ==');
+t('30 + 0 = 30', p1.saldo===30, 'saldo='+p1.saldo);
+const c2=base([
+  {ini:'2024-11-01',venc:'2025-10-31',direito:30,debito:10,saldo:20,tipo:'vencido'},
+  {ini:'2025-11-01',venc:'2026-08-31',direito:30,debito:0,saldo:30,tipo:'atual'},
+]);
+const p2=APP.ferPeriodosAquisitivos(c2,HOJE);
+t('dois vencidos somam 20 + 30 = 50', p2.saldo===50, 'saldo='+p2.saldo);
+t('e os dois contam como direito', p2.direito===60, 'direito='+p2.direito);
+t('quem ainda tem dias fica em aberto', p2.abertos.length===2);
+
+console.log('\n== 4) COLETIVAS: SALDO NEGATIVO E INFORMACAO, NAO ERRO ==');
+const c3=base([
+  {ini:'2024-11-01',venc:'2025-10-31',direito:30,debito:30,saldo:0,tipo:'vencido'},
+  {ini:'2025-11-01',venc:'2026-08-31',direito:30,debito:45,saldo:-15,tipo:'atual'},
+]);
+const p3=APP.ferPeriodosAquisitivos(c3,HOJE);
+t('saldo fica negativo', p3.saldo===-15, 'saldo='+p3.saldo);
+t('e nao e zerado a forca', p3.saldo<0);
+t('registra quanto esta devendo', p3.devendo===15, 'devendo='+p3.devendo);
+t('quem zerou nao aparece como em aberto',
+  p3.abertos.length===0, 'abertos='+p3.abertos.length);
+
+console.log('\n== 5) O PRAZO PARA GOZO ==');
+t('o ultimo dia para COMECAR e 30 dias antes do limite', APP.FER_ANTES_DO_LIMITE===30);
+const lim=new Date(2026,11,31);                       // limite legal 31/12/2026
+const ini=APP.ferUltimoInicio({limite:lim});
+t('limite 31/12 -> comecar ate 01/12', ini.getMonth()===11 && ini.getDate()===1,
+  ini.toISOString().slice(0,10));
+t('sem limite, nao inventa data', APP.ferUltimoInicio({})===null);
+// as faixas passam a medir a distancia ate esse ultimo dia de inicio
+const comLimite=d=>base([
+  {ini:'2024-11-01',venc:'2025-10-31',direito:30,debito:0,saldo:30,tipo:'vencido',limiteLegal:d},
+  {ini:'2025-11-01',venc:'2026-10-31',direito:30,debito:0,saldo:0,tipo:'atual'},
+]);
+const faixaDe=d=>APP.ferFaixa(APP.ferPeriodosAquisitivos(comLimite(d),HOJE),HOJE);
+// de 16/09 ate o ultimo dia de inicio (limite menos 30):
+t('limite 15/12/2026 -> comecar ate 15/11, 60 dias: e a janela do aviso',
+  faixaDe('2026-12-15')==='60d', faixaDe('2026-12-15'));
+t('limite 31/12/2026 -> 76 dias, ainda folgado', faixaDe('2026-12-31')==='90d',
+  faixaDe('2026-12-31'));
+t('limite 15/11/2026 -> 30 dias, ja apertado', faixaDe('2026-11-15')==='30d',
+  faixaDe('2026-11-15'));
+t('a janela de 60 dias e a que o Ale pediu para ser avisado',
+  APP.ferFaixaInfo('60d').lbl==='≤ 60 dias', APP.ferFaixaInfo('60d').lbl);
+t('limite 16/10/2026: 30 dias -> aperta', faixaDe('2026-10-16')==='30d', faixaDe('2026-10-16'));
+t('limite 01/10/2026: ja passou do dia de comecar -> vencido',
+  faixaDe('2026-10-01')==='vencido', faixaDe('2026-10-01'));
+t('limite 16/09/2027: mais de 6 meses', faixaDe('2027-09-16')==='6a12m', faixaDe('2027-09-16'));
+
+console.log('\n== 6) SEM SALDO, SEM ALERTA ==');
+const zerado=base([
+  {ini:'2024-11-01',venc:'2025-10-31',direito:30,debito:30,saldo:0,tipo:'vencido',
+   limiteLegal:'2026-10-01'},
+  {ini:'2025-11-01',venc:'2026-10-31',direito:30,debito:0,saldo:0,tipo:'atual'},
+]);
+t('quem nao tem dia a tirar fica em dia',
+  APP.ferFaixa(APP.ferPeriodosAquisitivos(zerado,HOJE),HOJE)==='emdia');
+
+console.log('\n== 7) O QUE A CARGA NAO MEXE ==');
+t('quem nao e elegivel continua fora',
+  APP.ferPeriodosAquisitivos(Object.assign({},c1,{elegibilidade:{ferias:false}}),HOJE)===null);
+t('o mes de agendamento nao entra no modelo', !/ferMes/.test(
+  (SRC.match(/function ferDaCarga[\s\S]*?\n\}/)||[''])[0]),
+  'a carga nao deve tocar em ferMes');
+
+console.log('\n'+(fail?'FALHAS: '+fail+' | ok: '+ok:'TUDO OK ('+ok+' checagens)'));
+process.exit(fail?1:0);

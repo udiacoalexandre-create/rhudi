@@ -6188,8 +6188,67 @@ function _diasAte(de,ate){ return Math.round((ate-de)/86400000); }
 
 // Monta os períodos aquisitivos do colaborador. Sem admissão, não há como
 // calcular — devolve null e a pessoa aparece como "sem admissão" na tela.
+// CARGA DA SENIOR
+// ---------------
+// Até aqui os períodos aquisitivos eram DEDUZIDOS: 12 meses a partir da
+// admissão, e o saldo era um número só. Dava divergência com a Senior, que é
+// quem tem a verdade — afastamento suspende a contagem, e acerto de período
+// não cabe numa soma de aniversários.
+//
+// A carga traz, por colaborador, os dois períodos que interessam (o último
+// vencido e o atual) com direito, débito e saldo já apurados. Daí para frente
+// o sistema toca sozinho: cada vencimento libera mais 30 dias, e sair de
+// férias ou vender dias debita como sempre.
+//
+// Quem tem carga usa a carga. Quem não tem — os que entraram depois — continua
+// pelo cálculo antigo, para nenhuma tela ficar vazia.
+function ferTemCarga(c){
+  return !!(c && c.feriasBase && Array.isArray(c.feriasBase.periodos)
+    && c.feriasBase.periodos.length);
+}
+
+// O período fica TRAVADO até a data de vencimento: os 30 dias só entram ali.
+// É o que a lei diz e é o que a tela precisa mostrar — "libera em tal dia",
+// não "você tem 30 dias" antes da hora.
+function ferDaCarga(c, hoje){
+  const b=c.feriasBase;
+  const h=_hoje0(hoje);
+  const periodos=b.periodos.map(p=>{
+    const venc=_dataLocal(p.venc);
+    const liberado=!!venc && venc<=h;
+    return {
+      ini:_dataLocal(p.ini), fim:venc, venc,
+      // 'limite' é o nome que o resto do arquivo usa para o fim do prazo de
+      // gozo. Aqui ele vem da Senior (coluna Limite Legal), e não de venc+1ano.
+      limite:_dataLocal(p.limiteLegal||p.limite)||_addAnos(venc,1),
+      direito:fnum(p.direito), usado:fnum(p.debito),
+      aberto:fnum(p.saldo), ok:fnum(p.saldo)<=0,
+      completo:liberado, liberado, tipo:p.tipo||'',
+      // Enquanto não vence, o direito ainda não existe: mostrar quando entra.
+      liberaEm:liberado?null:venc,
+    };
+  }).sort((a,b2)=>(a.ini&&b2.ini)?(a.ini-b2.ini):0);
+
+  const completos=periodos.filter(p=>p.liberado);
+  const direito=completos.reduce((s,p)=>s+p.direito,0);
+  // O saldo é a soma dos períodos — inclusive negativo, que vai acontecer nas
+  // coletivas do fim do ano e é informação, não erro.
+  const saldo=periodos.reduce((s,p)=>s+p.aberto,0);
+  const abertos=completos.filter(p=>p.aberto>0);
+  return {
+    ciclos:periodos, completos, abertos, direito, saldo,
+    devendo:saldo<0?-saldo:0,
+    maisAntigo:abertos[0]||null,
+    emFormacao:periodos.find(p=>!p.liberado)||null,
+    daCarga:true, origem:b.origem||'', carregadoEm:b.carregadoEm||'',
+    proxVenc:_dataLocal(b.proxVenc),
+    limiteLegal:_dataLocal(b.limiteLegal),
+  };
+}
+
 function ferPeriodosAquisitivos(c, hoje){
   if(!c || c.elegibilidade?.ferias===false) return null;
+  if(ferTemCarga(c)) return ferDaCarga(c, hoje);
   const adm=_dataLocal(c.admissao); if(!adm) return null;
   const h=_hoje0(hoje);
   const ciclos=[];
@@ -6218,9 +6277,20 @@ function ferPeriodosAquisitivos(c, hoje){
     emFormacao:ciclos.find(p=>!p.completo)||null};
 }
 // Faixa de urgência pelo LIMITE do período aberto mais antigo.
+// Prazo para GOZO. A Senior dá o limite legal; o último dia para o
+// colaborador COMEÇAR as férias é 30 dias antes dele — sair no limite
+// significaria terminar depois. E o aviso sai 60 dias antes desse começo,
+// que é o tempo de conversar, combinar e lançar.
+const FER_ANTES_DO_LIMITE = 30;   // último dia para começar = limite − 30
+function ferUltimoInicio(p){
+  if(!p || !p.limite) return null;
+  const d=new Date(p.limite); d.setDate(d.getDate()-FER_ANTES_DO_LIMITE);
+  return d;
+}
 function ferFaixa(per, hoje){
   const p=per&&per.maisAntigo; if(!p) return 'emdia';
-  const d=_diasAte(_hoje0(hoje), p.limite);
+  const ini=ferUltimoInicio(p);
+  const d=_diasAte(_hoje0(hoje), ini||p.limite);
   if(d<0) return 'vencido';
   const f=FER_FAIXAS.find(x=>x.k!=='vencido' && d<=x.ate);
   return f?f.k:'folga';
