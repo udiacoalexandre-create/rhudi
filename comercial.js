@@ -219,18 +219,45 @@ function temComercial(d){
   if(d.papel==='master') return true;
   return !!(d.plataformas && d.plataformas.comercial===true);
 }
+// Le o cadastro da pessoa. Uma falha de leitura NAO e a mesma coisa que nao
+// ter cadastro: logo depois do login o token as vezes ainda nao chegou, e
+// tratar isso como "sem acesso" mandava embora quem tinha acesso. Por isso
+// tenta de novo e, se ainda falhar, devolve o erro para a tela dizer o que foi.
+let _ultimoErroLogin='';
+async function lerCadastro(mail){
+  for(let tentativa=0; tentativa<2; tentativa++){
+    try{
+      const snap=await window._getDoc(window._doc('usuarios', mail));
+      return {achou:snap.exists(), dados:snap.exists()?snap.data():null};
+    }catch(e){
+      _ultimoErroLogin=String((e&&(e.code||e.message))||e);
+      if(tentativa===0) await new Promise(r=>setTimeout(r,700));
+    }
+  }
+  return {erro:_ultimoErroLogin||'falha ao ler o cadastro'};
+}
 async function carregarUsuario(email){
   const mail=(email||'').toLowerCase().trim();
-  let d=null;
-  try{
-    const snap=await window._getDoc(window._doc('usuarios', mail));
-    if(snap.exists()) d=snap.data();
-  }catch(e){ /* sem permissão de leitura = sem acesso */ }
+  _ultimoErroLogin='';
+  const r=await lerCadastro(mail);
+  let d=r.dados||null;
   if(!d && MASTER_BOOTSTRAP.includes(mail)) d={email:mail,nome:mail,papel:'master',ativo:true};
-  if(!d || d.ativo===false || d.papel==='um989') return 'sem-acesso';
+  if(!d && r.erro) return 'erro-leitura';
+  if(!d) return 'sem-cadastro';
+  if(d.ativo===false) return 'inativo';
+  if(d.papel==='um989') return 'sem-acesso';
   if(!temComercial(d)) return 'sem-plataforma';
   usuario={email:mail, nome:d.nome||mail, papel:d.papel||'corporativo'};
   return 'ok';
+}
+// A mensagem diz o que aconteceu e o que fazer — e cita o e-mail que chegou,
+// que e por onde se descobre login trocado.
+function motivoLogin(r, mail){
+  if(r==='sem-plataforma') return 'Seu acesso ao sistema está ativo, mas a plataforma Comercial não foi liberada para você. Peça ao Master (Sistema de RH > Acessos).';
+  if(r==='sem-cadastro')  return 'O e-mail '+mail+' não está cadastrado no sistema. Procure o administrador.';
+  if(r==='inativo')       return 'O acesso de '+mail+' está desativado. Procure o administrador.';
+  if(r==='erro-leitura')  return 'Não deu para confirmar seu acesso agora ('+_ultimoErroLogin+'). Tente de novo em alguns segundos.';
+  return 'Seu e-mail não tem acesso liberado a este sistema. Procure o administrador.';
 }
 async function entrar(){
   const email=($('login-email').value||'').trim().toLowerCase();
@@ -1537,10 +1564,10 @@ function iniciar(){
     if(!user){ mostrarLogin(); return; }
     const r=await carregarUsuario(user.email);
     if(r!=='ok'){
-      erroLogin(r==='sem-plataforma'
-        ? 'Seu acesso ao sistema está ativo, mas a plataforma Comercial não foi liberada para você. Peça ao Master (Sistema de RH > Acessos).'
-        : 'Seu e-mail não tem acesso liberado a este sistema. Procure o administrador.');
-      await window._signOut();
+      erroLogin(motivoLogin(r, (user.email||'').toLowerCase()));
+      // Falha de leitura nao e falta de acesso: deslogar aqui obrigaria a
+      // pessoa a digitar tudo de novo por causa de um soluço de rede.
+      if(r!=='erro-leitura') await window._signOut();
       return;
     }
     // Abre na aba que estiver no endereço: recarregar não devolve a pessoa
