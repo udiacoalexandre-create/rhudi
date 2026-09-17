@@ -81,9 +81,14 @@ t('saldo de férias não se edita mais aqui', form.indexOf('id="e-fer-saldo"')<0
 t('nem o período em gozo',
   form.indexOf('id="e-fer-inicio"')<0 && form.indexOf('id="e-fer-fim"')<0);
 t('nem o ano do agendamento, que é calculado', form.indexOf('id="e-fer-ano"')<0);
-t('o bloco de férias tem só vencimento e mês',
-  (form.slice(form.indexOf('e-card-fer'), form.indexOf('e-card-fer')+1400)
-    .match(/<input |<select /g)||[]).length===2);
+const blFer=form.slice(form.indexOf('e-card-fer'));
+t('o bloco de férias tem função, nave, vencimento e mês — nada mais',
+  (blFer.slice(0, blFer.indexOf('</div>\n        </div>'))
+    .match(/<input type|<select /g)||[]).length===4,
+  (blFer.match(/id="e-[a-z-]+"/g)||[]).join(' '));
+t('função e nave saíram da identificação',
+  form.indexOf('e-funcao') > form.indexOf('e-card-fer')
+  && form.indexOf('e-nave') > form.indexOf('e-card-fer'));
 
 console.log('\n== 3) SALVAR NÃO APAGA O QUE SAIU ==');
 // A tela na memoria: so os campos que a ficha nova tem.
@@ -127,6 +132,12 @@ t('as explicações viraram mouse over', (form.match(/<label title="/g)||[]).len
   'labels com title: '+(form.match(/<label title="/g)||[]).length);
 t('o estilo novo existe', /\.cad\{/.test(HTML) && /\.cad-chip\{/.test(HTML) && /\.cad-vt\{/.test(HTML));
 t('a ficha abre em duas colunas', /\.cad\{ display:grid; grid-template-columns:1\.25fr 1fr/.test(HTML));
+t('a grade tem seis colunas, com larguras por campo',
+  /grid-template-columns:repeat\(6,1fr\)/.test(HTML) && /\.sp4\{ grid-column:span 4 \}/.test(HTML));
+t('os rotulos nao sao mais cortados', !/text-overflow:ellipsis \}\n\.cad/.test(HTML)
+  && !/cad-gr \.fg label\{[^}]*white-space:nowrap/.test(HTML));
+t('as linhas fecham em seis colunas certinhas',
+  (form.match(/class="fg sp(\d)"/g)||[]).length>=9);
 t('e vira uma só no celular', /@media \(max-width:880px\)\{ \.cad\{ grid-template-columns:1fr \}/.test(HTML));
 
 console.log('\n== 5) MOSTRAR E ESCONDER ==');

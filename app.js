@@ -313,9 +313,13 @@ function naveColab(c){
   const n=(c&&c.nave)||'';
   return NAVES.includes(n)?n:'N/A';   // sem informacao = N/A
 }
+function naveDefinida(c){ return !!(c && NAVES.includes(c.nave)); }
 function naveOptions(c){
-  const at=naveColab(c);
-  return NAVES.map(n=>'<option value="'+n+'" '+(n===at?'selected':'')+'>'+n+'</option>').join('');
+  // Quem ainda nao tem nave escolhida abre em branco — N/A e uma decisao
+  // ('nao e da operacao'), nao o estado de quem acabou de ser cadastrado.
+  const at=naveDefinida(c)?c.nave:'';
+  return (at?'':'<option value="" selected>— definir —</option>')
+    +NAVES.map(n=>'<option value="'+n+'" '+(n===at?'selected':'')+'>'+n+'</option>').join('');
 }
 
 function vtOptions(selCod){
@@ -364,24 +368,20 @@ function formColabHTML(prefix, c){
         <div class="cad-bl">
           <div class="cad-bl__t">Identificação</div>
           <div class="cad-gr">
-            ${g('Matrícula', inp('mat','text',c?.mat||'',' oninput="verificarDuplic(\''+prefix+'\')"'))}
-            ${g('Nome *', inp('nome','text',escH(c?.nome)||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp2')}
-            ${g('CPF', inp('cpf','text',c?.cpf||'',' oninput="verificarDuplic(\''+prefix+'\')"'))}
-            ${g('Admissão', inp('admissao','date',c?.admissao||''))}
+            ${g('Matrícula', inp('mat','text',c?.mat||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp2')}
+            ${g('Nome *', inp('nome','text',escH(c?.nome)||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp4')}
+            ${g('CPF', inp('cpf','text',c?.cpf||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp2')}
+            ${g('Admissão', inp('admissao','date',c?.admissao||''),'','sp2')}
             ${g('Cargo', inp('cargo','text',escH(c?.cargo)||''),'','sp2')}
-            ${g('Função', inp('funcao','text',escH(c?.funcao)||'',' placeholder="Ex.: Operador de Empilhadeira"'),
-                'É a função que controla as férias: quem divide função e nave disputa cobertura.','sp2')}
-            ${g('Nave','<select id="'+prefix+'-nave">'+naveOptions(c)+'</select>',
-                'Nave onde a pessoa trabalha. N/A para quem não é da operação.')}
-            ${g('Departamento', inp('depto','text',escH(c?.depto)||''),'','sp2')}
-            ${g('Status', buildStatusSelect(prefix, c))}
+            ${g('Departamento', inp('depto','text',escH(c?.depto)||''),'','sp3')}
+            ${g('Status', buildStatusSelect(prefix, c),'','sp3')}
             ${g('Tipo','<select id="'+prefix+'-filtro">'
               +[['OK','CLT normal'],['DUP','CLT com MEI/Sócio'],['MEI','Contrato MEI'],['SOC','Sócio'],
                 ['TER','Terceiros'],['DIR','Diretoria'],['PART','Particular (sócio)']]
                 .map(([v,l])=>'<option value="'+v+'" '+(fil===v?'selected':'')+'>'+v+' — '+l+'</option>').join('')
-              +'</select>')}
+              +'</select>','','sp3')}
             ${g('Dias fixos', inp('dias-fixos','number','' + (c?.diasFixos||''),' min="0" max="31" placeholder="—"'),
-                'Preenchido, trava a jornada deste colaborador. Vazio usa os dias úteis do mês.')}
+                'Preenchido, trava a jornada deste colaborador. Vazio usa os dias úteis do mês.','sp3')}
           </div>
           <div id="${prefix}-duplic-alert"></div>
         </div>
@@ -389,14 +389,18 @@ function formColabHTML(prefix, c){
         <div class="cad-bl" id="${prefix}-card-fer" style="display:none">
           <div class="cad-bl__t">Férias</div>
           <div class="cad-gr">
+            ${g('Função', inp('funcao','text',escH(c?.funcao)||'',' placeholder="Ex.: Operador de Empilhadeira"'),
+                'É a função que controla as férias: só quem divide função e nave disputa cobertura.','sp3')}
+            ${g('Nave','<select id="'+prefix+'-nave">'+naveOptions(c)+'</select>',
+                'Nave onde a pessoa trabalha. N/A para quem não é da operação.','sp3')}
             ${g('Vencimento do ciclo', inp('fer-venc','text',_vencCampoDDMM(c),' placeholder="DD/MM" maxlength="5"'),
-                'Dia/mês do próximo vencimento. Em branco, é calculado da admissão. O ano é do sistema.')}
+                'Dia/mês do próximo vencimento. Em branco, é calculado da admissão. O ano é do sistema.','sp2')}
             ${g('Mês de agendamento','<select id="'+prefix+'-fer-mes" onchange="atualizarAnoFerias(\''+prefix+'\')">'
                 +'<option value="">-- Não agendado --</option>'
                 +MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')
                 +'</select> <span class="cad-hint" id="'+prefix+'-fer-ano-label">'
                 +(c?.ferMes?anoAgendadoColab(c):'')+'</span>',
-                'Mês previsto para as férias. Saldo, período em gozo e dias vendidos são tratados no Controle de Férias.','sp2')}
+                'Mês previsto para as férias. Saldo, período em gozo e dias vendidos são tratados no Controle de Férias.','sp4')}
           </div>
         </div>
       </div>
@@ -579,7 +583,7 @@ function getColabFromForm(prefix){
     cargo:  (document.getElementById(prefix+'-cargo')?.value||'').trim().toUpperCase(),
     funcao: (document.getElementById(prefix+'-funcao')?.value||'').trim().toUpperCase(),
     depto:  document.getElementById(prefix+'-depto')?.value.trim()||'',
-    nave:   document.getElementById(prefix+'-nave')?.value||'N/A',
+    nave:   document.getElementById(prefix+'-nave')?.value||'',
     status: document.getElementById(prefix+'-status')?.value||'Ativo',
     diasFixos: fnum(document.getElementById(prefix+'-dias-fixos')?.value)||null,
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
@@ -6003,6 +6007,25 @@ function pgFerPeriodos(){
 function fpVerTabela(v){ _fpTab=!!v; renderFerPeriodos(); }
 let _fpTab=false;
 
+// Quem entrou e ainda nao tem funcao ou nave: sem isso nao da para saber quem
+// cobre quem, e o mes de ferias e escolhido no escuro.
+function ferSemControle(lista){
+  return (lista||colaboradores||[])
+    .filter(c=>c && statusGrupo(c.status)!=='nao_recebe' && c.elegibilidade?.ferias!==false)
+    .filter(c=>!funcaoColab(c) || !naveDefinida(c));
+}
+function ferAvisoNovosHTML(lista){
+  const p=ferSemControle(lista);
+  if(!p.length) return '';
+  const nomes=p.slice(0,6).map(c=>'<button class="lnk" onclick="abrirDetalheFerias(\''+c._id+'\',true)">'
+    +escH(c.nome)+'</button>').join(', ');
+  return '<div class="alert alert-warning" style="margin-bottom:12px">'
+    +'<i class="ti ti-user-plus"></i><div><strong>'+p.length+' colaborador'
+    +(p.length>1?'es sem função ou nave definida':' sem função ou nave definida')+'.</strong> '
+    +'Sem isso o controle não sabe quem cobre quem nas férias.<br>'
+    +nomes+(p.length>6?' e mais '+(p.length-6):'')+'</div></div>';
+}
+
 // Base do kanban: ativos elegíveis, com os períodos já calculados.
 function _fpBase(){
   const hoje=new Date();
@@ -6046,7 +6069,8 @@ function renderFerPeriodos(){
   const abertos=lista.filter(x=>x.per&&x.per.abertos.length).length;
   const devendo=lista.filter(x=>x.per&&x.per.devendo>0);
   const diasAbertos=lista.reduce((a,x)=>a+(x.per?x.per.abertos.reduce((s,p)=>s+p.aberto,0):0),0);
-  if(dest) dest.innerHTML='<div class="stats-inline" style="margin-bottom:12px">'
+  if(dest) dest.innerHTML=ferAvisoNovosHTML(colaboradoresUnicos())
+    +'<div class="stats-inline" style="margin-bottom:12px">'
     +'<span><strong style="color:var(--red)">'+criticos+'</strong> críticos'
       +_ajuda('A 90 dias ou menos do limite (ou vencido) e sem férias agendadas.')+'</span>'
     +'<span><strong>'+vencidos+'</strong> vencidos</span>'

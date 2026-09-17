@@ -39,7 +39,7 @@ const sandbox={ window,document,location:window.location,history:window.history,
   structuredClone:o=>JSON.parse(JSON.stringify(o)) };
 const nomes=Object.keys(sandbox);
 const API=['NAVES','naveColab','naveOptions','ferColegas','ferConflitos','ferConflitoHTML',
-  'formColabHTML','verificarAlertasFerias'];
+  'formColabHTML','verificarAlertasFerias','naveDefinida','ferSemControle','ferAvisoNovosHTML'];
 let APP;
 console.log('-- NAVES --');
 try{
@@ -61,11 +61,14 @@ t('o select marca a nave da pessoa', /value="Nave 03" selected/.test(opt));
 t('o select comeca por N/A', opt.indexOf('N/A')<opt.indexOf('Nave 01'));
 
 const form=APP.formColabHTML('n', {nome:'X', nave:'Nave 01'});
-console.log('DEBUG', /n-nave/.test(form), form.length, form.slice(0,300));
 t('o cadastro tem o campo Nave', /id="n-nave"/.test(form) && /value="Nave 01" selected/.test(form));
-t('e ele fica junto da funcao, antes do departamento',
-  form.indexOf('n-funcao') < form.indexOf('n-nave')
-  && form.indexOf('n-nave') < form.indexOf('n-depto'));
+t('funcao e nave ficam no bloco de ferias, junto do agendamento',
+  form.indexOf('n-depto') < form.indexOf('n-funcao')
+  && form.indexOf('n-funcao') < form.indexOf('n-nave')
+  && form.indexOf('n-nave') < form.indexOf('n-fer-mes'));
+t('quem e novo abre com a nave em branco, para alguem escolher',
+  /<option value="" selected>— definir —<\/option>/.test(APP.naveOptions(null)));
+t('quem ja tem nave nao mostra o em branco', !/— definir —/.test(APP.naveOptions({nave:'Nave 01'})));
 
 console.log('\n== 2) QUEM DISPUTA COM QUEM ==');
 const P=(id,nome,func,nave,mes,status)=>({_id:id,nome,funcao:func,nave,ferMes:mes,
@@ -113,5 +116,23 @@ t('o bloco pode testar outro mes antes de salvar',
 t('o estilo do bloco existe', /\.fch-conf\{/.test(HTML));
 t('a frase antiga saiu do app', !/Atencao a cobertura/.test(SRC));
 
+console.log('\n== 4) O CONTROLE COBRA QUEM ENTROU SEM DEFINICAO ==');
+const novos=[
+  {_id:'n1',nome:'NOVO SEM NADA',status:'Trabalhando'},
+  {_id:'n2',nome:'NOVO SEM NAVE',status:'Trabalhando',funcao:'AJUDANTE'},
+  {_id:'n3',nome:'NOVO SEM FUNCAO',status:'Trabalhando',nave:'Nave 01'},
+  {_id:'n4',nome:'COMPLETO',status:'Trabalhando',funcao:'AJUDANTE',nave:'N/A'},
+  {_id:'n5',nome:'NAO TEM FERIAS',status:'Trabalhando',elegibilidade:{ferias:false}},
+];
+const pend=APP.ferSemControle(novos).map(c=>c.nome);
+t('cobra quem esta sem funcao ou sem nave',
+  pend.join(',')==='NOVO SEM NADA,NOVO SEM NAVE,NOVO SEM FUNCAO', pend.join(','));
+t('quem escolheu N/A ja esta definido', !pend.includes('COMPLETO'));
+t('quem nao tem direito a ferias nao e cobrado', !pend.includes('NAO TEM FERIAS'));
+const aviso=APP.ferAvisoNovosHTML(novos);
+t('o aviso aparece no topo do controle de ferias', /alert-warning/.test(aviso)
+  && /3 colaboradores sem função ou nave/.test(aviso), aviso.slice(0,140));
+t('e leva direto para a ficha da pessoa', /abrirDetalheFerias\('n1'/.test(aviso));
+t('sem pendencia, nao aparece nada', APP.ferAvisoNovosHTML([novos[3]])==='');
 console.log('\n'+(fail?('FALHAS: '+fail+' | ok: '+ok):('TUDO OK ('+ok+' checagens)')));
 process.exit(fail?1:0);
