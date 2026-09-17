@@ -104,7 +104,7 @@ DB.usuarios={'ana@udiaco.com.br':{nome:'Ana',papel:'corporativo',ativo:true,plat
              'zé@udiaco.com.br':{nome:'Zé',papel:'corporativo',ativo:true,plataformas:{}}};
 t('carregarUsuario libera quem tem', await APP.carregarUsuario('ana@udiaco.com.br')==='ok');
 t('carregarUsuario barra quem não tem', await APP.carregarUsuario('zé@udiaco.com.br')==='sem-plataforma');
-t('e-mail desconhecido barrado', await APP.carregarUsuario('ninguem@x.com')==='sem-acesso');
+t('e-mail desconhecido barrado', await APP.carregarUsuario('ninguem@x.com')==='sem-cadastro');
 APP.setUsuario({email:'ana@udiaco.com.br',nome:'Ana',papel:'corporativo'});
 
 console.log('\n══ 2) COMPRESSÃO E PEDAÇOS ══');
