@@ -61,6 +61,7 @@ t('o select marca a nave da pessoa', /value="Nave 03" selected/.test(opt));
 t('o select comeca por N/A', opt.indexOf('N/A')<opt.indexOf('Nave 01'));
 
 const form=APP.formColabHTML('n', {nome:'X', nave:'Nave 01'});
+console.log('DEBUG', /n-nave/.test(form), form.length, form.slice(0,300));
 t('o cadastro tem o campo Nave', /id="n-nave"/.test(form) && /value="Nave 01" selected/.test(form));
 t('e ele fica junto da funcao, antes do departamento',
   form.indexOf('n-funcao') < form.indexOf('n-nave')

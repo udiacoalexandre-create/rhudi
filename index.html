@@ -795,6 +795,38 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .modal-sub { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 
+/* ── Ficha do colaborador: cabe em uma tela ─────────────────────────── */
+.cad{ display:grid; grid-template-columns:1.25fr 1fr; gap:14px; align-items:start }
+.cad-col{ display:flex; flex-direction:column; gap:14px; min-width:0 }
+.cad-bl{ background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:12px 14px 14px }
+.cad-bl__t{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+  color:var(--text2); margin-bottom:10px }
+.cad-gr{ display:grid; grid-template-columns:repeat(4,1fr); gap:9px 10px }
+.cad-gr .sp2{ grid-column:span 2 }
+.cad-gr .fg label{ font-size:10px; letter-spacing:.3px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis }
+.cad-gr .fg input, .cad-gr .fg select{ padding:6px 8px; font-size:13px }
+.cad-hint{ font-size:11px; color:var(--text3); font-weight:600 }
+.cad-eleg{ display:flex; flex-wrap:wrap; gap:6px }
+.cad-chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 10px;
+  border:1.5px solid var(--border); border-radius:999px; background:var(--surface2);
+  cursor:pointer; font-size:12px; font-weight:500; transition:all .15s; user-select:none }
+.cad-chip--on{ border-color:var(--blue); background:var(--blue-light); color:var(--blue) }
+.cad-chip input{ width:14px; height:14px; accent-color:var(--blue); margin:0 }
+.cad-bl--ben .cad-gr{ grid-template-columns:repeat(2,1fr) }
+.cad-bl--ben .cad-gr+.cad-gr{ margin-top:9px }
+.cad-vt{ width:100%; border-collapse:collapse; margin-top:10px; font-size:11px }
+.cad-vt th{ text-align:left; font-size:9px; text-transform:uppercase; letter-spacing:.4px;
+  color:var(--text3); font-weight:700; padding:0 4px 4px }
+.cad-vt td{ padding:2px 4px 2px 0 }
+.cad-vt select, .cad-vt input{ width:100%; padding:4px 6px; font-size:12px;
+  border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--surface2) }
+.cad-vt th:nth-child(2), .cad-vt td:nth-child(2){ width:76px }
+.cad-vt th:nth-child(3), .cad-vt td:nth-child(3){ width:52px }
+@media (max-width:880px){ .cad{ grid-template-columns:1fr }
+  .cad-gr{ grid-template-columns:repeat(2,1fr) } }
+
 /* ALERTS */
 .alert { border-radius: var(--radius-sm); padding: 12px 16px; font-size: 13px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; }
 .alert-info { background: var(--blue-light); color: var(--blue); border: 1px solid #BFDBFE; }
@@ -1003,7 +1035,7 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: va
 
 <!-- MODAIS -->
 <div class="modal-overlay" id="modal-colab">
-  <div class="modal" style="max-width:700px">
+  <div class="modal" style="max-width:940px">
     <div class="modal-title" id="modal-colab-title">Colaborador</div>
     <div id="modal-colab-body"></div>
     <div class="modal-footer">

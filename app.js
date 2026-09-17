@@ -345,117 +345,107 @@ function buildStatusSelect(prefix, c){
   return '<select id="' + prefix + '-status">' + opts + '</select>';
 }
 
+// A ficha do colaborador cabe em uma tela. Quatro blocos, cada um com o que
+// se preenche NAQUELE momento:
+//   quem é  ·  a que tem direito  ·  quanto vale cada coisa  ·  férias
+// O que é acompanhamento (saldo de férias, período em gozo) mora no Controle
+// de Férias, não aqui — no cadastro só entra o que define o controle.
 function formColabHTML(prefix, c){
   const mob=c?inferMob(c):'perto';
   const fil=c?.filtro||'OK';
+  const g=(rot,campo,dica,cls)=>'<div class="fg'+(cls?' '+cls:'')+'">'
+    +'<label'+(dica?' title="'+String(dica).replace(/"/g,'&quot;')+'"':'')+'>'+rot+'</label>'
+    +campo+'</div>';
+  const inp=(id,tipo,val,extra)=>'<input type="'+tipo+'" id="'+prefix+'-'+id+'" value="'
+    +(val==null?'':String(val).replace(/"/g,'&quot;'))+'"'+(extra||'')+'>';
   return `
-    <div class="card">
-      <div class="card-title">Dados Pessoais</div>
-      <div class="form-grid">
-        <div class="fg"><label>Matr\u00EDcula</label><input type="text" id="${prefix}-mat" value="${c?.mat||''}" oninput="verificarDuplic('${prefix}')"></div>
-        <div class="fg span2"><label>Nome Completo *</label><input type="text" id="${prefix}-nome" value="${escH(c?.nome)||''}" oninput="verificarDuplic('${prefix}')"></div>
-        <div class="fg"><label>CPF</label><input type="text" id="${prefix}-cpf" value="${c?.cpf||''}" oninput="verificarDuplic('${prefix}')"></div>
-        <div class="fg"><label>Data de Admiss\u00E3o</label><input type="date" id="${prefix}-admissao" value="${c?.admissao||''}"></div>
-        <div class="fg span2"><label>Cargo</label><input type="text" id="${prefix}-cargo" value="${escH(c?.cargo)||''}"></div>
-        <div class="fg span2"><label>Função <span style="font-weight:400;color:var(--text3);font-size:11px">(controla as férias)</span></label><input type="text" id="${prefix}-funcao" value="${escH(c?.funcao)||''}" placeholder="Ex.: Operador de Empilhadeira"></div>
-        <div class="fg span2"><label>Nave <span style="font-weight:400;color:var(--text3);font-size:11px">(operação)</span></label>
-          <select id="${prefix}-nave">${naveOptions(c)}</select>
+    <div class="cad">
+      <div class="cad-col">
+        <div class="cad-bl">
+          <div class="cad-bl__t">Identificação</div>
+          <div class="cad-gr">
+            ${g('Matrícula', inp('mat','text',c?.mat||'',' oninput="verificarDuplic(\''+prefix+'\')"'))}
+            ${g('Nome *', inp('nome','text',escH(c?.nome)||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp2')}
+            ${g('CPF', inp('cpf','text',c?.cpf||'',' oninput="verificarDuplic(\''+prefix+'\')"'))}
+            ${g('Admissão', inp('admissao','date',c?.admissao||''))}
+            ${g('Cargo', inp('cargo','text',escH(c?.cargo)||''),'','sp2')}
+            ${g('Função', inp('funcao','text',escH(c?.funcao)||'',' placeholder="Ex.: Operador de Empilhadeira"'),
+                'É a função que controla as férias: quem divide função e nave disputa cobertura.','sp2')}
+            ${g('Nave','<select id="'+prefix+'-nave">'+naveOptions(c)+'</select>',
+                'Nave onde a pessoa trabalha. N/A para quem não é da operação.')}
+            ${g('Departamento', inp('depto','text',escH(c?.depto)||''),'','sp2')}
+            ${g('Status', buildStatusSelect(prefix, c))}
+            ${g('Tipo','<select id="'+prefix+'-filtro">'
+              +[['OK','CLT normal'],['DUP','CLT com MEI/Sócio'],['MEI','Contrato MEI'],['SOC','Sócio'],
+                ['TER','Terceiros'],['DIR','Diretoria'],['PART','Particular (sócio)']]
+                .map(([v,l])=>'<option value="'+v+'" '+(fil===v?'selected':'')+'>'+v+' — '+l+'</option>').join('')
+              +'</select>')}
+            ${g('Dias fixos', inp('dias-fixos','number','' + (c?.diasFixos||''),' min="0" max="31" placeholder="—"'),
+                'Preenchido, trava a jornada deste colaborador. Vazio usa os dias úteis do mês.')}
+          </div>
+          <div id="${prefix}-duplic-alert"></div>
         </div>
-        <div class="fg span2"><label>Departamento</label><input type="text" id="${prefix}-depto" value="${escH(c?.depto)||''}"></div>
-        <div class="fg"><label>Status</label>
-          ${buildStatusSelect(prefix, c)}
-        </div>
-        <div class="fg"><label>Filtro / Tipo</label>
-          <select id="${prefix}-filtro">
-            <option value="OK" ${fil==='OK'?'selected':''}>OK \u2014 CLT normal</option>
-            <option value="DUP" ${fil==='DUP'?'selected':''}>DUP \u2014 CLT com MEI/S\u00F3cio</option>
-            <option value="MEI" ${fil==='MEI'?'selected':''}>MEI \u2014 Contrato MEI</option>
-            <option value="SOC" ${fil==='SOC'?'selected':''}>SOC \u2014 S\u00F3cio</option>
-            <option value="TER" ${fil==='TER'?'selected':''}>TER \u2014 Terceiros</option>
-            <option value="DIR" ${fil==='DIR'?'selected':''}>DIR \u2014 Diretoria</option>
-            <option value="PART" ${fil==='PART'?'selected':''}>PART \u2014 Particular (s\u00f3cio)</option>
-          </select>
-        </div>
-        <div class="fg">
-          <label>Dias Fixos (travar jornada)</label>
-          <input type="number" id="${prefix}-dias-fixos" min="0" max="31"
-            value="${c?.diasFixos||''}" placeholder="Opcional - trava os dias deste colab."
-            title="Se preenchido, este colaborador sempre usara este numero de dias independente do botao Aplicar a todos">
-          <span style="font-size:10px;color:var(--text3);margin-top:2px">Deixe vazio para usar os dias uteis do mes. Preenchido = jornada travada.</span>
-        </div>
-      </div>
-      <div id="${prefix}-duplic-alert"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">Elegibilidade a Benef\u00EDcios</div>
-      <p class="text-sm text-muted" style="margin-bottom:10px">Marque apenas os benef\u00EDcios aos quais este colaborador tem direito.</p>
-      <div style="display:flex;flex-wrap:wrap;gap:10px">
-        ${elegCheckHTML(prefix,c)}
-      </div>
-    </div>
-    <div class="card" id="${prefix}-card-fer" style="display:none">
-      <div class="card-title">Controle de Férias</div>
-      <p class="text-sm text-muted" style="margin-bottom:10px">Dados compartilhados com o módulo de Controle de Férias — qualquer alteração aqui reflete lá e vice-versa.</p>
-      <div class="form-grid">
-        <div class="fg"><label>Vencimento (próximo ciclo) — dia/mês</label><input type="text" id="${prefix}-fer-venc" placeholder="DD/MM" maxlength="5" value="${_vencCampoDDMM(c)}"><span style="font-size:10px;color:var(--text3);margin-top:2px">Em branco: calculado da admissão (véspera do aniversário). O ano do próximo vencimento é gerido pelo sistema.</span></div>
-        <div class="fg"><label>Mês de agendamento das férias</label>
-          <select id="${prefix}-fer-mes">
-            <option value="">-- Não agendado --</option>
-            ${MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')}
-          </select>
-        </div>
-        <div class="fg"><label>Ano do agendamento</label>
-          <select id="${prefix}-fer-ano">
-            ${(()=>{const ay=new Date().getFullYear();const ac=anoAgendadoColab(c||{});const cur=(c&&c.ferAno&&+c.ferAno>=ay)?+c.ferAno:(typeof ac==='number'?ac:ay);return [ay,ay+1,ay+2,ay+3].map(a=>'<option value="'+a+'" '+(a===cur?'selected':'')+'>'+a+'</option>').join('');})()}
-          </select>
-        </div>
-        <div class="fg"><label>Saldo de dias a tirar</label><input type="number" id="${prefix}-fer-saldo" min="-90" max="90" value="${c?.ferSaldo!=null?c.ferSaldo:''}" placeholder="30"><span style="font-size:10px;color:var(--text3);margin-top:2px">Pode ser negativo (férias antecipadas).</span></div>
-        <div class="fg"><label>Início das férias (período atual)</label><input type="date" id="${prefix}-fer-inicio" value="${c?.ferInicio||''}"></div>
-        <div class="fg"><label>Término das férias</label><input type="date" id="${prefix}-fer-fim" value="${c?.ferFim||''}"><span style="font-size:10px;color:var(--text3);margin-top:2px">Define se o colaborador está de férias e reflete nos benefícios da competência. Ao entrar em Férias, também pode ser informado na janela que abre.</span></div>
-      </div>
-    </div>
-    <div class="card" id="${prefix}-card-vr" style="display:none">
-      <div class="card-title">Vale Refei\u00E7\u00E3o</div>
-      <div class="form-grid"><div class="fg"><label>Valor/dia (R$)</label><input type="number" id="${prefix}-vr" step="0.01" min="0" value="${fnum(c?.vr)||''}"></div></div>
-    </div>
-    <div class="card" id="${prefix}-card-cafe" style="display:none">
-      <div class="card-title">Caf\u00E9 da Manh\u00E3</div>
-      <div class="form-grid"><div class="fg"><label>Valor/dia (R$)</label><input type="number" id="${prefix}-cafe" step="0.01" min="0" value="${fnum(c?.cafe)||''}"></div></div>
-    </div>
-    <div class="card" id="${prefix}-card-cesta" style="display:none">
-      <div class="card-title">Cesta B\u00E1sica</div>
-      <div class="form-grid"><div class="fg"><label>Valor/m\u00EAs (R$) \u2014 valor fixo, n\u00E3o depende dos dias trabalhados</label><input type="number" id="${prefix}-cesta" step="0.01" min="0" value="${fnum(c?.cesta)||''}" placeholder="185,00"></div></div>
-    </div>
-    <div class="card" id="${prefix}-card-mob" style="display:none">
-      <div class="card-title">Mobilidade / Combust\u00EDvel</div>
-      <div class="form-grid" style="margin-bottom:12px">
-        <div class="fg span2"><label>Tipo</label>
-          <select id="${prefix}-mobilidade" onchange="toggleMob('${prefix}')">
-            <option value="combustivel" ${mob==='combustivel'?'selected':''}>Combust\u00EDvel</option>
-            <option value="perto" ${mob==='perto'?'selected':''}>Mora perto</option>
-            <option value="carro_empresa" ${mob==='carro_empresa'?'selected':''}>Carro da empresa</option>
-          </select>
+
+        <div class="cad-bl" id="${prefix}-card-fer" style="display:none">
+          <div class="cad-bl__t">Férias</div>
+          <div class="cad-gr">
+            ${g('Vencimento do ciclo', inp('fer-venc','text',_vencCampoDDMM(c),' placeholder="DD/MM" maxlength="5"'),
+                'Dia/mês do próximo vencimento. Em branco, é calculado da admissão. O ano é do sistema.')}
+            ${g('Mês de agendamento','<select id="'+prefix+'-fer-mes" onchange="atualizarAnoFerias(\''+prefix+'\')">'
+                +'<option value="">-- Não agendado --</option>'
+                +MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')
+                +'</select> <span class="cad-hint" id="'+prefix+'-fer-ano-label">'
+                +(c?.ferMes?anoAgendadoColab(c):'')+'</span>',
+                'Mês previsto para as férias. Saldo, período em gozo e dias vendidos são tratados no Controle de Férias.','sp2')}
+          </div>
         </div>
       </div>
-      <div id="${prefix}-bloco-comb" style="display:${mob==='combustivel'?'block':'none'}">
-        <div class="form-grid"><div class="fg"><label>Combust\u00EDvel Mensal (R$)</label><input type="number" id="${prefix}-comb" step="0.01" min="0" value="${fnum(c?.comb)||''}"></div></div>
+
+      <div class="cad-col">
+        <div class="cad-bl">
+          <div class="cad-bl__t">Elegibilidade</div>
+          ${elegCheckHTML(prefix,c)}
+        </div>
+
+        <div class="cad-bl cad-bl--ben">
+          <div class="cad-bl__t">Valores</div>
+          <div class="cad-gr">
+            <div class="fg cad-ben" id="${prefix}-card-vr" style="display:none">
+              <label title="Valor por dia trabalhado.">Vale refeição (R$/dia)</label>
+              ${inp('vr','number',fnum(c?.vr)||'',' step="0.01" min="0"')}</div>
+            <div class="fg cad-ben" id="${prefix}-card-cafe" style="display:none">
+              <label title="Valor por dia trabalhado.">Café da manhã (R$/dia)</label>
+              ${inp('cafe','number',fnum(c?.cafe)||'',' step="0.01" min="0"')}</div>
+            <div class="fg cad-ben" id="${prefix}-card-cesta" style="display:none">
+              <label title="Valor fixo no mês — não depende dos dias trabalhados.">Cesta básica (R$/mês)</label>
+              ${inp('cesta','number',fnum(c?.cesta)||'',' step="0.01" min="0" placeholder="185,00"')}</div>
+          </div>
+          <div class="cad-gr" id="${prefix}-card-mob" style="display:none">
+            <div class="fg"><label title="Mobilidade é exclusiva com o vale transporte.">Mobilidade</label>
+              <select id="${prefix}-mobilidade" onchange="toggleMob('${prefix}')">
+                <option value="combustivel" ${mob==='combustivel'?'selected':''}>Combustível</option>
+                <option value="perto" ${mob==='perto'?'selected':''}>Mora perto</option>
+                <option value="carro_empresa" ${mob==='carro_empresa'?'selected':''}>Carro da empresa</option>
+              </select></div>
+            <div class="fg" id="${prefix}-bloco-comb" style="display:${mob==='combustivel'?'flex':'none'}">
+              <label title="Valor mensal de combustível.">Combustível (R$/mês)</label>
+              ${inp('comb','number',fnum(c?.comb)||'',' step="0.01" min="0"')}</div>
+          </div>
+          <div id="${prefix}-card-vt" style="display:none">
+            <table class="cad-vt">
+              <thead><tr><th>Linha de transporte</th><th>R$</th><th title="Viagens por dia">Via.</th></tr></thead>
+              <tbody>${[1,2,3,4].map(n=>'<tr>'
+                +'<td><select id="'+prefix+'-vt-sel'+n+'" onchange="onVTSelect('+n+',\''+prefix+'\')">'+vtOptions(c?c['cod'+n]||'':'')+'</select>'
+                  +'<input type="hidden" id="'+prefix+'-vt-tp'+n+'" value="'+(c?c['tp'+n]||'':'')+'">'
+                  +'<input type="hidden" id="'+prefix+'-vt-cod'+n+'" value="'+(c?c['cod'+n]||'':'')+'">'
+                  +'<input type="hidden" id="'+prefix+'-vt-ben'+n+'" value="'+(c?c['ben'+n]||'':'')+'"></td>'
+                +'<td><input type="number" id="'+prefix+'-vt'+n+'" step="0.01" min="0" value="'+(c?fnum(c['vt'+n])||'':'')+'"></td>'
+                +'<td><input type="number" id="'+prefix+'-v'+n+'" min="0" value="'+(c?fnum(c['v'+n])||'':'')+'"></td>'
+              +'</tr>').join('')}</tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="card" id="${prefix}-card-vt" style="display:none">
-      <div class="card-title">Vale Transporte</div>
-      <table class="vt-tbl">
-        <thead><tr><th>Linha</th><th>Linha de Transporte</th><th>Valor (R$)</th><th>Viagens/dia</th></tr></thead>
-        <tbody>${[1,2,3,4].map(n=>`<tr>
-          <td style="font-weight:700;color:var(--blue)">L${n}</td>
-          <td><select id="${prefix}-vt-sel${n}" onchange="onVTSelect(${n},'${prefix}')" style="width:100%">${vtOptions(c?c['cod'+n]||'':'')}</select>
-            <input type="hidden" id="${prefix}-vt-tp${n}" value="${c?c['tp'+n]||'':''}">
-            <input type="hidden" id="${prefix}-vt-cod${n}" value="${c?c['cod'+n]||'':''}">
-            <input type="hidden" id="${prefix}-vt-ben${n}" value="${c?c['ben'+n]||'':''}">
-          </td>
-          <td><input type="number" id="${prefix}-vt${n}" step="0.01" min="0" value="${c?fnum(c['vt'+n])||'':''}" style="width:90px"></td>
-          <td><input type="number" id="${prefix}-v${n}" min="0" value="${c?fnum(c['v'+n])||'':''}" style="width:60px"></td>
-        </tr>`).join('')}</tbody>
-      </table>
     </div>`;
 }
 
@@ -480,12 +470,10 @@ function elegTransporte(c){
 }
 
 function elegItemHTML(prefix,item){
-  return `
-    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid ${item.checked?'var(--blue)':'var(--border)'};border-radius:var(--radius-sm);cursor:pointer;background:${item.checked?'var(--blue-light)':'var(--surface2)'};transition:all .15s" onclick="toggleEleg(this)">
-      <input type="checkbox" name="${prefix}-eleg-${item.id}" id="${prefix}-eleg-${item.id}" ${item.checked?'checked':''}
-        onchange="onElegChange('${prefix}','${item.id}',this.checked)" style="accent-color:var(--blue);width:15px;height:15px">
-      <span style="font-size:13px;font-weight:500">${item.label}</span>
-    </label>`;
+  return '<label class="cad-chip'+(item.checked?' cad-chip--on':'')+'" onclick="toggleEleg(this)">'
+    +'<input type="checkbox" name="'+prefix+'-eleg-'+item.id+'" id="'+prefix+'-eleg-'+item.id+'" '
+      +(item.checked?'checked':'')+' onchange="onElegChange(\''+prefix+'\',\''+item.id+'\',this.checked)">'
+    +'<span>'+item.label+'</span></label>';
 }
 
 function elegGrupoHTML(prefix,titulo,items){
@@ -507,18 +495,18 @@ function elegCheckHTML(prefix, c){
   const mob   = {id:'mobilidade',label:'Mobilidade / Combustível', checked:tr.mob};
   const vt    = {id:'vt',     label:'Vale Transporte',     checked:tr.vt};
   const cesta = {id:'cesta',  label:'Cesta Básica',        checked:eleg.cesta!==undefined?eleg.cesta:true};
-  return `<div style="display:flex;flex-wrap:wrap;gap:24px;width:100%">
-    ${elegGrupoHTML(prefix,'Folha',[folhaCLT,folhaMEI,ferias])}
-    ${elegGrupoHTML(prefix,'Prêmio',[premio])}
-    ${elegGrupoHTML(prefix,'Benefícios',[vr,cafe,mob,vt,cesta])}
-  </div>`;
+  // Uma faixa de fichas. O que importa e ver de relance o que esta marcado —
+  // titulos de grupo so ocupavam altura.
+  return '<div class="cad-eleg">'
+    +[folhaCLT,folhaMEI,ferias,premio,vr,cafe,mob,vt,cesta]
+      .map(i=>elegItemHTML(prefix,i)).join('')
+    +'</div>';
 }
 
 function toggleEleg(label){
   const cb=label.querySelector('input[type=checkbox]');
   if(!cb) return;
-  label.style.borderColor=cb.checked?'var(--blue)':'var(--border)';
-  label.style.background=cb.checked?'var(--blue-light)':'var(--surface2)';
+  label.classList.toggle('cad-chip--on', cb.checked);
 }
 
 // Marca/desmarca um checkbox de elegibilidade e atualiza o estilo do pill
@@ -530,7 +518,9 @@ function setElegCheckbox(prefix,id,val){
 }
 
 function onElegChange(prefix, tipo, checked){
-  const show=(card,vis)=>{const el=document.getElementById(prefix+'-card-'+card); if(el) el.style.display=vis?'block':'none';};
+  const show=(card,vis)=>{ const el=document.getElementById(prefix+'-card-'+card);
+    if(el) el.style.display=vis?(el.classList.contains('cad-ben')?'flex'
+      :(el.classList.contains('cad-gr')?'grid':'block')):'none'; };
   if(tipo==='vr')    show('vr',checked);
   if(tipo==='cafe')  show('cafe',checked);
   if(tipo==='cesta') show('cesta',checked);
@@ -557,7 +547,7 @@ function atualizarAnoFerias(prefix){
 function toggleMob(prefix){
   const v=document.getElementById(prefix+'-mobilidade')?.value||'combustivel';
   const bc=document.getElementById(prefix+'-bloco-comb');
-  if(bc) bc.style.display=v==='combustivel'?'block':'none';
+  if(bc) bc.style.display=v==='combustivel'?'flex':'none';
 }
 
 function initFormDisplay(prefix){
@@ -581,7 +571,7 @@ function getColabFromForm(prefix){
   if(eleg.vt) eleg.mobilidade=false; // VT e Mobilidade/Combustivel sao exclusivos
   // Tipo de transporte resultante (um unico por colaborador)
   const mob = eleg.vt ? 'vt' : (eleg.mobilidade ? mobSel : 'perto');
-  return {
+  const dados={
     mat:    document.getElementById(prefix+'-mat')?.value.trim()||'',
     nome:   (document.getElementById(prefix+'-nome')?.value||'').trim().toUpperCase(),
     cpf:    document.getElementById(prefix+'-cpf')?.value.trim()||'',
@@ -595,7 +585,16 @@ function getColabFromForm(prefix){
     filtro: document.getElementById(prefix+'-filtro')?.value||'OK',
     ferVenc:  _resolveVencInput(document.getElementById(prefix+'-fer-venc')?.value||'', (prefix==='e'&&editColabId)?(colaboradores.find(x=>x._id===editColabId)?.ferVenc||''):''),
     ferMes:   document.getElementById(prefix+'-fer-mes')?.value||'',
-    ferAno:   (()=>{const mm=document.getElementById(prefix+'-fer-mes')?.value||''; return mm?(fnum(document.getElementById(prefix+'-fer-ano')?.value)||''):'';})(),
+    ferAno:   (()=>{
+      const mm=document.getElementById(prefix+'-fer-mes')?.value||'';
+      if(!mm) return '';
+      const sel=document.getElementById(prefix+'-fer-ano');
+      if(sel) return fnum(sel.value)||'';
+      // Sem o select na tela, o ano vem do mês e da admissão — que é como o
+      // resto do sistema já o calcula.
+      const a=anoAgendadoColab({ferMes:mm, admissao:document.getElementById(prefix+'-admissao')?.value||''});
+      return typeof a==='number'?a:'';
+    })(),
     ferInicio: document.getElementById(prefix+'-fer-inicio')?.value||'',
     ferFim:    document.getElementById(prefix+'-fer-fim')?.value||'',
     ferSaldo: (()=>{const v=document.getElementById(prefix+'-fer-saldo')?.value; return (v!==''&&v!=null&&v!==undefined)?fnum(v):null;})(),
@@ -625,6 +624,11 @@ function getColabFromForm(prefix){
     cod4:document.getElementById(prefix+'-vt-cod4')?.value||'',
     ben4:document.getElementById(prefix+'-vt-ben4')?.value||'',
   };
+  // Saldo, período em gozo e dias vendidos saíram do cadastro — são do
+  // Controle de Férias. Sem este corte, salvar a ficha zeraria os três.
+  Object.entries({ferSaldo:'fer-saldo', ferInicio:'fer-inicio', ferFim:'fer-fim'})
+    .forEach(([k,campo])=>{ if(!document.getElementById(prefix+'-'+campo)) delete dados[k]; });
+  return dados;
 }
 
 function verificarDuplic(prefix){
@@ -678,6 +682,7 @@ function limparFormColab(prefix){
   const st=document.getElementById(prefix+'-status'); if(st) st.value='Ativo';
   const fi=document.getElementById(prefix+'-filtro'); if(fi) fi.value='OK';
   const mob=document.getElementById(prefix+'-mobilidade'); if(mob) mob.value='combustivel';
+  const nv=document.getElementById(prefix+'-nave'); if(nv) nv.value='N/A';
   ['vr','cafe','cesta','mobilidade','vt'].forEach(t=>onElegChange(prefix,t,false));
   onElegChange(prefix,'ferias',document.getElementById(prefix+'-eleg-ferias')?.checked||false);
   const fclt=document.getElementById(prefix+'-eleg-folhaCLT');
