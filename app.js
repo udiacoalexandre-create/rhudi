@@ -968,9 +968,7 @@ const MODULES = {
   ]},
   ferias:{pages:[
     {id:'fer-periodos',icon:'<i class="ti ti-layout-kanban"></i>',label:'Períodos e vencimentos'},
-    {id:'fer-agendar',icon:'<i class="ti ti-calendar-plus"></i>',label:'Agendar F\u00E9rias',action:'abrirAgendarFerias()'},
     {id:'fer-agendadas',icon:'<i class="ti ti-calendar-event"></i>',label:'F\u00E9rias Agendadas'},
-    {id:'fer-ajuste',icon:'<i class="ti ti-table-options"></i>',label:'Saldos e per\u00EDodos'},
     {id:'fer-um989',icon:'<i class="ti ti-users"></i>',label:'F\u00E9rias UM989'},
   ]},
   premio:{pages:[
@@ -1119,7 +1117,6 @@ function renderPage(id){
     'ben-historico':pgBenHistorico,'ben-config':pgBenConfig,'config-main':pgConfiguracoes,'base-dash':pgBaseDashboard,'ben-dash':pgBenDashboard,
     'folha-import':pgFolhaImport,'folha-view':pgFolhaView,
     'fer-periodos':pgFerPeriodos,'fer-agendadas':pgFeriasAgendadas,'fer-um989':pgFerUM989,'fer-import':pgFerImport,
-    'fer-ajuste':pgFerAjusteTabela,
     'teste-senior':pgTesteSenior,'usuarios':pgUsuarios,
     'premio-dash':pgPremioDashboard,'premio-historico':pgPremioHistorico,
     'contab-processo':pgContabProcesso,'contab-historico':pgContabHistorico,
@@ -1155,7 +1152,6 @@ function afterRender(id){
   }
   if(id==='fer-periodos'){ renderFerPeriodos(); ferAoAbrirAba(); }
   if(id==='fer-agendadas') renderFeriasAgendadas();
-  if(id==='fer-ajuste') renderFerAjusteTabela();
   if(id==='fer-um989') loadUM989().then(renderUM989);
   if(id==='premio-main') afterRenderPremio();
   if(id==='rv-main') afterRenderRV();
@@ -14338,199 +14334,3 @@ async function salvarVersaoRapida(){
 // aparece com férias vencidas e saldo cheio. Esta tela mostra tudo lado a
 // lado e permite corrigir direto, célula por célula, gravando na ficha.
 
-function pgFerAjusteTabela(){
-  return `
-   <div class="bl-page">
-    <div class="lan-conteudo">
-      <div class="page-header"><h2 class="page-title">Saldos e períodos de férias</h2></div>
-      <div id="fa-topo"></div>
-      <div class="filter-bar filter-bar--slim">
-        <div class="filter-group" style="flex:1;min-width:200px">
-          <input type="text" id="fa-q" placeholder="Buscar nome ou matrícula..." aria-label="Buscar" oninput="renderFerAjusteLista()">
-        </div>
-        <div class="filter-group"><select id="fa-emp" aria-label="Empresa" onchange="renderFerAjusteLista()"></select></div>
-        <div class="filter-group"><select id="fa-sit" aria-label="Situação" onchange="renderFerAjusteLista()">
-          <option value="">Todas as situações</option>
-          <option value="vencida">Férias vencidas</option>
-          <option value="vencendo">Vencem em até 60 dias</option>
-          <option value="semperiodo">Sem período informado</option>
-          <option value="comperiodo">Com período informado</option>
-          <option value="semagenda">Sem agendamento</option>
-          <option value="saldocheio">Saldo 30 ou mais</option>
-          <option value="saldozero">Saldo zerado ou negativo</option>
-        </select></div>
-        <div class="filter-group" style="flex-direction:row;align-items:center;gap:6px">
-          <span class="text-xs text-muted">Venceu entre</span>
-          <input type="month" id="fa-de" aria-label="Vencimento de" onchange="renderFerAjusteLista()" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-          <span class="text-xs text-muted">e</span>
-          <input type="month" id="fa-ate" aria-label="Vencimento até" onchange="renderFerAjusteLista()" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px">
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="limparFerAjuste()">Limpar</button>
-        <button class="btn btn-ghost btn-sm" onclick="exportarFerAjuste()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
-      </div>
-      <div id="fa-lista"></div>
-    </div>
-    <div id="fa-rodape"></div>
-   </div>`;
-}
-
-function _faElegiveis(){
-  return colaboradores.filter(c=>
-    !STATUS_NAO_RECEBE.includes(c.status) && c.elegibilidade?.ferias!==false);
-}
-
-function renderFerAjusteTabela(){
-  const sel=document.getElementById('fa-emp');
-  if(sel && !sel.options.length){
-    const emps=getEmpresaList();
-    sel.innerHTML='<option value="">Todas as empresas</option>'
-      +emps.map(e=>'<option value="'+e.cod+'">'+_empresaLabel(e.cod)+' ('+e.qtd+')</option>').join('');
-  }
-  renderFerAjusteLista();
-}
-
-function limparFerAjuste(){
-  ['fa-q','fa-emp','fa-sit','fa-de','fa-ate'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
-  renderFerAjusteLista();
-}
-
-// AAAA-MM da data de vencimento, para comparar com os campos de mês.
-function _faMesVenc(c){
-  const f=getFarol(c);
-  if(!f.vencDate) return '';
-  return f.vencDate.getFullYear()+'-'+String(f.vencDate.getMonth()+1).padStart(2,'0');
-}
-function _faFiltrar(){
-  const q=(document.getElementById('fa-q')?.value||'').toLowerCase().trim();
-  const emp=document.getElementById('fa-emp')?.value||'';
-  const sit=document.getElementById('fa-sit')?.value||'';
-  const de=document.getElementById('fa-de')?.value||'';
-  const ate=document.getElementById('fa-ate')?.value||'';
-  const hoje=new Date(); hoje.setHours(0,0,0,0);
-  return _faElegiveis().filter(c=>{
-    if(q && !((c.nome||'').toLowerCase().includes(q)||String(c.mat||'').toLowerCase().includes(q))) return false;
-    if(emp && !_empresaMatch(c,[emp])) return false;
-    if(de||ate){
-      const m=_faMesVenc(c);
-      if(!m) return false;                       // sem vencimento não entra na faixa
-      if(de && m<de) return false;
-      if(ate && m>ate) return false;
-    }
-    if(!sit) return true;
-    const f=getFarol(c);
-    const temPeriodo=!!(c.ferInicio&&c.ferFim);
-    const saldo=(c.ferSaldo!=null?fnum(c.ferSaldo):30);
-    if(sit==='vencida')    return f.vencDate && f.vencDate<hoje;
-    if(sit==='vencendo')   return f.vencDate && f.vencDate>=hoje && (f.vencDate-hoje)/86400000<=60;
-    if(sit==='semperiodo') return !temPeriodo;
-    if(sit==='comperiodo') return temPeriodo;
-    if(sit==='semagenda')  return !c.ferMes;
-    if(sit==='saldocheio') return saldo>=30;
-    if(sit==='saldozero')  return saldo<=0;
-    return true;
-  }).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
-}
-
-function renderFerAjusteLista(){
-  const el=document.getElementById('fa-lista'); if(!el) return;
-  const lista=_faFiltrar();
-  const hoje=new Date(); hoje.setHours(0,0,0,0);
-  const todos=_faElegiveis();
-  const vencidas=todos.filter(c=>{const f=getFarol(c);return f.vencDate&&f.vencDate<hoje;});
-  const semPer=todos.filter(c=>!(c.ferInicio&&c.ferFim));
-  const suspeitos=todos.filter(c=>{const f=getFarol(c);
-    return f.vencDate&&f.vencDate<hoje&&(c.ferSaldo==null||fnum(c.ferSaldo)>=30);});
-
-  const topo=document.getElementById('fa-topo');
-  if(topo) topo.innerHTML='<div class="stats-inline" style="margin-bottom:10px">'
-    +_dsStat('users','accent',todos.length,'Elegíveis')
-    +_dsStat('alert-triangle','danger',vencidas.length,'Vencidas')
-    +_dsStat('calendar-off','warning',semPer.length,'Sem período')
-    +_dsStat('alert-circle','warning',suspeitos.length,'Vencida com saldo cheio')
-    +'</div>';
-
-  if(!lista.length){ el.innerHTML='<div class="empty-state"><p>Nenhum colaborador com esses filtros.</p></div>'; return; }
-  const inp='padding:5px 7px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit';
-  const anoAtual=new Date().getFullYear();
-  el.innerHTML='<div class="tbl-wrap bl-scroll"><table class="tbl"><thead><tr>'
-    +'<th>Colaborador</th><th style="text-align:center">Saldo</th><th style="text-align:center">Vencimento</th>'
-    +'<th style="text-align:center">Entrada</th><th style="text-align:center">Saída</th>'
-    +'<th style="text-align:center">Vendidos</th><th style="text-align:center">Agendamento</th><th style="text-align:center">Situação</th>'
-    +'</tr></thead><tbody>'
-    +lista.map(c=>{
-      const f=getFarol(c);
-      const venc=f.vencDate&&f.vencDate<hoje;
-      const saldo=(c.ferSaldo!=null?c.ferSaldo:'');
-      const alerta=venc&&(c.ferSaldo==null||fnum(c.ferSaldo)>=30);
-      return '<tr'+(alerta?' style="background:#FEF3C7"':'')+'>'
-        +'<td><div style="font-weight:500">'+escH(c.nome)+'</div>'
-          +'<div class="text-xs text-muted"><code style="font-size:10px">'+(c.mat||'—')+'</code>'+(escH(c.depto)?' · '+escH(c.depto):'')+'</div></td>'
-        +'<td style="text-align:center"><input type="number" min="-90" max="90" value="'+saldo+'" placeholder="30" style="'+inp+';width:64px" onchange="faSalvar(\''+c._id+'\',\'ferSaldo\',this.value)"></td>'
-        +'<td style="text-align:center"><input type="text" maxlength="5" placeholder="dd/mm" value="'+_vencCampoDDMM(c)+'" style="'+inp+';width:70px" onchange="faSalvar(\''+c._id+'\',\'ferVenc\',this.value)">'
-          +'<div class="text-xs text-muted">'+(f.vencDate?f.vencDate.toLocaleDateString('pt-BR'):'—')+'</div></td>'
-        +'<td style="text-align:center"><input type="date" value="'+(c.ferInicio||'')+'" style="'+inp+'" onchange="faSalvar(\''+c._id+'\',\'ferInicio\',this.value)"></td>'
-        +'<td style="text-align:center"><input type="date" value="'+(c.ferFim||'')+'" style="'+inp+'" onchange="faSalvar(\''+c._id+'\',\'ferFim\',this.value)"></td>'
-        +'<td style="text-align:center"><input type="number" min="0" max="10" value="'+(fnum(c.ferDiasComprados)||'')+'" placeholder="0" style="'+inp+';width:58px" onchange="faSalvar(\''+c._id+'\',\'ferDiasComprados\',this.value)"></td>'
-        +'<td style="text-align:center;white-space:nowrap">'
-          +'<select style="'+inp+'" onchange="faSalvar(\''+c._id+'\',\'ferMes\',this.value)">'
-          +'<option value="">—</option>'+MESES_FER.map(m=>'<option value="'+m+'"'+(c.ferMes===m?' selected':'')+'>'+m.slice(0,3)+'</option>').join('')
-          +'</select> '
-          +'<select style="'+inp+';width:70px" onchange="faSalvar(\''+c._id+'\',\'ferAno\',this.value)">'
-          +'<option value="">—</option>'+[anoAtual-1,anoAtual,anoAtual+1,anoAtual+2].map(a=>'<option value="'+a+'"'+(String(c.ferAno)===String(a)?' selected':'')+'>'+a+'</option>').join('')
-          +'</select></td>'
-        +'<td style="text-align:center">'+(venc
-            ?'<span class="badge badge--danger">vencida</span>'
-            :'<span class="badge badge--success">em dia</span>')
-          +(alerta?' <span class="ajuda" title="Férias vencidas e saldo cheio: provavelmente tirou férias sem o abate. Informe entrada, saída e dias vendidos, e ajuste o saldo.">?</span>':'')
-        +'</td></tr>';
-    }).join('')
-    +'</tbody></table></div>'
-    +'<div class="text-xs text-muted" style="margin-top:6px">'+lista.length+' de '+todos.length+' · alterações gravam na ficha do colaborador na hora.</div>';
-}
-
-// Grava o campo direto na ficha e espelha na base da apuração.
-async function faSalvar(id,campo,valor){
-  const c=colaboradores.find(x=>x._id===id); if(!c) return;
-  const antes=c[campo];
-  const antIni=c.ferInicio, antFim=c.ferFim;
-  const retrato=Object.assign({},c);        // retrato para a auditoria
-  if(campo==='ferSaldo')            c.ferSaldo = (valor===''?null:fnum(valor));
-  else if(campo==='ferVenc')        c.ferVenc  = _resolveVencInput(valor, c.ferVenc);
-  else if(campo==='ferDiasComprados') c.ferDiasComprados = fnum(valor);
-  else if(campo==='ferAno')         c.ferAno   = valor?fnum(valor):'';
-  else                              c[campo]   = valor||'';
-  if(c.ferInicio&&c.ferFim&&c.ferFim<c.ferInicio){
-    toast('A saída não pode ser anterior à entrada.','error');
-    c[campo]=antes; renderFerAjusteLista(); return;
-  }
-  if(campo==='ferInicio'||campo==='ferFim'||campo==='ferDiasComprados'){
-    ferRegistrarPeriodo(c,c.ferInicio,c.ferFim,c.ferDiasComprados,antIni,antFim);
-  }
-  ferLogEdicao(c, retrato, 'saldos e períodos');
-  try{
-    await fsSet('colaboradores',id,c);
-    if(baseApuracao&&Array.isArray(baseApuracao.colaboradores)){
-      const cb=baseApuracao.colaboradores.find(x=>x._id===id||(x.mat&&x.mat===c.mat));
-      if(cb) cb[campo]=c[campo];
-    }
-    toast(c.nome.split(' ')[0]+': '+campo.replace('fer','')+' atualizado.','success');
-    // Período em curso entra em Férias na hora. Período passado não mexe no
-    // status — esta tela também serve para lançar histórico.
-    if(campo==='ferInicio'||campo==='ferFim') await sincronizarStatusFerias(new Date());
-    renderFerAjusteLista();
-  }catch(e){ c[campo]=antes; toast('Erro: '+e.message,'error'); renderFerAjusteLista(); }
-}
-
-function exportarFerAjuste(){
-  const lista=_faFiltrar();
-  const rows=[['Matrícula','Nome','Departamento','Saldo','Vencimento (dd/mm)','Vence em','Entrada','Saída','Dias vendidos','Mês agendado','Ano']];
-  lista.forEach(c=>rows.push([c.mat||'',c.nome||'',c.depto||'',
-    (c.ferSaldo!=null?c.ferSaldo:''), _vencCampoDDMM(c),
-    (getFarol(c).vencDate?getFarol(c).vencDate.toLocaleDateString('pt-BR'):''),
-    c.ferInicio||'', c.ferFim||'',
-    fnum(c.ferDiasComprados)||0, c.ferMes||'', c.ferAno||'']));
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Saldos e períodos');
-  XLSX.writeFile(wb,'Ferias_Saldos_Periodos.xlsx');
-  toast('Excel exportado.','success');
-}
