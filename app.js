@@ -10474,7 +10474,7 @@ function pgFeriasAgendadas(){
   return `
     <div class="page-header">
       <h2 class="page-title">Férias Agendadas</h2>
-      <p class="page-subtitle">Quem está com férias agendadas em cada mês. Clique num colaborador para ver/editar.</p>
+      <p class="page-subtitle">Confere conflito de cobertura: mesma função e mesma nave no mesmo mês${_ajuda('O agendamento é feito em Períodos e vencimentos. Aqui só se verifica quem está marcado para o mesmo mês dividindo função e nave — vermelho é conflito, verde está livre.')}</p>
     </div>
     <div class="filter-bar" style="align-items:flex-end;margin-bottom:16px">
       <div class="filter-group" style="flex:1"><label>Buscar</label>
@@ -10491,6 +10491,17 @@ function pgFeriasAgendadas(){
     <div id="feragd-resumo" style="margin-bottom:14px"></div>
     <div id="feragd-grid"></div>
     <div id="feragd-sem" style="margin-top:20px"></div>`;
+}
+
+// Conflito de cobertura: duas pessoas da MESMA funcao e MESMA nave marcadas
+// para o mesmo mes. Quem esta sozinho no par funcao+nave fica verde.
+function ferChaveCobertura(c){
+  return funcaoColab(c)+' | '+naveColab(c);
+}
+function ferConflitosDoMes(itens){
+  const conta={};
+  (itens||[]).forEach(c=>{ const k=ferChaveCobertura(c); conta[k]=(conta[k]||0)+1; });
+  return conta;
 }
 
 // Situacao de agendamento de ferias (categorias exclusivas):
@@ -10544,13 +10555,19 @@ function renderFeriasAgendadas(){
 
   // Resumo em cards (mesmo padrao visual do Radar de Ferias):
   // agendadas · afastados · nao se aplicam · pendentes (sem mes)
+  // Quantos estao em conflito, no total: e a pergunta que a aba responde.
+  let emConflito=0;
+  meses.forEach(mes=>{
+    const doMes=agendados.filter(c=>c.ferMes===mes);
+    const conta=ferConflitosDoMes(doMes);
+    emConflito+=doMes.filter(c=>conta[ferChaveCobertura(c)]>1).length;
+  });
   const resumoEl=document.getElementById('feragd-resumo');
   if(resumoEl){
     resumoEl.innerHTML='<div class="stat-grid">'
-      +_dsStat('circle-check','success',agendados.length,'Com férias agendadas')
-      +_dsStat('first-aid-kit','warning',afastados.length,'Afastados')
-      +_dsStat('circle-minus','neutral',naoAplicam.length,'Não se aplicam')
-      +_dsStat('alert-triangle','danger',semAgenda.length,'Pendentes')
+      +_dsStat('alert-triangle', emConflito?'danger':'success', emConflito,'Em conflito')
+      +_dsStat('circle-check','success',agendados.length-emConflito,'Sem conflito')
+      +_dsStat('calendar-off','warning',semAgenda.length,'Sem mês definido')
       +'</div>';
   }
 
@@ -10571,19 +10588,19 @@ function renderFeriasAgendadas(){
           +'<div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">'
           +(itens.length===0
             ? '<div class="text-xs text-muted" style="padding:4px 2px">—</div>'
-            : itens.map(c=>{
-                const f=getFarol(c);
-                const corMap={verde:'var(--green)',amarelo:'var(--yellow)',laranja:'var(--orange)',vermelho:'var(--red)',sem:'var(--text3)',na:'#9CA3AF'};
-                const saldo=(c.ferSaldo!=null?c.ferSaldo:f.dias);
-                const dd=f.vencDate?(String(f.vencDate.getDate()).padStart(2,'0')+'/'+String(f.vencDate.getMonth()+1).padStart(2,'0')+'/'+String(f.vencDate.getFullYear()).slice(-2)):'';
-                const vencTxt=f.cor==='sem'?'Sem venc.':(f.meses<0?'Venceu '+dd:'Vence '+dd);
-                return '<div class="rad-card" onclick="abrirDetalheFerias(\''+c._id+'\')" title="Clique para ver/editar">'
-                  +'<div class="rad-card__top"><span class="rad-card__name">'+escH(c.nome)+'</span>'
-                    +'<span class="rad-saldo'+(saldo<0?' neg':'')+'" title="Saldo de dias">'+saldo+'d</span></div>'
-                  +'<div class="rad-venc" style="color:'+corMap[f.cor]+'">'+vencTxt+'</div>'
-                  +(escH(c.depto)?'<div class="rad-agend">'+escH(c.depto)+'</div>':'')
+            : (()=>{ const conta=ferConflitosDoMes(itens);
+                return itens.map(c=>{
+                  const bate=conta[ferChaveCobertura(c)]>1;
+                  return '<div class="ag-card'+(bate?' ag-card--bate':'')+'" '
+                    +'onclick="abrirDetalheFerias(\''+c._id+'\')" '
+                    +'title="'+(bate?'Conflito: outra pessoa da mesma função e nave neste mês.'
+                                    :'Sem conflito neste mês.')+'">'
+                    +'<div class="ag-card__n">'+escH(c.nome)+'</div>'
+                    +'<div class="ag-card__f">'+escH(funcaoColab(c)||'—')+'</div>'
+                    +'<div class="ag-card__v">'+naveColab(c)+'</div>'
                   +'</div>';
-              }).join(''))
+                }).join('');
+              })())
           +'</div></div>';
       }).join('')
       +'</div>';
@@ -10621,8 +10638,9 @@ function renderFeriasAgendadas(){
             +'</tr>';
         }).join('')+'</tbody></table></div>';
     };
-    semEl.innerHTML = tabela('Sem férias agendadas', semAgenda, 'sem_mes')
-                    + tabela('Afastados', afastados, 'afastado');
+    // Afastados e quem nao tem direito nao entram: aqui so importa quem
+    // ainda precisa de um mes para entrar na conferencia.
+    semEl.innerHTML = tabela('Sem mês definido', semAgenda, 'sem_mes');
   }
 }
 

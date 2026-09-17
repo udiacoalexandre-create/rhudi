@@ -795,6 +795,15 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .modal-sub { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 
+.ag-card{ border:1.5px solid var(--green); border-left-width:4px; background:#F0FDF4;
+  border-radius:8px; padding:7px 9px; cursor:pointer; transition:all .12s }
+.ag-card:hover{ transform:translateY(-1px); box-shadow:var(--shadow-sm) }
+.ag-card--bate{ border-color:var(--red); background:#FEF2F2 }
+.ag-card__n{ font-size:12px; font-weight:600; line-height:1.25; color:var(--text) }
+.ag-card__f{ font-size:10.5px; color:var(--text2); margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.ag-card__v{ font-size:10px; color:var(--text3); font-weight:600; margin-top:1px }
+.ag-card--bate .ag-card__n{ color:var(--danger-text,#991B1B) }
 .lnk{ background:none; border:none; padding:0; font:inherit; color:inherit;
   text-decoration:underline; cursor:pointer }
 .lnk:hover{ opacity:.8 }
