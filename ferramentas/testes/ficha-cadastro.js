@@ -82,6 +82,10 @@ t('nem o período em gozo',
   form.indexOf('id="e-fer-inicio"')<0 && form.indexOf('id="e-fer-fim"')<0);
 t('nem o ano do agendamento, que é calculado', form.indexOf('id="e-fer-ano"')<0);
 const blFer=form.slice(form.indexOf('e-card-fer'));
+t('o ano calculado nao aparece na ficha', !/cad-hint/.test(form) && !/fer-ano-label/.test(form));
+t('a funcao diz para que serve', /Função controle férias/.test(form));
+t('cargo tem meia linha, nao fica cortado', /class="fg sp3"><label[^>]*>Cargo/.test(form),
+  (form.match(/class="fg sp\d"><label[^>]*>(Cargo|CPF|Dias fixos)/g)||[]).join(' | '));
 t('o bloco de férias tem função, nave, vencimento e mês — nada mais',
   (blFer.slice(0, blFer.indexOf('</div>\n        </div>'))
     .match(/<input type|<select /g)||[]).length===4,

@@ -372,7 +372,9 @@ function formColabHTML(prefix, c){
             ${g('Nome *', inp('nome','text',escH(c?.nome)||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp4')}
             ${g('CPF', inp('cpf','text',c?.cpf||'',' oninput="verificarDuplic(\''+prefix+'\')"'),'','sp2')}
             ${g('Admissão', inp('admissao','date',c?.admissao||''),'','sp2')}
-            ${g('Cargo', inp('cargo','text',escH(c?.cargo)||''),'','sp2')}
+            ${g('Dias fixos', inp('dias-fixos','number','' + (c?.diasFixos||''),' min="0" max="31" placeholder="—"'),
+                'Preenchido, trava a jornada deste colaborador. Vazio usa os dias úteis do mês.','sp2')}
+            ${g('Cargo', inp('cargo','text',escH(c?.cargo)||''),'','sp3')}
             ${g('Departamento', inp('depto','text',escH(c?.depto)||''),'','sp3')}
             ${g('Status', buildStatusSelect(prefix, c),'','sp3')}
             ${g('Tipo','<select id="'+prefix+'-filtro">'
@@ -380,8 +382,6 @@ function formColabHTML(prefix, c){
                 ['TER','Terceiros'],['DIR','Diretoria'],['PART','Particular (sócio)']]
                 .map(([v,l])=>'<option value="'+v+'" '+(fil===v?'selected':'')+'>'+v+' — '+l+'</option>').join('')
               +'</select>','','sp3')}
-            ${g('Dias fixos', inp('dias-fixos','number','' + (c?.diasFixos||''),' min="0" max="31" placeholder="—"'),
-                'Preenchido, trava a jornada deste colaborador. Vazio usa os dias úteis do mês.','sp3')}
           </div>
           <div id="${prefix}-duplic-alert"></div>
         </div>
@@ -389,17 +389,16 @@ function formColabHTML(prefix, c){
         <div class="cad-bl" id="${prefix}-card-fer" style="display:none">
           <div class="cad-bl__t">Férias</div>
           <div class="cad-gr">
-            ${g('Função', inp('funcao','text',escH(c?.funcao)||'',' placeholder="Ex.: Operador de Empilhadeira"'),
+            ${g('Função controle férias', inp('funcao','text',escH(c?.funcao)||'',' placeholder="Ex.: Operador de Empilhadeira"'),
                 'É a função que controla as férias: só quem divide função e nave disputa cobertura.','sp3')}
             ${g('Nave','<select id="'+prefix+'-nave">'+naveOptions(c)+'</select>',
                 'Nave onde a pessoa trabalha. N/A para quem não é da operação.','sp3')}
             ${g('Vencimento do ciclo', inp('fer-venc','text',_vencCampoDDMM(c),' placeholder="DD/MM" maxlength="5"'),
                 'Dia/mês do próximo vencimento. Em branco, é calculado da admissão. O ano é do sistema.','sp2')}
-            ${g('Mês de agendamento','<select id="'+prefix+'-fer-mes" onchange="atualizarAnoFerias(\''+prefix+'\')">'
+            ${g('Mês de agendamento','<select id="'+prefix+'-fer-mes">'
                 +'<option value="">-- Não agendado --</option>'
                 +MESES_FER.map(m=>'<option value="'+m+'" '+(c?.ferMes===m?'selected':'')+'>'+m+'</option>').join('')
-                +'</select> <span class="cad-hint" id="'+prefix+'-fer-ano-label">'
-                +(c?.ferMes?anoAgendadoColab(c):'')+'</span>',
+                +'</select>',
                 'Mês previsto para as férias. Saldo, período em gozo e dias vendidos são tratados no Controle de Férias.','sp4')}
           </div>
         </div>
