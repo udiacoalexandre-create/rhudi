@@ -267,6 +267,12 @@ function getFuncaoList(){
   return [...new Set(colaboradores.map(c=>funcaoColab(c)).filter(f=>f))].sort();
 }
 
+// Naves em uso, na ordem da constante — para os filtros do controle de ferias.
+// Quem esta sem nave cai em N/A (mesma regra de naveColab), por isso N/A aparece.
+function getNaveList(){
+  return NAVES.filter(n=>colaboradores.some(c=>naveColab(c)===n));
+}
+
 function inferMob(c){
   if(['vt','combustivel','perto','carro_empresa'].includes(c.mobilidade)) return c.mobilidade;
   if([1,2,3,4].some(n=>fnum(c['vt'+n])>0)) return 'vt';
@@ -5986,6 +5992,7 @@ function pgFerPeriodos(){
       <div class="filter-group"><label>Empresa</label>${msDropdown('fpemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:_empresaLabel(e.cod)})),'renderFerPeriodos')}</div>
       <div class="filter-group"><label>Departamento</label>${msDropdown('fpdep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFerPeriodos')}</div>
       <div class="filter-group"><label>Função</label>${msDropdown('fpfunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFerPeriodos')}</div>
+      <div class="filter-group"><label>Nave</label>${msDropdown('fpnave','Nave',getNaveList().map(n=>({value:n,label:n})),'renderFerPeriodos')}</div>
       <div class="filter-group"><label>Agendamento</label>${msDropdown('fpag','Agendamento',[{value:'sem',label:'Sem agendamento'},{value:'com',label:'Agendado'}],'renderFerPeriodos')}</div>
       <div class="filter-group"><label>Mês agendado</label>${msDropdown('fpmes','Mês agendado',MESES_FER.map(m=>({value:m,label:m})),'renderFerPeriodos')}</div>
       <label class="filter-group" style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
@@ -6031,7 +6038,7 @@ function _fpBase(){
 }
 function _fpFiltrar(){
   const q=(document.getElementById('fp-q')?.value||'').toLowerCase().trim();
-  const emp=getMs('fpemp'), dep=getMs('fpdep'), func=getMs('fpfunc');
+  const emp=getMs('fpemp'), dep=getMs('fpdep'), func=getMs('fpfunc'), nave=getMs('fpnave');
   const ag=getMs('fpag'), mes=getMs('fpmes');
   const soCrit=!!document.getElementById('fp-crit')?.checked;
   return _fpBase().filter(({c,critico})=>{
@@ -6042,6 +6049,7 @@ function _fpFiltrar(){
     if(emp.length && !_empresaMatch(c,emp)) return false;
     if(dep.length && !dep.includes(c.depto||'')) return false;
     if(func.length && !func.includes(funcaoColab(c)||'')) return false;
+    if(nave.length && !nave.includes(naveColab(c))) return false;
     if(mes.length && !mes.includes(c.ferMes||'')) return false;
     if(ag.length){
       const tem=!!c.ferMes;
@@ -10482,6 +10490,7 @@ function pgFeriasAgendadas(){
       <div class="filter-group"><label>Empresa</label>${msDropdown('faemp','Empresa',getEmpresaList().map(e=>({value:e.cod,label:_empresaLabel(e.cod)})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Departamento</label>${msDropdown('fadep','Departamento',getDeptoList().map(d=>({value:d,label:d})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Função</label>${msDropdown('fafunc','Função',getFuncaoList().map(f=>({value:f,label:f})),'renderFeriasAgendadas')}</div>
+      <div class="filter-group"><label>Nave</label>${msDropdown('fanave','Nave',getNaveList().map(n=>({value:n,label:n})),'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Situação</label>${msDropdown('fasit','Situação',[{value:'agendado',label:'Agendado'},{value:'sem_mes',label:'Sem mês definido'},{value:'afastado',label:'Afastado'},{value:'nao_aplica',label:'Não se aplica'}],'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Vencimento</label>${msDropdown('favenc','Vencimento',[{value:'vermelho',label:'Vencido'},{value:'laranja',label:'Vence ≤3m'},{value:'amarelo',label:'Vence 4-6m'},{value:'verde',label:'Vence +6m'},{value:'sem',label:'Sem dados'},{value:'na',label:'N/A'}],'renderFeriasAgendadas')}</div>
       <div class="filter-group"><label>Agendamento</label>${msDropdown('faagend','Agendamento',[{value:'ok',label:'No prazo'},{value:'bad',label:'Fora do prazo'},{value:'none',label:'Sem agendamento'}],'renderFeriasAgendadas')}</div>
@@ -10523,6 +10532,7 @@ function renderFeriasAgendadas(){
   const empF=getMs('faemp');   // empresa (prefixo da matricula)
   const depF=getMs('fadep');   // departamento
   const funcF=getMs('fafunc'); // funcao
+  const naveF=getMs('fanave'); // nave
   const sitF=getMs('fasit');   // situacao de agendamento
   const corF=getMs('favenc');  // situacao de vencimento (cor do farol)
   const agF=getMs('faagend');  // status do agendamento (ok/bad/none)
@@ -10534,6 +10544,7 @@ function renderFeriasAgendadas(){
   if(empF.length)  base=base.filter(c=>_empresaMatch(c,empF));
   if(depF.length)  base=base.filter(c=>depF.includes(c.depto||''));
   if(funcF.length) base=base.filter(c=>funcF.includes(funcaoColab(c)));
+  if(naveF.length) base=base.filter(c=>naveF.includes(naveColab(c)));
   if(q) base=base.filter(c=>
     (c.nome||'').toLowerCase().includes(q) ||
     (c.mat||'').toLowerCase().includes(q) ||
