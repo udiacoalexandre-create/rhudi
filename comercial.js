@@ -201,6 +201,59 @@ function histHTML(hist){
     }).join('')+'</tbody></table>';
 }
 
+// ── Atualizações da demanda ───────────────────────────────────────────────
+// Comentário datado e assinado sobre o andamento. O histórico conta o que
+// MUDOU nos campos; a atualização conta o que está acontecendo com o trabalho
+// — é a resposta a "como está isso hoje". Por isso ela é o único campo que se
+// escreve com a ficha travada: registrar andamento não é editar a demanda.
+function upsDem(d){ return Array.isArray(d&&d.atualizacoes) ? d.atualizacoes : []; }
+// Mais recente em cima. Ordena pelo carimbo e não pela posição no array: o
+// array é só acrescentado, mas data ISO comparada como texto já ordena certo,
+// e assim um registro que chegou fora de ordem não fura a fila.
+function upsOrdem(d){
+  return upsDem(d).slice().sort((a,b)=>String(b.em||'').localeCompare(String(a.em||'')));
+}
+function upsHTML(d){
+  const l=upsOrdem(d);
+  if(!l.length) return '<div class="up--vazio">Nenhuma atualização ainda.</div>';
+  return l.map(u=>'<div class="up"><div class="up__c">'+esc(u.texto||'')+'</div>'
+    +'<div class="up__m">'+esc(u.por||'—')+' · '+dataHora(u.em)+'</div></div>').join('');
+}
+function upUltimaHTML(d){
+  const u=upsOrdem(d)[0];
+  return u ? 'Última atualização em '+dataHora(u.em)+' por '+esc(u.por||'—')
+           : 'Sem atualizações registradas';
+}
+async function publicarAtualizacao(id){
+  const ta=$('dm-up-txt'); if(!ta) return;
+  const txt=(ta.value||'').trim();
+  if(!txt){ toast('Escreva a atualização.','aviso'); ta.focus(); return; }
+  const d=demandas.find(x=>x._id===id); if(!d) return;
+  const btn=$('dm-up-ok'); if(btn) btn.disabled=true;
+  const lista=upsDem(d).concat([{texto:txt, em:agora(), por:quem()}]);
+  // A atualização também entra no histórico como ação própria: quem for
+  // auditar a demanda vê a conversa e as mudanças de campo na mesma linha
+  // do tempo.
+  const hist=logDem(d.historico,'Atualização',[],txt);
+  try{
+    const confirmado = await comPrazo(window._setDoc(window._doc(COL_DEM, id),
+      Object.assign({}, d, {atualizacoes:lista, historico:hist,
+        atualizadoEm:agora(), atualizadoPor:quem()})), 8000);
+    // Pinta na hora com o dado local: a ficha não fica esperando o snapshot
+    // voltar do servidor para mostrar o que a pessoa acabou de escrever.
+    d.atualizacoes=lista; d.historico=hist;
+    ta.value='';
+    const cx=$('dm-ups');   if(cx) cx.innerHTML=upsHTML(d);
+    const ul=$('dm-ultima'); if(ul) ul.innerHTML=upUltimaHTML(d);
+    const hx=$('dm-hist');  if(hx) hx.innerHTML=histHTML(d.historico);
+    const hn=$('dm-hist-n');if(hn) hn.textContent=(d.historico||[]).length;
+    toast(confirmado ? 'Atualização publicada.'
+      : 'Atualização salva neste navegador; ela sobe quando a conexão voltar.',
+      confirmado?'ok':'aviso');
+  }catch(e){ toast('Erro ao publicar a atualização: '+e.message,'erro'); }
+  finally{ if($('dm-up-ok')) $('dm-up-ok').disabled=false; }
+}
+
 // ── Login e acesso ────────────────────────────────────────────────────────
 function mostrarLogin(){ $('tela-login').style.display='flex'; $('tela-app').style.display='none'; }
 function mostrarApp(){
@@ -1278,7 +1331,7 @@ function tabelaDm(itens){
           +'<td style="color:var(--text-secondary);white-space:nowrap">'+soDataCurta(d.entrada)+'</td>'
           +'<td style="text-align:center">'+_rolouHTML(d)+'</td>'
           +'<td style="text-align:center"><button class="btn-ed" title="Editar esta demanda" '
-            +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\')">'
+            +'onclick="event.stopPropagation();modalDemanda(\''+d._id+'\',\'editar\')">'
             +'<i class="ti ti-pencil"></i></button></td>'
           +'</tr>';
       }).join('')+'</tbody></table></div>';
@@ -1436,26 +1489,102 @@ function pintarDemandas(){
     +' em '+ordenadas.length+' sprint(s)</div>';
 }
 
-function modalDemanda(id){
+// A ficha da demanda abre TRAVADA. Quem clica numa linha está consultando, e
+// com os campos vivos um clique errado mudava o dado sem ninguém perceber.
+// Editar é uma decisão, e decisão tem botão. A exceção são as atualizações:
+// escrever andamento não é mexer na demanda, então esse campo vale sempre.
+function modalDemanda(id, modo){
   const d = id ? demandas.find(x=>x._id===id) : null;
-  const sel=(arr,v)=>arr.map(o=>'<option value="'+o.v+'"'+(v===o.v?' selected':'')+'>'+o.l+'</option>').join('');
+  const ed = !d || modo==='editar';        // demanda nova já nasce editável
   $('camada').innerHTML='<div class="mod" id="mod-dm">'
-    +'<div class="mod__cx"><div class="mod__h"><b>'+(d?'Demanda':'Nova demanda')+'</b>'
+    +'<div class="mod__cx mod__cx--dm"><div class="mod__h">'
+      +'<b>'+(d?(ed?'Editar demanda':'Demanda'):'Nova demanda')+'</b>'
       +'<button class="mod__x" onclick="fecharMod()">&times;</button></div>'
     +'<div class="mod__b">'
-    +'<div class="fg" style="margin-bottom:12px"><label>Demanda</label>'
+      // Em edição o cabeçalho sairia repetindo o campo Demanda logo abaixo.
+      +(d&&!ed?_dmCabecalho(d):'')
+      +(ed?_dmForm(d):_dmFicha(d))
+      +(d?_dmAtualizacoes(d):'')
+      +(d?_dmHistorico(d):'')
+    +'</div>'
+    +'<div class="mod__f">'
+    +(d?'<button class="btn" style="color:var(--cm-alta)" onclick="excluirDemanda(\''+d._id+'\')">'
+        +'<i class="ti ti-trash"></i> Excluir</button>':'<span></span>')
+    +'<span style="display:flex;gap:8px">'
+    +(ed
+      ? '<button class="btn" onclick="'+(d?'modalDemanda(\''+d._id+'\',\'ver\')':'fecharMod()')+'">Cancelar</button>'
+        +'<button class="btn btn--primary" id="dm-ok" onclick="salvarDemanda(\''+(d?d._id:'')+'\')">'
+        +'<i class="ti ti-check"></i> Salvar</button>'
+      : '<button class="btn" onclick="fecharMod()">Fechar</button>'
+        +'<button class="btn btn--primary" onclick="modalDemanda(\''+d._id+'\',\'editar\')">'
+        +'<i class="ti ti-pencil"></i> Editar</button>')
+    +'</span>'
+    +'</div></div></div>';
+  if(ed) setTimeout(()=>{ const t=$('dm-tit'); if(t) t.focus(); },50);
+}
+
+// Cabeçalho: o que é a demanda e como ela está. O descritivo inteiro não cabe
+// aqui sem empurrar o resto da ficha para fora da tela, então ele fica no
+// balão do título — o mesmo tracejado que a tabela já usa para avisar disso.
+function _dmCabecalho(d){
+  const desc=String(d.descricao||'').trim();
+  const st=sInfo(d.status);
+  const n=diasAte(d.prazo);
+  const entregue=st.v==='entregue';
+  // Mesma leitura da tabela: a estimativa só vira alerta enquanto a demanda
+  // não foi entregue.
+  let prazoTxt='', cls='';
+  if(!entregue && n!==null){
+    if(n<0){ cls='prazo-venc'; prazoTxt='estimativa passou há '+(-n)+' dia(s)'; }
+    else if(n===0){ cls='prazo-perto'; prazoTxt='estimada para hoje'; }
+    else if(n<=7){ cls='prazo-perto'; prazoTxt='faltam '+n+' dias'; }
+  }
+  return '<div class="dm-cab">'
+    +'<h3 class="dm-cab__t'+(desc?' tem-desc':'')+'"'
+      +(desc?' data-desc="'+d._id+'"':'')+'>'+esc(d.titulo||'(sem título)')+'</h3>'
+    +'<div class="dm-cab__l">'+pill(st.l, st.cor)
+      +(prazoTxt?'<span class="'+cls+'">'+prazoTxt+'</span>':'')
+    +'</div>'
+    +'<div class="dm-cab__u" id="dm-ultima">'+upUltimaHTML(d)+'</div>'
+  +'</div>';
+}
+
+// Consulta: os campos como texto. O título, o status e o andamento já estão no
+// cabeçalho — repeti-los aqui só faria a ficha pedir mais rolagem.
+function _dmFicha(d){
+  const vw=(rot,val,dica)=>'<div><span class="vw__l">'+rot+(dica?ajuda(dica):'')+'</span>'
+    +'<span class="vw__v">'+(val===''||val==null?'—':val)+'</span></div>';
+  return '<div class="vw-grid">'
+    +vw('Quem pediu', esc(d.solicitante||''))
+    +vw('Responsável', esc(d.responsavel||''),
+        'Quem da equipe de projetos responde por esta demanda junto à parceira.')
+    +vw('Área', esc(d.area||''))
+    +vw('Entrada da demanda', d.entrada?soData(d.entrada):'',
+        'Quando o pedido chegou. É o que permite ver há quanto tempo a demanda está aberta.')
+    +vw('Entrega estimada', (d.prazo?soData(d.prazo):'')
+        +(diasRolados(d)?' '+_rolouHTML(d):''),
+        'A data estimada pela parceira. O selo ao lado mostra quanto ela já rolou desde a primeira estimativa.')
+    +vw('Prioridade', prioTxt(d.prioridade),
+        'O número que a parceira usa na planilha (coluna T). Vazio = sem prioridade definida.')
+  +'</div>';
+}
+
+// Edição: o formulário de sempre, agora só depois do clique em Editar.
+function _dmForm(d){
+  const sel=(arr,v)=>arr.map(o=>'<option value="'+o.v+'"'+(v===o.v?' selected':'')+'>'+o.l+'</option>').join('');
+  return '<div class="fg" style="margin-bottom:12px"><label>Demanda</label>'
       +'<input type="text" id="dm-tit" maxlength="120" placeholder="O que foi pedido" '
       +'value="'+esc(d?d.titulo:'')+'"></div>'
     +'<div class="grid2" style="margin-bottom:12px">'
       +'<div class="fg"><label>Quem pediu</label><input type="text" id="dm-f-solic" maxlength="80" '
-        +'placeholder="Nome de quem solicitou" value="'+esc(d?d.solicitante:'')+'"></div>'
+        +'list="dl-solic" placeholder="Nome de quem solicitou" value="'+esc(d?d.solicitante:'')+'"></div>'
       +'<div class="fg"><label>Responsável'
         +ajuda('Quem da equipe de projetos responde por esta demanda junto à parceira. '
               +'A lista sugere quem já aparece nas demandas; dá para digitar um nome novo.')
         +'</label><input type="text" id="dm-resp" list="dl-resp" maxlength="80" '
         +'placeholder="Quem acompanha" value="'+esc(d?d.responsavel:'')+'"></div>'
       +'<div class="fg"><label>Área</label><input type="text" id="dm-area" maxlength="60" '
-        +'placeholder="Ex.: Comercial, Diretoria" value="'+esc(d?d.area:'')+'"></div>'
+        +'list="dl-area" placeholder="Ex.: Comercial, Diretoria" value="'+esc(d?d.area:'')+'"></div>'
       +'<div class="fg"><label>Prioridade'
         +ajuda('O número que a parceira usa na planilha (coluna T). Vazio = sem prioridade definida.')
         +'</label><input type="number" id="dm-f-prio" step="1" placeholder="—" '
@@ -1465,25 +1594,43 @@ function modalDemanda(id){
         +'</label><input type="date" id="dm-entrada" value="'+esc(d?d.entrada:'')+'"></div>'
       +'<div class="fg"><label>Entrega estimada</label><input type="date" id="dm-prazo" '
         +'value="'+esc(d?d.prazo:'')+'"></div>'
-      +'<div class="fg"><label>Status</label><select id="dm-f-status">'+sel(STATUS,d?d.status:'nao_iniciado')+'</select></div>'
+      +'<div class="fg"><label>Status</label><select id="dm-f-status">'
+        +sel(STATUS,d?sInfo(d.status).v:'nao_iniciado')+'</select></div>'
     +'</div>'
-    +'<div class="fg" style="margin-top:12px"><label>Descritivo'
-      +ajuda('O texto completo como veio da planilha. A demanda acima é o resumo.')
+    +'<div class="fg"><label>Descritivo'
+      +ajuda('O texto completo como veio da planilha. A demanda acima é o resumo. '
+            +'Na consulta ele aparece ao passar o mouse no título.')
       +'</label><textarea id="dm-desc" rows="6" placeholder="Texto completo da demanda">'
-      +esc(d?d.descricao:'')+'</textarea></div>'
-    +(d?'<div style="margin-top:14px"><div class="fg" style="margin-bottom:6px"><label>Histórico'
-        +ajuda('Toda inclusão, edição e exclusão fica registrada com data, hora e usuário.')+'</label></div>'
-      +'<div class="hist">'+histHTML(d.historico)+'</div></div>':'')
-    +'</div>'
-    +'<div class="mod__f">'
-    +(d?'<button class="btn" style="color:var(--cm-alta)" onclick="excluirDemanda(\''+d._id+'\')">'
-        +'<i class="ti ti-trash"></i> Excluir</button>':'<span></span>')
-    +'<span style="display:flex;gap:8px"><button class="btn" onclick="fecharMod()">Cancelar</button>'
-    +'<button class="btn btn--primary" id="dm-ok" onclick="salvarDemanda(\''+(d?d._id:'')+'\')">'
-      +'<i class="ti ti-check"></i> Salvar</button></span>'
-    +'</div></div></div>';
-  setTimeout(()=>{ const t=$('dm-tit'); if(t) t.focus(); },50);
+      +esc(d?d.descricao:'')+'</textarea></div>';
 }
+
+function _dmAtualizacoes(d){
+  return '<div class="bloco">'
+    +'<div class="bloco__t">Atualizações'
+      +ajuda('O andamento contado em comentários, do mais recente para o mais antigo, '
+            +'cada um com quem escreveu, data e hora. Este campo vale mesmo com a ficha '
+            +'travada — registrar andamento não é editar a demanda.')+'</div>'
+    +'<div class="up-novo">'
+      +'<textarea id="dm-up-txt" rows="2" maxlength="1000" '
+        +'placeholder="O que aconteceu nesta demanda..."></textarea>'
+      +'<div style="display:flex;justify-content:flex-end">'
+        +'<button class="btn btn--primary btn--sm" id="dm-up-ok" '
+        +'onclick="publicarAtualizacao(\''+d._id+'\')">'
+        +'<i class="ti ti-send"></i> Publicar atualização</button></div>'
+    +'</div>'
+    +'<div class="ups" id="dm-ups">'+upsHTML(d)+'</div>'
+  +'</div>';
+}
+
+// Histórico fechado por padrão: é consulta, não é o assunto de quem abriu a
+// ficha. Aberto, continua sendo só leitura.
+function _dmHistorico(d){
+  return '<details class="bloco hist-d"><summary>Histórico '
+    +'(<span id="dm-hist-n">'+((d.historico||[]).length)+'</span>)'
+    +ajuda('Toda inclusão, edição, exclusão e atualização fica registrada com data, hora e usuário.')
+    +'</summary><div class="hist" id="dm-hist">'+histHTML(d.historico)+'</div></details>';
+}
+
 async function salvarDemanda(id){
   const dep={
     titulo:($('dm-tit').value||'').trim(),
