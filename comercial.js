@@ -213,16 +213,23 @@ function upsDem(d){ return Array.isArray(d&&d.atualizacoes) ? d.atualizacoes : [
 function upsOrdem(d){
   return upsDem(d).slice().sort((a,b)=>String(b.em||'').localeCompare(String(a.em||'')));
 }
+// Nome de gente, não endereço de e-mail: numa conversa o que identifica quem
+// falou é o nome. O e-mail inteiro fica no title, para desempatar xarás.
+function _nomeCurto(email){
+  const e=String(email||'').trim();
+  if(!e) return '—';
+  return e.split('@')[0].replace(/[._-]+/g,' ')
+    .replace(/(^|\s)\S/g, c=>c.toUpperCase());
+}
 function upsHTML(d){
   const l=upsOrdem(d);
-  if(!l.length) return '<div class="up--vazio">Nenhuma atualização ainda.</div>';
-  return l.map(u=>'<div class="up"><div class="up__c">'+esc(u.texto||'')+'</div>'
-    +'<div class="up__m">'+esc(u.por||'—')+' · '+dataHora(u.em)+'</div></div>').join('');
-}
-function upUltimaHTML(d){
-  const u=upsOrdem(d)[0];
-  return u ? 'Última atualização em '+dataHora(u.em)+' por '+esc(u.por||'—')
-           : 'Sem atualizações registradas';
+  if(!l.length) return '<div class="up--vazio">Nenhuma atualização ainda. '
+    +'A primeira que você escrever aparece aqui.</div>';
+  const eu=quem();
+  return l.map(u=>'<div class="msg'+(String(u.por||'')===eu?' msg--eu':'')+'">'
+    +'<div class="msg__m" title="'+esc(u.por||'')+'">'+esc(_nomeCurto(u.por))
+      +' · '+dataHora(u.em)+'</div>'
+    +'<div class="msg__c">'+esc(u.texto||'')+'</div></div>').join('');
 }
 async function publicarAtualizacao(id){
   const ta=$('dm-up-txt'); if(!ta) return;
@@ -244,7 +251,6 @@ async function publicarAtualizacao(id){
     d.atualizacoes=lista; d.historico=hist;
     ta.value='';
     const cx=$('dm-ups');   if(cx) cx.innerHTML=upsHTML(d);
-    const ul=$('dm-ultima'); if(ul) ul.innerHTML=upUltimaHTML(d);
     const hx=$('dm-hist');  if(hx) hx.innerHTML=histHTML(d.historico);
     const hn=$('dm-hist-n');if(hn) hn.textContent=(d.historico||[]).length;
     toast(confirmado ? 'Atualização publicada.'
@@ -1504,7 +1510,7 @@ function modalDemanda(id, modo){
       // Em edição o cabeçalho sairia repetindo o campo Demanda logo abaixo.
       +(d&&!ed?_dmCabecalho(d):'')
       +(ed?_dmForm(d):_dmFicha(d))
-      +(d?_dmAtualizacoes(d):'')
+      +(d?_dmAtualizacoes(d,!ed):'')
       +(d?_dmHistorico(d):'')
     +'</div>'
     +'<div class="mod__f">'
@@ -1526,15 +1532,17 @@ function modalDemanda(id, modo){
 // Cabeçalho: o que é a demanda e como ela está. O descritivo inteiro não cabe
 // aqui sem empurrar o resto da ficha para fora da tela, então ele fica no
 // balão do título — o mesmo tracejado que a tabela já usa para avisar disso.
+// Cabeçalho: o título é a pergunta que a ficha responde — entra grande e
+// sozinho. O descritivo inteiro não cabe aqui sem empurrar o resto para fora
+// da tela, então ele fica no balão do título, no mesmo tracejado que a tabela
+// já usa para avisar que há texto no hover.
 function _dmCabecalho(d){
   const desc=String(d.descricao||'').trim();
-  const st=sInfo(d.status);
   const n=diasAte(d.prazo);
-  const entregue=st.v==='entregue';
   // Mesma leitura da tabela: a estimativa só vira alerta enquanto a demanda
   // não foi entregue.
   let prazoTxt='', cls='';
-  if(!entregue && n!==null){
+  if(sInfo(d.status).v!=='entregue' && n!==null){
     if(n<0){ cls='prazo-venc'; prazoTxt='estimativa passou há '+(-n)+' dia(s)'; }
     else if(n===0){ cls='prazo-perto'; prazoTxt='estimada para hoje'; }
     else if(n<=7){ cls='prazo-perto'; prazoTxt='faltam '+n+' dias'; }
@@ -1542,30 +1550,28 @@ function _dmCabecalho(d){
   return '<div class="dm-cab">'
     +'<h3 class="dm-cab__t'+(desc?' tem-desc':'')+'"'
       +(desc?' data-desc="'+d._id+'"':'')+'>'+esc(d.titulo||'(sem título)')+'</h3>'
-    +'<div class="dm-cab__l">'+pill(st.l, st.cor)
-      +(prazoTxt?'<span class="'+cls+'">'+prazoTxt+'</span>':'')
-    +'</div>'
-    +'<div class="dm-cab__u" id="dm-ultima">'+upUltimaHTML(d)+'</div>'
+    +(prazoTxt?'<div class="dm-cab__l '+cls+'">'+prazoTxt+'</div>':'')
   +'</div>';
 }
 
-// Consulta: os campos como texto. O título, o status e o andamento já estão no
-// cabeçalho — repeti-los aqui só faria a ficha pedir mais rolagem.
+// Consulta: seis campos numa faixa só, rótulo miúdo em cima do valor. Como
+// caixa de formulário, cada um comia uma linha inteira da ficha e ainda
+// convidava a digitar num dado que ninguém veio mudar.
 function _dmFicha(d){
-  const vw=(rot,val,dica)=>'<div><span class="vw__l">'+rot+(dica?ajuda(dica):'')+'</span>'
+  const vw=(rot,val,dica)=>'<div class="vw"><span class="vw__l">'+rot+(dica?ajuda(dica):'')+'</span>'
     +'<span class="vw__v">'+(val===''||val==null?'—':val)+'</span></div>';
   return '<div class="vw-grid">'
     +vw('Quem pediu', esc(d.solicitante||''))
     +vw('Responsável', esc(d.responsavel||''),
         'Quem da equipe de projetos responde por esta demanda junto à parceira.')
     +vw('Área', esc(d.area||''))
-    +vw('Entrada da demanda', d.entrada?soData(d.entrada):'',
-        'Quando o pedido chegou. É o que permite ver há quanto tempo a demanda está aberta.')
-    +vw('Entrega estimada', (d.prazo?soData(d.prazo):'')
-        +(diasRolados(d)?' '+_rolouHTML(d):''),
-        'A data estimada pela parceira. O selo ao lado mostra quanto ela já rolou desde a primeira estimativa.')
     +vw('Prioridade', prioTxt(d.prioridade),
         'O número que a parceira usa na planilha (coluna T). Vazio = sem prioridade definida.')
+    +vw('Entrada', d.entrada?soDataCurta(d.entrada):'',
+        'Quando o pedido chegou. É o que permite ver há quanto tempo a demanda está aberta.')
+    +vw('Entrega estimada', (d.prazo?soDataCurta(d.prazo):'')
+        +(diasRolados(d)?' '+_rolouHTML(d):''),
+        'A data estimada pela parceira. O selo ao lado mostra o quanto ela já rolou desde a primeira estimativa.')
   +'</div>';
 }
 
@@ -1604,21 +1610,26 @@ function _dmForm(d){
       +esc(d?d.descricao:'')+'</textarea></div>';
 }
 
-function _dmAtualizacoes(d){
+// Status e atualizações no MESMO bloco: a pergunta "como está isso" se
+// responde com as duas coisas juntas — o selo diz o estágio, a conversa diz o
+// porquê. Em edição o selo sai, porque o status vira campo no formulário.
+function _dmAtualizacoes(d, comStatus){
+  const st=sInfo(d.status);
   return '<div class="bloco">'
-    +'<div class="bloco__t">Atualizações'
-      +ajuda('O andamento contado em comentários, do mais recente para o mais antigo, '
-            +'cada um com quem escreveu, data e hora. Este campo vale mesmo com a ficha '
-            +'travada — registrar andamento não é editar a demanda.')+'</div>'
+    +(comStatus
+      ? '<div class="st-bar"><span class="st-bar__l">Status</span>'+pill(st.l,st.cor)
+        +'</div>'
+      : '<div class="bloco__t">Atualizações</div>')
     +'<div class="up-novo">'
       +'<textarea id="dm-up-txt" rows="2" maxlength="1000" '
-        +'placeholder="O que aconteceu nesta demanda..."></textarea>'
-      +'<div style="display:flex;justify-content:flex-end">'
+        +'placeholder="Escreva uma atualização do projeto..."></textarea>'
+      +'<div class="up-novo__f">'
+        +'<span class="up-novo__d">Fica registrado com seu nome, data e hora.</span>'
         +'<button class="btn btn--primary btn--sm" id="dm-up-ok" '
         +'onclick="publicarAtualizacao(\''+d._id+'\')">'
-        +'<i class="ti ti-send"></i> Publicar atualização</button></div>'
+        +'<i class="ti ti-send"></i> Publicar</button></div>'
     +'</div>'
-    +'<div class="ups" id="dm-ups">'+upsHTML(d)+'</div>'
+    +'<div class="chat" id="dm-ups">'+upsHTML(d)+'</div>'
   +'</div>';
 }
 
